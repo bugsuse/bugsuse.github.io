@@ -154,7 +154,7 @@ WPS(WRF Preprocessing System)是为了真实数据模拟提供输入的前处理
 
 #### calc_ecmwf_p.exe
 
-垂直插值气象场时，`real`程序需要和其他气象场处于相同垂直层的**3D气压场**和**位势高度场**。`calc_ecmwf_p.exe`可食用ECMWF的`sigma`层数据集创建这些气象场。给定地面气压场或地面气压场的log值以及A和B的系数，那么`calc_ecmwf_p.exe`就可以计算在ECMWF `sigma` `k`层的格点$P_{ijk} = A_k + B_k*P_{{sfc}_{ij}}$的气压值。
+垂直插值气象场时，`real`程序需要和其他气象场处于相同垂直层的**3D气压场**和**位势高度场**。`calc_ecmwf_p.exe`可食用ECMWF的`sigma`层数据集创建这些气象场。给定地面气压场或地面气压场的log值以及A和B的系数，那么`calc_ecmwf_p.exe`就可以计算在ECMWF `sigma` `k`层的格点$P_{ijk} = A_k + B_k*P_{{sfc}_{ij}}$ 的气压值。
 
 用于ECMWF不同的垂直层数据集气压计算的系数可从以下链接获取：
 
