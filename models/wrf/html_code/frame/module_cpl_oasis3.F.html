@@ -1,0 +1,553 @@
+<HTML> <BODY BGCOLOR=#eeddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_CPL_OASIS3'><A href='../../html_code/frame/module_cpl_oasis3.F.html#MODULE_CPL_OASIS3' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+ <font color=#993300>MODULE </font><font color=#cc0000>module_cpl_oasis3</font> <A href='../../call_to/MODULE_CPL_OASIS3.html' TARGET='index'>1</A><a name='3'>
+#ifdef key_cpp_oasis3<a name='4'>
+   <font color=#447700>!!======================================================================<a name='5'></font>
+   <font color=#447700>!!                    ***  MODULE cpl_oasis  ***<a name='6'></font>
+   <font color=#447700>!! Coupled O/A : coupled ocean-atmosphere case using OASIS3-MCT<a name='7'></font>
+   <font color=#447700>!!=====================================================================<a name='8'></font>
+   <font color=#447700>!!----------------------------------------------------------------------<a name='9'></font>
+   <font color=#447700>!!   cpl_oasis_init     : initialization of coupled mode communication<a name='10'></font>
+   <font color=#447700>!!   cpl_oasis_define   : definition of grid and fields<a name='11'></font>
+   <font color=#447700>!!   cpl_oasis_snd      : send out fields in coupled mode<a name='12'></font>
+   <font color=#447700>!!   cpl_oasis_rcv      : receive fields in coupled mode<a name='13'></font>
+   <font color=#447700>!!   cpl_oasis_finaliz : finalize the coupled mode communication<a name='14'></font>
+   <font color=#447700>!!----------------------------------------------------------------------<a name='15'></font>
+<a name='16'>
+   USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#module_cpl_oasis3.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_102">          , ONLY : domain, get_ijk_from_grid<a name='17'>
+   USE <A href='../../html_code/frame/module_driver_constants.F.html#MODULE_DRIVER_CONSTANTS'>module_driver_constants</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#module_cpl_oasis3.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DRIVER_CONSTANTS_22">, ONLY : max_domains, max_cplfld, max_extdomains<a name='18'>
+   USE mod_oasis              <font color=#447700>! OASIS3-MCT module<a name='19'></font>
+<a name='20'>
+   IMPLICIT NONE<a name='21'>
+   PRIVATE<a name='22'>
+<a name='23'>
+   TYPE ::   FLD_CPL                                  <font color=#447700>! Coupling field information<a name='24'></font>
+      CHARACTER(len = 64) ::   clname                    <font color=#447700>! Name of the coupling field, jpeighty defined in oasis<a name='25'></font>
+      INTEGER             ::   nid                       <font color=#447700>! Id of the field<a name='26'></font>
+#if ( RWORDSIZE == 8 )<a name='27'>
+      REAL        , POINTER, DIMENSION(:,:) ::   dbl2d   <font color=#447700>! 2d array to store received field <a name='28'></font>
+#else<a name='29'>
+      REAL(kind=8), POINTER, DIMENSION(:,:) ::   dbl2d   <font color=#447700>! 2d array to store received field <a name='30'></font>
+#endif<a name='31'>
+   END TYPE FLD_CPL<a name='32'>
+   TYPE(FLD_CPL), DIMENSION(max_domains,max_extdomains,max_cplfld) :: srcv, ssnd   <font color=#447700>! Coupling fields informations<a name='33'></font>
+   INTEGER :: ndm_comm                                                         <font color=#447700>! MPI communicator between the computing nodes<a name='34'></font>
+   INTEGER :: ncomp_id                                                         <font color=#447700>! id returned by oasis_init_comp<a name='35'></font>
+   INTEGER :: nlevdbg  = 1                                                     <font color=#447700>! verbosity level<a name='36'></font>
+   INTEGER :: nlevdbg2 = 10                                                    <font color=#447700>! verbosity level<a name='37'></font>
+   CHARACTER(len = 256) :: cltxt                                               <font color=#447700>! messages or debug string<a name='38'></font>
+<a name='39'>
+   <font color=#447700>!! Routine accessibility<a name='40'></font>
+   PUBLIC cpl_oasis_init<a name='41'>
+   PUBLIC cpl_oasis_def_dmcomm<a name='42'>
+   PUBLIC cpl_oasis_define<a name='43'>
+   PUBLIC cpl_oasis_toreceive<a name='44'>
+   PUBLIC cpl_oasis_tosend<a name='45'>
+   PUBLIC cpl_oasis_snd<a name='46'>
+   PUBLIC cpl_oasis_rcv<a name='47'>
+   PUBLIC cpl_oasis_finalize<a name='48'>
+   PUBLIC cpl_oasis_abort<a name='49'>
+<a name='50'>
+#if ( defined( DM_PARALLEL ) &amp;&amp; ( <font color=#447700>! defined( STUBMPI ) ) )<a name='51'></font>
+   INCLUDE 'mpif.h'               <font color=#447700>! only for MPI_COMM_NULL<a name='52'></font>
+#else<a name='53'>
+   INTEGER :: MPI_COMM_NULL = -1  <font color=#447700>! define a fake (and not used) MPI_COMM_NULL, so it is compiling <a name='54'></font>
+#endif<a name='55'>
+<a name='56'>
+CONTAINS<a name='57'>
+<a name='58'>
+<A NAME='CPL_OASIS_INIT'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='59'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_init</font>( kl_comm )  <A href='../../call_to/CPL_OASIS_INIT.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_OASIS_INIT.html' TARGET='index'>2</A><a name='60'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='61'></font>
+      <font color=#447700>!!             ***  ROUTINE cpl_oasis_init  ***<a name='62'></font>
+      <font color=#447700>!!<a name='63'></font>
+      <font color=#447700>!! ** Purpose :   Initialize coupled mode communication for WRF<a name='64'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='65'></font>
+      INTEGER, INTENT(OUT) :: kl_comm       <font color=#447700>! local communicator of the model<a name='66'></font>
+      <font color=#447700>!<a name='67'></font>
+      INTEGER :: ierror   <font color=#447700>! return error code<a name='68'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='69'></font>
+<a name='70'>
+      <font color=#447700>! Initialize OASIS for the application<a name='71'></font>
+      CALL oasis_init_comp( ncomp_id, 'wrfexe', ierror )<a name='72'>
+      IF( ierror /= OASIS_Ok )   CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT'>cpl_oasis_abort</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_ABORT_2">( 'cpl_oasis_init', 'Failure in oasis_init_comp' )<a name='73'>
+<a name='74'>
+      <font color=#447700>! Get an MPI communicator for WRF local communication<a name='75'></font>
+      CALL oasis_get_localcomm( kl_comm, ierror )<a name='76'>
+      IF( ierror /= OASIS_Ok )   CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT'>cpl_oasis_abort</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_ABORT_3">( 'cpl_oasis_init','Failure in oasis_get_localcomm' )<a name='77'>
+<a name='78'>
+      srcv(:,:,:)%nid = -1            <font color=#447700>! default definition<a name='79'></font>
+      ssnd(:,:,:)%nid = -1            <font color=#447700>! default definition<a name='80'></font>
+      ndm_comm        = MPI_COMM_NULL <font color=#447700>! default definition, will be redefined by cpl_oasis_def_dmcomm if computing node<a name='81'></font>
+<a name='82'>
+   END SUBROUTINE cpl_oasis_init<a name='83'>
+<a name='84'>
+<a name='85'>
+<A NAME='CPL_OASIS_DEF_DMCOMM'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEF_DMCOMM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='86'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_def_dmcomm</font>( kdm_comm )  <A href='../../call_to/CPL_OASIS_DEF_DMCOMM.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_OASIS_DEF_DMCOMM.html' TARGET='index'>2</A><a name='87'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='88'></font>
+      <font color=#447700>!!             ***  ROUTINE cpl_oasis_def_dmcomm  ***<a name='89'></font>
+      <font color=#447700>!!<a name='90'></font>
+      <font color=#447700>!! ** Purpose :   define ndm_comm: the MPI communicator between the computing nodes<a name='91'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='92'></font>
+      INTEGER, INTENT(IN) :: kdm_comm       <font color=#447700>! computing nodes communicator<a name='93'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='94'></font>
+      ndm_comm = kdm_comm   <font color=#447700>! store it to used it in cpl_oasis_define<a name='95'></font>
+<a name='96'>
+      WRITE(cltxt,*) 'cpl_oasis_def_dmcomm : ', kdm_comm<a name='97'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEF_DMCOMM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_178">(nlevdbg, cltxt)<a name='98'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEF_DMCOMM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_179">(nlevdbg, '~~~~~~~~~~~~~~~~~~~~~~~')<a name='99'>
+<a name='100'>
+   END SUBROUTINE cpl_oasis_def_dmcomm<a name='101'>
+<a name='102'>
+<a name='103'>
+<A NAME='CPL_OASIS_DEFINE'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='104'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_define</font>( cdsndname, cdrcvname, pgrid ) <A href='../../call_to/CPL_OASIS_DEFINE.html' TARGET='index'>2</A>,<A href='../../call_from/CPL_OASIS_DEFINE.html' TARGET='index'>27</A><a name='105'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='106'></font>
+      <font color=#447700>!!             ***  ROUTINE cpl_oasis_define  ***<a name='107'></font>
+      <font color=#447700>!!<a name='108'></font>
+      <font color=#447700>!! ** Purpose :   Define grid and coupling field information for WRF<a name='109'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='110'></font>
+      CHARACTER(*), INTENT(IN), DIMENSION(:,:,:)  :: cdsndname, cdrcvname   <font color=#447700>! coupling field names<a name='111'></font>
+      TYPE(domain), INTENT(IN), OPTIONAL, POINTER :: pgrid                  <font color=#447700>! grid structure<a name='112'></font>
+      <font color=#447700>!<a name='113'></font>
+      INTEGER :: ierror                  <font color=#447700>! return error code<a name='114'></font>
+      INTEGER :: idwrf1,idwrf2           <font color=#447700>! loop index over wrf domain number (start and end)<a name='115'></font>
+      INTEGER :: idext1,idext2           <font color=#447700>! loop index over external model domain number (start and end)<a name='116'></font>
+      INTEGER :: id_part                 <font color=#447700>! partition id in oasis<a name='117'></font>
+      INTEGER :: iparal(5)               <font color=#447700>! OASIS box partition<a name='118'></font>
+      INTEGER :: ishape(2,2)             <font color=#447700>! shape of arrays passed to PSMILe<a name='119'></font>
+      INTEGER :: jw,je,jf                <font color=#447700>! local loop indicees<a name='120'></font>
+      INTEGER :: ips,ipe,jps,jpe,kps,kpe <font color=#447700>! domain dimension on 1 processor<a name='121'></font>
+      INTEGER :: ims,ime,jms,jme,kms,kme <font color=#447700>! memory domain dimension on 1 processor <a name='122'></font>
+      INTEGER :: ids,ide,jds,jde,kds,kde <font color=#447700>! domain dimension<a name='123'></font>
+      LOGICAL :: llcompute_core          <font color=#447700>! is it a compiting core?<a name='124'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='125'></font>
+<a name='126'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_289">('cpl_oasis_define : initialization in coupled ocean/atmosphere case')<a name='127'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_180">(nlevdbg, '~~~~~~~~~~~~~~~~~~~~~~~')<a name='128'>
+<a name='129'>
+      llcompute_core = PRESENT(pgrid)<a name='130'>
+<a name='131'>
+      <font color=#447700>! -----------------------------------------------------------------<a name='132'></font>
+      <font color=#447700>! ... Define communicator used between computing cores      <a name='133'></font>
+      CALL oasis_set_couplcomm( ndm_comm, ierror )               <font color=#447700>! provide this communicator to OASIS3-MCT<a name='134'></font>
+      IF ( ierror /= OASIS_Ok ) CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT'>cpl_oasis_abort</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_ABORT_4">( 'cpl_oasis_define', 'Failure in oasis_set_couplcomm')<a name='135'>
+      <a name='136'>
+      <font color=#447700>! -----------------------------------------------------------------<a name='137'></font>
+      <font color=#447700>! ... Define the partition <a name='138'></font>
+      <font color=#447700>! -----------------------------------------------------------------<a name='139'></font>
+      IF( llcompute_core ) THEN<a name='140'>
+         <a name='141'>
+         <font color=#447700>! ... get mpi domain position<a name='142'></font>
+         CALL <A href='../../html_code/frame/module_domain.F.html#GET_IJK_FROM_GRID'>get_ijk_from_grid</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_IJK_FROM_GRID_33">( pgrid, ids, ide, jds, jde, kds, kde, &amp;<a name='143'>
+            &amp;                           ims, ime, jms, jme, kms, kme, &amp;<a name='144'>
+            &amp;                           ips, ipe, jps, jpe, kps, kpe  )<a name='145'>
+<a name='146'>
+         ishape(:,1) = (/1, ipe-ips+1 /)<a name='147'>
+         ishape(:,2) = (/1, jpe-jps+1 /)<a name='148'>
+         <a name='149'>
+         <font color=#447700>! ... Define the partition parameteres<a name='150'></font>
+         iparal(1) = 2                                      <font color=#447700>! box partitioning<a name='151'></font>
+         iparal(2) = ide * ( jps - 1 ) + (ips -1)<a name='152'>
+         iparal(3) = ipe - ips + 1                          <font color=#447700>! local extent in i <a name='153'></font>
+         iparal(4) = jpe - jps + 1                          <font color=#447700>! local extent in j<a name='154'></font>
+         iparal(5) = ide                                    <font color=#447700>! global extent in x<a name='155'></font>
+      <a name='156'>
+         WRITE(cltxt,*) 'Define the partition for computing cores'   ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_181">(nlevdbg, cltxt)<a name='157'>
+         WRITE(cltxt,*) ' multiexchg: iparal (1:5)', iparal          ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_182">(nlevdbg, cltxt)<a name='158'>
+         WRITE(cltxt,*) ' multiexchg: ips, ipe =', ips, ipe          ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_183">(nlevdbg, cltxt)<a name='159'>
+         WRITE(cltxt,*) ' multiexchg: jps, jpe =', jps, jpe          ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_184">(nlevdbg, cltxt)<a name='160'>
+         WRITE(cltxt,*) ' multiexchg: ids, jds =', ids, jds          ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_185">(nlevdbg, cltxt)<a name='161'>
+         WRITE(cltxt,*) ' multiexchg: ide, jde =', ide, jde          ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_186">(nlevdbg, cltxt)<a name='162'>
+         WRITE(cltxt,*) ' multiexchg: ishape(:,1) =', ishape(:,1)    ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_187">(nlevdbg, cltxt)<a name='163'>
+         WRITE(cltxt,*) ' multiexchg: ishape(:,2) =', ishape(:,2)    ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_188">(nlevdbg, cltxt)<a name='164'>
+<a name='165'>
+      ELSE<a name='166'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_189">(nlevdbg, 'no partition for IO cores')<a name='167'>
+         iparal(:) = 0   <font color=#447700>! "fake" partition for IO cores<a name='168'></font>
+      ENDIF<a name='169'>
+      <a name='170'>
+      CALL oasis_def_partition( id_part, iparal, ierror )<a name='171'>
+      IF( ierror /= OASIS_Ok ) CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT'>cpl_oasis_abort</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_ABORT_5">( 'cpl_oasis_define', 'Failure in oasis_def_partition')<a name='172'>
+<a name='173'>
+      <font color=#447700>! -----------------------------------------------------------------<a name='174'></font>
+      <font color=#447700>! ... Define the variables that can be send/received by WRF<a name='175'></font>
+      <font color=#447700>! -----------------------------------------------------------------<a name='176'></font>
+      IF( llcompute_core ) THEN   ;   idwrf1 = pgrid%id   ;   idwrf2 = pgrid%id      <font color=#447700>! coupling field related to this nest<a name='177'></font>
+      ELSE                        ;   idwrf1 = 1          ;   idwrf2 = max_domains   <font color=#447700>! define all (dummy) coupling fields<a name='178'></font>
+      ENDIF<a name='179'>
+<a name='180'>
+      <font color=#447700>! -----------------------------------------------------------------<a name='181'></font>
+      <font color=#447700>! ... Define sent variables. <a name='182'></font>
+      <font color=#447700>! -----------------------------------------------------------------<a name='183'></font>
+      DO jf = 1, max_cplfld<a name='184'>
+         DO je = 1, max_extdomains<a name='185'>
+            DO jw = idwrf1, idwrf2<a name='186'>
+               ssnd(jw,je,jf)%clname = TRIM(cdsndname(jw,je,jf))<a name='187'>
+               CALL oasis_def_var(ssnd(jw,je,jf)%nid, ssnd(jw,je,jf)%clname, id_part, (/2,1/), OASIS_Out, ishape, OASIS_Real,ierror)<a name='188'>
+               IF( ierror /= OASIS_Ok ) THEN<a name='189'>
+                  WRITE(cltxt,*) 'wrf domain ',jw,' external model domain ',je,   &amp;<a name='190'>
+                     ' field ',jf,' (',TRIM(ssnd(jw,je,jf)%clname),'): oasis_def_var failed'<a name='191'>
+                  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_290">( cltxt )<a name='192'>
+                  CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT'>cpl_oasis_abort</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_ABORT_6">( 'cpl_oasis_define', 'Failure in oasis_def_var')<a name='193'>
+               ENDIF<a name='194'>
+               WRITE(cltxt,*) 'cpl_oasis_define ok for :', TRIM(ssnd(jw,je,jf)%clname), ssnd(jw,je,jf)%nid <a name='195'>
+               CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_190">(nlevdbg2, cltxt)<a name='196'>
+               IF( ssnd(jw,je,jf)%nid /= -1 ) THEN <a name='197'>
+                  WRITE(cltxt,*) ' var snd: ', ssnd(jw,je,jf)%nid, ' ', TRIM(ssnd(jw,je,jf)%clname), id_part <a name='198'>
+                  CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_191">(nlevdbg, cltxt)<a name='199'>
+               ENDIF<a name='200'>
+            END DO<a name='201'>
+         END DO<a name='202'>
+      END DO<a name='203'>
+         <a name='204'>
+      <font color=#447700>! -----------------------------------------------------------------<a name='205'></font>
+      <font color=#447700>! ... Define received variables. <a name='206'></font>
+      <font color=#447700>! -----------------------------------------------------------------<a name='207'></font>
+      DO jf = 1, max_cplfld<a name='208'>
+         DO je = 1, max_extdomains<a name='209'>
+            DO jw = idwrf1, idwrf2<a name='210'>
+               srcv(jw,je,jf)%clname = TRIM(cdrcvname(jw,je,jf))<a name='211'>
+               CALL oasis_def_var(srcv(jw,je,jf)%nid, srcv(jw,je,jf)%clname, id_part, (/2,1/), OASIS_In , ishape, OASIS_Real,ierror)<a name='212'>
+               IF( ierror /= OASIS_Ok ) THEN<a name='213'>
+                  WRITE(cltxt,*) 'wrf domain ',jw,' external model domain ',je,   &amp;<a name='214'>
+                     ' field ',jf,' (',TRIM(srcv(jw,je,jf)%clname),'): oasis_def_var failed'<a name='215'>
+                  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_291">( cltxt )<a name='216'>
+                  CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT'>cpl_oasis_abort</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_ABORT_7">( 'cpl_oasis_define', 'Failure in oasis_def_var')<a name='217'>
+               ENDIF<a name='218'>
+               WRITE(cltxt,*) 'cpl_oasis_define ok for :', TRIM(srcv(jw,je,jf)%clname), srcv(jw,je,jf)%nid<a name='219'>
+               CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_192">(nlevdbg2, cltxt)<a name='220'>
+               IF( srcv(jw,je,jf)%nid /= -1 ) THEN<a name='221'>
+                  WRITE(cltxt,*) ' var rcv: ', srcv(jw,je,jf)%nid, ' ', TRIM(srcv(jw,je,jf)%clname), id_part<a name='222'>
+                  CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_193">(nlevdbg, cltxt)<a name='223'>
+               END IF<a name='224'>
+               IF( srcv(jw,je,jf)%nid /= -1 .AND. llcompute_core ) THEN   <font color=#447700>! allocate received array<a name='225'></font>
+                  ALLOCATE( srcv(jw,je,jf)%dbl2d( iparal(3), iparal(4) ), stat = ierror)<a name='226'>
+                  IF (ierror &gt; 0)   CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT'>cpl_oasis_abort</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_ABORT_8">( 'cpl_oasis_define', 'Failure in allocating srcv')<a name='227'>
+               END IF<a name='228'>
+            END DO<a name='229'>
+         END DO<a name='230'>
+      END DO<a name='231'>
+<a name='232'>
+      <font color=#447700>! -----------------------------------------------------------------<a name='233'></font>
+      <font color=#447700>! ... End definition<a name='234'></font>
+      <font color=#447700>! -----------------------------------------------------------------<a name='235'></font>
+      IF (llcompute_core) THEN <a name='236'>
+         IF ( pgrid%id == pgrid%max_dom ) CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ENDDEF'>cpl_oasis_enddef</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_ENDDEF_1">()<a name='237'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_292">('cpl_oasis_define (compute_core) : cpl_oasis_enddef done')<a name='238'>
+      ELSE<a name='239'>
+         CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ENDDEF'>cpl_oasis_enddef</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_ENDDEF_2">()<a name='240'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_293">('cpl_oasis_define (io_core) : cpl_oasis_enddef done')<a name='241'>
+      ENDIF<a name='242'>
+      <a name='243'>
+   END SUBROUTINE cpl_oasis_define<a name='244'>
+   <a name='245'>
+   <a name='246'>
+<A NAME='CPL_OASIS_ENDDEF'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ENDDEF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='247'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_enddef</font>() <A href='../../call_to/CPL_OASIS_ENDDEF.html' TARGET='index'>2</A>,<A href='../../call_from/CPL_OASIS_ENDDEF.html' TARGET='index'>1</A><a name='248'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='249'></font>
+      <font color=#447700>!!             ***  ROUTINE cpl_oasis_enddef  ***<a name='250'></font>
+      <font color=#447700>!!<a name='251'></font>
+      <font color=#447700>!! ** Purpose :   tells to OASIS that exchanged field definition is finished<a name='252'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='253'></font>
+      INTEGER :: ierror         <font color=#447700>! return error code<a name='254'></font>
+      CALL oasis_enddef(ierror)<a name='255'>
+      IF( ierror /= OASIS_Ok )   CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT'>cpl_oasis_abort</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ENDDEF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_ABORT_9">( 'cpl_oasis_define', 'Failure in oasis_enddef')<a name='256'>
+      <a name='257'>
+   END SUBROUTINE cpl_oasis_enddef<a name='258'>
+   <a name='259'>
+   <a name='260'>
+<A NAME='CPL_OASIS_TORECEIVE'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_TORECEIVE' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='261'>
+   <font color=#993300>FUNCTION </font><font color=#cc0000>cpl_oasis_toreceive</font>( kdomwrf, kdomext, kfldid ) <A href='../../call_to/CPL_OASIS_TORECEIVE.html' TARGET='index'>1</A><a name='262'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='263'></font>
+      <font color=#447700>!!             ***  FUNCTION cpl_oasis_toreceive  ***<a name='264'></font>
+      <font color=#447700>!!<a name='265'></font>
+      <font color=#447700>!! ** Purpose :   send back a logical to tell if a variable is received or not<a name='266'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='267'></font>
+      INTEGER, INTENT(IN) :: kdomwrf   <font color=#447700>! wrf domain index<a name='268'></font>
+      INTEGER, INTENT(IN) :: kdomext   <font color=#447700>! external model domain index<a name='269'></font>
+      INTEGER, INTENT(IN) :: kfldid    <font color=#447700>! field index<a name='270'></font>
+      <font color=#447700>!<a name='271'></font>
+      LOGICAL :: cpl_oasis_toreceive<a name='272'>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='273'></font>
+      <a name='274'>
+      cpl_oasis_toreceive = srcv(kdomwrf,kdomext,kfldid)%nid /= -1<a name='275'>
+<a name='276'>
+   END FUNCTION cpl_oasis_toreceive<a name='277'>
+<a name='278'>
+<a name='279'>
+<A NAME='CPL_OASIS_TOSEND'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_TOSEND' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='280'>
+   <font color=#993300>FUNCTION </font><font color=#cc0000>cpl_oasis_tosend</font>( kdomwrf, kdomext, kfldid ) <A href='../../call_to/CPL_OASIS_TOSEND.html' TARGET='index'>1</A><a name='281'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='282'></font>
+      <font color=#447700>!!             ***  FUNCTION cpl_oasis_tosend  ***<a name='283'></font>
+      <font color=#447700>!!<a name='284'></font>
+      <font color=#447700>!! ** Purpose :   send back a logical to tell if a variable is tosend or not<a name='285'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='286'></font>
+      INTEGER, INTENT(IN) :: kdomwrf   <font color=#447700>! wrf domain index<a name='287'></font>
+      INTEGER, INTENT(IN) :: kdomext   <font color=#447700>! external model domain index<a name='288'></font>
+      INTEGER, INTENT(IN) :: kfldid    <font color=#447700>! field index<a name='289'></font>
+      <font color=#447700>!<a name='290'></font>
+      LOGICAL :: cpl_oasis_tosend<a name='291'>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='292'></font>
+      <a name='293'>
+      cpl_oasis_tosend = ssnd(kdomwrf,kdomext,kfldid)%nid /= -1<a name='294'>
+<a name='295'>
+   END FUNCTION cpl_oasis_tosend<a name='296'>
+<a name='297'>
+<a name='298'>
+<A NAME='CPL_OASIS_SND'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='299'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_snd</font>( kdomwrf, kdomext, kfldid, ksec, pdata ) <A href='../../call_to/CPL_OASIS_SND.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_OASIS_SND.html' TARGET='index'>14</A><a name='300'>
+      <font color=#447700>!!---------------------------------------------------------------------<a name='301'></font>
+      <font color=#447700>!!              ***  ROUTINE cpl_oasis_snd  ***<a name='302'></font>
+      <font color=#447700>!!<a name='303'></font>
+      <font color=#447700>!! ** Purpose : - At each coupling time-step,this routine sends fields to the coupler<a name='304'></font>
+      <font color=#447700>!!----------------------------------------------------------------------<a name='305'></font>
+      INTEGER,              INTENT(IN) :: kdomwrf   <font color=#447700>! wrf domain index<a name='306'></font>
+      INTEGER,              INTENT(IN) :: kdomext   <font color=#447700>! external model domain index<a name='307'></font>
+      INTEGER,              INTENT(IN) :: kfldid    <font color=#447700>! field index<a name='308'></font>
+      INTEGER,              INTENT(IN) :: ksec      <font color=#447700>! time-step in seconds<a name='309'></font>
+      REAL, DIMENSION(:,:), INTENT(IN) :: pdata     <font color=#447700>! data to be sent<a name='310'></font>
+      <font color=#447700>!!<a name='311'></font>
+      INTEGER :: info              <font color=#447700>! OASIS3 info argument<a name='312'></font>
+      LOGICAL :: llaction          <font color=#447700>! true if we sent data to the coupler<a name='313'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='314'></font>
+      <font color=#447700>!<a name='315'></font>
+      WRITE(cltxt,*) 'OASIS_PUT in: kdomwrf, kdomext, kfldid, name, ksec', &amp;<a name='316'>
+         kdomwrf, kdomext, kfldid, ' ', TRIM(ssnd(kdomwrf,kdomext,kfldid)%clname), ksec<a name='317'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_194">(nlevdbg, cltxt)<a name='318'>
+<a name='319'>
+#if ( RWORDSIZE == 8 )<a name='320'>
+      CALL oasis_put(ssnd(kdomwrf,kdomext,kfldid)%nid, ksec,      pdata(:,:) , info)<a name='321'>
+#else<a name='322'>
+      CALL oasis_put(ssnd(kdomwrf,kdomext,kfldid)%nid, ksec, DBLE(pdata(:,:)), info)<a name='323'>
+#endif<a name='324'>
+      <a name='325'>
+      WRITE(cltxt,*) 'OASIS_PUT out: info', info   ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_195">(nlevdbg, cltxt)<a name='326'>
+<a name='327'>
+      llaction = info == OASIS_Sent     .OR. info == OASIS_ToRest .OR.   &amp;<a name='328'>
+         &amp;       info == OASIS_SentOut  .OR. info == OASIS_ToRestOut <a name='329'>
+<a name='330'>
+      WRITE(cltxt,*) "llaction : ", llaction       ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_196">(nlevdbg, cltxt)<a name='331'>
+<a name='332'>
+      IF( llaction ) THEN<a name='333'>
+         WRITE(cltxt,*) '****************'                                                  ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_197">(nlevdbg, cltxt)<a name='334'>
+         WRITE(cltxt,*) 'oasis_put: Incoming ', TRIM(ssnd(kdomwrf,kdomext,kfldid)%clname)   ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_198">(nlevdbg, cltxt)<a name='335'>
+         WRITE(cltxt,*) 'oasis_put:    varid ', ssnd(kdomwrf,kdomext,kfldid)%nid            ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_199">(nlevdbg, cltxt)<a name='336'>
+         WRITE(cltxt,*) 'oasis_put:     ksec ', ksec                                        ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_200">(nlevdbg, cltxt)<a name='337'>
+         WRITE(cltxt,*) 'oasis_put:     info ', info                                        ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_201">(nlevdbg, cltxt)<a name='338'>
+         WRITE(cltxt,*) '    - shape         ', SHAPE(pdata)                                ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_202">(nlevdbg, cltxt)<a name='339'>
+         WRITE(cltxt,*) '    - minimum       ', MINVAL(pdata)                               ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_203">(nlevdbg, cltxt)<a name='340'>
+         WRITE(cltxt,*) '    - maximum       ', MAXVAL(pdata)                               ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_204">(nlevdbg, cltxt)<a name='341'>
+         WRITE(cltxt,*) '    - sum           ', SUM(pdata)                                  ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_205">(nlevdbg, cltxt)<a name='342'>
+         WRITE(cltxt,*) '****************'                                                  ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_206">(nlevdbg, cltxt)<a name='343'>
+      ELSE<a name='344'>
+         WRITE(cltxt,*) 'field not sent as info=', info                                     ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_207">(nlevdbg, cltxt)<a name='345'>
+      ENDIF<a name='346'>
+      <a name='347'>
+    END SUBROUTINE cpl_oasis_snd<a name='348'>
+<a name='349'>
+<a name='350'>
+<A NAME='CPL_OASIS_RCV'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='351'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_rcv</font>( kdomwrf, kdomext, kfldid, ksec, pcplrcv ) <A href='../../call_to/CPL_OASIS_RCV.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_OASIS_RCV.html' TARGET='index'>20</A><a name='352'>
+<a name='353'>
+      <font color=#447700>!!---------------------------------------------------------------------<a name='354'></font>
+      <font color=#447700>!!              ***  ROUTINE cpl_oasis_rcv  ***<a name='355'></font>
+      <font color=#447700>!!<a name='356'></font>
+      <font color=#447700>!! ** Purpose : - At each coupling time-step, this routine check if it is the good time<a name='357'></font>
+      <font color=#447700>!!                to receive field from the coupler<a name='358'></font>
+      <font color=#447700>!!----------------------------------------------------------------------<a name='359'></font>
+      INTEGER,              INTENT(IN   ) :: kdomwrf   <font color=#447700>! wrf domain index<a name='360'></font>
+      INTEGER,              INTENT(IN   ) :: kdomext   <font color=#447700>! external model domain index<a name='361'></font>
+      INTEGER,              INTENT(IN   ) :: kfldid    <font color=#447700>! variable index<a name='362'></font>
+      INTEGER,              INTENT(IN   ) :: ksec      <font color=#447700>! number of seconds since the last restart<a name='363'></font>
+      REAL, DIMENSION(:,:), INTENT(  OUT) :: pcplrcv   <font color=#447700>! output data<a name='364'></font>
+      <font color=#447700>!!<a name='365'></font>
+      INTEGER :: info              <font color=#447700>! OASIS3 info argument<a name='366'></font>
+      LOGICAL :: llaction          <font color=#447700>! true if we received data from the coupler<a name='367'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='368'></font>
+      <font color=#447700>!<a name='369'></font>
+      WRITE(cltxt,*) 'OASIS_GET in: kdomwrf, kdomext, kfldid, name, ksec', &amp;<a name='370'>
+         kdomwrf, kdomext, kfldid, ' ', TRIM(srcv(kdomwrf,kdomext,kfldid)%clname), ksec<a name='371'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_208">(nlevdbg, cltxt)<a name='372'>
+<a name='373'>
+      CALL oasis_get( srcv(kdomwrf,kdomext,kfldid)%nid, ksec, srcv(kdomwrf,kdomext,kfldid)%dbl2d, info )<a name='374'>
+#if ( RWORDSIZE == 8 )<a name='375'>
+      pcplrcv(:,:) =      srcv(kdomwrf,kdomext,kfldid)%dbl2d<a name='376'>
+#else<a name='377'>
+      pcplrcv(:,:) = REAL(srcv(kdomwrf,kdomext,kfldid)%dbl2d, kind=4)<a name='378'>
+#endif<a name='379'>
+<a name='380'>
+      WRITE(cltxt,*) 'OASIS_GET out: info', info   ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_209">(nlevdbg, cltxt)<a name='381'>
+<a name='382'>
+      llaction = info == OASIS_Recvd   .OR. info == OASIS_FromRest .OR.   &amp;<a name='383'>
+         &amp;       info == OASIS_RecvOut .OR. info == OASIS_FromRestOut <a name='384'>
+<a name='385'>
+      WRITE(cltxt,*) "llaction : ", llaction       ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_210">(nlevdbg, cltxt)<a name='386'>
+<a name='387'>
+      IF( llaction ) THEN<a name='388'>
+            WRITE(cltxt,*) '****************'                                                   ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_211">(nlevdbg, cltxt)<a name='389'>
+            WRITE(cltxt,*) 'oasis_get: Incoming ', TRIM(srcv(kdomwrf,kdomext,kfldid)%clname)    ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_212">(nlevdbg, cltxt)<a name='390'>
+            WRITE(cltxt,*) 'oasis_get:    varid ', srcv(kdomwrf,kdomext,kfldid)%nid             ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_213">(nlevdbg, cltxt)<a name='391'>
+            WRITE(cltxt,*) 'oasis_get:     ksec ', ksec                                         ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_214">(nlevdbg, cltxt)<a name='392'>
+            WRITE(cltxt,*) 'oasis_get:     info ', info                                         ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_215">(nlevdbg, cltxt)<a name='393'>
+            WRITE(cltxt,*) '    - shape         ', SHAPE(pcplrcv)                               ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_216">(nlevdbg, cltxt)<a name='394'>
+            WRITE(cltxt,*) '    - local shape   ', SHAPE(srcv(kdomwrf, kdomext,kfldid)%dbl2d)   ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_217">(nlevdbg, cltxt)<a name='395'>
+            WRITE(cltxt,*) '    - local minimum ', MINVAL(pcplrcv)                              ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_218">(nlevdbg, cltxt)<a name='396'>
+            WRITE(cltxt,*) '    - local maximum ', MAXVAL(pcplrcv)                              ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_219">(nlevdbg, cltxt)<a name='397'>
+            WRITE(cltxt,*) '    - local sum     ', SUM(pcplrcv)                                 ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_220">(nlevdbg, cltxt)<a name='398'>
+            WRITE(cltxt,*) '****************'                                                   ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_221">(nlevdbg, cltxt)<a name='399'>
+      ELSE<a name='400'>
+            WRITE(cltxt,*) '****************'                                                   ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_222">(nlevdbg, cltxt)<a name='401'>
+            WRITE(cltxt,*) 'oasis_get: field not received as info = ', info                     ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_223">(nlevdbg, cltxt)<a name='402'>
+            WRITE(cltxt,*) '    - local minimum ', MINVAL(pcplrcv)                              ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_224">(nlevdbg, cltxt)<a name='403'>
+            WRITE(cltxt,*) '    - local maximum ', MAXVAL(pcplrcv)                              ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_225">(nlevdbg, cltxt)<a name='404'>
+            WRITE(cltxt,*) '    - local sum     ', SUM(pcplrcv)                                 ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_226">(nlevdbg, cltxt)<a name='405'>
+            WRITE(cltxt,*) '****************'                                                   ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_227">(nlevdbg, cltxt)<a name='406'>
+      ENDIF<a name='407'>
+<a name='408'>
+   END SUBROUTINE cpl_oasis_rcv<a name='409'>
+<a name='410'>
+<a name='411'>
+<A NAME='CPL_OASIS_FINALIZE'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_FINALIZE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='412'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_finalize</font>() <A href='../../call_to/CPL_OASIS_FINALIZE.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_OASIS_FINALIZE.html' TARGET='index'>1</A><a name='413'>
+      <font color=#447700>!!---------------------------------------------------------------------<a name='414'></font>
+      <font color=#447700>!!              ***  ROUTINE cpl_oasis_finalize  ***<a name='415'></font>
+      <font color=#447700>!!<a name='416'></font>
+      <font color=#447700>!! ** Purpose : - Finalizes the coupling. If MPI_init has not been<a name='417'></font>
+      <font color=#447700>!!      called explicitly before cpl_oasis_init it will also close<a name='418'></font>
+      <font color=#447700>!!      MPI communication.<a name='419'></font>
+      <font color=#447700>!!----------------------------------------------------------------------<a name='420'></font>
+      INTEGER :: ierror         <font color=#447700>! return error code<a name='421'></font>
+      INTEGER :: jw,je,jf       <font color=#447700>! local loop indicees<a name='422'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='423'></font>
+      DO jf = 1, max_cplfld<a name='424'>
+         DO je = 1, max_extdomains<a name='425'>
+            DO jw = 1, max_domains<a name='426'>
+               ierror = 0<a name='427'>
+               IF ( ASSOCIATED(srcv(jw,je,jf)%dbl2d) ) DEALLOCATE( srcv(jw,je,jf)%dbl2d, stat = ierror )<a name='428'>
+               IF (ierror &gt; 0) THEN<a name='429'>
+                  CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT'>cpl_oasis_abort</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_FINALIZE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_ABORT_10">( 'cpl_oasis_finalize', 'Failure in deallocating ')<a name='430'>
+                  RETURN<a name='431'>
+               ENDIF<a name='432'>
+            END DO<a name='433'>
+         END DO<a name='434'>
+      END DO<a name='435'>
+      CALL oasis_terminate ( ierror )         <a name='436'>
+<a name='437'>
+   END SUBROUTINE cpl_oasis_finalize<a name='438'>
+<a name='439'>
+<a name='440'>
+<A NAME='CPL_OASIS_ABORT'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='441'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_abort</font>( cdroutine, cdtxt ) <A href='../../call_to/CPL_OASIS_ABORT.html' TARGET='index'>10</A>,<A href='../../call_from/CPL_OASIS_ABORT.html' TARGET='index'>4</A><a name='442'>
+      <font color=#447700>!!---------------------------------------------------------------------<a name='443'></font>
+      <font color=#447700>!!              ***  ROUTINE cpl_oasis_abort  ***<a name='444'></font>
+      <font color=#447700>!!<a name='445'></font>
+      <font color=#447700>!! ** Purpose :   abort coupling simulation<a name='446'></font>
+      <font color=#447700>!!----------------------------------------------------------------------<a name='447'></font>
+      CHARACTER(*), INTENT(IN) :: cdroutine   <font color=#447700>! name of the subroutine calling cpl_oasis_abort<a name='448'></font>
+      CHARACTER(*), INTENT(IN) :: cdtxt       <font color=#447700>! aborting text<a name='449'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='450'></font>
+<a name='451'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_294">( '     ==== ABORTING ====' )<a name='452'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_295">( 'cpl_abort called by '//TRIM(cdroutine) )<a name='453'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_296">( '   ==&gt; '//TRIM(cdtxt) )<a name='454'>
+      CALL oasis_abort( ncomp_id, cdroutine, cdtxt )<a name='455'>
+      <a name='456'>
+   END SUBROUTINE cpl_oasis_abort<a name='457'>
+   <a name='458'>
+#else<a name='459'>
+   <font color=#447700>!!----------------------------------------------------------------------<a name='460'></font>
+   <font color=#447700>!!   Dummy modules just for compilation...<a name='461'></font>
+   <font color=#447700>!!----------------------------------------------------------------------<a name='462'></font>
+   USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_103">, ONLY : domain<a name='463'>
+   IMPLICIT NONE<a name='464'>
+   PRIVATE<a name='465'>
+   PUBLIC cpl_oasis_init<a name='466'>
+   PUBLIC cpl_oasis_def_dmcomm<a name='467'>
+   PUBLIC cpl_oasis_define<a name='468'>
+   PUBLIC cpl_oasis_toreceive<a name='469'>
+   PUBLIC cpl_oasis_tosend<a name='470'>
+   PUBLIC cpl_oasis_snd<a name='471'>
+   PUBLIC cpl_oasis_rcv<a name='472'>
+   PUBLIC cpl_oasis_finalize<a name='473'>
+   PUBLIC cpl_oasis_abort<a name='474'>
+<a name='475'>
+CONTAINS<a name='476'>
+<a name='477'>
+<A NAME='CPL_OASIS_INIT'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='478'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_init</font>( kl_comm )  <A href='../../call_to/CPL_OASIS_INIT.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_OASIS_INIT.html' TARGET='index'>2</A><a name='479'>
+      INTEGER, INTENT(OUT) :: kl_comm       <font color=#447700>! local communicator of the model<a name='480'></font>
+      IF (.FALSE.) kl_comm = -1 <font color=#447700>! to avoid compilation warning<a name='481'></font>
+   END SUBROUTINE cpl_oasis_init<a name='482'>
+<a name='483'>
+<A NAME='CPL_OASIS_DEF_DMCOMM'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEF_DMCOMM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='484'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_def_dmcomm</font>( kdm_comm )  <A href='../../call_to/CPL_OASIS_DEF_DMCOMM.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_OASIS_DEF_DMCOMM.html' TARGET='index'>2</A><a name='485'>
+      INTEGER, INTENT(IN) :: kdm_comm       <font color=#447700>! computing nodes communicator<a name='486'></font>
+      IF (.FALSE.) WRITE(*,*) kdm_comm <font color=#447700>! to avoid compilation warning<a name='487'></font>
+   END SUBROUTINE cpl_oasis_def_dmcomm<a name='488'>
+<a name='489'>
+<A NAME='CPL_OASIS_DEFINE'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='490'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_define</font>( cdsndname, cdrcvname, pgrid ) <A href='../../call_to/CPL_OASIS_DEFINE.html' TARGET='index'>2</A>,<A href='../../call_from/CPL_OASIS_DEFINE.html' TARGET='index'>27</A><a name='491'>
+      CHARACTER(*), INTENT(IN), DIMENSION(:,:,:)  :: cdsndname, cdrcvname   <font color=#447700>! coupling field names<a name='492'></font>
+      TYPE(domain), INTENT(IN), OPTIONAL, POINTER :: pgrid                  <font color=#447700>! grid structure<a name='493'></font>
+      IF (.FALSE.) WRITE(*,*) cdsndname, cdrcvname, pgrid%id  <font color=#447700>! to avoid compilation warning<a name='494'></font>
+   END SUBROUTINE cpl_oasis_define<a name='495'>
+<a name='496'>
+<A NAME='CPL_OASIS_TORECEIVE'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_TORECEIVE' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='497'>
+   <font color=#993300>FUNCTION </font><font color=#cc0000>cpl_oasis_toreceive</font>( kdomwrf, kdomext, kfldid ) <A href='../../call_to/CPL_OASIS_TORECEIVE.html' TARGET='index'>1</A><a name='498'>
+      INTEGER, INTENT(IN) :: kdomwrf   <font color=#447700>! wrf domain index<a name='499'></font>
+      INTEGER, INTENT(IN) :: kdomext   <font color=#447700>! external model domain index<a name='500'></font>
+      INTEGER, INTENT(IN) :: kfldid    <font color=#447700>! field index<a name='501'></font>
+      LOGICAL :: cpl_oasis_toreceive<a name='502'>
+      IF (.FALSE.) WRITE(*,*) kdomwrf, kdomext, kfldid  <font color=#447700>! to avoid compilation warning<a name='503'></font>
+      IF (.FALSE.) cpl_oasis_toreceive = .false.  <font color=#447700>! to avoid compilation warning<a name='504'></font>
+   END FUNCTION cpl_oasis_toreceive<a name='505'>
+<a name='506'>
+<A NAME='CPL_OASIS_TOSEND'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_TOSEND' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='507'>
+   <font color=#993300>FUNCTION </font><font color=#cc0000>cpl_oasis_tosend</font>( kdomwrf, kdomext, kfldid ) <A href='../../call_to/CPL_OASIS_TOSEND.html' TARGET='index'>1</A><a name='508'>
+      INTEGER, INTENT(IN) :: kdomwrf   <font color=#447700>! wrf domain index<a name='509'></font>
+      INTEGER, INTENT(IN) :: kdomext   <font color=#447700>! external model domain index<a name='510'></font>
+      INTEGER, INTENT(IN) :: kfldid    <font color=#447700>! field index<a name='511'></font>
+      LOGICAL :: cpl_oasis_tosend<a name='512'>
+      IF (.FALSE.) WRITE(*,*) kdomwrf, kdomext, kfldid  <font color=#447700>! to avoid compilation warning<a name='513'></font>
+      IF (.FALSE.) cpl_oasis_tosend = .false.  <font color=#447700>! to avoid compilation warning<a name='514'></font>
+   END FUNCTION cpl_oasis_tosend<a name='515'>
+<a name='516'>
+<A NAME='CPL_OASIS_SND'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='517'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_snd</font>( kdomwrf, kdomext, kfldid, ksec, pdata ) <A href='../../call_to/CPL_OASIS_SND.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_OASIS_SND.html' TARGET='index'>14</A><a name='518'>
+      <font color=#447700>!!----------------------------------------------------------------------<a name='519'></font>
+      INTEGER,              INTENT(IN) :: kdomwrf   <font color=#447700>! wrf domain index<a name='520'></font>
+      INTEGER,              INTENT(IN) :: kdomext   <font color=#447700>! external model domain index<a name='521'></font>
+      INTEGER,              INTENT(IN) :: kfldid    <font color=#447700>! field index<a name='522'></font>
+      INTEGER,              INTENT(IN) :: ksec      <font color=#447700>! time-step in seconds<a name='523'></font>
+      REAL, DIMENSION(:,:), INTENT(IN) :: pdata     <font color=#447700>! data to be sent<a name='524'></font>
+      IF (.FALSE.) WRITE(*,*) kdomwrf, kdomext, kfldid, ksec, pdata <font color=#447700>! to avoid compilation warning<a name='525'></font>
+   END SUBROUTINE cpl_oasis_snd<a name='526'>
+<a name='527'>
+<A NAME='CPL_OASIS_RCV'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='528'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_rcv</font>( kdomwrf, kdomext, kfldid, ksec, pcplrcv ) <A href='../../call_to/CPL_OASIS_RCV.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_OASIS_RCV.html' TARGET='index'>20</A><a name='529'>
+      INTEGER,              INTENT(IN   ) :: kdomwrf   <font color=#447700>! wrf domain index<a name='530'></font>
+      INTEGER,              INTENT(IN   ) :: kdomext   <font color=#447700>! external model domain index<a name='531'></font>
+      INTEGER,              INTENT(IN   ) :: kfldid    <font color=#447700>! variable index<a name='532'></font>
+      INTEGER,              INTENT(IN   ) :: ksec      <font color=#447700>! number of seconds since the last restart<a name='533'></font>
+      REAL, DIMENSION(:,:), INTENT(  OUT) :: pcplrcv   <font color=#447700>! output data<a name='534'></font>
+      IF (.FALSE.) WRITE(*,*) kdomwrf, kdomext, kfldid, ksec <font color=#447700>! to avoid compilation warning<a name='535'></font>
+      IF (.FALSE.) pcplrcv(:,:) = -1. <font color=#447700>! to avoid compilation warning<a name='536'></font>
+   END SUBROUTINE cpl_oasis_rcv<a name='537'>
+<a name='538'>
+<A NAME='CPL_OASIS_FINALIZE'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_FINALIZE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='539'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_finalize</font>() <A href='../../call_to/CPL_OASIS_FINALIZE.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_OASIS_FINALIZE.html' TARGET='index'>1</A><a name='540'>
+      IF (.FALSE.) WRITE(*,*) 'You should not be there...'<a name='541'>
+   END SUBROUTINE cpl_oasis_finalize<a name='542'>
+<a name='543'>
+<A NAME='CPL_OASIS_ABORT'><A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='544'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_oasis_abort</font>( cdroutine, cdtxt ) <A href='../../call_to/CPL_OASIS_ABORT.html' TARGET='index'>10</A>,<A href='../../call_from/CPL_OASIS_ABORT.html' TARGET='index'>4</A><a name='545'>
+      CHARACTER(*), INTENT(IN) :: cdroutine   <font color=#447700>! name of the subroutine calling cpl_oasis_abort<a name='546'></font>
+      CHARACTER(*), INTENT(IN) :: cdtxt       <font color=#447700>! aborting text<a name='547'></font>
+      IF (.FALSE.) WRITE(*,*) cdroutine, cdtxt   <font color=#447700>! to avoid compilation warning<a name='548'></font>
+   END SUBROUTINE cpl_oasis_abort<a name='549'>
+#endif<a name='550'>
+<a name='551'>
+END MODULE module_cpl_oasis3<a name='552'>
+</pre></body></html>

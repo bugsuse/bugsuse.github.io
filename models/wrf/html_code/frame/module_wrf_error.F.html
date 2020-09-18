@@ -1,0 +1,383 @@
+<HTML> <BODY BGCOLOR=#eeddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:DRIVER_LAYER:UTIL<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<a name='4'>
+<A NAME='MODULE_WRF_ERROR'><A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='5'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_wrf_error</font> <A href='../../call_to/MODULE_WRF_ERROR.html' TARGET='index'>118</A><a name='6'>
+  INTEGER           :: wrf_debug_level = 0<a name='7'>
+  CHARACTER*256     :: wrf_err_message<a name='8'>
+<a name='9'>
+  <font color=#447700>! LOGICAL silence -- if TRUE (non-zero), this MPI rank does not send<a name='10'></font>
+  <font color=#447700>!   messages via wrf_message, end_timing, wrf_debug, atm_announce,<a name='11'></font>
+  <font color=#447700>!   cmp_announce, non-fatal glob_abort, or the like.  If FALSE, this<a name='12'></font>
+  <font color=#447700>!   MPI rank DOES send messages.  Regardless of this setting, fatal<a name='13'></font>
+  <font color=#447700>!   errors (wrf_error_fatal or fatal glob_aborts) and anything sent to<a name='14'></font>
+  <font color=#447700>!   write or print will be sent.<a name='15'></font>
+#if defined(DM_PARALLEL)<a name='16'>
+  integer, save :: silence=0<a name='17'>
+#else<a name='18'>
+  integer, PARAMETER :: silence=0 <font color=#447700>! Per-rank silence requires MPI<a name='19'></font>
+#endif<a name='20'>
+<a name='21'>
+  <font color=#447700>! LOGICAL buffered -- if TRUE, messages are buffered via clog_write.<a name='22'></font>
+  <font color=#447700>!   Once the buffer is full, messages are sent to stdout.  This does<a name='23'></font>
+  <font color=#447700>!   not apply to WRF_MESSAGE2, WRF_ERROR_FATAL, or anything sent to<a name='24'></font>
+  <font color=#447700>!   write or print.  The buffering implementation will not write<a name='25'></font>
+  <font color=#447700>!   partial lines, and buffer size is specified via namelist (see<a name='26'></font>
+  <font color=#447700>!   init_module_wrf_error).<a name='27'></font>
+  <font color=#447700>!   If FALSE, messages are send directly to WRITE.<a name='28'></font>
+  <font color=#447700>!<a name='29'></font>
+  <font color=#447700>!   This must be enabled at compile time by setting $WRF_LOG_BUFFERING<a name='30'></font>
+<a name='31'>
+#if defined(WRF_LOG_BUFFERING)<a name='32'>
+  integer :: buffered=0<a name='33'>
+#else<a name='34'>
+  integer, PARAMETER :: buffered=0 <font color=#447700>! buffering disabled at compile time<a name='35'></font>
+#endif<a name='36'>
+<a name='37'>
+  <font color=#447700>! LOGICAL stderrlog -- if TRUE, messages are sent to stderr via<a name='38'></font>
+  <font color=#447700>!   write(0,...).  If FALSE, messages are not sent to stderr.<a name='39'></font>
+  <font color=#447700>!   This is set to FALSE automatically when buffering is enabled.<a name='40'></font>
+<a name='41'>
+  <font color=#447700>! Defaults: Non-MPI configurations and HWRF turn OFF stderr.<a name='42'></font>
+  <font color=#447700>!    MPI configurations other than HWRF turn ON stderr.<a name='43'></font>
+<a name='44'>
+#if defined( DM_PARALLEL ) &amp;&amp; <font color=#447700>! defined( STUBMPI ) &amp;&amp; !(HWRF == 1)<a name='45'></font>
+  integer :: stderrlog=1 <font color=#447700>! 1/T = send to write(0,...) if buffered=0<a name='46'></font>
+#else<a name='47'>
+  integer :: stderrlog=0<font color=#447700>! 1/T = send to write(0,...) if buffered=0<a name='48'></font>
+#endif<a name='49'>
+<a name='50'>
+  INTEGER, PARAMETER :: wrf_log_flush=0, wrf_log_set_buffer_size=1, &amp;<a name='51'>
+                        wrf_log_write=2<a name='52'>
+<a name='53'>
+  <font color=#447700>!NOTE: Make sure silence, buffered and stderrlog defaults here match<a name='54'></font>
+  <font color=#447700>! the namelist defaults in init_module_wrf_error.<a name='55'></font>
+<a name='56'>
+<font color=#447700>! min_allowed_buffer_size: requested buffer sizes smaller than this<a name='57'></font>
+<font color=#447700>! will simply result in disabling of log file buffering.  This number<a name='58'></font>
+<font color=#447700>! should be larger than any line WRF prints frequently.  If you set it <a name='59'></font>
+<font color=#447700>! too small, the buffering code will still work.  However, any line <a name='60'></font>
+<font color=#447700>! that is larger than the buffer may result in two writes: one for <a name='61'></font>
+<font color=#447700>! the message and one for the end-of-line character at the end (if the<a name='62'></font>
+<font color=#447700>! message didn't already have one).<a name='63'></font>
+  integer, parameter :: min_allowed_buffer_size=200<a name='64'>
+<a name='65'>
+<font color=#447700>!$OMP THREADPRIVATE (wrf_err_message)<a name='66'></font>
+CONTAINS<a name='67'>
+<a name='68'>
+<font color=#447700>! ------------------------------------------------------------------------------<a name='69'></font>
+<a name='70'>
+<A NAME='WRF_AT_DEBUG_LEVEL'><A href='../../html_code/frame/module_wrf_error.F.html#WRF_AT_DEBUG_LEVEL' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='71'>
+  LOGICAL <font color=#993300>FUNCTION </font><font color=#cc0000>wrf_at_debug_level</font> ( level )<a name='72'>
+    IMPLICIT NONE<a name='73'>
+    INTEGER , INTENT(IN) :: level<a name='74'>
+    wrf_at_debug_level = ( level .LE. wrf_debug_level )<a name='75'>
+    RETURN<a name='76'>
+  END FUNCTION wrf_at_debug_level<a name='77'>
+<a name='78'>
+<font color=#447700>! ------------------------------------------------------------------------------<a name='79'></font>
+<a name='80'>
+<A NAME='INIT_MODULE_WRF_ERROR'><A href='../../html_code/frame/module_wrf_error.F.html#INIT_MODULE_WRF_ERROR' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='81'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>init_module_wrf_error</font>(on_io_server) <A href='../../call_to/INIT_MODULE_WRF_ERROR.html' TARGET='index'>3</A>,<A href='../../call_from/INIT_MODULE_WRF_ERROR.html' TARGET='index'>3</A><a name='82'>
+    IMPLICIT NONE<a name='83'>
+    LOGICAL,OPTIONAL,INTENT(IN) :: on_io_server<a name='84'>
+#if defined(DM_PARALLEL)<a name='85'>
+    LOGICAL, EXTERNAL :: wrf_dm_on_monitor<a name='86'>
+#endif<a name='87'>
+    LOGICAL :: compute_tasks_silent<a name='88'>
+    LOGICAL :: io_servers_silent<a name='89'>
+    INTEGER :: buffer_size,iostat,stderr_logging<a name='90'>
+    namelist /logging/ buffer_size,compute_tasks_silent, &amp;<a name='91'>
+                       io_servers_silent,stderr_logging<a name='92'>
+<a name='93'>
+    <font color=#447700>! MAKE SURE THE NAMELIST DEFAULTS MATCH THE DEFAULT VALUES<a name='94'></font>
+    <font color=#447700>! AT THE MODULE LEVEL<a name='95'></font>
+<a name='96'>
+    <font color=#447700>! Default: original behavior.  No buffering, all ranks talk<a name='97'></font>
+    compute_tasks_silent=.false.<a name='98'>
+    io_servers_silent=.false.<a name='99'>
+    buffer_size=0<a name='100'>
+<a name='101'>
+    <font color=#447700>! MPI configurations default to stderr logging, except for HWRF.<a name='102'></font>
+    <font color=#447700>! Non-MPI does not log to stderr.  (Note that fatal errors always<a name='103'></font>
+    <font color=#447700>! are sent to both stdout and stderr regardless of config.)<a name='104'></font>
+#if defined( DM_PARALLEL ) &amp;&amp; <font color=#447700>! defined( STUBMPI ) &amp;&amp; !(HWRF == 1)<a name='105'></font>
+    stderr_logging=1<a name='106'>
+#else<a name='107'>
+    stderr_logging=0<a name='108'>
+#endif<a name='109'>
+500 format(A)<a name='110'>
+    <font color=#447700>! Open namelist.input using the same unit used by module_io_wrf <a name='111'></font>
+    <font color=#447700>! since we know nobody else will use that unit:<a name='112'></font>
+    OPEN(unit=27, file="namelist.input", form="formatted", status="old")<a name='113'>
+    READ(27,nml=logging,iostat=iostat)<a name='114'>
+    if(iostat /= 0) then<a name='115'>
+#if (DA_CORE<font color=#447700>!=1)<a name='116'></font>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_wrf_error.F.html#INIT_MODULE_WRF_ERROR' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_303"> ( 1 , 'Namelist logging not found in namelist.input. ' )<a name='117'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_wrf_error.F.html#INIT_MODULE_WRF_ERROR' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_304"> ( 1 , ' --&gt; Using registry defaults for variables in logging.' )<a name='118'>
+#else<a name='119'>
+       write(0,*) 'Namelist logging not found in namelist.input. Using registry defaults for variables in logging.'<a name='120'>
+       write(6,*) 'Namelist logging not found in namelist.input. Using registry defaults for variables in logging.'<a name='121'>
+#endif<a name='122'>
+#      ifdef _WIN32<a name='123'>
+          FLUSH(0)<a name='124'>
+#      endif<a name='125'>
+       close(27)<a name='126'>
+       return<a name='127'>
+    endif<a name='128'>
+    CLOSE(27)<a name='129'>
+<a name='130'>
+#if defined(WRF_LOG_BUFFERING)<a name='131'>
+    <font color=#447700>! Forbid small buffers.  See the comment above for min_allowed_buffer_size:<a name='132'></font>
+    if(buffer_size&gt;=min_allowed_buffer_size) then<a name='133'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_LOG_ACTION'>wrf_log_action</A><A href='../../html_code/frame/module_wrf_error.F.html#INIT_MODULE_WRF_ERROR' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_LOG_ACTION_1">(wrf_log_set_buffer_size,buffer_size,' ')<a name='134'>
+       buffered=1<a name='135'>
+    else<a name='136'>
+       buffered=0<a name='137'>
+    endif<a name='138'>
+#else<a name='139'>
+    if(buffer_size&gt;=min_allowed_buffer_size) then<a name='140'>
+       write(0,500) 'Forcing disabling of buffering due to compile-time configuration.'<a name='141'>
+       write(6,500) 'Forcing disabling of buffering due to compile-time configuration.'<a name='142'>
+    endif<a name='143'>
+#endif<a name='144'>
+<a name='145'>
+    stderrlog=stderr_logging<a name='146'>
+    if(buffered/=0 .and. stderrlog/=0) then<a name='147'>
+       write(0,500) 'Disabling stderr logging since buffering is enabled.'<a name='148'>
+       write(6,500) 'Disabling stderr logging since buffering is enabled.'<a name='149'>
+#      ifdef _WIN32<a name='150'>
+          FLUSH(0)<a name='151'>
+#      endif<a name='152'>
+       stderrlog=0<a name='153'>
+    endif<a name='154'>
+<a name='155'>
+#if defined(DM_PARALLEL)<a name='156'>
+    silence=0<a name='157'>
+    if(present(on_io_server)) then<a name='158'>
+       if(on_io_server) then<a name='159'>
+          if(io_servers_silent) &amp;<a name='160'>
+               silence=1<a name='161'>
+          return<a name='162'>
+       endif<a name='163'>
+    endif<a name='164'>
+    if(compute_tasks_silent) then<a name='165'>
+       if(wrf_dm_on_monitor()) then<a name='166'>
+          silence=0<a name='167'>
+       else<a name='168'>
+          silence=1<a name='169'>
+       endif<a name='170'>
+    endif<a name='171'>
+#endif<a name='172'>
+  END SUBROUTINE init_module_wrf_error<a name='173'>
+<a name='174'>
+END MODULE module_wrf_error<a name='175'>
+<a name='176'>
+<font color=#447700>! ------------------------------------------------------------------------------<a name='177'></font>
+<font color=#447700>! ------------------------  GLOBAL SCOPE SUBROUTINES  --------------------------<a name='178'></font>
+<font color=#447700>! ------------------------------------------------------------------------------<a name='179'></font>
+#if defined(WRF_LOG_BUFFERING)<a name='180'>
+<A NAME='WRF_LOG_ACTION'><A href='../../html_code/frame/module_wrf_error.F.html#WRF_LOG_ACTION' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='181'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>wrf_log_action</font>( act,int,str ) <A href='../../call_to/WRF_LOG_ACTION.html' TARGET='index'>3</A>,<A href='../../call_from/WRF_LOG_ACTION.html' TARGET='index'>1</A><a name='182'>
+  <font color=#447700>! The underlying clog.c is not thread-safe, so this wrapper subroutine<a name='183'></font>
+  <font color=#447700>! ensures that only one thread accesses clog.c at a time.<a name='184'></font>
+<a name='185'>
+  <font color=#447700>! NOTE: This routine only exists if WRF_LOG_BUFFERING is defined at<a name='186'></font>
+  <font color=#447700>! compile time.<a name='187'></font>
+  use <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_LOG_ACTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_29"><a name='188'>
+  implicit none<a name='189'>
+  integer, intent(in) :: int,act<a name='190'>
+  character(*), intent(in) :: str<a name='191'>
+<font color=#447700>!$OMP CRITICAL(wrf_log_action_critical)<a name='192'></font>
+  if(act==wrf_log_flush) then<a name='193'>
+     call clog_flush(int)<a name='194'>
+  elseif(act==wrf_log_set_buffer_size) then<a name='195'>
+     call clog_set_buffer_len(int)<a name='196'>
+  elseif(act==wrf_log_write) then<a name='197'>
+     call clog_write(int,str)<a name='198'>
+  endif<a name='199'>
+<font color=#447700>!$OMP END CRITICAL(wrf_log_action_critical)<a name='200'></font>
+END SUBROUTINE wrf_log_action<a name='201'>
+#endif<a name='202'>
+<font color=#447700>! ------------------------------------------------------------------------------<a name='203'></font>
+<a name='204'>
+<font color=#447700>! wrf_message: ordinary message<a name='205'></font>
+<font color=#447700>!   Write to stderr if stderrlog=T to ensure immediate output<a name='206'></font>
+<font color=#447700>!   Write to stdout for buffered output.<a name='207'></font>
+<A NAME='WRF_MESSAGE'><A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='208'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>wrf_message</font>( str ) <A href='../../call_to/WRF_MESSAGE.html' TARGET='index'>1553</A>,<A href='../../call_from/WRF_MESSAGE.html' TARGET='index'>2</A><a name='209'>
+#ifdef ESMFIO<a name='210'>
+  USE ESMF<a name='211'>
+#endif<a name='212'>
+  use <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_30">, only: silence, buffered, stderrlog, wrf_log_write<a name='213'>
+  IMPLICIT NONE<a name='214'>
+<a name='215'>
+  CHARACTER*(*) str<a name='216'>
+  if(silence/=0) return<a name='217'>
+  if(buffered/=0) then<a name='218'>
+#if defined(WRF_LOG_BUFFERING)<a name='219'>
+     call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_LOG_ACTION'>wrf_log_action</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_LOG_ACTION_2">(wrf_log_write,len_trim(str),str)<a name='220'>
+#endif<a name='221'>
+  else<a name='222'>
+<font color=#447700>!$OMP MASTER<a name='223'></font>
+     if(stderrlog/=0) then<a name='224'>
+300     format(A)<a name='225'>
+        write(0,300) trim(str)<a name='226'>
+# ifdef _WIN32<a name='227'>
+  FLUSH(0)<a name='228'>
+# endif<a name='229'>
+     endif<a name='230'>
+     print 300,trim(str)<a name='231'>
+<font color=#447700>!$OMP END MASTER<a name='232'></font>
+  endif<a name='233'>
+<a name='234'>
+#ifdef ESMFIO<a name='235'>
+  CALL ESMF_LogWrite(TRIM(str),ESMF_LOGMSG_INFO)<a name='236'>
+#endif<a name='237'>
+END SUBROUTINE wrf_message<a name='238'>
+<a name='239'>
+<font color=#447700>! ------------------------------------------------------------------------------<a name='240'></font>
+<a name='241'>
+<font color=#447700>! Intentionally write to stderr only<a name='242'></font>
+<font color=#447700>! This is set to stderr, even in silent mode, because<a name='243'></font>
+<font color=#447700>! it is used for potentially fatal error or warning messages and<a name='244'></font>
+<font color=#447700>! we want the message to get to the log file before any crash <a name='245'></font>
+<font color=#447700>! or MPI_Abort happens.<a name='246'></font>
+<A NAME='WRF_MESSAGE2'><A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE2' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='247'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>wrf_message2</font>( str ) <A href='../../call_to/WRF_MESSAGE2.html' TARGET='index'>10</A><a name='248'>
+#ifdef ESMFIO<a name='249'>
+  USE ESMF<a name='250'>
+#endif<a name='251'>
+  IMPLICIT NONE<a name='252'>
+  CHARACTER*(*) str<a name='253'>
+<font color=#447700>!$OMP MASTER<a name='254'></font>
+400 format(A)<a name='255'>
+  write(0,400) str<a name='256'>
+# ifdef _WIN32<a name='257'>
+  FLUSH(0)<a name='258'>
+# endif<a name='259'>
+<font color=#447700>!$OMP END MASTER<a name='260'></font>
+#ifdef ESMFIO<a name='261'>
+  CALL ESMF_LogWrite(TRIM(str),ESMF_LOGMSG_INFO)<a name='262'>
+#endif<a name='263'>
+END SUBROUTINE wrf_message2<a name='264'>
+<a name='265'>
+<font color=#447700>! ------------------------------------------------------------------------------<a name='266'></font>
+<a name='267'>
+<A NAME='WRF_ERROR_FATAL3'><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='268'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>wrf_error_fatal3</font>( file_str, line, str ) <A href='../../call_to/WRF_ERROR_FATAL3.html' TARGET='index'>5</A>,<A href='../../call_from/WRF_ERROR_FATAL3.html' TARGET='index'>11</A><a name='269'>
+  USE <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_31"><a name='270'>
+#ifdef ESMFIO<a name='271'>
+<font color=#447700>! 5.2.0r  USE ESMF_Mod<a name='272'></font>
+  USE ESMF<a name='273'>
+#endif<a name='274'>
+  IMPLICIT NONE<a name='275'>
+  CHARACTER*(*) file_str<a name='276'>
+  INTEGER , INTENT (IN) :: line  <font color=#447700>! only print file and line if line &gt; 0<a name='277'></font>
+  CHARACTER*(*) str<a name='278'>
+  CHARACTER*256 :: line_str<a name='279'>
+<a name='280'>
+  write(line_str,'(i6)') line<a name='281'>
+<a name='282'>
+  <font color=#447700>! Fatal errors are printed to stdout and stderr regardless of<a name='283'></font>
+  <font color=#447700>! any &amp;logging namelist settings.<a name='284'></font>
+<a name='285'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_386">( '-------------- FATAL CALLED ---------------' )<a name='286'>
+  <font color=#447700>! only print file and line if line is positive<a name='287'></font>
+  IF ( line &gt; 0 ) THEN<a name='288'>
+    CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_387">( 'FATAL CALLED FROM FILE:  '//file_str//'  LINE:  '//TRIM(line_str) )<a name='289'>
+  ENDIF<a name='290'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_388">( str )<a name='291'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_389">( '-------------------------------------------' )<a name='292'>
+<a name='293'>
+  force_stderr: if(stderrlog==0) then<a name='294'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE2'>wrf_message2</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE2_3">( '-------------- FATAL CALLED ---------------' )<a name='295'>
+  <font color=#447700>! only print file and line if line is positive<a name='296'></font>
+  IF ( line &gt; 0 ) THEN<a name='297'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE2'>wrf_message2</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE2_4">( 'FATAL CALLED FROM FILE:  '//file_str//'  LINE:  '//TRIM(line_str) )<a name='298'>
+  ENDIF<a name='299'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE2'>wrf_message2</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE2_5">( trim(str) )<a name='300'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE2'>wrf_message2</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE2_6">( '-------------------------------------------' )<a name='301'>
+  endif force_stderr<a name='302'>
+<a name='303'>
+  <font color=#447700>! Flush all streams.<a name='304'></font>
+  flush(6)<a name='305'>
+#if defined(WRF_LOG_BUFFERING)<a name='306'>
+  if(buffered/=0) call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_LOG_ACTION'>wrf_log_action</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_LOG_ACTION_3">(wrf_log_flush,1,' ')<a name='307'>
+# endif<a name='308'>
+  flush(0)<a name='309'>
+<a name='310'>
+#ifdef ESMFIO<a name='311'>
+<font color=#447700>! 5.2.0r  CALL esmf_finalize(terminationflag=ESMF_ABORT)<a name='312'></font>
+  CALL esmf_finalize(endflag=ESMF_END_ABORT)<a name='313'>
+#endif<a name='314'>
+<a name='315'>
+#ifdef TRACEBACKQQ<a name='316'>
+  CALL tracebackqq<a name='317'>
+#endif<a name='318'>
+  CALL <A href='../../html_code/io_netcdf/vort.F90.html#WRF_ABORT'>wrf_abort</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ABORT_1"><a name='319'>
+END SUBROUTINE wrf_error_fatal3<a name='320'>
+<a name='321'>
+<font color=#447700>! ------------------------------------------------------------------------------<a name='322'></font>
+<a name='323'>
+<A NAME='WRF_ERROR_FATAL'><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='324'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>wrf_error_fatal</font>( str ) <A href='../../call_to/WRF_ERROR_FATAL.html' TARGET='index'>1502</A>,<A href='../../call_from/WRF_ERROR_FATAL.html' TARGET='index'>2</A><a name='325'>
+  USE <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_32"><a name='326'>
+  IMPLICIT NONE<a name='327'>
+  CHARACTER*(*) str<a name='328'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3'>wrf_error_fatal3</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL3_4"> ( ' ', 0, str )<a name='329'>
+END SUBROUTINE wrf_error_fatal<a name='330'>
+<a name='331'>
+<font color=#447700>! ------------------------------------------------------------------------------<a name='332'></font>
+<a name='333'>
+<font color=#447700>! Check to see if expected value == actual value<a name='334'></font>
+<font color=#447700>! If not, print message and exit.  <a name='335'></font>
+<A NAME='WRF_CHECK_ERROR'><A href='../../html_code/frame/module_wrf_error.F.html#WRF_CHECK_ERROR' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='336'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>wrf_check_error</font>( expected, actual, str, file_str, line ) <A href='../../call_to/WRF_CHECK_ERROR.html' TARGET='index'>36</A>,<A href='../../call_from/WRF_CHECK_ERROR.html' TARGET='index'>2</A><a name='337'>
+  USE <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_CHECK_ERROR' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_33"><a name='338'>
+  IMPLICIT NONE<a name='339'>
+  INTEGER , INTENT (IN) :: expected<a name='340'>
+  INTEGER , INTENT (IN) :: actual<a name='341'>
+  CHARACTER*(*) str<a name='342'>
+  CHARACTER*(*) file_str<a name='343'>
+  INTEGER , INTENT (IN) :: line<a name='344'>
+  CHARACTER (LEN=512)   :: rc_str<a name='345'>
+  CHARACTER (LEN=512)   :: str_with_rc<a name='346'>
+<a name='347'>
+  IF ( expected .ne. actual ) THEN<a name='348'>
+    WRITE (rc_str,*) '  Routine returned error code = ',actual<a name='349'>
+    str_with_rc = TRIM(str // rc_str)<a name='350'>
+    CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL3'>wrf_error_fatal3</A><A href='../../html_code/frame/module_wrf_error.F.html#WRF_CHECK_ERROR' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL3_5"> ( file_str, line, str_with_rc )<a name='351'>
+  ENDIF<a name='352'>
+END SUBROUTINE wrf_check_error<a name='353'>
+<a name='354'>
+<font color=#447700>! ------------------------------------------------------------------------------<a name='355'></font>
+<a name='356'>
+<font color=#447700>!  Some compilers do not yet support the entirety of the Fortran 2003 standard.<a name='357'></font>
+<font color=#447700>!  This is a small patch to pick up the two most common events.  Most xlf <a name='358'></font>
+<font color=#447700>!  compilers have an extension fflush.  That is available here.  For other older<a name='359'></font>
+<font color=#447700>!  compilers with no flush capability at all, we just stub it out completely.<a name='360'></font>
+<font color=#447700>!  These CPP ifdefs are defined in the configure file.<a name='361'></font>
+<a name='362'>
+#ifdef USE_FFLUSH<a name='363'>
+<A NAME='FLUSH'><A href='../../html_code/frame/module_wrf_error.F.html#FLUSH' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='364'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>flush</font> ( iunit )<a name='365'>
+  IMPLICIT NONE<a name='366'>
+  INTEGER :: iunit<a name='367'>
+  CALL fflush ( iunit ) <a name='368'>
+END SUBROUTINE flush<a name='369'>
+#endif<a name='370'>
+<a name='371'>
+#ifdef NO_FLUSH_SUPPORT<a name='372'>
+<A NAME='FLUSH'><A href='../../html_code/frame/module_wrf_error.F.html#FLUSH' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='373'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>flush</font> ( iunit )<a name='374'>
+  IMPLICIT NONE<a name='375'>
+  INTEGER :: iunit<a name='376'>
+  RETURN<a name='377'>
+END SUBROUTINE flush<a name='378'>
+#endif<a name='379'>
+<a name='380'>
+<a name='381'>
+<a name='382'>
+</pre></body></html>

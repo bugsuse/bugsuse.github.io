@@ -1,0 +1,128 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:MODEL_LAYER:PHYSICS<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<A NAME='MODULE_SF_TMNUPDATE'><A href='../../html_code/phys/module_sf_tmnupdate.F.html#MODULE_SF_TMNUPDATE' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='4'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_sf_tmnupdate</font> <A href='../../call_to/MODULE_SF_TMNUPDATE.html' TARGET='index'>1</A><a name='5'>
+<a name='6'>
+<a name='7'>
+CONTAINS<a name='8'>
+<a name='9'>
+<A NAME='TMNUPDATE'><A href='../../html_code/phys/module_sf_tmnupdate.F.html#TMNUPDATE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='10'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>tmnupdate</font>(tsk,tmn,tlag,tyr,tyra,tdly,nday,nyear,lagday, &amp; <A href='../../call_to/TMNUPDATE.html' TARGET='index'>1</A><a name='11'>
+                julian_in, dt, yr,                                  &amp;<a name='12'>
+                ids, ide, jds, jde, kds, kde,                       &amp;<a name='13'>
+                ims, ime, jms, jme, kms, kme,                       &amp;<a name='14'>
+                i_start,i_end, j_start,j_end, kts,kte, num_tiles   )<a name='15'>
+<a name='16'>
+<a name='17'>
+   IMPLICIT NONE<a name='18'>
+<a name='19'>
+<font color=#447700>!---------------------------------------------------------------------<a name='20'></font>
+   INTEGER , INTENT(IN)           :: ids, ide, jds, jde, kds, kde,   &amp;<a name='21'>
+                                     ims, ime, jms, jme, kms, kme,   &amp;<a name='22'>
+                                     kts, kte, num_tiles, lagday<a name='23'>
+<a name='24'>
+   INTEGER, DIMENSION(num_tiles), INTENT(IN) ::                       &amp;<a name='25'>
+     &amp;           i_start,i_end,j_start,j_end<a name='26'>
+<a name='27'>
+   INTEGER, INTENT(INOUT ) ::   NYEAR<a name='28'>
+   REAL   , INTENT(INOUT ) ::   NDAY<a name='29'>
+   INTEGER, INTENT(IN ) ::   YR<a name='30'>
+<a name='31'>
+   REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN)::   TSK<a name='32'>
+   REAL, DIMENSION( ims:ime , jms:jme ), INTENT(INOUT)::   TMN<a name='33'>
+   REAL, DIMENSION( ims:ime , jms:jme ), INTENT(INOUT ) ::   TYR<a name='34'>
+   REAL, DIMENSION( ims:ime , jms:jme ), INTENT(INOUT ) ::   TYRA<a name='35'>
+   REAL, DIMENSION( ims:ime , jms:jme ), INTENT(INOUT ) ::   TDLY<a name='36'>
+   REAL, DIMENSION( ims:ime , 1:lagday , jms:jme ), INTENT(INOUT ) ::   TLAG<a name='37'>
+   REAL,                                INTENT(IN)  :: julian_in, dt<a name='38'>
+<a name='39'>
+<font color=#447700>!... Local Variables<a name='40'></font>
+<a name='41'>
+<font color=#447700>!... Integer<a name='42'></font>
+      INTEGER :: ij, i, j, n<a name='43'>
+<font color=#447700>!... Real<a name='44'></font>
+      REAL, PARAMETER      :: tconst = 0.6<a name='45'>
+      REAL  :: julian, yrday, tprior, deltat<a name='46'>
+<a name='47'>
+#ifdef NO_LEAP_CALENDAR<a name='48'>
+<font color=#447700>! no leap year when coupled with CCSM<a name='49'></font>
+      yrday=365.      <font color=#447700>! number of days in a non-leap year<a name='50'></font>
+#else<a name='51'>
+      yrday=365.      <font color=#447700>! number of days in a non-leap year<a name='52'></font>
+      if(mod(yr,4).eq.0) yrday=366.<a name='53'>
+#endif<a name='54'>
+<a name='55'>
+<font color=#447700>! accumulate tsk of current day<a name='56'></font>
+    <font color=#447700>!$OMP PARALLEL DO   &amp;<a name='57'></font>
+    <font color=#447700>!$OMP PRIVATE ( ij, i, j )<a name='58'></font>
+    DO ij = 1 , num_tiles<a name='59'>
+      DO j=j_start(ij),j_end(ij)<a name='60'>
+      DO i=i_start(ij),i_end(ij)<a name='61'>
+             tdly(i,j)=tdly(i,j)+tsk(i,j)*dt<a name='62'>
+      ENDDO<a name='63'>
+      ENDDO<a name='64'>
+     ENDDO<a name='65'>
+    nday=nday+1.*dt<a name='66'>
+<a name='67'>
+<a name='68'>
+<font color=#447700>! Update deep soil temperature<a name='69'></font>
+<font color=#447700>! if it is the end of a day, update variables<a name='70'></font>
+    <font color=#447700>!! deltat=(julian_in-int(julian_in))*24.*3600.<a name='71'></font>
+    <font color=#447700>!! IF(nint(deltat).lt.dt) THEN<a name='72'></font>
+    deltat=(julian_in-nint(julian_in))*24.*3600.<a name='73'>
+    IF(abs(deltat).le.dt/2.) THEN<a name='74'>
+      julian=(julian_in-1.)+(dt/(60.*60.*24.))<a name='75'>
+      <font color=#447700>!$OMP PARALLEL DO   &amp;<a name='76'></font>
+      <font color=#447700>!$OMP PRIVATE ( ij, i, j, n )<a name='77'></font>
+      DO ij = 1 , num_tiles<a name='78'>
+        DO j=j_start(ij),j_end(ij)<a name='79'>
+        DO i=i_start(ij),i_end(ij)<a name='80'>
+<font color=#447700>! update tmn<a name='81'></font>
+               tprior=0.0<a name='82'>
+               do n=1,lagday<a name='83'>
+                 tprior=tprior+tlag(i,n,j)<a name='84'>
+               end do<a name='85'>
+               tprior=tprior/lagday<a name='86'>
+               tmn(i,j)=tconst*tyr(i,j)+(1.-tconst)*tprior<a name='87'>
+<font color=#447700>! update tlag and tyra<a name='88'></font>
+               do n=1,lagday-1<a name='89'>
+                 tlag(i,n,j)=tlag(i,n+1,j)<a name='90'>
+               end do<a name='91'>
+               tlag(i,lagday,j)=tdly(i,j)/nday<a name='92'>
+               tdly(i,j)=0.0<a name='93'>
+        ENDDO<a name='94'>
+        ENDDO<a name='95'>
+      ENDDO<a name='96'>
+      nday=0.<a name='97'>
+<font color=#447700>! update tyr if it is the end of a year<a name='98'></font>
+      if((yrday-julian).le.1.) then<a name='99'>
+        DO ij = 1 , num_tiles<a name='100'>
+          DO j=j_start(ij),j_end(ij)<a name='101'>
+          DO i=i_start(ij),i_end(ij)<a name='102'>
+                tyr(i,j)=tyra(i,j)/nyear<a name='103'>
+                tyra(i,j)=0.0<a name='104'>
+          ENDDO<a name='105'>
+          ENDDO<a name='106'>
+        ENDDO<a name='107'>
+        nyear=0<a name='108'>
+      else<a name='109'>
+        DO ij = 1 , num_tiles<a name='110'>
+          DO j=j_start(ij),j_end(ij)<a name='111'>
+          DO i=i_start(ij),i_end(ij)<a name='112'>
+                tyra(i,j)=tyra(i,j)+tlag(i,lagday,j)<a name='113'>
+          ENDDO<a name='114'>
+          ENDDO<a name='115'>
+        ENDDO<a name='116'>
+        nyear=nyear+1<a name='117'>
+      endif<a name='118'>
+    ENDIF<a name='119'>
+<a name='120'>
+<font color=#447700>!<a name='121'></font>
+      return<a name='122'>
+<a name='123'>
+   END SUBROUTINE tmnupdate<a name='124'>
+<a name='125'>
+<a name='126'>
+END MODULE module_sf_tmnupdate<a name='127'>
+</pre></body></html>

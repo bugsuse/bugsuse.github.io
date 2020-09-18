@@ -1,0 +1,405 @@
+<HTML> <BODY BGCOLOR=#eeddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_CLEAR_HALOS'><A href='../../html_code/frame/module_clear_halos.F.html#MODULE_CLEAR_HALOS' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>module </font><font color=#cc0000>module_clear_halos</font> <A href='../../call_to/MODULE_CLEAR_HALOS.html' TARGET='index'>1</A><a name='3'>
+  implicit none<a name='4'>
+contains<a name='5'>
+  <font color=#447700>! --------------------------------------------------------------------<a name='6'></font>
+<A NAME='CLEAR_IJ_FULL_DOMAIN'><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_FULL_DOMAIN' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='7'>
+  <font color=#993300>subroutine </font><font color=#cc0000>clear_ij_full_domain</font>(grid,how),<A href='../../call_from/CLEAR_IJ_FULL_DOMAIN.html' TARGET='index'>2</A><a name='8'>
+    <font color=#447700>! Convenience function - wrapper around clear_ij_halos.  Clears<a name='9'></font>
+    <font color=#447700>! full domain with badval.  See clear_ij_halos for details.<a name='10'></font>
+    use <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_FULL_DOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_92">, only: domain,get_ijk_from_grid,fieldlist<a name='11'>
+    type(domain), intent(inout) :: grid<a name='12'>
+    integer, intent(in) :: how<a name='13'>
+    <font color=#447700>!<a name='14'></font>
+    call <A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS'>clear_ij_halos</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_FULL_DOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CLEAR_IJ_HALOS_2">(grid,how,full_domain=.true.)<a name='15'>
+  end subroutine clear_ij_full_domain<a name='16'>
+  <font color=#447700>! --------------------------------------------------------------------<a name='17'></font>
+<A NAME='CLEAR_IJ_HALOS'><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='18'>
+  <font color=#993300>subroutine </font><font color=#cc0000>clear_ij_halos</font>(grid,how,full_domain) <A href='../../call_to/CLEAR_IJ_HALOS.html' TARGET='index'>2</A>,<A href='../../call_from/CLEAR_IJ_HALOS.html' TARGET='index'>11</A><a name='19'>
+    <font color=#447700>! Clears halo regions OR full domain with badval.  Select full<a name='20'></font>
+    <font color=#447700>! domain with full_domain=.true.  Select badval type with "how"<a name='21'></font>
+    <font color=#447700>! parameter:<a name='22'></font>
+<a name='23'>
+    <font color=#447700>! how=1 -- badval=0<a name='24'></font>
+    <font color=#447700>! how=2 -- badval=quiet NaN or -maxint<a name='25'></font>
+    <font color=#447700>! how=3 -- badval=signaling NaN or -maxint<a name='26'></font>
+<a name='27'>
+    <font color=#447700>! Fills outside domain with 0 UNLESS fill_domain=.true.  If<a name='28'></font>
+    <font color=#447700>! fill_domain=true., entire array is filled with badval.<a name='29'></font>
+<a name='30'>
+    use <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_93">, only: domain,get_ijk_from_grid,fieldlist<a name='31'>
+    use <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>module_configure</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_56">, only: PARAM_FIRST_SCALAR<a name='32'>
+#ifndef NO_IEEE_MODULE<a name='33'>
+    use,intrinsic :: ieee_arithmetic<a name='34'>
+#endif<a name='35'>
+    implicit none<a name='36'>
+<a name='37'>
+    logical, intent(in), optional :: full_domain<a name='38'>
+    integer, intent(in) :: how<a name='39'>
+    type(domain), intent(inout) :: grid<a name='40'>
+<a name='41'>
+    type( fieldlist ), pointer :: p<a name='42'>
+    integer :: itrace, i,j, &amp;<a name='43'>
+         ids, ide, jds, jde, kds, kde,    &amp;<a name='44'>
+         ims, ime, jms, jme, kms, kme,    &amp;<a name='45'>
+         ips, ipe, jps, jpe, kps, kpe<a name='46'>
+    logical :: fulldom<a name='47'>
+    real :: badR, badR_N,badR_NE,badR_NW,badR_S,badR_SW,badR_SE,badR_E,badR_W<a name='48'>
+#if (RWORDSIZE==4)<a name='49'>
+    double precision :: badD, badD_N,badD_NE,badD_NW,badD_S,badD_SW,badD_SE,badD_E,badD_W<a name='50'>
+#else<a name='51'>
+    real             :: badD, badD_N,badD_NE,badD_NW,badD_S,badD_SW,badD_SE,badD_E,badD_W<a name='52'>
+#endif<a name='53'>
+    integer :: badI, badI_N,badI_NE,badI_NW,badI_S,badI_SW,badI_SE,badI_E,badI_W<a name='54'>
+<a name='55'>
+    select case(how)<a name='56'>
+    case(0)<a name='57'>
+       return<a name='58'>
+    case(1)<a name='59'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_279">('Fill I and J halos with 0.')<a name='60'>
+       badR = 0<a name='61'>
+       badD = 0<a name='62'>
+       badI = 0<a name='63'>
+    case(2)<a name='64'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_280">('Fill I and J halos with -maxint or quiet NaN.')<a name='65'>
+#ifndef NO_IEEE_MODULE<a name='66'>
+       badR = ieee_value(badR,ieee_quiet_nan)<a name='67'>
+       badD = ieee_value(badD,ieee_quiet_nan)<a name='68'>
+       badI = -huge(badI)<a name='69'>
+#else<a name='70'>
+       badR = -huge(badR) <a name='71'>
+       badD = -huge(badD)<a name='72'>
+       badI = -huge(badI)<a name='73'>
+#endif<a name='74'>
+    case(3)<a name='75'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_281">('Fill I and J halos with -maxint or signalling NaN.')<a name='76'>
+#ifndef NO_IEEE_MODULE<a name='77'>
+       badR = ieee_value(badR,ieee_signaling_nan)<a name='78'>
+       badD = ieee_value(badD,ieee_signaling_nan)<a name='79'>
+       badI = -huge(badI)<a name='80'>
+#else<a name='81'>
+       badR = -huge(badR) <a name='82'>
+       badD = -huge(badD)<a name='83'>
+       badI = -huge(badI)<a name='84'>
+#endif<a name='85'>
+    case default<a name='86'>
+       if(fulldom) then<a name='87'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_282">('Invalid value for clear_ij_full_domain/clear_ij_halos "how" parameter.  Will not clear domain.')<a name='88'>
+       else<a name='89'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_283">('Invalid value for clear_ij_halos "how" parameter.  Will not clear halos.')<a name='90'>
+       endif<a name='91'>
+       return<a name='92'>
+    end select<a name='93'>
+<a name='94'>
+    fulldom=.false.<a name='95'>
+    if(present(full_domain)) fulldom=full_domain<a name='96'>
+    if(fulldom) then<a name='97'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_284">('Filling entire memory area, not just halos.')<a name='98'>
+    endif<a name='99'>
+<a name='100'>
+    badR_N =badR ; badD_N =badD ; badI_N =badI<a name='101'>
+    badR_NE=badR ; badD_NE=badD ; badI_NE=badI<a name='102'>
+    badR_NW=badR ; badD_NW=badD ; badI_NW=badI<a name='103'>
+    badR_S =badR ; badD_S =badD ; badI_S =badI<a name='104'>
+    badR_SE=badR ; badD_SE=badD ; badI_SE=badI<a name='105'>
+    badR_SW=badR ; badD_SW=badD ; badI_SW=badI<a name='106'>
+    badR_E =badR ; badD_E =badD ; badI_E =badI<a name='107'>
+    badR_W =badR ; badD_W =badD ; badI_W =badI<a name='108'>
+<a name='109'>
+    CALL <A href='../../html_code/frame/module_domain.F.html#GET_IJK_FROM_GRID'>get_ijk_from_grid</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_IJK_FROM_GRID_29"> (  grid ,      &amp;<a name='110'>
+         ids, ide, jds, jde, kds, kde,    &amp;<a name='111'>
+         ims, ime, jms, jme, kms, kme,    &amp;<a name='112'>
+         ips, ipe, jps, jpe, kps, kpe     )<a name='113'>
+<a name='114'>
+    if(ips==ids) then<a name='115'>
+       badR_S =0 ; badD_S =0 ; badI_S =0<a name='116'>
+       badR_SE=0 ; badD_SE=0 ; badI_SE=0<a name='117'>
+       badR_SW=0 ; badD_SW=0 ; badI_SW=0<a name='118'>
+    endif<a name='119'>
+    if(ipe==ide) then<a name='120'>
+       badR_N =0 ; badD_N =0 ; badI_N =0<a name='121'>
+       badR_NE=0 ; badD_NE=0 ; badI_NE=0<a name='122'>
+       badR_NW=0 ; badD_NW=0 ; badI_NW=0<a name='123'>
+    endif<a name='124'>
+    if(jps==jds) then<a name='125'>
+       badR_NW=0 ; badD_NW=0 ; badI_NW=0<a name='126'>
+       badR_SW=0 ; badD_SW=0 ; badI_SW=0<a name='127'>
+       badR_W =0 ; badD_W =0 ; badI_W =0<a name='128'>
+    endif<a name='129'>
+    if(jpe==jde) then<a name='130'>
+       badR_NE=0 ; badD_NE=0 ; badI_NE=0<a name='131'>
+       badR_SE=0 ; badD_SE=0 ; badI_SE=0<a name='132'>
+       badR_E =0 ; badD_E =0 ; badI_E =0<a name='133'>
+    endif<a name='134'>
+<a name='135'>
+    if(.not.associated(grid%head_statevars)) then<a name='136'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_285">('grid%head_statevars is not associated')<a name='137'>
+       return<a name='138'>
+    elseif(.not.associated(grid%head_statevars%next)) then<a name='139'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_clear_halos.F.html#CLEAR_IJ_HALOS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_286">('grid%head_statevars%next is not associated')<a name='140'>
+       return<a name='141'>
+    endif<a name='142'>
+    p =&gt; grid%head_statevars%next<a name='143'>
+    DO WHILE ( ASSOCIATED( p ) ) <a name='144'>
+       IF ( p%ProcOrient .NE. 'X' .AND. p%ProcOrient .NE. 'Y' ) THEN<a name='145'>
+          IF ( p%Ndim .EQ. 2 ) THEN<a name='146'>
+             IF (      p%MemoryOrder(1:1) .EQ. 'X' .AND.  p%MemoryOrder(2:2) .EQ.  'Y' ) THEN<a name='147'>
+                IF      ( p%Type .EQ. 'r' ) THEN<a name='148'>
+                   IF ( SIZE(p%rfield_2d,1)*SIZE(p%rfield_2d,2) .GT. 1 ) THEN<a name='149'>
+                      if(fulldom) then<a name='150'>
+                         p%rfield_2d=badR<a name='151'>
+                      else<a name='152'>
+                         p%rfield_2d(ims:ips-1,jps:jpe) = badR_S<a name='153'>
+                         p%rfield_2d(ims:ips-1,jms:jps-1) = badR_SW<a name='154'>
+                         p%rfield_2d(ims:ips-1,jpe+1:jme) = badR_SE<a name='155'>
+                         p%rfield_2d(ipe+1:ime,jps:jpe) = badR_N<a name='156'>
+                         p%rfield_2d(ipe+1:ime,jms:jps-1) = badR_NW<a name='157'>
+                         p%rfield_2d(ipe+1:ime,jpe+1:jme) = badR_NE<a name='158'>
+                         p%rfield_2d(ips:ipe,jms:jps-1) = badR_W<a name='159'>
+                         p%rfield_2d(ips:ipe,jpe+1:jme) = badR_E<a name='160'>
+                      endif<a name='161'>
+                   ENDIF<a name='162'>
+                ELSE IF ( p%Type .EQ. 'd' ) THEN<a name='163'>
+                   IF ( SIZE(p%dfield_2d,1)*SIZE(p%dfield_2d,2) .GT. 1 ) THEN<a name='164'>
+                      if(fulldom) then<a name='165'>
+                         p%dfield_2d=badD<a name='166'>
+                      else<a name='167'>
+                         p%dfield_2d(ims:ips-1,jps:jpe) = badD_S<a name='168'>
+                         p%dfield_2d(ims:ips-1,jms:jps-1) = badD_SW<a name='169'>
+                         p%dfield_2d(ims:ips-1,jpe+1:jme) = badD_SE<a name='170'>
+                         p%dfield_2d(ipe+1:ime,jps:jpe) = badD_N<a name='171'>
+                         p%dfield_2d(ipe+1:ime,jms:jps-1) = badD_NW<a name='172'>
+                         p%dfield_2d(ipe+1:ime,jpe+1:jme) = badD_NE<a name='173'>
+                         p%dfield_2d(ips:ipe,jms:jps-1) = badD_W<a name='174'>
+                         p%dfield_2d(ips:ipe,jpe+1:jme) = badD_E<a name='175'>
+                      endif<a name='176'>
+                   ENDIF<a name='177'>
+                ELSE IF ( p%Type .EQ. 'i' ) THEN<a name='178'>
+                   IF ( SIZE(p%ifield_2d,1)*SIZE(p%ifield_2d,2) .GT. 1 ) THEN<a name='179'>
+                      if(fulldom) then<a name='180'>
+                         p%ifield_2d=badI<a name='181'>
+                      else<a name='182'>
+                         p%ifield_2d(ims:ips-1,jps:jpe) = badI_S<a name='183'>
+                         p%ifield_2d(ims:ips-1,jms:jps-1) = badI_SW<a name='184'>
+                         p%ifield_2d(ims:ips-1,jpe+1:jme) = badI_SE<a name='185'>
+                         p%ifield_2d(ipe+1:ime,jps:jpe) = badI_N<a name='186'>
+                         p%ifield_2d(ipe+1:ime,jms:jps-1) = badI_NW<a name='187'>
+                         p%ifield_2d(ipe+1:ime,jpe+1:jme) = badI_NE<a name='188'>
+                         p%ifield_2d(ips:ipe,jms:jps-1) = badI_W<a name='189'>
+                         p%ifield_2d(ips:ipe,jpe+1:jme) = badI_E<a name='190'>
+                      endif<a name='191'>
+                   ENDIF<a name='192'>
+                ENDIF<a name='193'>
+             ENDIF<a name='194'>
+          ELSE IF ( p%Ndim .EQ. 3 ) THEN<a name='195'>
+             IF (      p%MemoryOrder(1:1) .EQ. 'X' .AND.  p%MemoryOrder(3:3) .EQ.  'Y' ) THEN<a name='196'>
+                IF      ( p%Type .EQ. 'r' ) THEN<a name='197'>
+                   IF ( SIZE(p%rfield_3d,1)*SIZE(p%rfield_3d,3) .GT. 1 ) THEN<a name='198'>
+                      if(fulldom) then<a name='199'>
+                         p%rfield_3d=badR<a name='200'>
+                      else<a name='201'>
+                         p%rfield_3d(ims:ips-1,:,jps:jpe) = badR_S<a name='202'>
+                         p%rfield_3d(ims:ips-1,:,jms:jps-1) = badR_SW<a name='203'>
+                         p%rfield_3d(ims:ips-1,:,jpe+1:jme) = badR_SE<a name='204'>
+                         p%rfield_3d(ipe+1:ime,:,jps:jpe) = badR_N<a name='205'>
+                         p%rfield_3d(ipe+1:ime,:,jms:jps-1) = badR_NW<a name='206'>
+                         p%rfield_3d(ipe+1:ime,:,jpe+1:jme) = badR_NE<a name='207'>
+                         p%rfield_3d(ips:ipe,:,jms:jps-1) = badR_W<a name='208'>
+                         p%rfield_3d(ips:ipe,:,jpe+1:jme) = badR_E<a name='209'>
+                      endif<a name='210'>
+                   ENDIF<a name='211'>
+                ELSE IF ( p%Type .EQ. 'd' ) THEN<a name='212'>
+                   IF ( SIZE(p%dfield_3d,1)*SIZE(p%dfield_3d,3) .GT. 1 ) THEN<a name='213'>
+                      if(fulldom) then<a name='214'>
+                         p%dfield_3d=badD<a name='215'>
+                      else<a name='216'>
+                         p%dfield_3d(ims:ips-1,:,jps:jpe) = badD_S<a name='217'>
+                         p%dfield_3d(ims:ips-1,:,jms:jps-1) = badD_SW<a name='218'>
+                         p%dfield_3d(ims:ips-1,:,jpe+1:jme) = badD_SE<a name='219'>
+                         p%dfield_3d(ipe+1:ime,:,jps:jpe) = badD_N<a name='220'>
+                         p%dfield_3d(ipe+1:ime,:,jms:jps-1) = badD_NW<a name='221'>
+                         p%dfield_3d(ipe+1:ime,:,jpe+1:jme) = badD_NE<a name='222'>
+                         p%dfield_3d(ips:ipe,:,jms:jps-1) = badD_W<a name='223'>
+                         p%dfield_3d(ips:ipe,:,jpe+1:jme) = badD_E<a name='224'>
+                      endif<a name='225'>
+                   ENDIF<a name='226'>
+                ELSE IF ( p%Type .EQ. 'i' ) THEN<a name='227'>
+                   IF ( SIZE(p%ifield_3d,1)*SIZE(p%ifield_3d,3) .GT. 1 ) THEN<a name='228'>
+                      if(fulldom) then<a name='229'>
+                         p%ifield_3d=badI<a name='230'>
+                      else<a name='231'>
+                         p%ifield_3d(ims:ips-1,:,jps:jpe) = badI_S<a name='232'>
+                         p%ifield_3d(ims:ips-1,:,jms:jps-1) = badI_SW<a name='233'>
+                         p%ifield_3d(ims:ips-1,:,jpe+1:jme) = badI_SE<a name='234'>
+                         p%ifield_3d(ipe+1:ime,:,jps:jpe) = badI_N<a name='235'>
+                         p%ifield_3d(ipe+1:ime,:,jms:jps-1) = badI_NW<a name='236'>
+                         p%ifield_3d(ipe+1:ime,:,jpe+1:jme) = badI_NE<a name='237'>
+                         p%ifield_3d(ips:ipe,:,jms:jps-1) = badI_W<a name='238'>
+                         p%ifield_3d(ips:ipe,:,jpe+1:jme) = badI_E<a name='239'>
+                      endif<a name='240'>
+                   ENDIF<a name='241'>
+                ENDIF<a name='242'>
+             ELSE IF (  p%MemoryOrder(1:2) .EQ. 'XY' ) THEN<a name='243'>
+                IF      ( p%Type .EQ. 'r' ) THEN<a name='244'>
+                   IF ( SIZE(p%rfield_3d,1)*SIZE(p%rfield_3d,2) .GT. 1 ) THEN<a name='245'>
+                      if(fulldom) then<a name='246'>
+                         p%rfield_3d=badR<a name='247'>
+                      else<a name='248'>
+                         p%rfield_3d(ims:ips-1,jps:jpe,:) = badR_S<a name='249'>
+                         p%rfield_3d(ims:ips-1,jms:jps-1,:) = badR_SW<a name='250'>
+                         p%rfield_3d(ims:ips-1,jpe+1:jme,:) = badR_SE<a name='251'>
+                         p%rfield_3d(ipe+1:ime,jps:jpe,:) = badR_N<a name='252'>
+                         p%rfield_3d(ipe+1:ime,jms:jps-1,:) = badR_NW<a name='253'>
+                         p%rfield_3d(ipe+1:ime,jpe+1:jme,:) = badR_NE<a name='254'>
+                         p%rfield_3d(ips:ipe,jms:jps-1,:) = badR_W<a name='255'>
+                         p%rfield_3d(ips:ipe,jpe+1:jme,:) = badR_E<a name='256'>
+                      endif<a name='257'>
+                   ENDIF<a name='258'>
+                ELSE IF ( p%Type .EQ. 'd' ) THEN<a name='259'>
+                   IF ( SIZE(p%dfield_3d,1)*SIZE(p%dfield_3d,2) .GT. 1 ) THEN<a name='260'>
+                      if(fulldom) then<a name='261'>
+                         p%dfield_3d=badD<a name='262'>
+                      else<a name='263'>
+                         p%dfield_3d(ims:ips-1,jps:jpe,:) = badD_S<a name='264'>
+                         p%dfield_3d(ims:ips-1,jms:jps-1,:) = badD_SW<a name='265'>
+                         p%dfield_3d(ims:ips-1,jpe+1:jme,:) = badD_SE<a name='266'>
+                         p%dfield_3d(ipe+1:ime,jps:jpe,:) = badD_N<a name='267'>
+                         p%dfield_3d(ipe+1:ime,jms:jps-1,:) = badD_NW<a name='268'>
+                         p%dfield_3d(ipe+1:ime,jpe+1:jme,:) = badD_NE<a name='269'>
+                         p%dfield_3d(ips:ipe,jms:jps-1,:) = badD_W<a name='270'>
+                         p%dfield_3d(ips:ipe,jpe+1:jme,:) = badD_E<a name='271'>
+                      endif<a name='272'>
+                   ENDIF<a name='273'>
+                ELSE IF ( p%Type .EQ. 'i' ) THEN<a name='274'>
+                   IF ( SIZE(p%ifield_3d,1)*SIZE(p%ifield_3d,2) .GT. 1 ) THEN<a name='275'>
+                      if(fulldom) then<a name='276'>
+                         p%ifield_3d=badI<a name='277'>
+                      else<a name='278'>
+                         p%ifield_3d(ims:ips-1,jps:jpe,:) = badI_S<a name='279'>
+                         p%ifield_3d(ims:ips-1,jms:jps-1,:) = badI_SW<a name='280'>
+                         p%ifield_3d(ims:ips-1,jpe+1:jme,:) = badI_SE<a name='281'>
+                         p%ifield_3d(ipe+1:ime,jps:jpe,:) = badI_N<a name='282'>
+                         p%ifield_3d(ipe+1:ime,jms:jps-1,:) = badI_NW<a name='283'>
+                         p%ifield_3d(ipe+1:ime,jpe+1:jme,:) = badI_NE<a name='284'>
+                         p%ifield_3d(ips:ipe,jms:jps-1,:) = badI_W<a name='285'>
+                         p%ifield_3d(ips:ipe,jpe+1:jme,:) = badI_E<a name='286'>
+                      endif<a name='287'>
+                   ENDIF<a name='288'>
+                ENDIF<a name='289'>
+             ENDIF<a name='290'>
+          ELSE IF ( p%Ndim .EQ. 4 ) THEN<a name='291'>
+             IF (      p%MemoryOrder(1:1) .EQ. 'X' .AND.  p%MemoryOrder(3:3) .EQ.  'Y' ) THEN<a name='292'>
+                IF      ( p%Type .EQ. 'r' ) THEN<a name='293'>
+                   IF ( SIZE(p%rfield_4d,1)*SIZE(p%rfield_4d,3) .GT. 1 ) THEN<a name='294'>
+                      DO itrace = PARAM_FIRST_SCALAR , p%num_table(grid%id)<a name='295'>
+                         if(fulldom) then<a name='296'>
+                            p%rfield_4d(:,:,:,itrace)=badR<a name='297'>
+                         else<a name='298'>
+                            p%rfield_4d(ims:ips-1,:,jps:jpe,itrace) = badR_S<a name='299'>
+                            p%rfield_4d(ims:ips-1,:,jms:jps-1,itrace) = badR_SW<a name='300'>
+                            p%rfield_4d(ims:ips-1,:,jpe+1:jme,itrace) = badR_SE<a name='301'>
+                            p%rfield_4d(ipe+1:ime,:,jps:jpe,itrace) = badR_N<a name='302'>
+                            p%rfield_4d(ipe+1:ime,:,jms:jps-1,itrace) = badR_NW<a name='303'>
+                            p%rfield_4d(ipe+1:ime,:,jpe+1:jme,itrace) = badR_NE<a name='304'>
+                            p%rfield_4d(ips:ipe,:,jms:jps-1,itrace) = badR_W<a name='305'>
+                            p%rfield_4d(ips:ipe,:,jpe+1:jme,itrace) = badR_E<a name='306'>
+                         endif<a name='307'>
+                      ENDDO<a name='308'>
+                   ENDIF<a name='309'>
+                ELSE IF ( p%Type .EQ. 'd' ) THEN<a name='310'>
+                   IF ( SIZE(p%dfield_4d,1)*SIZE(p%dfield_4d,3) .GT. 1 ) THEN<a name='311'>
+                      DO itrace = PARAM_FIRST_SCALAR , p%num_table(grid%id)<a name='312'>
+                         if(fulldom) then<a name='313'>
+                            p%dfield_4d(:,:,:,itrace)=badD<a name='314'>
+                         else<a name='315'>
+                            p%dfield_4d(ims:ips-1,:,jps:jpe,itrace) = badD_S<a name='316'>
+                            p%dfield_4d(ims:ips-1,:,jms:jps-1,itrace) = badD_SW<a name='317'>
+                            p%dfield_4d(ims:ips-1,:,jpe+1:jme,itrace) = badD_SE<a name='318'>
+                            p%dfield_4d(ipe+1:ime,:,jps:jpe,itrace) = badD_N<a name='319'>
+                            p%dfield_4d(ipe+1:ime,:,jms:jps-1,itrace) = badD_NW<a name='320'>
+                            p%dfield_4d(ipe+1:ime,:,jpe+1:jme,itrace) = badD_NE<a name='321'>
+                            p%dfield_4d(ips:ipe,:,jms:jps-1,itrace) = badD_W<a name='322'>
+                            p%dfield_4d(ips:ipe,:,jpe+1:jme,itrace) = badD_E<a name='323'>
+                         endif<a name='324'>
+                      ENDDO<a name='325'>
+                   ENDIF<a name='326'>
+                ELSE IF ( p%Type .EQ. 'i' ) THEN<a name='327'>
+                   IF ( SIZE(p%ifield_4d,1)*SIZE(p%ifield_4d,3) .GT. 1 ) THEN<a name='328'>
+                      DO itrace = PARAM_FIRST_SCALAR , p%num_table(grid%id)<a name='329'>
+                         if(fulldom) then<a name='330'>
+                            p%ifield_4d(:,:,:,itrace)=badI<a name='331'>
+                         else<a name='332'>
+                            p%ifield_4d(ims:ips-1,:,jps:jpe,itrace) = badI_S<a name='333'>
+                            p%ifield_4d(ims:ips-1,:,jms:jps-1,itrace) = badI_SW<a name='334'>
+                            p%ifield_4d(ims:ips-1,:,jpe+1:jme,itrace) = badI_SE<a name='335'>
+                            p%ifield_4d(ipe+1:ime,:,jps:jpe,itrace) = badI_N<a name='336'>
+                            p%ifield_4d(ipe+1:ime,:,jms:jps-1,itrace) = badI_NW<a name='337'>
+                            p%ifield_4d(ipe+1:ime,:,jpe+1:jme,itrace) = badI_NE<a name='338'>
+                            p%ifield_4d(ips:ipe,:,jms:jps-1,itrace) = badI_W<a name='339'>
+                            p%ifield_4d(ips:ipe,:,jpe+1:jme,itrace) = badI_E<a name='340'>
+                         endif<a name='341'>
+                      ENDDO<a name='342'>
+                   ENDIF<a name='343'>
+                ENDIF<a name='344'>
+             ELSE IF (  p%MemoryOrder(1:2) .EQ. 'XY' ) THEN<a name='345'>
+                IF      ( p%Type .EQ. 'r' ) THEN<a name='346'>
+                   IF ( SIZE(p%rfield_4d,1)*SIZE(p%rfield_4d,2) .GT. 1 ) THEN<a name='347'>
+                      DO itrace = PARAM_FIRST_SCALAR , p%num_table(grid%id)<a name='348'>
+                         if(fulldom) then<a name='349'>
+                            p%rfield_4d(:,:,:,itrace)=badR<a name='350'>
+                         else<a name='351'>
+                            p%rfield_4d(ims:ips-1,jps:jpe,:,itrace) = badR_S<a name='352'>
+                            p%rfield_4d(ims:ips-1,jms:jps-1,:,itrace) = badR_SW<a name='353'>
+                            p%rfield_4d(ims:ips-1,jpe+1:jme,:,itrace) = badR_SE<a name='354'>
+                            p%rfield_4d(ipe+1:ime,jps:jpe,:,itrace) = badR_N<a name='355'>
+                            p%rfield_4d(ipe+1:ime,jms:jps-1,:,itrace) = badR_NW<a name='356'>
+                            p%rfield_4d(ipe+1:ime,jpe+1:jme,:,itrace) = badR_NE<a name='357'>
+                            p%rfield_4d(ips:ipe,jms:jps-1,:,itrace) = badR_W<a name='358'>
+                            p%rfield_4d(ips:ipe,jpe+1:jme,:,itrace) = badR_E<a name='359'>
+                         endif<a name='360'>
+                      ENDDO<a name='361'>
+                   ENDIF<a name='362'>
+                ELSE IF ( p%Type .EQ. 'd' ) THEN<a name='363'>
+                   IF ( SIZE(p%dfield_4d,1)*SIZE(p%dfield_4d,2) .GT. 1 ) THEN<a name='364'>
+                      DO itrace = PARAM_FIRST_SCALAR , p%num_table(grid%id)<a name='365'>
+                         if(fulldom) then<a name='366'>
+                            p%dfield_4d(:,:,:,itrace)=badD<a name='367'>
+                         else<a name='368'>
+                            p%dfield_4d(ims:ips-1,jps:jpe,:,itrace) = badD_S<a name='369'>
+                            p%dfield_4d(ims:ips-1,jms:jps-1,:,itrace) = badD_SW<a name='370'>
+                            p%dfield_4d(ims:ips-1,jpe+1:jme,:,itrace) = badD_SE<a name='371'>
+                            p%dfield_4d(ipe+1:ime,jps:jpe,:,itrace) = badD_N<a name='372'>
+                            p%dfield_4d(ipe+1:ime,jms:jps-1,:,itrace) = badD_NW<a name='373'>
+                            p%dfield_4d(ipe+1:ime,jpe+1:jme,:,itrace) = badD_NE<a name='374'>
+                            p%dfield_4d(ips:ipe,jms:jps-1,:,itrace) = badD_W<a name='375'>
+                            p%dfield_4d(ips:ipe,jpe+1:jme,:,itrace) = badD_E<a name='376'>
+                         endif<a name='377'>
+                      ENDDO<a name='378'>
+                   ENDIF<a name='379'>
+                ELSE IF ( p%Type .EQ. 'i' ) THEN<a name='380'>
+                   IF ( SIZE(p%ifield_4d,1)*SIZE(p%ifield_4d,2) .GT. 1 ) THEN<a name='381'>
+                      DO itrace = PARAM_FIRST_SCALAR , p%num_table(grid%id)<a name='382'>
+                         if(fulldom) then<a name='383'>
+                            p%ifield_4d(:,:,:,itrace)=badI<a name='384'>
+                         else<a name='385'>
+                            p%ifield_4d(ims:ips-1,jps:jpe,:,itrace) = badI_S<a name='386'>
+                            p%ifield_4d(ims:ips-1,jms:jps-1,:,itrace) = badI_SW<a name='387'>
+                            p%ifield_4d(ims:ips-1,jpe+1:jme,:,itrace) = badI_SE<a name='388'>
+                            p%ifield_4d(ipe+1:ime,jps:jpe,:,itrace) = badI_N<a name='389'>
+                            p%ifield_4d(ipe+1:ime,jms:jps-1,:,itrace) = badI_NW<a name='390'>
+                            p%ifield_4d(ipe+1:ime,jpe+1:jme,:,itrace) = badI_NE<a name='391'>
+                            p%ifield_4d(ips:ipe,jms:jps-1,:,itrace) = badI_W<a name='392'>
+                            p%ifield_4d(ips:ipe,jpe+1:jme,:,itrace) = badI_E<a name='393'>
+                         endif<a name='394'>
+                      ENDDO<a name='395'>
+                   ENDIF<a name='396'>
+                ENDIF<a name='397'>
+             ENDIF<a name='398'>
+          ENDIF<a name='399'>
+       ENDIF<a name='400'>
+       p =&gt; p%next<a name='401'>
+    ENDDO<a name='402'>
+  end subroutine clear_ij_halos<a name='403'>
+end module module_clear_halos<a name='404'>
+</pre></body></html>

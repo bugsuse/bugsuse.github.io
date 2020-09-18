@@ -1,0 +1,1815 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!<a name='2'></font>
+<A NAME='MODULE_BL_MYJURB'><A href='../../html_code/phys/module_bl_myjurb.F.html#MODULE_BL_MYJURB' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='3'>
+      <font color=#993300>MODULE </font><font color=#cc0000>MODULE_BL_MYJURB</font> <A href='../../call_to/MODULE_BL_MYJURB.html' TARGET='index'>2</A><a name='4'>
+<font color=#447700>!<a name='5'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='6'></font>
+<font color=#447700>!<a name='7'></font>
+      USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>MODULE_MODEL_CONSTANTS</A><A href='../../html_code/phys/module_bl_myjurb.F.html#module_bl_myjurb.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_43"><a name='8'>
+<font color=#447700>!<a name='9'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='10'></font>
+<font color=#447700>!<a name='11'></font>
+<font color=#447700>! REFERENCES:  Janjic (2002), NCEP Office Note 437<a name='12'></font>
+<font color=#447700>!              Mellor and Yamada (1982), Rev. Geophys. Space Phys.<a name='13'></font>
+<font color=#447700>!<a name='14'></font>
+<font color=#447700>! ABSTRACT:<a name='15'></font>
+<font color=#447700>!     MYJ UPDATES THE TURBULENT KINETIC ENERGY WITH THE PRODUCTION/<a name='16'></font>
+<font color=#447700>!     DISSIPATION TERM AND THE VERTICAL DIFFUSION TERM<a name='17'></font>
+<font color=#447700>!     (USING AN IMPLICIT FORMULATION) FROM MELLOR-YAMADA<a name='18'></font>
+<font color=#447700>!     LEVEL 2.5 AS EXTENDED BY JANJIC.  EXCHANGE COEFFICIENTS FOR<a name='19'></font>
+<font color=#447700>!     THE SURFACE AND FOR ALL LAYER INTERFACES ARE COMPUTED FROM<a name='20'></font>
+<font color=#447700>!     MONIN-OBUKHOV THEORY.<a name='21'></font>
+<font color=#447700>!     THE TURBULENT VERTICAL EXCHANGE IS THEN EXECUTED.<a name='22'></font>
+<font color=#447700>!<a name='23'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='24'></font>
+<font color=#447700>!<a name='25'></font>
+      INTEGER :: ITRMX=5 <font color=#447700>! Iteration count for mixing length computation<a name='26'></font>
+<font color=#447700>!<a name='27'></font>
+<font color=#447700>!     REAL,PARAMETER :: G=9.81,PI=3.1415926,R_D=287.04,R_V=461.6        &amp;<a name='28'></font>
+<font color=#447700>!    &amp;                 ,VKARMAN=0.4<a name='29'></font>
+      REAL,PARAMETER :: PI=3.1415926,VKARMAN=0.4<a name='30'>
+<font color=#447700>!     REAL,PARAMETER :: CP=7.*R_D/2.<a name='31'></font>
+      REAL,PARAMETER :: CAPA=R_D/CP<a name='32'>
+      REAL,PARAMETER :: RLIVWV=XLS/XLV,ELOCP=2.72E6/CP<a name='33'>
+      REAL,PARAMETER :: EPS1=1.E-12,EPS2=0.<a name='34'>
+      REAL,PARAMETER :: EPSL=0.32,EPSRU=1.E-7,EPSRS=1.E-7               &amp;<a name='35'>
+     &amp;                 ,EPSTRB=1.E-24<a name='36'>
+      REAL,PARAMETER :: EPSA=1.E-8,EPSIT=1.E-4,EPSU2=1.E-4,EPSUST=0.07  &amp;<a name='37'>
+     &amp;                 ,FH=1.01 <a name='38'>
+      REAL,PARAMETER :: ALPH=0.30,BETA=1./273.,EL0MAX=1000.,EL0MIN=1.   &amp;<a name='39'>
+     &amp;                 ,ELFC=0.23*0.5,GAM1=0.2222222222222222222        &amp;<a name='40'>
+     &amp;                 ,PRT=1.<a name='41'>
+      REAL,PARAMETER :: A1=0.659888514560862645                         &amp;<a name='42'>
+     &amp;                 ,A2x=0.6574209922667784586                       &amp;<a name='43'>
+     &amp;                 ,B1=11.87799326209552761                         &amp;<a name='44'>
+     &amp;                 ,B2=7.226971804046074028                         &amp;<a name='45'>
+     &amp;                 ,C1=0.000830955950095854396<a name='46'>
+      REAL,PARAMETER :: A2S=17.2693882,A3S=273.16,A4S=35.86<a name='47'>
+      REAL,PARAMETER :: ELZ0=0.,ESQ=5.0,EXCM=0.001                      &amp;<a name='48'>
+     &amp;                 ,FHNEU=0.8,GLKBR=10.,GLKBS=30.                   &amp;<a name='49'>
+     &amp;                 ,QVISC=2.1E-5,RFC=0.191,RIC=0.505,SMALL=0.35     &amp;<a name='50'>
+     &amp;                 ,SQPR=0.84,SQSC=0.84,SQVISC=258.2,TVISC=2.1E-5   &amp;<a name='51'>
+     &amp;                 ,USTC=0.7,USTR=0.225,VISC=1.5E-5                 &amp;<a name='52'>
+     &amp;                 ,WOLD=0.15,WWST=1.2,ZTMAX=1.,ZTFC=1.,ZTMIN=-5.<a name='53'>
+<font color=#447700>!<a name='54'></font>
+      REAL,PARAMETER :: SEAFC=0.98,PQ0SEA=PQ0*SEAFC<a name='55'>
+<font color=#447700>!<a name='56'></font>
+      REAL,PARAMETER :: BTG=BETA*G,CZIV=SMALL*GLKBS                     &amp;<a name='57'>
+<font color=#447700>!    &amp;                 ,EP_1=R_V/R_D-1.,ESQHF=0.5*5.0,GRRS=GLKBR/GLKBS  &amp;<a name='58'></font>
+     &amp;                 ,ESQHF=0.5*5.0,GRRS=GLKBR/GLKBS                  &amp;<a name='59'>
+     &amp;                 ,RB1=1./B1,RTVISC=1./TVISC,RVISC=1./VISC         &amp;<a name='60'>
+     &amp;                 ,ZQRZT=SQSC/SQPR<a name='61'>
+<font color=#447700>!<a name='62'></font>
+      REAL,PARAMETER :: ADNH= 9.*A1*A2x*A2x*(12.*A1+3.*B2)*BTG*BTG      &amp;                  <a name='63'>
+     &amp;                 ,ADNM=18.*A1*A1*A2x*(B2-3.*A2x)*BTG              &amp; <a name='64'>
+     &amp;                 ,ANMH=-9.*A1*A2x*A2x*BTG*BTG                     &amp;<a name='65'>
+     &amp;                 ,ANMM=-3.*A1*A2x*(3.*A2x+3.*B2*C1+18.*A1*C1-B2)  &amp;<a name='66'>
+     &amp;                                *BTG                              &amp;   <a name='67'>
+     &amp;                 ,BDNH= 3.*A2x*(7.*A1+B2)*BTG                     &amp;<a name='68'>
+     &amp;                 ,BDNM= 6.*A1*A1                                  &amp;<a name='69'>
+     &amp;                 ,BEQH= A2x*B1*BTG+3.*A2x*(7.*A1+B2)*BTG          &amp;<a name='70'>
+     &amp;                 ,BEQM=-A1*B1*(1.-3.*C1)+6.*A1*A1                 &amp;<a name='71'>
+     &amp;                 ,BNMH=-A2x*BTG                                   &amp;     <a name='72'>
+     &amp;                 ,BNMM=A1*(1.-3.*C1)                              &amp;<a name='73'>
+     &amp;                 ,BSHH=9.*A1*A2x*A2x*BTG                          &amp;<a name='74'>
+     &amp;                 ,BSHM=18.*A1*A1*A2x*C1                           &amp;<a name='75'>
+     &amp;                 ,BSMH=-3.*A1*A2x*(3.*A2x+3.*B2*C1+12.*A1*C1-B2)  &amp;<a name='76'>
+     &amp;                                *BTG                              &amp;<a name='77'>
+     &amp;                 ,CESH=A2x                                        &amp;<a name='78'>
+     &amp;                 ,CESM=A1*(1.-3.*C1)                              &amp;<a name='79'>
+     &amp;                 ,CNV=EP_1*G/BTG                                  &amp;<a name='80'>
+     &amp;                 ,ELFCS=VKARMAN*BTG                               &amp;<a name='81'>
+     &amp;                 ,FZQ1=RTVISC*QVISC*ZQRZT                         &amp;<a name='82'>
+     &amp;                 ,FZQ2=RTVISC*QVISC*ZQRZT                         &amp;<a name='83'>
+     &amp;                 ,FZT1=RVISC *TVISC*SQPR                          &amp;<a name='84'>
+     &amp;                 ,FZT2=CZIV*GRRS*TVISC*SQPR                       &amp;<a name='85'>
+     &amp;                 ,FZU1=CZIV*VISC                                  &amp;<a name='86'>
+     &amp;                 ,PIHF=0.5*PI                                     &amp;<a name='87'>
+     &amp;                 ,RFAC=RIC/(FHNEU*RFC*RFC)                        &amp;<a name='88'>
+     &amp;                 ,RQVISC=1./QVISC                                 &amp;<a name='89'>
+     &amp;                 ,RRIC=1./RIC                                     &amp;<a name='90'>
+     &amp;                 ,USTFC=0.018/G                                   &amp;<a name='91'>
+     &amp;                 ,WNEW=1.-WOLD                                    &amp;<a name='92'>
+     &amp;                 ,WWST2=WWST*WWST<a name='93'>
+<font color=#447700>!<a name='94'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='95'></font>
+<font color=#447700>!***  FREE TERM IN THE EQUILIBRIUM EQUATION FOR (L/Q)**2<a name='96'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='97'></font>
+<font color=#447700>!<a name='98'></font>
+      REAL,PARAMETER :: AEQH=9.*A1*A2x*A2x*B1*BTG*BTG                   &amp;<a name='99'>
+     &amp;                      +9.*A1*A2x*A2x*(12.*A1+3.*B2)*BTG*BTG       &amp;<a name='100'>
+     &amp;                 ,AEQM=3.*A1*A2x*B1*(3.*A2x+3.*B2*C1+18.*A1*C1-B2)&amp;<a name='101'>
+     &amp;                      *BTG+18.*A1*A1*A2x*(B2-3.*A2x)*BTG<a name='102'>
+<font color=#447700>!<a name='103'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='104'></font>
+<font color=#447700>!***  FORBIDDEN TURBULENCE AREA<a name='105'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='106'></font>
+<font color=#447700>!<a name='107'></font>
+      REAL,PARAMETER :: REQU=-AEQH/AEQM                                 &amp;<a name='108'>
+     &amp;                 ,EPSGH=1.E-9,EPSGM=REQU*EPSGH<a name='109'>
+<font color=#447700>!<a name='110'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='111'></font>
+<font color=#447700>!***  NEAR ISOTROPY FOR SHEAR TURBULENCE, WW/Q2 LOWER LIMIT<a name='112'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='113'></font>
+<font color=#447700>! <a name='114'></font>
+      REAL,PARAMETER :: UBRYL=(18.*REQU*A1*A1*A2x*B2*C1*BTG             &amp;<a name='115'>
+     &amp;                         +9.*A1*A2x*A2x*B2*BTG*BTG)               &amp;<a name='116'>
+     &amp;                        /(REQU*ADNM+ADNH)                         &amp;<a name='117'>
+     &amp;                 ,UBRY=(1.+EPSRS)*UBRYL,UBRY3=3.*UBRY<a name='118'>
+<font color=#447700>!<a name='119'></font>
+      REAL,PARAMETER :: AUBH=27.*A1*A2x*A2x*B2*BTG*BTG-ADNH*UBRY3       &amp;<a name='120'>
+     &amp;                 ,AUBM=54.*A1*A1*A2x*B2*C1*BTG -ADNM*UBRY3        &amp;<a name='121'>
+     &amp;                 ,BUBH=(9.*A1*A2x+3.*A2x*B2)*BTG-BDNH*UBRY3       &amp;<a name='122'>
+     &amp;                 ,BUBM=18.*A1*A1*C1           -BDNM*UBRY3         &amp;<a name='123'>
+     &amp;                 ,CUBR=1.                     -     UBRY3         &amp;<a name='124'>
+     &amp;                 ,RCUBR=1./CUBR<a name='125'>
+<font color=#447700>!<a name='126'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='127'></font>
+<font color=#447700>!<a name='128'></font>
+      CONTAINS<a name='129'>
+<font color=#447700>!<a name='130'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='131'></font>
+<A NAME='MYJURB'><A href='../../html_code/phys/module_bl_myjurb.F.html#MYJURB' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='132'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>MYJURB</font>(IDIFF,FLAG_BEP,DT,STEPBL,HT,DZ                                &amp; <A href='../../call_to/MYJURB.html' TARGET='index'>1</A>,<A href='../../call_from/MYJURB.html' TARGET='index'>6</A><a name='133'>
+     &amp;                 ,PMID,PINT,TH,T,EXNER,QV,CWM,U,V,RHO            &amp;<a name='134'>
+     &amp;                 ,TSK,QSFC,CHKLOWQ,THZ0,QZ0,UZ0,VZ0              &amp;<a name='135'>
+     &amp;                 ,LOWLYR,XLAND,SICE,SNOW                         &amp;<a name='136'>
+     &amp;                 ,TKE_MYJ,EXCH_H,EXCH_M,USTAR,ZNT,EL_MYJ,PBLH,KPBL,CT   &amp;<a name='137'>
+     &amp;                 ,AKHS,AKMS,ELFLX                                &amp;<a name='138'>
+     &amp;                 ,RUBLTEN,RVBLTEN,RTHBLTEN,RQVBLTEN,RQCBLTEN     &amp;<a name='139'>
+<font color=#447700>! Variables added for multi-layer UCM<a name='140'></font>
+     &amp;                 ,FRC_URB2D                                      &amp; <a name='141'>
+     &amp;                 ,A_U_BEP,A_V_BEP,A_T_BEP,A_Q_BEP                &amp;<a name='142'>
+     &amp;                 ,A_E_BEP,B_U_BEP,B_V_BEP                        &amp;<a name='143'>
+     &amp;                 ,B_T_BEP,B_Q_BEP,B_E_BEP,DLG_BEP                &amp;<a name='144'>
+     &amp;                 ,DL_U_BEP,SF_BEP,VL_BEP                         &amp;<a name='145'>
+<font color=#447700>! Multi-layer UCM end<a name='146'></font>
+     &amp;                 ,IDS,IDE,JDS,JDE,KDS,KDE                        &amp;<a name='147'>
+     &amp;                 ,IMS,IME,JMS,JME,KMS,KME                        &amp;<a name='148'>
+     &amp;                 ,ITS,ITE,JTS,JTE,KTS,KTE)<a name='149'>
+<font color=#447700>!----------------------------------------------------------------------<a name='150'></font>
+<font color=#447700>!<a name='151'></font>
+      IMPLICIT NONE<a name='152'>
+<font color=#447700>!<a name='153'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='154'></font>
+      INTEGER,INTENT(IN) :: IDIFF<a name='155'>
+      INTEGER,INTENT(IN) :: IDS,IDE,JDS,JDE,KDS,KDE                    &amp;<a name='156'>
+     &amp;                     ,IMS,IME,JMS,JME,KMS,KME                    &amp;<a name='157'>
+     &amp;                     ,ITS,ITE,JTS,JTE,KTS,KTE<a name='158'>
+<font color=#447700>!<a name='159'></font>
+      INTEGER,INTENT(IN) :: STEPBL<a name='160'>
+<a name='161'>
+      INTEGER,DIMENSION(IMS:IME,JMS:JME),INTENT(IN) :: LOWLYR<a name='162'>
+<font color=#447700>!<a name='163'></font>
+      INTEGER,DIMENSION(IMS:IME,JMS:JME),INTENT(OUT) :: KPBL<a name='164'>
+<font color=#447700>!<a name='165'></font>
+      REAL,INTENT(IN) :: DT<a name='166'>
+<font color=#447700>!<a name='167'></font>
+      REAL,DIMENSION(IMS:IME,JMS:JME),INTENT(IN) :: HT,SICE,SNOW       &amp;<a name='168'>
+     &amp;                                             ,TSK,XLAND<a name='169'>
+<font color=#447700>!<a name='170'></font>
+      REAL,DIMENSION(IMS:IME,KMS:KME,JMS:JME),INTENT(IN) :: CWM,DZ     &amp;<a name='171'>
+     &amp;                                                     ,EXNER      &amp;<a name='172'>
+     &amp;                                                     ,PMID,PINT  &amp;<a name='173'>
+     &amp;                                                     ,QV,RHO     &amp;<a name='174'>
+     &amp;                                                     ,T,TH,U,V   <a name='175'>
+<font color=#447700>!<a name='176'></font>
+      REAL,DIMENSION(IMS:IME,JMS:JME),INTENT(OUT) :: PBLH<a name='177'>
+<font color=#447700>!<a name='178'></font>
+      REAL,DIMENSION(IMS:IME,JMS:JME),INTENT(INOUT) :: AKHS,AKMS<a name='179'>
+<font color=#447700>!<a name='180'></font>
+      REAL,DIMENSION(IMS:IME,KMS:KME,JMS:JME)                          &amp;<a name='181'>
+     &amp;    ,INTENT(OUT) ::                      EL_MYJ                  &amp;<a name='182'>
+     &amp;                                        ,RQCBLTEN,RQVBLTEN       &amp;<a name='183'>
+     &amp;                                        ,RTHBLTEN                &amp;<a name='184'>
+     &amp;                                        ,RUBLTEN,RVBLTEN        <a name='185'>
+<font color=#447700>! Variables added for multi-layer UCM<a name='186'></font>
+      REAL,DIMENSION(IMS:IME,KMS:KME,JMS:JME),INTENT(IN) :: A_U_BEP    &amp;<a name='187'>
+     &amp;                                        ,A_V_BEP,A_T_BEP         &amp;<a name='188'>
+     &amp;                                        ,A_E_BEP,B_U_BEP         &amp;<a name='189'>
+     &amp;                                        ,A_Q_BEP,B_Q_BEP         &amp;<a name='190'>
+     &amp;                                        ,B_V_BEP,B_T_BEP         &amp;<a name='191'>
+     &amp;                                        ,B_E_BEP,DLG_BEP         &amp;<a name='192'>
+     &amp;                                        ,DL_U_BEP                &amp;<a name='193'>
+     &amp;                                        ,VL_BEP,SF_BEP<a name='194'>
+      REAL,DIMENSION(IMS:IME,JMS:JME),INTENT(IN) :: FRC_URB2D<a name='195'>
+      REAL,DIMENSION(IMS:IME,KMS:KME,JMS:JME)                          &amp;<a name='196'>
+     &amp;    ,INTENT(INOUT) ::                    EXCH_H,EXCH_M,TKE_MYJ<a name='197'>
+<font color=#447700>! UCM end<a name='198'></font>
+<a name='199'>
+      REAL,DIMENSION(IMS:IME,JMS:JME),INTENT(INOUT) :: CT,QSFC,QZ0     &amp;<a name='200'>
+     &amp;                                                ,THZ0,USTAR      &amp;<a name='201'>
+     &amp;                                                ,UZ0,VZ0,ZNT<a name='202'>
+<font color=#447700>!<a name='203'></font>
+      REAL,DIMENSION(IMS:IME,JMS:JME),INTENT(IN) :: CHKLOWQ,ELFLX<a name='204'>
+      LOGICAL,    INTENT(IN   )    ::     FLAG_BEP<a name='205'>
+<font color=#447700>!<a name='206'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='207'></font>
+<font color=#447700>!***<a name='208'></font>
+<font color=#447700>!***  LOCAL VARIABLES<a name='209'></font>
+<font color=#447700>!***<a name='210'></font>
+      INTEGER :: I,J,K,KFLIP,LLOW,LMH,LMXL<a name='211'>
+<font color=#447700>! Variables added for multi-layer UCM<a name='212'></font>
+      REAL,DIMENSION(KTS:KTE) :: A_U,A_V,A_T,A_E,B_U,B_V,B_T,B_E   <font color=#447700>!Vertically flipped fields<a name='213'></font>
+      REAL,DIMENSION(KTS:KTE) :: A_Q,B_Q,VLK,DL_U,B_E_FACE,DZ_KFLIP   <font color=#447700>!Vertically flipped fields<a name='214'></font>
+      REAL,DIMENSION(KTS:KTE) :: SFK                             <font color=#447700>!Vertically flipped SF,VL<a name='215'></font>
+      INTEGER :: IURB<a name='216'>
+      REAL :: SLOPE,ICEPT<a name='217'>
+<font color=#447700>! UCM end<a name='218'></font>
+<a name='219'>
+<font color=#447700>!<a name='220'></font>
+      INTEGER,DIMENSION(ITS:ITE,JTS:JTE) :: LPBL<a name='221'>
+<font color=#447700>!<a name='222'></font>
+      REAL :: AKHS_DENS,AKMS_DENS,APEX,DCDT,DELTAZ,DQDT,DTDIF,DTDT     &amp;<a name='223'>
+     &amp;       ,DTTURBL,DUDT,DVDT,EXNSFC,PSFC,PTOP,QFC1,QLOW,QOLD        &amp;<a name='224'>
+     &amp;       ,RATIOMX,RDTTURBL,RG,RWMSK,SEAMASK,THNEW,THOLD,TX         &amp;<a name='225'>
+     &amp;       ,ULOW,VLOW,WMSK<a name='226'>
+<font color=#447700>!<a name='227'></font>
+      REAL,DIMENSION(KTS:KTE) :: CWMK,PK,Q2K,QK,THEK,TK,UK,VK<a name='228'>
+<font color=#447700>!      <a name='229'></font>
+      REAL,DIMENSION(KTS:KTE-1) :: AKHK,AKMK,EL,GH,GM<a name='230'>
+<font color=#447700>!<a name='231'></font>
+      REAL,DIMENSION(KTS:KTE+1) :: ZHK<a name='232'>
+<font color=#447700>!<a name='233'></font>
+      REAL,DIMENSION(ITS:ITE,JTS:JTE) :: THSK<a name='234'>
+<font color=#447700>!<a name='235'></font>
+      REAL,DIMENSION(KTS:KTE,ITS:ITE) :: RHOK<a name='236'>
+<font color=#447700>!<a name='237'></font>
+      REAL,DIMENSION(ITS:ITE,KTS:KTE,JTS:JTE) :: APE,THE<a name='238'>
+<font color=#447700>!<a name='239'></font>
+      REAL,DIMENSION(ITS:ITE,KTS:KTE-1,JTS:JTE) :: AKH,AKM<a name='240'>
+<font color=#447700>!<a name='241'></font>
+      REAL,DIMENSION(ITS:ITE,KTS:KTE+1,JTS:JTE) :: ZINT<a name='242'>
+<font color=#447700>!<a name='243'></font>
+<font color=#447700>!***  Begin debugging<a name='244'></font>
+      REAL :: ZSL_DIAG<a name='245'>
+      INTEGER :: IMD,JMD,PRINT_DIAG<a name='246'>
+<font color=#447700>!***  End debugging<a name='247'></font>
+<font color=#447700>!<a name='248'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='249'></font>
+<font color=#447700>!**********************************************************************<a name='250'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='251'></font>
+<font color=#447700>!<a name='252'></font>
+<font color=#447700>!***  Begin debugging<a name='253'></font>
+      IMD=(IMS+IME)/2<a name='254'>
+      JMD=(JMS+JME)/2<a name='255'>
+<font color=#447700>!***  End debugging<a name='256'></font>
+<font color=#447700>!<a name='257'></font>
+<font color=#447700>!***  MAKE PREPARATIONS<a name='258'></font>
+<font color=#447700>!<a name='259'></font>
+     <a name='260'>
+<font color=#447700>!----------------------------------------------------------------------<a name='261'></font>
+      DTTURBL=DT*STEPBL<a name='262'>
+      RDTTURBL=1./DTTURBL<a name='263'>
+      DTDIF=DTTURBL<a name='264'>
+      RG=1./G<a name='265'>
+<font color=#447700>!<a name='266'></font>
+      DO J=JTS,JTE<a name='267'>
+      DO K=KTS,KTE-1<a name='268'>
+      DO I=ITS,ITE<a name='269'>
+        AKM(I,K,J)=0.<a name='270'>
+      ENDDO<a name='271'>
+      ENDDO<a name='272'>
+      ENDDO<a name='273'>
+<font color=#447700>!<a name='274'></font>
+      DO J=JTS,JTE<a name='275'>
+      DO K=KTS,KTE+1<a name='276'>
+      DO I=ITS,ITE<a name='277'>
+        ZINT(I,K,J)=0.<a name='278'>
+      ENDDO<a name='279'>
+      ENDDO<a name='280'>
+      ENDDO<a name='281'>
+<font color=#447700>!<a name='282'></font>
+      DO J=JTS,JTE<a name='283'>
+      DO I=ITS,ITE<a name='284'>
+        ZINT(I,KTE+1,J)=HT(I,J)     <font color=#447700>! Z at bottom of lowest sigma layer<a name='285'></font>
+<font color=#447700>!<a name='286'></font>
+<font color=#447700>!!!!!!!!!<a name='287'></font>
+<font color=#447700>!!!!!! UNCOMMENT THESE LINES IF USING ETA COORDINATES<a name='288'></font>
+<font color=#447700>!!!!!!!!!<a name='289'></font>
+<font color=#447700>!!!!!!  ZINT(I,KTE+1,J)=1.E-4       ! Z of bottom of lowest eta layer<a name='290'></font>
+<font color=#447700>!!!!!!  ZHK(KTE+1)=1.E-4            ! Z of bottom of lowest eta layer<a name='291'></font>
+<font color=#447700>!<a name='292'></font>
+      ENDDO<a name='293'>
+      ENDDO<a name='294'>
+<font color=#447700>!<a name='295'></font>
+      DO J=JTS,JTE<a name='296'>
+      DO K=KTE,KTS,-1<a name='297'>
+        KFLIP=KTE+1-K<a name='298'>
+        DO I=ITS,ITE<a name='299'>
+          ZINT(I,K,J)=ZINT(I,K+1,J)+DZ(I,KFLIP,J)<a name='300'>
+          APEX=1./EXNER(I,K,J)<a name='301'>
+          APE(I,K,J)=APEX<a name='302'>
+          TX=T(I,K,J)<a name='303'>
+          THE(I,K,J)=(CWM(I,K,J)*(-ELOCP/TX)+1.)*TH(I,K,J)<a name='304'>
+        ENDDO<a name='305'>
+      ENDDO<a name='306'>
+      ENDDO<a name='307'>
+      EL_MYJ(its:ite,:,jts:jte) = 0.<a name='308'>
+<font color=#447700>!<a name='309'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='310'></font>
+      setup_integration:  DO J=JTS,JTE<a name='311'>
+<font color=#447700>!----------------------------------------------------------------------<a name='312'></font>
+<font color=#447700>!<a name='313'></font>
+        DO I=ITS,ITE<a name='314'>
+<font color=#447700>!<a name='315'></font>
+<font color=#447700>!***  LOWEST LAYER ABOVE GROUND MUST BE FLIPPED<a name='316'></font>
+<font color=#447700>!<a name='317'></font>
+          LMH=KTE-LOWLYR(I,J)+1<a name='318'>
+<font color=#447700>!<a name='319'></font>
+          PTOP=PINT(I,KTE+1,J)      <font color=#447700>! KTE+1=KME<a name='320'></font>
+          PSFC=PINT(I,LOWLYR(I,J),J)<a name='321'>
+<font color=#447700>!<a name='322'></font>
+<font color=#447700>!***  CONVERT LAND MASK (1 FOR SEA; 0 FOR LAND)<a name='323'></font>
+<font color=#447700>!<a name='324'></font>
+          SEAMASK=XLAND(I,J)-1.<a name='325'>
+<font color=#447700>!<a name='326'></font>
+<font color=#447700>!***  FILL 1-D VERTICAL ARRAYS<a name='327'></font>
+<font color=#447700>!***  AND FLIP DIRECTION SINCE MYJ SCHEME<a name='328'></font>
+<font color=#447700>!***  COUNTS DOWNWARD FROM THE DOMAIN'S TOP<a name='329'></font>
+<font color=#447700>!<a name='330'></font>
+          DO K=KTE,KTS,-1<a name='331'>
+            KFLIP=KTE+1-K<a name='332'>
+            TK(K)=T(I,KFLIP,J)<a name='333'>
+            THEK(K)=THE(I,KFLIP,J)<a name='334'>
+            RATIOMX=QV(I,KFLIP,J)<a name='335'>
+            QK(K)=RATIOMX/(1.+RATIOMX)<a name='336'>
+            CWMK(K)=CWM(I,KFLIP,J)<a name='337'>
+            PK(K)=PMID(I,KFLIP,J)<a name='338'>
+            UK(K)=U(I,KFLIP,J)<a name='339'>
+            VK(K)=V(I,KFLIP,J)<a name='340'>
+<a name='341'>
+            DZ_KFLIP(K)=DZ(I,KFLIP,J)<a name='342'>
+ <a name='343'>
+<a name='344'>
+<a name='345'>
+<font color=#447700>!<a name='346'></font>
+<font color=#447700>!***  TKE=0.5*(q**2) ==&gt; q**2=2.*TKE<a name='347'></font>
+<font color=#447700>!<a name='348'></font>
+            Q2K(K)=2.*TKE_MYJ(I,KFLIP,J)<a name='349'>
+<font color=#447700>!<a name='350'></font>
+<font color=#447700>!***  COMPUTE THE HEIGHTS OF THE LAYER INTERFACES<a name='351'></font>
+<font color=#447700>!<a name='352'></font>
+            ZHK(K)=ZINT(I,K,J)<a name='353'>
+          ENDDO<a name='354'>
+<a name='355'>
+          ZHK(KTE+1)=HT(I,J)          <font color=#447700>! Z at bottom of lowest sigma layer<a name='356'></font>
+<font color=#447700>! Multi-layer UCM<a name='357'></font>
+          if(flag_bep)then<a name='358'>
+           DO K=KTE,KTS,-1<a name='359'>
+            KFLIP=KTE+1-K<a name='360'>
+            B_E(K)=B_E_BEP(I,KFLIP,J)<a name='361'>
+            A_E(K)=A_E_BEP(I,KFLIP,J)<a name='362'>
+            SFK(K)=SF_BEP(I,KFLIP,J)<a name='363'>
+            VLK(K)=VL_BEP(I,KFLIP,J)<a name='364'>
+            B_E_FACE(K)=0.<a name='365'>
+            DL_U(K)=DL_U_BEP(I,KFLIP,J)<a name='366'>
+           enddo<a name='367'>
+          else<a name='368'>
+           DO K=KTE,KTS,-1<a name='369'>
+            B_E(K)=0.<a name='370'>
+            A_E(K)=0.<a name='371'>
+            SFK(K)=1.<a name='372'>
+            VLK(K)=1.<a name='373'>
+            B_E_FACE(K)=0.<a name='374'>
+            DL_U(K)=0.<a name='375'>
+           enddo<a name='376'>
+          endif<a name='377'>
+<font color=#447700>!UCM end<a name='378'></font>
+<font color=#447700>! Multi-layer UCM - caculate B_E at grid faces<a name='379'></font>
+<font color=#447700>!          SFK(1)=1<a name='380'></font>
+         IF (FLAG_BEP) THEN<a name='381'>
+          DO K=KTE,KTS,-1<a name='382'>
+             IF (K==KTE) THEN<a name='383'>
+                B_E_FACE(K)=0.0<a name='384'>
+             ELSEIF ( K == KTS ) THEN<a name='385'>
+                B_E_FACE(K) = 0.0<a name='386'>
+             ELSE<a name='387'>
+                SLOPE=(B_E(K-1)-B_E(K))/0.5/(DZ_KFLIP(K-1)+DZ_KFLIP(K))<a name='388'>
+                ICEPT=B_E(K)-SLOPE*(ZHK(K)-0.5*DZ_KFLIP(K))<a name='389'>
+                B_E_FACE(K)=2.*(SLOPE*ZHK(K)+ICEPT)                         <font color=#447700>!*2 accounts for Q2K=2.*TKE_MYJ<a name='390'></font>
+             ENDIF<a name='391'>
+          ENDDO<a name='392'>
+         ENDIF<a name='393'>
+<font color=#447700>!<a name='394'></font>
+<font color=#447700>!***  Begin debugging<a name='395'></font>
+<font color=#447700>!         IF(I==IMD.AND.J==JMD)THEN<a name='396'></font>
+<font color=#447700>!           PRINT_DIAG=1<a name='397'></font>
+<font color=#447700>!         ELSE<a name='398'></font>
+<font color=#447700>!           PRINT_DIAG=0<a name='399'></font>
+<font color=#447700>!         ENDIF<a name='400'></font>
+<font color=#447700>!         IF(I==227.AND.J==363)PRINT_DIAG=2<a name='401'></font>
+<font color=#447700>!***  End debugging<a name='402'></font>
+<font color=#447700>!<a name='403'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='404'></font>
+<font color=#447700>!***<a name='405'></font>
+<font color=#447700>!***  FIND THE MIXING LENGTH<a name='406'></font>
+<font color=#447700>!***<a name='407'></font>
+          CALL <A href='../../html_code/phys/module_bl_shinhong.F.html#MIXLEN'>MIXLEN</A><A href='../../html_code/phys/module_bl_myjurb.F.html#MYJURB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIXLEN_2">(LMH,UK,VK,TK,THEK,QK,CWMK                    &amp;<a name='408'>
+     &amp;               ,Q2K,ZHK,GM,GH,EL                                 &amp;<a name='409'>
+     &amp;               ,PBLH(I,J),LPBL(I,J),LMXL,CT(I,J)                 &amp;<a name='410'>
+<font color=#447700>! Multi-layer UCM<a name='411'></font>
+                     ,DL_U                                             &amp;<a name='412'>
+<font color=#447700>! UCM end<a name='413'></font>
+     &amp;               ,IDS,IDE,JDS,JDE,KDS,KDE                          &amp;<a name='414'>
+     &amp;               ,IMS,IME,JMS,JME,KMS,KME                          &amp;<a name='415'>
+     &amp;               ,ITS,ITE,JTS,JTE,KTS,KTE)<a name='416'>
+<font color=#447700>!<a name='417'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='418'></font>
+<font color=#447700>!***<a name='419'></font>
+<font color=#447700>!***  SOLVE FOR THE PRODUCTION/DISSIPATION OF<a name='420'></font>
+<font color=#447700>!***  THE TURBULENT KINETIC ENERGY<a name='421'></font>
+<font color=#447700>!***<a name='422'></font>
+<font color=#447700>!<a name='423'></font>
+          CALL <A href='../../html_code/phys/module_bl_shinhong.F.html#PRODQ2'>PRODQ2</A><A href='../../html_code/phys/module_bl_myjurb.F.html#MYJURB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRODQ2_2">(LMH,DTTURBL,USTAR(I,J),GM,GH,EL,Q2K              &amp;<a name='424'>
+     &amp;               ,IDS,IDE,JDS,JDE,KDS,KDE                          &amp;<a name='425'>
+     &amp;               ,IMS,IME,JMS,JME,KMS,KME                          &amp;<a name='426'>
+     &amp;               ,ITS,ITE,JTS,JTE,KTS,KTE)<a name='427'>
+<font color=#447700>!<a name='428'></font>
+<font color=#447700>! Multi-layer UCM<a name='429'></font>
+         IF (FLAG_BEP) THEN<a name='430'>
+            Q2K(LMH)=Q2K(LMH)*(1-FRC_URB2D(I,J))+(B_E_FACE(LMH)*       &amp;<a name='431'>
+                 &amp;         0.5*EL(LMH-1)/11.788/2.)**(2./3.)<a name='432'>
+         ENDIF<a name='433'>
+<font color=#447700>!UCM end<a name='434'></font>
+<font color=#447700>!<a name='435'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='436'></font>
+<font color=#447700>!*** THE MODEL LAYER (COUNTING UPWARD) CONTAINING THE TOP OF THE PBL<a name='437'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='438'></font>
+<font color=#447700>!<a name='439'></font>
+          KPBL(I,J)=KTE-LPBL(I,J)+1<a name='440'>
+<font color=#447700>!<a name='441'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='442'></font>
+<font color=#447700>!***<a name='443'></font>
+<font color=#447700>!***  FIND THE EXCHANGE COEFFICIENTS IN THE FREE ATMOSPHERE<a name='444'></font>
+<font color=#447700>!***<a name='445'></font>
+          CALL <A href='../../html_code/phys/module_bl_qnsepbl.F.html#DIFCOF'>DIFCOF</A><A href='../../html_code/phys/module_bl_myjurb.F.html#MYJURB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DIFCOF_2">(LMH,LMXL,GM,GH,EL,TK,Q2K,ZHK,AKMK,AKHK      &amp;<a name='446'>
+     &amp;               ,IDS,IDE,JDS,JDE,KDS,KDE                          &amp;<a name='447'>
+     &amp;               ,IMS,IME,JMS,JME,KMS,KME                          &amp;<a name='448'>
+     &amp;               ,ITS,ITE,JTS,JTE,KTS,KTE,PRINT_DIAG)   <font color=#447700>! debug<a name='449'></font>
+<font color=#447700>!<a name='450'></font>
+<font color=#447700>!***  COUNTING DOWNWARD FROM THE TOP, THE EXCHANGE COEFFICIENTS AKH <a name='451'></font>
+<font color=#447700>!***  ARE DEFINED ON THE BOTTOMS OF THE LAYERS KTS TO KTE-1.  COUNTING <a name='452'></font>
+<font color=#447700>!***  COUNTING UPWARD FROM THE BOTTOM, THOSE SAME COEFFICIENTS EXCH_H<a name='453'></font>
+<font color=#447700>!***  ARE DEFINED ON THE TOPS OF THE LAYERS KTS TO KTE-1.<a name='454'></font>
+<font color=#447700>!<a name='455'></font>
+          DO K=KTS,KTE-1<a name='456'>
+            KFLIP=KTE-K<a name='457'>
+            AKH(I,K,J)=AKHK(K)<a name='458'>
+            AKM(I,K,J)=AKMK(K)<a name='459'>
+            DELTAZ=0.5*(ZHK(KFLIP)-ZHK(KFLIP+2))<a name='460'>
+<font color=#447700>! Multi-layer UCM<a name='461'></font>
+            EXCH_H(I,K+1,J)=AKHK(KFLIP)*DELTAZ<a name='462'>
+            EXCH_M(I,K+1,J)=AKMK(KFLIP)*DELTAZ<a name='463'>
+<font color=#447700>! UCM end<a name='464'></font>
+          ENDDO<a name='465'>
+<font color=#447700>!----------------------------------------------------------------------<a name='466'></font>
+<font color=#447700>!***<a name='467'></font>
+<font color=#447700>!***  CARRY OUT THE VERTICAL DIFFUSION OF<a name='468'></font>
+<font color=#447700>!***  TURBULENT KINETIC ENERGY<a name='469'></font>
+<font color=#447700>!***<a name='470'></font>
+<font color=#447700>!<a name='471'></font>
+<a name='472'>
+          CALL <A href='../../html_code/phys/module_bl_shinhong.F.html#VDIFQ'>VDIFQ</A><A href='../../html_code/phys/module_bl_myjurb.F.html#MYJURB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VDIFQ_2">(LMH,DTDIF,Q2K,EL,ZHK                             &amp;<a name='473'>
+<font color=#447700>! Multi-layer UCM<a name='474'></font>
+     &amp;              ,A_E,B_E_FACE,SFK,VLK                              &amp;<a name='475'>
+<font color=#447700>! UCM end<a name='476'></font>
+     &amp;              ,IDS,IDE,JDS,JDE,KDS,KDE                           &amp;<a name='477'>
+     &amp;              ,IMS,IME,JMS,JME,KMS,KME                           &amp;<a name='478'>
+     &amp;              ,ITS,ITE,JTS,JTE,KTS,KTE)<a name='479'>
+<font color=#447700>!<a name='480'></font>
+<font color=#447700>!***  SAVE THE NEW TKE AND MIXING LENGTH.<a name='481'></font>
+<font color=#447700>!<a name='482'></font>
+          DO K=KTS,KTE<a name='483'>
+            KFLIP=KTE+1-K<a name='484'>
+            Q2K(KFLIP)=AMAX1(Q2K(KFLIP),EPSQ2)<a name='485'>
+            TKE_MYJ(I,K,J)=0.5*Q2K(KFLIP)<a name='486'>
+            IF(KFLIP/=KTE)EL_MYJ(I,K,J)=EL(KFLIP)   <font color=#447700>! EL IS NOT DEFINED AT KTE (ground surface)<a name='487'></font>
+          ENDDO<a name='488'>
+<font color=#447700>!<a name='489'></font>
+        ENDDO<a name='490'>
+<font color=#447700>!<a name='491'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='492'></font>
+      ENDDO setup_integration<a name='493'>
+<font color=#447700>!----------------------------------------------------------------------<a name='494'></font>
+<font color=#447700>! Multi-layer UCM - if idiff=1 then integration in PBL driver<a name='495'></font>
+      IF(IDIFF.NE.1)then <a name='496'>
+<font color=#447700>! UCM end<a name='497'></font>
+<font color=#447700>!<a name='498'></font>
+<font color=#447700>!***  CONVERT SURFACE SENSIBLE TEMPERATURE TO POTENTIAL TEMPERATURE.<a name='499'></font>
+<font color=#447700>!<a name='500'></font>
+      DO J=JTS,JTE<a name='501'>
+      DO I=ITS,ITE<a name='502'>
+        PSFC=PINT(I,LOWLYR(I,J),J)<a name='503'>
+        THSK(I,J)=TSK(I,J)*(1.E5/PSFC)**CAPA<a name='504'>
+      ENDDO<a name='505'>
+      ENDDO<a name='506'>
+<font color=#447700>!<a name='507'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='508'></font>
+<font color=#447700>!<a name='509'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='510'></font>
+      main_integration:  DO J=JTS,JTE<a name='511'>
+<font color=#447700>!----------------------------------------------------------------------<a name='512'></font>
+<font color=#447700>!<a name='513'></font>
+        DO I=ITS,ITE<a name='514'>
+<font color=#447700>!<a name='515'></font>
+<font color=#447700>!***  FILL 1-D VERTICAL ARRAYS<a name='516'></font>
+<font color=#447700>!***  AND FLIP DIRECTION SINCE MYJ SCHEME<a name='517'></font>
+<font color=#447700>!***  COUNTS DOWNWARD FROM THE DOMAIN'S TOP<a name='518'></font>
+<font color=#447700>!<a name='519'></font>
+          DO K=KTE,KTS,-1<a name='520'>
+            KFLIP=KTE+1-K<a name='521'>
+            THEK(K)=THE(I,KFLIP,J)<a name='522'>
+            RATIOMX=QV(I,KFLIP,J)                            <font color=#447700>!mixing ratio<a name='523'></font>
+            QK(K)=RATIOMX/(1.+RATIOMX)                       <font color=#447700>!specific humidity<a name='524'></font>
+            CWMK(K)=CWM(I,KFLIP,J)<a name='525'>
+            ZHK(K)=ZINT(I,K,J)<a name='526'>
+            RHOK(K,I)=PMID(I,KFLIP,J)/(R_D*T(I,KFLIP,J)*               &amp;<a name='527'>
+     &amp;                                (1.+P608*QK(K)-CWMK(K)))<a name='528'>
+<a name='529'>
+          ENDDO<a name='530'>
+<font color=#447700>!            SFK(1)=1.<a name='531'></font>
+          if(flag_bep)then<a name='532'>
+           <font color=#447700>! Multi-layer UCM<a name='533'></font>
+           <a name='534'>
+            DO K=KTE,KTS,-1<a name='535'>
+             KFLIP=KTE+1-K<a name='536'>
+             A_Q(K)=A_Q_BEP(I,KFLIP,J)<a name='537'>
+             B_Q(K)=B_Q_BEP(I,KFLIP,J)<a name='538'>
+             A_T(K)=A_T_BEP(I,KFLIP,J)<a name='539'>
+             B_T(K)=B_T_BEP(I,KFLIP,J)<a name='540'>
+             SFK(K)=SF_BEP(I,KFLIP,J)<a name='541'>
+             VLK(K)=VL_BEP(I,KFLIP,J)             <a name='542'>
+            ENDDO<a name='543'>
+<font color=#447700>! UCM end<a name='544'></font>
+          else<a name='545'>
+           DO K=KTE,KTS,-1<a name='546'>
+             A_Q(K)=0.<a name='547'>
+             B_Q(K)=0.<a name='548'>
+             A_T(K)=0.<a name='549'>
+             B_T(K)=0.<a name='550'>
+             SFK(K)=1.<a name='551'>
+             VLK(K)=1.<a name='552'>
+            ENDDO<a name='553'>
+          endif           <a name='554'>
+<font color=#447700>!<a name='555'></font>
+<font color=#447700>!***  COUNTING DOWNWARD FROM THE TOP, THE EXCHANGE COEFFICIENTS AKH<a name='556'></font>
+<font color=#447700>!***  ARE DEFINED ON THE BOTTOMS OF THE LAYERS KTS TO KTE-1.  THESE COEFFICIENTS<a name='557'></font>
+<font color=#447700>!***  ARE ALSO MULTIPLIED BY THE DENSITY AT THE BOTTOM INTERFACE LEVEL.<a name='558'></font>
+<font color=#447700>!<a name='559'></font>
+          DO K=KTS,KTE-1<a name='560'>
+            AKHK(K)=AKH(I,K,J)*0.5*(RHOK(K,I)+RHOK(K+1,I))<a name='561'>
+          ENDDO<a name='562'>
+<font color=#447700>!<a name='563'></font>
+          ZHK(KTE+1)=ZINT(I,KTE+1,J)<a name='564'>
+<font color=#447700>!<a name='565'></font>
+          SEAMASK=XLAND(I,J)-1.<a name='566'>
+          THZ0(I,J)=(1.-SEAMASK)*THSK(I,J)+SEAMASK*THZ0(I,J)<a name='567'>
+<font color=#447700>!<a name='568'></font>
+          LLOW=LOWLYR(I,J)<a name='569'>
+          AKHS_DENS=AKHS(I,J)*RHOK(KTE+1-LLOW,I)<a name='570'>
+<font color=#447700>!<a name='571'></font>
+          IF(SEAMASK&lt;0.5)THEN<a name='572'>
+            QFC1=XLV*CHKLOWQ(I,J)*AKHS_DENS<a name='573'>
+<font color=#447700>!<a name='574'></font>
+            IF(SNOW(I,J)&gt;0..OR.SICE(I,J)&gt;0.5)THEN<a name='575'>
+              QFC1=QFC1*RLIVWV<a name='576'>
+            ENDIF<a name='577'>
+<font color=#447700>!<a name='578'></font>
+            IF(QFC1&gt;0.)THEN<a name='579'>
+              QLOW=QK(KTE+1-LLOW)<a name='580'>
+              QSFC(I,J)=QLOW+ELFLX(I,J)/QFC1<a name='581'>
+            ENDIF<a name='582'>
+<font color=#447700>!<a name='583'></font>
+          ELSE<a name='584'>
+            PSFC=PINT(I,LOWLYR(I,J),J)<a name='585'>
+            EXNSFC=(1.E5/PSFC)**CAPA<a name='586'>
+            QSFC(I,J)=PQ0SEA/PSFC                                      &amp;<a name='587'>
+     &amp;         *EXP(A2*(THSK(I,J)-A3*EXNSFC)/(THSK(I,J)-A4*EXNSFC))<a name='588'>
+          ENDIF<a name='589'>
+<font color=#447700>!<a name='590'></font>
+          QZ0 (I,J)=(1.-SEAMASK)*QSFC(I,J)+SEAMASK*QZ0 (I,J)<a name='591'>
+<font color=#447700>!<a name='592'></font>
+<font color=#447700>!***  LOWEST LAYER ABOVE GROUND MUST BE FLIPPED<a name='593'></font>
+<font color=#447700>!<a name='594'></font>
+          LMH=KTE-LOWLYR(I,J)+1<a name='595'>
+<font color=#447700>!<a name='596'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='597'></font>
+<font color=#447700>!***  CARRY OUT THE VERTICAL DIFFUSION OF<a name='598'></font>
+<font color=#447700>!***  TEMPERATURE AND WATER VAPOR<a name='599'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='600'></font>
+<font color=#447700>!<a name='601'></font>
+         <a name='602'>
+          CALL <A href='../../html_code/phys/module_bl_qnsepbl.F.html#VDIFH'>VDIFH</A><A href='../../html_code/phys/module_bl_myjurb.F.html#MYJURB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VDIFH_2">(DTDIF,LMH,THZ0(I,J),QZ0(I,J)                      &amp;<a name='603'>
+     &amp;              ,AKHS_DENS,CHKLOWQ(I,J),CT(I,J)                    &amp;<a name='604'>
+     &amp;              ,THEK,QK,CWMK,AKHK,ZHK,RHOK(KTS,I)                 &amp;<a name='605'>
+<font color=#447700>! Multi-layer UCM<a name='606'></font>
+     &amp;              ,A_T,B_T,A_Q,B_Q,SFK,VLK                           &amp;<a name='607'>
+<font color=#447700>! UCM end<a name='608'></font>
+     &amp;              ,IDS,IDE,JDS,JDE,KDS,KDE                           &amp;<a name='609'>
+     &amp;              ,IMS,IME,JMS,JME,KMS,KME                           &amp;<a name='610'>
+     &amp;              ,ITS,ITE,JTS,JTE,KTS,KTE,I,J)<a name='611'>
+<font color=#447700>!----------------------------------------------------------------------<a name='612'></font>
+<font color=#447700>!***<a name='613'></font>
+<font color=#447700>!***  COMPUTE PRIMARY VARIABLE TENDENCIES<a name='614'></font>
+<font color=#447700>!***<a name='615'></font>
+          DO K=KTS,KTE<a name='616'>
+            KFLIP=KTE+1-K<a name='617'>
+            THOLD=TH(I,K,J)<a name='618'>
+            THNEW=THEK(KFLIP)+CWMK(KFLIP)*ELOCP*APE(I,K,J)<a name='619'>
+            DTDT=(THNEW-THOLD)*RDTTURBL<a name='620'>
+            QOLD=QV(I,K,J)/(1.+QV(I,K,J))<a name='621'>
+            DQDT=(QK(KFLIP)-QOLD)*RDTTURBL<a name='622'>
+            DCDT=(CWMK(KFLIP)-CWM(I,K,J))*RDTTURBL<a name='623'>
+<font color=#447700>!<a name='624'></font>
+            RTHBLTEN(I,K,J)=DTDT<a name='625'>
+            RQVBLTEN(I,K,J)=DQDT/(1.-QK(KFLIP))**2<a name='626'>
+            RQCBLTEN(I,K,J)=DCDT<a name='627'>
+          ENDDO<a name='628'>
+<font color=#447700>!<a name='629'></font>
+          <a name='630'>
+<font color=#447700>!*** Begin debugging<a name='631'></font>
+<font color=#447700>!         IF(I==IMD.AND.J==JMD)THEN<a name='632'></font>
+<font color=#447700>!           PRINT_DIAG=0<a name='633'></font>
+<font color=#447700>!         ELSE<a name='634'></font>
+<font color=#447700>!           PRINT_DIAG=0<a name='635'></font>
+<font color=#447700>!         ENDIF<a name='636'></font>
+<font color=#447700>!         IF(I==227.AND.J==363)PRINT_DIAG=0<a name='637'></font>
+<font color=#447700>!*** End debugging<a name='638'></font>
+<font color=#447700>!<a name='639'></font>
+        PSFC=.01*PINT(I,LOWLYR(I,J),J)<a name='640'>
+        ZSL_DIAG=0.5*DZ(I,1,J)<a name='641'>
+<font color=#447700>!<a name='642'></font>
+<font color=#447700>!*** Begin debugging<a name='643'></font>
+<font color=#447700>!         IF(PRINT_DIAG==1)THEN<a name='644'></font>
+<font color=#447700>!<a name='645'></font>
+<font color=#447700>!           write(6,"(a, 2i5, 2i3, 2f8.2, f6.2, 2f8.2)") &amp;<a name='646'></font>
+<font color=#447700>!           '{turb4 i,j, Kpbl, Kmxl, Psfc, Zsfc, Zsl, Zpbl, Zmxl = ' &amp;<a name='647'></font>
+<font color=#447700>!           , i, j, KPBL(i,j), KTE-LMXL+1, PSFC, ZHK(LMH+1), ZSL_diag  &amp;<a name='648'></font>
+<font color=#447700>!           , PBLH(i,j), ZHK(LMXL)-ZHK(LMH+1)<a name='649'></font>
+<font color=#447700>!           write(6,"(a, 2f7.2, f7.3, 3e11.4)") &amp;<a name='650'></font>
+<font color=#447700>!           '{turb4 tsk, thsk, qz0, q**2_0, akhs, exch_0 = ' &amp;<a name='651'></font>
+<font color=#447700>!           , tsk(i,j)-273.15, thsk(i,j), 1000.*qz0(i,j) &amp;<a name='652'></font>
+<font color=#447700>!           , 2.*tke_myj(i,1,j), akhs(i,j), akhs(i,j)*ZSL_diag<a name='653'></font>
+<font color=#447700>!           write(6,"(a)") &amp;<a name='654'></font>
+<font color=#447700>!           '{turb5 k, Pmid, Pint_1, Tc, TH, DTH, GH, GM, EL, Q**2, Akh, EXCH_h, Dz, Dp'<a name='655'></font>
+<font color=#447700>!           do k=kts,kte/2<a name='656'></font>
+<font color=#447700>!             KFLIP=KTE-K   !-- Includes the KFLIP-1 in earlier versions<a name='657'></font>
+<font color=#447700>!             write(6,"(a,i3, 2f8.2, 2f8.3, 3e12.4, 4e11.4, f7.2, f6.2)") &amp;<a name='658'></font>
+<font color=#447700>!            '{turb5 ', k, .01*pmid(i,k,j),.01*pint(i,k,j), T(i,k,j)-273.15 &amp;<a name='659'></font>
+<font color=#447700>!            , th(i,k,j), DTTURBL*rthblten(i,k,j), GH(KFLIP), GM(KFLIP) &amp;<a name='660'></font>
+<font color=#447700>!            , el_myj(i,KFLIP,j), 2.*tke_myj(i,k+1,j), akh(i,KFLIP,j) &amp;<a name='661'></font>
+<font color=#447700>!            , exch_h(i,k,j), dz(i,k,j), .01*(pint(i,k,j)-pint(i,k+1,j))<a name='662'></font>
+<font color=#447700>!           enddo<a name='663'></font>
+<font color=#447700>!<a name='664'></font>
+<font color=#447700>!         ELSEIF(PRINT_DIAG==2)THEN<a name='665'></font>
+<font color=#447700>!<a name='666'></font>
+<font color=#447700>!           write(6,"(a, 2i5, 2i3, 2f8.2, f6.2, 2f8.2)") &amp;<a name='667'></font>
+<font color=#447700>!           '}turb4 i,j, Kpbl, Kmxl, Psfc, Zsfc, Zsl, Zpbl, Zmxl = ' &amp;<a name='668'></font>
+<font color=#447700>!           , i, j, KPBL(i,j), KTE-LMXL+1, PSFC, ZHK(LMH+1), ZSL_diag  &amp;<a name='669'></font>
+<font color=#447700>!           , PBLH(i,j), ZHK(LMXL)-ZHK(LMH+1)<a name='670'></font>
+<font color=#447700>!           write(6,"(a, 2f7.2, f7.3, 3e11.4)") &amp;<a name='671'></font>
+<font color=#447700>!           '}turb4 tsk, thsk, qz0, q**2_0, akhs, exch_0 = ' &amp;<a name='672'></font>
+<font color=#447700>!           , tsk(i,j)-273.15, thsk(i,j), 1000.*qz0(i,j) &amp;<a name='673'></font>
+<font color=#447700>!           , 2.*tke_myj(i,1,j), akhs(i,j), akhs(i,j)*ZSL_diag<a name='674'></font>
+<font color=#447700>!           write(6,"(a)") &amp;<a name='675'></font>
+<font color=#447700>!           '}turb5 k, Pmid, Pint_1, Tc, TH, DTH, GH, GM, EL, Q**2, Akh, EXCH_h, Dz, Dp'<a name='676'></font>
+<font color=#447700>!           do k=kts,kte/2<a name='677'></font>
+<font color=#447700>!             KFLIP=KTE-K   !-- Includes the KFLIP-1 in earlier versions<a name='678'></font>
+<font color=#447700>!             write(6,"(a,i3, 2f8.2, 2f8.3, 3e12.4, 4e11.4, f7.2, f6.2)") &amp;<a name='679'></font>
+<font color=#447700>!            '}turb5 ', k, .01*pmid(i,k,j),.01*pint(i,k,j), T(i,k,j)-273.15 &amp;<a name='680'></font>
+<font color=#447700>!            , th(i,k,j), DTTURBL*rthblten(i,k,j), GH(KFLIP), GM(KFLIP) &amp;<a name='681'></font>
+<font color=#447700>!            , el_myj(i,KFLIP,j), 2.*tke_myj(i,k+1,j), akh(i,KFLIP,j) &amp;<a name='682'></font>
+<font color=#447700>!            , exch_h(i,k,j), dz(i,k,j), .01*(pint(i,k,j)-pint(i,k+1,j))<a name='683'></font>
+<font color=#447700>!           enddo<a name='684'></font>
+<font color=#447700>!         ENDIF<a name='685'></font>
+<font color=#447700>!*** End debugging<a name='686'></font>
+<font color=#447700>!<a name='687'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='688'></font>
+        ENDDO<a name='689'>
+<font color=#447700>!----------------------------------------------------------------------<a name='690'></font>
+        DO I=ITS,ITE<a name='691'>
+<font color=#447700>!<a name='692'></font>
+<font color=#447700>!***  FILL 1-D VERTICAL ARRAYS<a name='693'></font>
+<font color=#447700>!***  AND FLIP DIRECTION SINCE MYJ SCHEME<a name='694'></font>
+<font color=#447700>!***  COUNTS DOWNWARD FROM THE DOMAIN'S TOP<a name='695'></font>
+<font color=#447700>!<a name='696'></font>
+<a name='697'>
+          DO K=KTS,KTE-1<a name='698'>
+            AKMK(K)=AKM(I,K,J)<a name='699'>
+            AKMK(K)=AKMK(K)*(RHOK(K,I)+RHOK(K+1,I))*0.5<a name='700'>
+          ENDDO<a name='701'>
+<font color=#447700>!<a name='702'></font>
+          LLOW=LOWLYR(I,J)<a name='703'>
+          AKMS_DENS=AKMS(I,J)*RHOK(KTE+1-LLOW,I)<a name='704'>
+<font color=#447700>!<a name='705'></font>
+<a name='706'>
+          DO K=KTE,KTS,-1<a name='707'>
+            KFLIP=KTE+1-K<a name='708'>
+            UK(K)=U(I,KFLIP,J)<a name='709'>
+            VK(K)=V(I,KFLIP,J)<a name='710'>
+            ZHK(K)=ZINT(I,K,J)<a name='711'>
+<a name='712'>
+          ENDDO            <a name='713'>
+<font color=#447700>!         SFK(1)=1.<a name='714'></font>
+          if(flag_bep)then<a name='715'>
+<font color=#447700>! Multi-layer UCM           <a name='716'></font>
+           DO K=KTE,KTS,-1<a name='717'>
+            KFLIP=KTE+1-K            <a name='718'>
+            A_U(K)=A_U_BEP(I,KFLIP,J)<a name='719'>
+            A_V(K)=A_V_BEP(I,KFLIP,J)<a name='720'>
+            B_U(K)=B_U_BEP(I,KFLIP,J)<a name='721'>
+            B_V(K)=B_V_BEP(I,KFLIP,J)<a name='722'>
+            SFK(K)=SF_BEP(I,KFLIP,J)<a name='723'>
+            VLK(K)=VL_BEP(I,KFLIP,J)<a name='724'>
+           ENDDO<a name='725'>
+<font color=#447700>! UCM end<a name='726'></font>
+         else<a name='727'>
+           DO K=KTE,KTS,-1            <a name='728'>
+            A_U(K)=0.<a name='729'>
+            A_V(K)=0.<a name='730'>
+            B_U(K)=0.<a name='731'>
+            B_V(K)=0.<a name='732'>
+            SFK(K)=1.<a name='733'>
+            VLK(K)=1.<a name='734'>
+           ENDDO<a name='735'>
+          endif<a name='736'>
+<a name='737'>
+          ZHK(KTE+1)=ZINT(I,KTE+1,J)<a name='738'>
+<font color=#447700>!<a name='739'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='740'></font>
+<font color=#447700>!***  CARRY OUT THE VERTICAL DIFFUSION OF<a name='741'></font>
+<font color=#447700>!***  VELOCITY COMPONENTS<a name='742'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='743'></font>
+<font color=#447700>!<a name='744'></font>
+          CALL <A href='../../html_code/phys/module_bl_qnsepbl.F.html#VDIFV'>VDIFV</A><A href='../../html_code/phys/module_bl_myjurb.F.html#MYJURB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VDIFV_2">(LMH,DTDIF,UZ0(I,J),VZ0(I,J)                   &amp;<a name='745'>
+     &amp;              ,AKMS_DENS,UK,VK,AKMK,ZHK,RHOK(KTS,I)              &amp;<a name='746'>
+<font color=#447700>! Multi-layer UCM<a name='747'></font>
+     &amp;              ,A_U,A_V,B_U,B_V,SFK,VLK                           &amp;<a name='748'>
+<font color=#447700>! UCM end<a name='749'></font>
+     &amp;              ,IDS,IDE,JDS,JDE,KDS,KDE                           &amp;<a name='750'>
+     &amp;              ,IMS,IME,JMS,JME,KMS,KME                           &amp;<a name='751'>
+     &amp;              ,ITS,ITE,JTS,JTE,KTS,KTE,I,J)<a name='752'>
+<font color=#447700>!<a name='753'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='754'></font>
+<font color=#447700>!***<a name='755'></font>
+<font color=#447700>!***  COMPUTE PRIMARY VARIABLE TENDENCIES<a name='756'></font>
+<font color=#447700>!***<a name='757'></font>
+          DO K=KTS,KTE<a name='758'>
+            KFLIP=KTE+1-K<a name='759'>
+            DUDT=(UK(KFLIP)-U(I,K,J))*RDTTURBL<a name='760'>
+            DVDT=(VK(KFLIP)-V(I,K,J))*RDTTURBL<a name='761'>
+            RUBLTEN(I,K,J)=DUDT<a name='762'>
+            RVBLTEN(I,K,J)=DVDT<a name='763'>
+          ENDDO<a name='764'>
+<font color=#447700>!<a name='765'></font>
+        ENDDO<a name='766'>
+<font color=#447700>!----------------------------------------------------------------------<a name='767'></font>
+<font color=#447700>!<a name='768'></font>
+      ENDDO main_integration<a name='769'>
+<font color=#447700>!<a name='770'></font>
+      ENDIF<a name='771'>
+<font color=#447700>!----------------------------------------------------------------------<a name='772'></font>
+<font color=#447700>!<a name='773'></font>
+      END SUBROUTINE MYJURB<a name='774'>
+<font color=#447700>!<a name='775'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='776'></font>
+<font color=#447700>!XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX<a name='777'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='778'></font>
+<A NAME='MIXLEN'><A href='../../html_code/phys/module_bl_myjurb.F.html#MIXLEN' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='779'>
+                          <font color=#993300>SUBROUTINE </font><font color=#cc0000>MIXLEN</font>                           &amp; <A href='../../call_to/MIXLEN.html' TARGET='index'>4</A><a name='780'>
+<font color=#447700>!----------------------------------------------------------------------<a name='781'></font>
+<font color=#447700>!   ******************************************************************<a name='782'></font>
+<font color=#447700>!   *                                                                *<a name='783'></font>
+<font color=#447700>!   *                   LEVEL 2.5 MIXING LENGTH                      *<a name='784'></font>
+<font color=#447700>!   *                                                                *<a name='785'></font>
+<font color=#447700>!   ******************************************************************<a name='786'></font>
+<font color=#447700>!<a name='787'></font>
+     &amp;(LMH,U,V,T,THE,Q,CWM,Q2,Z,GM,GH,EL,PBLH,LPBL,LMXL,CT             &amp;<a name='788'>
+<font color=#447700>! Multi-layer UCM<a name='789'></font>
+     &amp;,DL_U                                                            &amp;<a name='790'>
+<font color=#447700>! UCM end<a name='791'></font>
+     &amp;,IDS,IDE,JDS,JDE,KDS,KDE                                         &amp;<a name='792'>
+     &amp;,IMS,IME,JMS,JME,KMS,KME                                         &amp;<a name='793'>
+     &amp;,ITS,ITE,JTS,JTE,KTS,KTE)<a name='794'>
+<font color=#447700>!----------------------------------------------------------------------<a name='795'></font>
+<font color=#447700>!<a name='796'></font>
+      IMPLICIT NONE<a name='797'>
+<font color=#447700>!<a name='798'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='799'></font>
+      INTEGER,INTENT(IN) :: IDS,IDE,JDS,JDE,KDS,KDE                    &amp;<a name='800'>
+     &amp;                     ,IMS,IME,JMS,JME,KMS,KME                    &amp;<a name='801'>
+     &amp;                     ,ITS,ITE,JTS,JTE,KTS,KTE<a name='802'>
+<font color=#447700>!<a name='803'></font>
+      INTEGER,INTENT(IN) :: LMH<a name='804'>
+<font color=#447700>!<a name='805'></font>
+      INTEGER,INTENT(OUT) :: LMXL,LPBL<a name='806'>
+<font color=#447700>!<a name='807'></font>
+      REAL,DIMENSION(KTS:KTE),INTENT(IN) :: CWM,Q,Q2,T,THE,U,V<a name='808'>
+<font color=#447700>! Multi-layer UCM<a name='809'></font>
+      REAL,DIMENSION(KTS:KTE),INTENT(IN) :: DL_U<a name='810'>
+<font color=#447700>! UCM end<a name='811'></font>
+<font color=#447700>!<a name='812'></font>
+      REAL,DIMENSION(KTS:KTE+1),INTENT(IN) :: Z<a name='813'>
+<font color=#447700>!<a name='814'></font>
+      REAL,INTENT(OUT) :: PBLH<a name='815'>
+<font color=#447700>!<a name='816'></font>
+      REAL,DIMENSION(KTS:KTE-1),INTENT(OUT) :: EL,GH,GM<a name='817'>
+<font color=#447700>!<a name='818'></font>
+      REAL,INTENT(INOUT) :: CT<a name='819'>
+<font color=#447700>!----------------------------------------------------------------------<a name='820'></font>
+<font color=#447700>!***<a name='821'></font>
+<font color=#447700>!***  LOCAL VARIABLES<a name='822'></font>
+<font color=#447700>!***<a name='823'></font>
+      INTEGER :: K,LPBLM<a name='824'>
+<font color=#447700>!<a name='825'></font>
+      REAL :: A,ADEN,B,BDEN,AUBR,BUBR,BLMX,EL0,ELOQ2X,GHL,GML           &amp;<a name='826'>
+     &amp;       ,QOL2ST,QOL2UN,QDZL,RDZ,SQ,SREL,SZQ,TEM,THM,VKRMZ<a name='827'>
+<font color=#447700>!<a name='828'></font>
+      REAL,DIMENSION(KTS:KTE) :: Q1<a name='829'>
+<font color=#447700>!<a name='830'></font>
+      REAL,DIMENSION(KTS:KTE-1) :: DTH,ELM,REL<a name='831'>
+<font color=#447700>!<a name='832'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='833'></font>
+<font color=#447700>!**********************************************************************<a name='834'></font>
+<font color=#447700>!--------------FIND THE HEIGHT OF THE PBL-------------------------------<a name='835'></font>
+      LPBL=LMH<a name='836'>
+<font color=#447700>!<a name='837'></font>
+      DO K=LMH-1,1,-1<a name='838'>
+        IF(Q2(K)&lt;=EPSQ2*FH)THEN<a name='839'>
+          LPBL=K<a name='840'>
+          GO TO 110<a name='841'>
+        ENDIF<a name='842'>
+      ENDDO<a name='843'>
+<font color=#447700>!<a name='844'></font>
+      LPBL=1<a name='845'>
+<font color=#447700>!<a name='846'></font>
+<font color=#447700>!--------------THE HEIGHT OF THE PBL------------------------------------<a name='847'></font>
+<font color=#447700>!<a name='848'></font>
+ 110  PBLH=Z(LPBL+1)-Z(LMH+1)<a name='849'>
+<font color=#447700>!<a name='850'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='851'></font>
+      DO K=KTS,LMH<a name='852'>
+        Q1(K)=0.<a name='853'>
+      ENDDO<a name='854'>
+<font color=#447700>!<a name='855'></font>
+      DO K=1,LMH-1<a name='856'>
+        DTH(K)=THE(K)-THE(K+1)<a name='857'>
+      ENDDO<a name='858'>
+<font color=#447700>!<a name='859'></font>
+      DO K=LMH-2,1,-1<a name='860'>
+        IF(DTH(K)&gt;0..AND.DTH(K+1)&lt;=0.)THEN<a name='861'>
+          DTH(K)=DTH(K)+CT<a name='862'>
+          EXIT<a name='863'>
+        ENDIF<a name='864'>
+      ENDDO<a name='865'>
+<font color=#447700>!<a name='866'></font>
+      CT=0.<a name='867'>
+<font color=#447700>!----------------------------------------------------------------------<a name='868'></font>
+      DO K=KTS,LMH-1<a name='869'>
+        RDZ=2./(Z(K)-Z(K+2))<a name='870'>
+        GML=((U(K)-U(K+1))**2+(V(K)-V(K+1))**2)*RDZ*RDZ<a name='871'>
+        GM(K)=MAX(GML,EPSGM)<a name='872'>
+<font color=#447700>!<a name='873'></font>
+        TEM=(T(K)+T(K+1))*0.5<a name='874'>
+        THM=(THE(K)+THE(K+1))*0.5<a name='875'>
+<font color=#447700>!<a name='876'></font>
+        A=THM*P608<a name='877'>
+        B=(ELOCP/TEM-1.-P608)*THM<a name='878'>
+<font color=#447700>!<a name='879'></font>
+        GHL=(DTH(K)*((Q(K)+Q(K+1)+CWM(K)+CWM(K+1))*(0.5*P608)+1.)      &amp;<a name='880'>
+     &amp;     +(Q(K)-Q(K+1)+CWM(K)-CWM(K+1))*A                            &amp;<a name='881'>
+     &amp;     +(CWM(K)-CWM(K+1))*B)*RDZ<a name='882'>
+<font color=#447700>!<a name='883'></font>
+        IF(ABS(GHL)&lt;=EPSGH)GHL=EPSGH<a name='884'>
+        GH(K)=GHL<a name='885'>
+      ENDDO<a name='886'>
+<font color=#447700>!<a name='887'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='888'></font>
+<font color=#447700>!***  FIND MAXIMUM MIXING LENGTHS AND THE LEVEL OF THE PBL TOP<a name='889'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='890'></font>
+<font color=#447700>!<a name='891'></font>
+      LMXL=LMH<a name='892'>
+<font color=#447700>!<a name='893'></font>
+      DO K=KTS,LMH-1<a name='894'>
+        GML=GM(K)<a name='895'>
+        GHL=GH(K)<a name='896'>
+<font color=#447700>!<a name='897'></font>
+        IF(GHL&gt;=EPSGH)THEN<a name='898'>
+          IF(GML/GHL&lt;=REQU)THEN<a name='899'>
+            ELM(K)=EPSL<a name='900'>
+            LMXL=K<a name='901'>
+          ELSE<a name='902'>
+            AUBR=(AUBM*GML+AUBH*GHL)*GHL<a name='903'>
+            BUBR= BUBM*GML+BUBH*GHL<a name='904'>
+            QOL2ST=(-0.5*BUBR+SQRT(BUBR*BUBR*0.25-AUBR*CUBR))*RCUBR<a name='905'>
+            ELOQ2X=1./QOL2ST<a name='906'>
+            ELM(K)=MAX(SQRT(ELOQ2X*Q2(K)),EPSL)<a name='907'>
+          ENDIF<a name='908'>
+        ELSE<a name='909'>
+          ADEN=(ADNM*GML+ADNH*GHL)*GHL<a name='910'>
+          BDEN= BDNM*GML+BDNH*GHL<a name='911'>
+          QOL2UN=-0.5*BDEN+SQRT(BDEN*BDEN*0.25-ADEN)<a name='912'>
+          ELOQ2X=1./(QOL2UN+EPSRU)       <font color=#447700>! repsr1/qol2un<a name='913'></font>
+          ELM(K)=MAX(SQRT(ELOQ2X*Q2(K)),EPSL)<a name='914'>
+        ENDIF<a name='915'>
+      ENDDO<a name='916'>
+<font color=#447700>!<a name='917'></font>
+      IF(ELM(LMH-1)==EPSL)LMXL=LMH<a name='918'>
+<font color=#447700>!<a name='919'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='920'></font>
+<font color=#447700>!***  THE HEIGHT OF THE MIXED LAYER<a name='921'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='922'></font>
+<font color=#447700>!<a name='923'></font>
+      BLMX=Z(LMXL)-Z(LMH+1)<a name='924'>
+<font color=#447700>!<a name='925'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='926'></font>
+      DO K=LPBL,LMH<a name='927'>
+        Q1(K)=SQRT(Q2(K))<a name='928'>
+      ENDDO<a name='929'>
+<font color=#447700>!----------------------------------------------------------------------<a name='930'></font>
+      SZQ=0.<a name='931'>
+      SQ =0.<a name='932'>
+<font color=#447700>!<a name='933'></font>
+      DO K=KTS,LMH-1<a name='934'>
+        QDZL=(Q1(K)+Q1(K+1))*(Z(K+1)-Z(K+2))<a name='935'>
+        SZQ=(Z(K+1)+Z(K+2)-Z(LMH+1)-Z(LMH+1))*QDZL+SZQ<a name='936'>
+        SQ=QDZL+SQ<a name='937'>
+      ENDDO<a name='938'>
+<font color=#447700>!<a name='939'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='940'></font>
+<font color=#447700>!***  COMPUTATION OF ASYMPTOTIC L IN BLACKADAR FORMULA<a name='941'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='942'></font>
+<font color=#447700>!<a name='943'></font>
+      EL0=MIN(ALPH*SZQ*0.5/SQ,EL0MAX)<a name='944'>
+      EL0=MAX(EL0            ,EL0MIN)<a name='945'>
+<font color=#447700>!<a name='946'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='947'></font>
+<font color=#447700>!***  ABOVE THE PBL TOP<a name='948'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='949'></font>
+<font color=#447700>!<a name='950'></font>
+      LPBLM=MAX(LPBL-1,1)<a name='951'>
+<font color=#447700>!<a name='952'></font>
+      DO K=KTS,LPBLM<a name='953'>
+        EL(K)=MIN((Z(K)-Z(K+2))*ELFC,ELM(K))<a name='954'>
+        REL(K)=EL(K)/ELM(K)<a name='955'>
+      ENDDO<a name='956'>
+<font color=#447700>!<a name='957'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='958'></font>
+<font color=#447700>!***  INSIDE THE PBL<a name='959'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='960'></font>
+<font color=#447700>!<a name='961'></font>
+      IF(LPBL&lt;LMH)THEN<a name='962'>
+        DO K=LPBL,LMH-1<a name='963'>
+          VKRMZ=(Z(K+1)-Z(LMH+1))*VKARMAN<a name='964'>
+<font color=#447700>! Multi-layer UCM<a name='965'></font>
+          IF (DL_U(K).GT.0.0) THEN<a name='966'>
+               EL(K)=MIN(VKRMZ/(VKRMZ/EL0+1.),ELM(K))<a name='967'>
+               EL(K)=1./(1./EL(K)+1./DL_U(K))<a name='968'>
+            ELSE<a name='969'>
+               EL(K)=MIN(VKRMZ/(VKRMZ/EL0+1.),ELM(K))       <a name='970'>
+          ENDIF<a name='971'>
+<font color=#447700>! UCM end<a name='972'></font>
+          REL(K)=EL(K)/ELM(K)<a name='973'>
+        ENDDO<a name='974'>
+      ENDIF<a name='975'>
+<font color=#447700>!<a name='976'></font>
+      DO K=LPBL+1,LMH-2<a name='977'>
+        SREL=MIN(((REL(K-1)+REL(K+1))*0.5+REL(K))*0.5,REL(K))<a name='978'>
+        EL(K)=MAX(SREL*ELM(K),EPSL)<a name='979'>
+      ENDDO<a name='980'>
+<font color=#447700>!<a name='981'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='982'></font>
+      END SUBROUTINE MIXLEN<a name='983'>
+<font color=#447700>!----------------------------------------------------------------------<a name='984'></font>
+<font color=#447700>!XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX<a name='985'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='986'></font>
+<A NAME='PRODQ2'><A href='../../html_code/phys/module_bl_myjurb.F.html#PRODQ2' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='987'>
+                          <font color=#993300>SUBROUTINE </font><font color=#cc0000>PRODQ2</font>                            &amp; <A href='../../call_to/PRODQ2.html' TARGET='index'>4</A><a name='988'>
+<font color=#447700>!----------------------------------------------------------------------<a name='989'></font>
+<font color=#447700>!   ******************************************************************<a name='990'></font>
+<font color=#447700>!   *                                                                *<a name='991'></font>
+<font color=#447700>!   *            LEVEL 2.5 Q2 PRODUCTION/DISSIPATION                 *<a name='992'></font>
+<font color=#447700>!   *                                                                *<a name='993'></font>
+<font color=#447700>!   ******************************************************************<a name='994'></font>
+<font color=#447700>!<a name='995'></font>
+     &amp;(LMH,DTTURBL,USTAR,GM,GH,EL,Q2                                   &amp;<a name='996'>
+     &amp;,IDS,IDE,JDS,JDE,KDS,KDE                                         &amp;<a name='997'>
+     &amp;,IMS,IME,JMS,JME,KMS,KME                                         &amp;<a name='998'>
+     &amp;,ITS,ITE,JTS,JTE,KTS,KTE)<a name='999'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1000'></font>
+<font color=#447700>!<a name='1001'></font>
+      IMPLICIT NONE<a name='1002'>
+<font color=#447700>!<a name='1003'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1004'></font>
+      INTEGER,INTENT(IN) :: IDS,IDE,JDS,JDE,KDS,KDE                    &amp;<a name='1005'>
+     &amp;                     ,IMS,IME,JMS,JME,KMS,KME                    &amp;<a name='1006'>
+     &amp;                     ,ITS,ITE,JTS,JTE,KTS,KTE<a name='1007'>
+<font color=#447700>!<a name='1008'></font>
+      INTEGER,INTENT(IN) :: LMH<a name='1009'>
+<font color=#447700>!<a name='1010'></font>
+      REAL,INTENT(IN) :: DTTURBL,USTAR<a name='1011'>
+<font color=#447700>!<a name='1012'></font>
+      REAL,DIMENSION(KTS:KTE-1),INTENT(IN) :: GH,GM<a name='1013'>
+      REAL,DIMENSION(KTS:KTE-1),INTENT(INOUT) :: EL<a name='1014'>
+<font color=#447700>!<a name='1015'></font>
+      REAL,DIMENSION(KTS:KTE),INTENT(INOUT) :: Q2<a name='1016'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1017'></font>
+<font color=#447700>!***<a name='1018'></font>
+<font color=#447700>!***  LOCAL VARIABLES<a name='1019'></font>
+<font color=#447700>!***<a name='1020'></font>
+      INTEGER :: K<a name='1021'>
+<font color=#447700>!<a name='1022'></font>
+      REAL :: ADEN,AEQU,ANUM,ARHS,BDEN,BEQU,BNUM,BRHS,CDEN,CRHS        &amp;<a name='1023'>
+     &amp;       ,DLOQ1,ELOQ11,ELOQ12,ELOQ13,ELOQ21,ELOQ22,ELOQ31,ELOQ32   &amp;<a name='1024'>
+     &amp;       ,ELOQ41,ELOQ42,ELOQ51,ELOQ52,ELOQN,EQOL2,GHL,GML          &amp;<a name='1025'>
+     &amp;       ,RDEN1,RDEN2,RHS2,RHSP1,RHSP2,RHST2<a name='1026'>
+<font color=#447700>!<a name='1027'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1028'></font>
+<font color=#447700>!**********************************************************************<a name='1029'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1030'></font>
+<font color=#447700>!<a name='1031'></font>
+      main_integration: DO K=1,LMH-1<a name='1032'>
+        GML=GM(K)<a name='1033'>
+        GHL=GH(K)<a name='1034'>
+<font color=#447700>!<a name='1035'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1036'></font>
+<font color=#447700>!***  COEFFICIENTS OF THE EQUILIBRIUM EQUATION<a name='1037'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1038'></font>
+<font color=#447700>!<a name='1039'></font>
+        AEQU=(AEQM*GML+AEQH*GHL)*GHL<a name='1040'>
+        BEQU= BEQM*GML+BEQH*GHL<a name='1041'>
+<font color=#447700>!<a name='1042'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1043'></font>
+<font color=#447700>!***  EQUILIBRIUM SOLUTION FOR L/Q<a name='1044'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1045'></font>
+<font color=#447700>!<a name='1046'></font>
+        EQOL2=-0.5*BEQU+SQRT(BEQU*BEQU*0.25-AEQU)<a name='1047'>
+<font color=#447700>!<a name='1048'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1049'></font>
+<font color=#447700>!***  IS THERE PRODUCTION/DISSIPATION ?<a name='1050'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1051'></font>
+<font color=#447700>!<a name='1052'></font>
+        IF((GML+GHL*GHL&lt;=EPSTRB)                                       &amp;<a name='1053'>
+     &amp;   .OR.(GHL&gt;=EPSGH.AND.GML/GHL&lt;=REQU)                            &amp;<a name='1054'>
+     &amp;   .OR.(EQOL2&lt;=EPS2))THEN<a name='1055'>
+<font color=#447700>!<a name='1056'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1057'></font>
+<font color=#447700>!***  NO TURBULENCE<a name='1058'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1059'></font>
+<font color=#447700>!<a name='1060'></font>
+          Q2(K)=EPSQ2<a name='1061'>
+          EL(K)=EPSL<a name='1062'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1063'></font>
+<font color=#447700>!<a name='1064'></font>
+        ELSE<a name='1065'>
+<font color=#447700>!<a name='1066'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1067'></font>
+<font color=#447700>!***  TURBULENCE<a name='1068'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1069'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1070'></font>
+<font color=#447700>!***  COEFFICIENTS OF THE TERMS IN THE NUMERATOR<a name='1071'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1072'></font>
+<font color=#447700>!<a name='1073'></font>
+          ANUM=(ANMM*GML+ANMH*GHL)*GHL<a name='1074'>
+          BNUM= BNMM*GML+BNMH*GHL<a name='1075'>
+<font color=#447700>!<a name='1076'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1077'></font>
+<font color=#447700>!***  COEFFICIENTS OF THE TERMS IN THE DENOMINATOR<a name='1078'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1079'></font>
+<font color=#447700>!<a name='1080'></font>
+          ADEN=(ADNM*GML+ADNH*GHL)*GHL<a name='1081'>
+          BDEN= BDNM*GML+BDNH*GHL<a name='1082'>
+          CDEN= 1.<a name='1083'>
+<font color=#447700>!<a name='1084'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1085'></font>
+<font color=#447700>!***  COEFFICIENTS OF THE NUMERATOR OF THE LINEARIZED EQ.<a name='1086'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1087'></font>
+<font color=#447700>!<a name='1088'></font>
+          ARHS=-(ANUM*BDEN-BNUM*ADEN)*2.<a name='1089'>
+          BRHS=- ANUM*4.<a name='1090'>
+          CRHS=- BNUM*2.<a name='1091'>
+<font color=#447700>!<a name='1092'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1093'></font>
+<font color=#447700>!***  INITIAL VALUE OF L/Q<a name='1094'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1095'></font>
+<font color=#447700>!<a name='1096'></font>
+          DLOQ1=EL(K)/SQRT(Q2(K))<a name='1097'>
+<font color=#447700>!<a name='1098'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1099'></font>
+<font color=#447700>!***  FIRST ITERATION FOR L/Q, RHS=0<a name='1100'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1101'></font>
+<font color=#447700>!<a name='1102'></font>
+          ELOQ21=1./EQOL2<a name='1103'>
+          ELOQ11=SQRT(ELOQ21)<a name='1104'>
+          ELOQ31=ELOQ21*ELOQ11<a name='1105'>
+          ELOQ41=ELOQ21*ELOQ21<a name='1106'>
+          ELOQ51=ELOQ21*ELOQ31<a name='1107'>
+<font color=#447700>!<a name='1108'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1109'></font>
+<font color=#447700>!***  1./DENOMINATOR<a name='1110'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1111'></font>
+<font color=#447700>!<a name='1112'></font>
+          RDEN1=1./(ADEN*ELOQ41+BDEN*ELOQ21+CDEN)<a name='1113'>
+<font color=#447700>!<a name='1114'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1115'></font>
+<font color=#447700>!***  D(RHS)/D(L/Q)<a name='1116'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1117'></font>
+<font color=#447700>!<a name='1118'></font>
+          RHSP1=(ARHS*ELOQ51+BRHS*ELOQ31+CRHS*ELOQ11)*RDEN1*RDEN1<a name='1119'>
+<font color=#447700>!<a name='1120'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1121'></font>
+<font color=#447700>!***  FIRST-GUESS SOLUTION<a name='1122'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1123'></font>
+<font color=#447700>!<a name='1124'></font>
+          ELOQ12=ELOQ11+(DLOQ1-ELOQ11)*EXP(RHSP1*DTTURBL)<a name='1125'>
+          ELOQ12=MAX(ELOQ12,EPS1)<a name='1126'>
+<font color=#447700>!<a name='1127'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1128'></font>
+<font color=#447700>!***  SECOND ITERATION FOR L/Q<a name='1129'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1130'></font>
+<font color=#447700>!<a name='1131'></font>
+          ELOQ22=ELOQ12*ELOQ12<a name='1132'>
+          ELOQ32=ELOQ22*ELOQ12<a name='1133'>
+          ELOQ42=ELOQ22*ELOQ22<a name='1134'>
+          ELOQ52=ELOQ22*ELOQ32<a name='1135'>
+<font color=#447700>!<a name='1136'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1137'></font>
+<font color=#447700>!***  1./DENOMINATOR<a name='1138'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1139'></font>
+<font color=#447700>!<a name='1140'></font>
+          RDEN2=1./(ADEN*ELOQ42+BDEN*ELOQ22+CDEN)<a name='1141'>
+          RHS2 =-(ANUM*ELOQ42+BNUM*ELOQ22)*RDEN2+RB1<a name='1142'>
+          RHSP2= (ARHS*ELOQ52+BRHS*ELOQ32+CRHS*ELOQ12)*RDEN2*RDEN2<a name='1143'>
+          RHST2=RHS2/RHSP2<a name='1144'>
+<font color=#447700>!<a name='1145'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1146'></font>
+<font color=#447700>!***  CORRECTED SOLUTION<a name='1147'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1148'></font>
+<font color=#447700>!<a name='1149'></font>
+          ELOQ13=ELOQ12-RHST2+(RHST2+DLOQ1-ELOQ12)*EXP(RHSP2*DTTURBL)<a name='1150'>
+          ELOQ13=AMAX1(ELOQ13,EPS1)<a name='1151'>
+<font color=#447700>!<a name='1152'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1153'></font>
+<font color=#447700>!***  TWO ITERATIONS IS ENOUGH IN MOST CASES ...<a name='1154'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1155'></font>
+<font color=#447700>!<a name='1156'></font>
+          ELOQN=ELOQ13<a name='1157'>
+<font color=#447700>!<a name='1158'></font>
+          IF(ELOQN&gt;EPS1)THEN<a name='1159'>
+            Q2(K)=EL(K)*EL(K)/(ELOQN*ELOQN)<a name='1160'>
+            Q2(K)=AMAX1(Q2(K),EPSQ2)<a name='1161'>
+            IF(Q2(K)==EPSQ2)THEN<a name='1162'>
+              EL(K)=EPSL<a name='1163'>
+            ENDIF<a name='1164'>
+          ELSE<a name='1165'>
+            Q2(K)=EPSQ2<a name='1166'>
+            EL(K)=EPSL<a name='1167'>
+          ENDIF<a name='1168'>
+<font color=#447700>!<a name='1169'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1170'></font>
+<font color=#447700>!***  END OF TURBULENT BRANCH<a name='1171'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1172'></font>
+<font color=#447700>!<a name='1173'></font>
+        ENDIF<a name='1174'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1175'></font>
+<font color=#447700>!***  END OF PRODUCTION/DISSIPATION LOOP<a name='1176'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1177'></font>
+<font color=#447700>!<a name='1178'></font>
+      ENDDO main_integration<a name='1179'>
+<font color=#447700>!<a name='1180'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1181'></font>
+<font color=#447700>!***  LOWER BOUNDARY CONDITION FOR Q2<a name='1182'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1183'></font>
+<font color=#447700>!<a name='1184'></font>
+      Q2(LMH)=AMAX1(B1**(2./3.)*USTAR*USTAR,EPSQ2)<a name='1185'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1186'></font>
+<font color=#447700>!<a name='1187'></font>
+      END SUBROUTINE PRODQ2<a name='1188'>
+<font color=#447700>!<a name='1189'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1190'></font>
+<font color=#447700>!XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX<a name='1191'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1192'></font>
+<A NAME='DIFCOF'><A href='../../html_code/phys/module_bl_myjurb.F.html#DIFCOF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1193'>
+                           <font color=#993300>SUBROUTINE </font><font color=#cc0000>DIFCOF</font>                           &amp; <A href='../../call_to/DIFCOF.html' TARGET='index'>3</A><a name='1194'>
+<font color=#447700>!   ******************************************************************<a name='1195'></font>
+<font color=#447700>!   *                                                                *<a name='1196'></font>
+<font color=#447700>!   *                LEVEL 2.5 DIFFUSION COEFFICIENTS                *<a name='1197'></font>
+<font color=#447700>!   *                                                                *<a name='1198'></font>
+<font color=#447700>!   ******************************************************************<a name='1199'></font>
+     &amp;(LMH,LMXL,GM,GH,EL,T,Q2,Z,AKM,AKH                                &amp;<a name='1200'>
+     &amp;,IDS,IDE,JDS,JDE,KDS,KDE                                         &amp;<a name='1201'>
+     &amp;,IMS,IME,JMS,JME,KMS,KME                                         &amp;<a name='1202'>
+     &amp;,ITS,ITE,JTS,JTE,KTS,KTE,PRINT_DIAG)   <font color=#447700>! debug<a name='1203'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1204'></font>
+<font color=#447700>!<a name='1205'></font>
+      IMPLICIT NONE<a name='1206'>
+<font color=#447700>!<a name='1207'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1208'></font>
+      INTEGER,INTENT(IN) :: IDS,IDE,JDS,JDE,KDS,KDE                    &amp;<a name='1209'>
+     &amp;                     ,IMS,IME,JMS,JME,KMS,KME                    &amp;<a name='1210'>
+     &amp;                     ,ITS,ITE,JTS,JTE,KTS,KTE<a name='1211'>
+<font color=#447700>!<a name='1212'></font>
+      INTEGER,INTENT(IN) :: LMH,LMXL<a name='1213'>
+<font color=#447700>!<a name='1214'></font>
+      REAL,DIMENSION(KTS:KTE),INTENT(IN) :: Q2,T<a name='1215'>
+      REAL,DIMENSION(KTS:KTE-1),INTENT(IN) :: EL,GH,GM<a name='1216'>
+      REAL,DIMENSION(KTS:KTE+1),INTENT(IN) :: Z<a name='1217'>
+<font color=#447700>!<a name='1218'></font>
+      REAL,DIMENSION(KTS:KTE-1),INTENT(OUT) :: AKH,AKM<a name='1219'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1220'></font>
+<font color=#447700>!***<a name='1221'></font>
+<font color=#447700>!***  LOCAL VARIABLES<a name='1222'></font>
+<font color=#447700>!***<a name='1223'></font>
+      INTEGER :: K,KINV<a name='1224'>
+<font color=#447700>!<a name='1225'></font>
+      REAL :: ADEN,AKMIN,BDEN,BESH,BESM,CDEN,D2T,ELL,ELOQ2,ELOQ4,ELQDZ &amp;<a name='1226'>
+     &amp;       ,ESH,ESM,GHL,GML,Q1L,RDEN,RDZ<a name='1227'>
+<font color=#447700>!<a name='1228'></font>
+<font color=#447700>!*** Begin debugging<a name='1229'></font>
+      INTEGER,INTENT(IN) :: PRINT_DIAG<a name='1230'>
+<font color=#447700>!     REAL :: D2Tmin<a name='1231'></font>
+<font color=#447700>!*** End debugging<a name='1232'></font>
+<font color=#447700>!<a name='1233'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1234'></font>
+<font color=#447700>!**********************************************************************<a name='1235'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1236'></font>
+<font color=#447700>!<a name='1237'></font>
+      DO K=1,LMH-1<a name='1238'>
+        ELL=EL(K)<a name='1239'>
+<font color=#447700>!<a name='1240'></font>
+        ELOQ2=ELL*ELL/Q2(K)<a name='1241'>
+        ELOQ4=ELOQ2*ELOQ2<a name='1242'>
+<font color=#447700>!<a name='1243'></font>
+        GML=GM(K)<a name='1244'>
+        GHL=GH(K)<a name='1245'>
+<font color=#447700>!<a name='1246'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1247'></font>
+<font color=#447700>!***  COEFFICIENTS OF THE TERMS IN THE DENOMINATOR<a name='1248'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1249'></font>
+<font color=#447700>!<a name='1250'></font>
+        ADEN=(ADNM*GML+ADNH*GHL)*GHL<a name='1251'>
+        BDEN= BDNM*GML+BDNH*GHL<a name='1252'>
+        CDEN= 1.<a name='1253'>
+<font color=#447700>!<a name='1254'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1255'></font>
+<font color=#447700>!***  COEFFICIENTS FOR THE SM DETERMINANT<a name='1256'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1257'></font>
+<font color=#447700>!<a name='1258'></font>
+        BESM=BSMH*GHL<a name='1259'>
+<font color=#447700>!<a name='1260'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1261'></font>
+<font color=#447700>!***  COEFFICIENTS FOR THE SH DETERMINANT<a name='1262'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1263'></font>
+<font color=#447700>!<a name='1264'></font>
+        BESH=BSHM*GML+BSHH*GHL<a name='1265'>
+<font color=#447700>!<a name='1266'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1267'></font>
+<font color=#447700>!***  1./DENOMINATOR<a name='1268'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1269'></font>
+<font color=#447700>!<a name='1270'></font>
+        RDEN=1./(ADEN*ELOQ4+BDEN*ELOQ2+CDEN)<a name='1271'>
+<font color=#447700>!<a name='1272'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1273'></font>
+<font color=#447700>!***  SM AND SH<a name='1274'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1275'></font>
+<font color=#447700>!<a name='1276'></font>
+        ESM=(BESM*ELOQ2+CESM)*RDEN<a name='1277'>
+        ESH=(BESH*ELOQ2+CESH)*RDEN<a name='1278'>
+<font color=#447700>!<a name='1279'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1280'></font>
+<font color=#447700>!***  DIFFUSION COEFFICIENTS<a name='1281'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1282'></font>
+<font color=#447700>!<a name='1283'></font>
+        RDZ=2./(Z(K)-Z(K+2))<a name='1284'>
+        Q1L=SQRT(Q2(K))<a name='1285'>
+        ELQDZ=ELL*Q1L*RDZ<a name='1286'>
+        AKM(K)=ELQDZ*ESM<a name='1287'>
+        AKH(K)=ELQDZ*ESH<a name='1288'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1289'></font>
+      ENDDO<a name='1290'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1291'></font>
+<font color=#447700>!<a name='1292'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1293'></font>
+<font color=#447700>!***  INVERSIONS<a name='1294'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1295'></font>
+<font color=#447700>!<a name='1296'></font>
+<font color=#447700>!     IF(LMXL==LMH)THEN<a name='1297'></font>
+<font color=#447700>!       KINV=LMH<a name='1298'></font>
+<font color=#447700>!       D2Tmin=0.<a name='1299'></font>
+<font color=#447700>!<a name='1300'></font>
+<font color=#447700>!       DO K=LMH/2,LMH-1<a name='1301'></font>
+<font color=#447700>!         D2T=T(K-1)-2.*T(K)+T(K+1)<a name='1302'></font>
+<font color=#447700>!         IF(D2T&lt;D2Tmin)THEN<a name='1303'></font>
+<font color=#447700>!           D2Tmin=D2T<a name='1304'></font>
+<font color=#447700>!           IF(D2T&lt;0)KINV=K<a name='1305'></font>
+<font color=#447700>!         ENDIF<a name='1306'></font>
+<font color=#447700>!       ENDDO<a name='1307'></font>
+<font color=#447700>!<a name='1308'></font>
+<font color=#447700>!       IF(KINV&lt;LMH)THEN<a name='1309'></font>
+<font color=#447700>!         DO K=KINV-1,LMH-1<a name='1310'></font>
+<font color=#447700>!           RDZ=2./(Z(K)-Z(K+2))<a name='1311'></font>
+<font color=#447700>!           AKMIN=0.5*RDZ<a name='1312'></font>
+<font color=#447700>!           AKM(K)=MAX(AKM(K),AKMIN)<a name='1313'></font>
+<font color=#447700>!           AKH(K)=MAX(AKH(K),AKMIN)<a name='1314'></font>
+<font color=#447700>!         ENDDO<a name='1315'></font>
+<font color=#447700>!<a name='1316'></font>
+<font color=#447700>!*** Begin debugging<a name='1317'></font>
+<font color=#447700>!         IF(PRINT_DIAG&gt;0)THEN<a name='1318'></font>
+<font color=#447700>!           write(6,"(a,3i3)") '{turb1 lmxl,lmh,kinv=',lmxl,lmh,kinv<a name='1319'></font>
+<font color=#447700>!           write(6,"(a,3i3)") '}turb1 lmxl,lmh,kinv=',lmxl,lmh,kinv<a name='1320'></font>
+<font color=#447700>!           IF(PRINT_DIAG==1)THEN<a name='1321'></font>
+<font color=#447700>!             write(6,"(a)") &amp;<a name='1322'></font>
+<font color=#447700>!               '{turb3 k, t, d2t, rdz, z(k), z(k+2), akmin, akh '<a name='1323'></font>
+<font color=#447700>!           ELSE<a name='1324'></font>
+<font color=#447700>!             write(6,"(a)") &amp;<a name='1325'></font>
+<font color=#447700>!               '}turb3 k, t, d2t, rdz, z(k), z(k+2), akmin, akh '<a name='1326'></font>
+<font color=#447700>!           ENDIF<a name='1327'></font>
+<font color=#447700>!           DO K=LMH-1,KINV-1,-1<a name='1328'></font>
+<font color=#447700>!             D2T=T(K-1)-2.*T(K)+T(K+1)<a name='1329'></font>
+<font color=#447700>!             RDZ=2./(Z(K)-Z(K+2))<a name='1330'></font>
+<font color=#447700>!             AKMIN=0.5*RDZ<a name='1331'></font>
+<font color=#447700>!             IF(PRINT_DIAG==1)THEN<a name='1332'></font>
+<font color=#447700>!               write(6,"(a,i3,f8.3,2e12.5,2f9.2,2e12.5)") '{turb3 ' &amp;<a name='1333'></font>
+<font color=#447700>!               ,k,t(k)-273.15,d2t,rdz,z(k),z(k+2),akmin,akh(k)<a name='1334'></font>
+<font color=#447700>!             ELSE<a name='1335'></font>
+<font color=#447700>!               write(6,"(a,i3,f8.3,2e12.5,2f9.2,2e12.5)") '}turb3 ' &amp;<a name='1336'></font>
+<font color=#447700>!               ,k,t(k)-273.15,d2t,rdz,z(k),z(k+2),akmin,akh(k)<a name='1337'></font>
+<font color=#447700>!             ENDIF<a name='1338'></font>
+<font color=#447700>!           ENDDO<a name='1339'></font>
+<font color=#447700>!         ENDIF     !- IF (print_diag &gt; 0) THEN<a name='1340'></font>
+<font color=#447700>!       ENDIF       !- IF(KINV&lt;LMH)THEN<a name='1341'></font>
+<font color=#447700>!*** End debugging<a name='1342'></font>
+<font color=#447700>!<a name='1343'></font>
+<font color=#447700>!     ENDIF<a name='1344'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1345'></font>
+<font color=#447700>!<a name='1346'></font>
+      END SUBROUTINE DIFCOF<a name='1347'>
+<font color=#447700>!<a name='1348'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1349'></font>
+<font color=#447700>!XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX<a name='1350'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1351'></font>
+<A NAME='VDIFQ'><A href='../../html_code/phys/module_bl_myjurb.F.html#VDIFQ' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1352'>
+                           <font color=#993300>SUBROUTINE </font><font color=#cc0000>VDIFQ</font>                            &amp; <A href='../../call_to/VDIFQ.html' TARGET='index'>4</A><a name='1353'>
+<font color=#447700>!   ******************************************************************<a name='1354'></font>
+<font color=#447700>!   *                                                                *<a name='1355'></font>
+<font color=#447700>!   *               VERTICAL DIFFUSION OF Q2 (TKE)                   *<a name='1356'></font>
+<font color=#447700>!   *                                                                *<a name='1357'></font>
+<font color=#447700>!   ******************************************************************<a name='1358'></font>
+     &amp;(LMH,DTDIF,Q2,EL,Z                                               &amp;<a name='1359'>
+<font color=#447700>! Multi-layer UCM<a name='1360'></font>
+     &amp;,A_E,B_E,SFK,VLK                                                 &amp;<a name='1361'>
+<font color=#447700>!UCM end<a name='1362'></font>
+     &amp;,IDS,IDE,JDS,JDE,KDS,KDE                                         &amp;<a name='1363'>
+     &amp;,IMS,IME,JMS,JME,KMS,KME                                         &amp;<a name='1364'>
+     &amp;,ITS,ITE,JTS,JTE,KTS,KTE)<a name='1365'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1366'></font>
+<font color=#447700>!<a name='1367'></font>
+      IMPLICIT NONE<a name='1368'>
+<font color=#447700>!<a name='1369'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1370'></font>
+      INTEGER,INTENT(IN) :: IDS,IDE,JDS,JDE,KDS,KDE                    &amp;<a name='1371'>
+     &amp;                     ,IMS,IME,JMS,JME,KMS,KME                    &amp;<a name='1372'>
+     &amp;                     ,ITS,ITE,JTS,JTE,KTS,KTE<a name='1373'>
+<font color=#447700>!<a name='1374'></font>
+      INTEGER,INTENT(IN) :: LMH<a name='1375'>
+<font color=#447700>!<a name='1376'></font>
+      REAL,INTENT(IN) :: DTDIF<a name='1377'>
+<font color=#447700>!<a name='1378'></font>
+      REAL,DIMENSION(KTS:KTE-1),INTENT(IN) :: EL<a name='1379'>
+      REAL,DIMENSION(KTS:KTE+1),INTENT(IN) :: Z<a name='1380'>
+<font color=#447700>!<a name='1381'></font>
+      REAL,DIMENSION(KTS:KTE),INTENT(INOUT) :: Q2<a name='1382'>
+<font color=#447700>! Multi-layer UCM<a name='1383'></font>
+      REAL,DIMENSION(KTS:KTE),INTENT(IN) :: A_E,B_E,VLK<a name='1384'>
+      REAL,DIMENSION(KTS:KTE),INTENT(IN) :: SFK<a name='1385'>
+<font color=#447700>! UCM end<a name='1386'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1387'></font>
+<font color=#447700>!***<a name='1388'></font>
+<font color=#447700>!***  LOCAL VARIABLES<a name='1389'></font>
+<font color=#447700>!***<a name='1390'></font>
+      INTEGER :: K<a name='1391'>
+<font color=#447700>!<a name='1392'></font>
+      REAL :: ADEN,AKQS,BDEN,BESH,BESM,CDEN,CF,DTOZS,ELL,ELOQ2,ELOQ4   &amp;<a name='1393'>
+     &amp;       ,ELQDZ,ESH,ESM,ESQHF,GHL,GML,Q1L,RDEN,RDZ<a name='1394'>
+<font color=#447700>!<a name='1395'></font>
+      REAL,DIMENSION(KTS:KTE-2) :: AKQ,CM,CR,DTOZ,RSQ2<a name='1396'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1397'></font>
+<font color=#447700>!**********************************************************************<a name='1398'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1399'></font>
+<font color=#447700>!***<a name='1400'></font>
+<font color=#447700>!***  VERTICAL TURBULENT DIFFUSION<a name='1401'></font>
+<font color=#447700>!***<a name='1402'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1403'></font>
+      ESQHF=0.5*ESQ<a name='1404'>
+<font color=#447700>!<a name='1405'></font>
+      DO K=KTS,LMH-2<a name='1406'>
+        DTOZ(K)=(DTDIF+DTDIF)/(Z(K)-Z(K+2))/VLK(K)                      <font color=#447700>!Bep<a name='1407'></font>
+        AKQ(K)=SFK(K)*SQRT((Q2(K)+Q2(K+1))*0.5)*(EL(K)+EL(K+1))*ESQHF &amp;<a name='1408'>
+     &amp;        /(Z(K+1)-Z(K+2))                                          <font color=#447700>!Bep<a name='1409'></font>
+        CR(K)=-DTOZ(K)*AKQ(K)<a name='1410'>
+      ENDDO<a name='1411'>
+<font color=#447700>!<a name='1412'></font>
+      CM(1)=DTOZ(1)*AKQ(1)+1.<a name='1413'>
+      RSQ2(1)=Q2(1)+DTDIF*B_E(1)                                     <font color=#447700>!Bep<a name='1414'></font>
+<font color=#447700>!<a name='1415'></font>
+      DO K=KTS+1,LMH-2<a name='1416'>
+        CF=-DTOZ(K)*AKQ(K-1)/CM(K-1)<a name='1417'>
+        CM(K)=-CR(K-1)*CF+(AKQ(K-1)+AKQ(K))*DTOZ(K)+1.<a name='1418'>
+        CM(K)=-CR(K-1)*CF+(AKQ(K-1)+AKQ(K))*DTOZ(K)+1.<a name='1419'>
+        RSQ2(K)=-RSQ2(K-1)*CF+Q2(K)+DTDIF*B_E(K)                     <font color=#447700>!Bep<a name='1420'></font>
+      ENDDO<a name='1421'>
+<font color=#447700>!<a name='1422'></font>
+      DTOZS=(DTDIF+DTDIF)/(Z(LMH-1)-Z(LMH+1))/VLK(K)<a name='1423'>
+      AKQS=SFK(K)*SQRT((Q2(LMH-1)+Q2(LMH))*0.5)*(EL(LMH-1)+ELZ0)*ESQHF&amp; <a name='1424'>
+     &amp;    /(Z(LMH)-Z(LMH+1))<a name='1425'>
+<font color=#447700>!<a name='1426'></font>
+      CF=-DTOZS*AKQ(LMH-2)/CM(LMH-2)<a name='1427'>
+<font color=#447700>!<a name='1428'></font>
+      Q2(LMH-1)=(DTOZS*AKQS*Q2(LMH)-RSQ2(LMH-2)*CF+Q2(LMH-1)&amp;<a name='1429'>
+     &amp;              +DTDIF*B_E(LMH-1))          &amp;                    <font color=#447700>!Bep<a name='1430'></font>
+     &amp;        /((AKQ(LMH-2)+AKQS)*DTOZS-CR(LMH-2)*CF+1.)<a name='1431'>
+<font color=#447700>!<a name='1432'></font>
+      DO K=LMH-2,KTS,-1<a name='1433'>
+        Q2(K)=(-CR(K)*Q2(K+1)+RSQ2(K))/CM(K)<a name='1434'>
+      ENDDO<a name='1435'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1436'></font>
+<font color=#447700>!<a name='1437'></font>
+      END SUBROUTINE VDIFQ<a name='1438'>
+<font color=#447700>!<a name='1439'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1440'></font>
+<font color=#447700>!XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX<a name='1441'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1442'></font>
+<A NAME='VDIFH'><A href='../../html_code/phys/module_bl_myjurb.F.html#VDIFH' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1443'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>VDIFH</font>(DTDIF,LMH,THZ0,QZ0,RKHS,CHKLOWQ,CT             &amp; <A href='../../call_to/VDIFH.html' TARGET='index'>3</A><a name='1444'>
+     &amp;                ,THE,Q,CWM,RKH_IN,Z,RHO                         &amp;<a name='1445'>
+<font color=#447700>! Multi-layer UCM<a name='1446'></font>
+     &amp;                ,A_T,B_T,A_Q,B_Q,SFK,VLK                        &amp;<a name='1447'>
+<font color=#447700>! UCM end<a name='1448'></font>
+     &amp;                ,IDS,IDE,JDS,JDE,KDS,KDE                        &amp;<a name='1449'>
+     &amp;                ,IMS,IME,JMS,JME,KMS,KME                        &amp;<a name='1450'>
+     &amp;                ,ITS,ITE,JTS,JTE,KTS,KTE,I,J)<a name='1451'>
+<font color=#447700>!     ***************************************************************<a name='1452'></font>
+<font color=#447700>!     *                                                             *<a name='1453'></font>
+<font color=#447700>!     *         VERTICAL DIFFUSION OF MASS VARIABLES                *<a name='1454'></font>
+<font color=#447700>!     *                                                             *<a name='1455'></font>
+<font color=#447700>!     ***************************************************************<a name='1456'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1457'></font>
+<font color=#447700>!<a name='1458'></font>
+      IMPLICIT NONE<a name='1459'>
+<font color=#447700>!<a name='1460'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1461'></font>
+      INTEGER,INTENT(IN) :: IDS,IDE,JDS,JDE,KDS,KDE                    &amp;<a name='1462'>
+     &amp;                     ,IMS,IME,JMS,JME,KMS,KME                    &amp;<a name='1463'>
+     &amp;                     ,ITS,ITE,JTS,JTE,KTS,KTE,I,J<a name='1464'>
+<font color=#447700>!<a name='1465'></font>
+      INTEGER,INTENT(IN) :: LMH<a name='1466'>
+<font color=#447700>!<a name='1467'></font>
+      REAL,INTENT(IN) :: CHKLOWQ,CT,DTDIF,QZ0,RKHS,THZ0<a name='1468'>
+<font color=#447700>!<a name='1469'></font>
+      REAL,DIMENSION(KTS:KTE-1),INTENT(IN) :: RKH_IN<a name='1470'>
+      REAL,DIMENSION(KTS:KTE),INTENT(IN) :: RHO<a name='1471'>
+      REAL,DIMENSION(KTS:KTE+1),INTENT(IN) :: Z<a name='1472'>
+      REAL,DIMENSION(KTS:KTE),INTENT(INOUT) :: CWM,Q,THE<a name='1473'>
+<font color=#447700>! Variables added for Bep<a name='1474'></font>
+      REAL,DIMENSION(KTS:KTE),INTENT(IN) :: A_T,B_T,A_Q,B_Q,VLK<a name='1475'>
+      REAL,DIMENSION(KTS:KTE),INTENT(IN) :: SFK<a name='1476'>
+<font color=#447700>! Bep end<a name='1477'></font>
+<font color=#447700>!<a name='1478'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1479'></font>
+<font color=#447700>!***<a name='1480'></font>
+<font color=#447700>!***  LOCAL VARIABLES<a name='1481'></font>
+<font color=#447700>!***<a name='1482'></font>
+      INTEGER :: K<a name='1483'>
+<font color=#447700>!<a name='1484'></font>
+      REAL :: CF,CMB,CMCB,CMQB,CMTB,CTHF,DTOZL,DTOZS                   &amp;<a name='1485'>
+     &amp;       ,RCML,RKHH,RKQS,RSCB,RSQB,RSTB<a name='1486'>
+<font color=#447700>! Variables added for Bep<a name='1487'></font>
+      REAL :: CF_T,CF_Q,RCML_T,RCML_Q,CMB_T,CMB_Q<a name='1488'>
+<font color=#447700>! Bep end<a name='1489'></font>
+<font color=#447700>!<a name='1490'></font>
+      REAL,DIMENSION(KTS:KTE-1) :: CM,CR,DTOZ,RKCT,RSC,RSQ,RST<a name='1491'>
+<font color=#447700>! Variables added for Bep<a name='1492'></font>
+      REAL,DIMENSION(KTS:KTE-1) :: CM_T,CM_Q<a name='1493'>
+      REAL,DIMENSION(KTS:KTE-1) :: RKH<a name='1494'>
+<font color=#447700>! Bep end<a name='1495'></font>
+<font color=#447700>!<a name='1496'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1497'></font>
+<font color=#447700>!**********************************************************************<a name='1498'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1499'></font>
+      CTHF=0.5*CT<a name='1500'>
+<font color=#447700>!<a name='1501'></font>
+      DO K=KTS,LMH-1<a name='1502'>
+        RKH(K)=RKH_IN(K)*SFK(K)                                    <font color=#447700>!Bep<a name='1503'></font>
+        DTOZ(K)=DTDIF/(Z(K)-Z(K+1))/VLK(K)                         <font color=#447700>!Bep<a name='1504'></font>
+        CR(K)=-DTOZ(K)*RKH(K)<a name='1505'>
+        RKCT(K)=RKH(K)*(Z(K)-Z(K+2))*CTHF<a name='1506'>
+      ENDDO<a name='1507'>
+<font color=#447700>!<a name='1508'></font>
+      CM(KTS)=DTOZ(KTS)*RKH(KTS)+RHO(KTS)<a name='1509'>
+      CM_T(KTS)=DTOZ(KTS)*RKH(KTS)+RHO(KTS)*(1.-DTDIF*A_T(KTS))   <font color=#447700>!Bep<a name='1510'></font>
+      CM_Q(KTS)=DTOZ(KTS)*RKH(KTS)+RHO(KTS)*(1.-DTDIF*A_Q(KTS))   <font color=#447700>!Bep<a name='1511'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1512'></font>
+      RST(KTS) = -RKCT(KTS)*DTOZ(KTS)+&amp;<a name='1513'>
+                &amp;RHO(KTS)*(THE(KTS)+DTDIF*B_T(KTS))                 <font color=#447700>!Bep<a name='1514'></font>
+      RSQ(KTS) = RHO(KTS)*(  Q(KTS)+DTDIF*B_Q(KTS))                 <font color=#447700>!Bep<a name='1515'></font>
+      RSC(KTS) = RHO(KTS)* CWM(KTS)<a name='1516'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1517'></font>
+      DO K=KTS+1,LMH-1<a name='1518'>
+        DTOZL=DTOZ(K)<a name='1519'>
+        CF   = -DTOZL*RKH(K-1)/CM(K-1)<a name='1520'>
+        CF_T = -DTOZL*RKH(K-1)/CM_T(K-1)                             <font color=#447700>!Bep<a name='1521'></font>
+        CF_Q = -DTOZL*RKH(K-1)/CM_Q(K-1)                             <font color=#447700>!Bep<a name='1522'></font>
+        CM(K)  = -CR(K-1)*CF+  (RKH(K-1)+RKH(K))*DTOZL+RHO(K)<a name='1523'>
+        CM_T(K)= -CR(K-1)*CF_T+(RKH(K-1)+RKH(K))*DTOZL+RHO(K)*&amp;<a name='1524'>
+                   &amp;(1.-DTDIF*A_T(K))<a name='1525'>
+        CM_Q(K)= -CR(K-1)*CF_Q+(RKH(K-1)+RKH(K))*DTOZL+RHO(K)*&amp;<a name='1526'>
+                   &amp;(1.-DTDIF*A_Q(K))                                 <font color=#447700>!Bep<a name='1527'></font>
+        RST(K)=-RST(K-1)*CF_T+(RKCT(K-1)-RKCT(K))*DTOZL+RHO(K)*&amp;<a name='1528'>
+                    &amp;(THE(K)+DTDIF*B_T(K))                             <font color=#447700>!Bep<a name='1529'></font>
+        RSQ(K)=-RSQ(K-1)*CF_Q+RHO(K)*(  Q(K)+DTDIF*B_Q(K))             <font color=#447700>!Bep<a name='1530'></font>
+        RSC(K)=-RSC(K-1)*CF+CWM(K)*RHO(K)<a name='1531'>
+      ENDDO<a name='1532'>
+<font color=#447700>!<a name='1533'></font>
+      DTOZS=DTDIF/(Z(LMH)-Z(LMH+1))/VLK(LMH)                   <font color=#447700>!Bep<a name='1534'></font>
+      RKHH=RKH(LMH-1)                            <a name='1535'>
+<font color=#447700>!<a name='1536'></font>
+      CF=-DTOZS*RKHH/CM(LMH-1)<a name='1537'>
+      CF_T=-DTOZS*RKHH/CM_T(LMH-1)                  <font color=#447700>!Bep<a name='1538'></font>
+      CF_Q=-DTOZS*RKHH/CM_Q(LMH-1)                  <font color=#447700>!Bep<a name='1539'></font>
+      RKQS=RKHS*CHKLOWQ<a name='1540'>
+<font color=#447700>!<a name='1541'></font>
+      CMB=CR(LMH-1)*CF<a name='1542'>
+      CMB_T=CR(LMH-1)*CF_T<a name='1543'>
+      CMB_Q=CR(LMH-1)*CF_Q<a name='1544'>
+      CMTB=-CMB_T+RKHH*DTOZS+RHO(LMH)*(1.-DTDIF*A_T(LMH))  <font color=#447700>!Bep<a name='1545'></font>
+      CMQB=-CMB_Q+RKHH*DTOZS+RHO(LMH)*(1.-DTDIF*A_Q(LMH))  <font color=#447700>!Bep<a name='1546'></font>
+      CMCB=-CMB+(RKHH     )*DTOZS+RHO(LMH)<a name='1547'>
+<font color=#447700>!<a name='1548'></font>
+      RSTB=-RST(LMH-1)*CF_T+RHO(LMH)*(THE(LMH)+DTDIF*B_T(LMH))+&amp;<a name='1549'>
+             &amp;RKCT(LMH-1)*DTOZS                                     <font color=#447700>!Bep<a name='1550'></font>
+      RSQB=-RSQ(LMH-1)*CF_Q+RHO(LMH)*(  Q(LMH)+DTDIF*B_Q(LMH))      <font color=#447700>!Bep<a name='1551'></font>
+      RSCB=-RSC(LMH-1)*CF+CWM(LMH)*RHO(LMH)<a name='1552'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1553'></font>
+      THE(LMH)= RSTB/CMTB<a name='1554'>
+      Q(LMH)  = RSQB/CMQB<a name='1555'>
+      CWM(LMH)= RSCB/CMCB<a name='1556'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1557'></font>
+      DO K=LMH-1,KTS,-1<a name='1558'>
+        RCML=1./CM(K)<a name='1559'>
+        RCML_T=1./CM_T(K)                                       <font color=#447700>!Bep<a name='1560'></font>
+        RCML_Q=1./CM_Q(K)                                       <font color=#447700>!Bep<a name='1561'></font>
+        THE(K)=(-CR(K)*THE(K+1)+RST(K))*RCML_T<a name='1562'>
+        Q(K)  =(-CR(K)*  Q(K+1)+RSQ(K))*RCML_Q<a name='1563'>
+        CWM(K)=(-CR(K)*CWM(K+1)+RSC(K))*RCML<a name='1564'>
+      ENDDO<a name='1565'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1566'></font>
+<font color=#447700>!<a name='1567'></font>
+<a name='1568'>
+   <a name='1569'>
+      END SUBROUTINE VDIFH<a name='1570'>
+<font color=#447700>!<a name='1571'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1572'></font>
+<font color=#447700>!XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX<a name='1573'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1574'></font>
+<A NAME='VDIFX'><A href='../../html_code/phys/module_bl_myjurb.F.html#VDIFX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1575'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>VDIFX</font>(DTDIF,LMH,RKHS,CT                              &amp;<a name='1576'>
+                      ,DUST1,DUST2,RKH,Z,RHO                          &amp;<a name='1577'>
+                      ,IDS,IDE,JDS,JDE,KDS,KDE                        &amp;<a name='1578'>
+                      ,IMS,IME,JMS,JME,KMS,KME                        &amp;<a name='1579'>
+                      ,ITS,ITE,JTS,JTE,KTS,KTE)<a name='1580'>
+<font color=#447700>!     ***************************************************************<a name='1581'></font>
+<font color=#447700>!     *                                                             *<a name='1582'></font>
+<font color=#447700>!     *         VERTICAL DIFFUSION OF MASS VARIABLES                *<a name='1583'></font>
+<font color=#447700>!     *                                                             *<a name='1584'></font>
+<font color=#447700>!     ***************************************************************<a name='1585'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1586'></font>
+<font color=#447700>!<a name='1587'></font>
+      IMPLICIT NONE<a name='1588'>
+<font color=#447700>!<a name='1589'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1590'></font>
+      INTEGER,INTENT(IN) :: IDS,IDE,JDS,JDE,KDS,KDE                    &amp;<a name='1591'>
+                           ,IMS,IME,JMS,JME,KMS,KME                    &amp;<a name='1592'>
+                           ,ITS,ITE,JTS,JTE,KTS,KTE<a name='1593'>
+<font color=#447700>!<a name='1594'></font>
+      INTEGER,INTENT(IN) :: LMH<a name='1595'>
+<font color=#447700>!<a name='1596'></font>
+      REAL,INTENT(IN) :: CT,DTDIF,RKHS<a name='1597'>
+<font color=#447700>!<a name='1598'></font>
+      REAL,DIMENSION(KTS:KTE-1),INTENT(IN) :: RKH<a name='1599'>
+      REAL,DIMENSION(KTS:KTE),INTENT(IN) :: RHO<a name='1600'>
+      REAL,DIMENSION(KTS:KTE+1),INTENT(IN) :: Z<a name='1601'>
+      REAL,DIMENSION(KTS:KTE),INTENT(INOUT) :: DUST1,DUST2<a name='1602'>
+<font color=#447700>! <a name='1603'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1604'></font>
+<font color=#447700>!***<a name='1605'></font>
+<font color=#447700>!***  LOCAL VARIABLES<a name='1606'></font>
+<font color=#447700>!***<a name='1607'></font>
+      INTEGER :: K<a name='1608'>
+<font color=#447700>!<a name='1609'></font>
+      REAL :: CF,CMB,CMDB,CTHF,DTOZL,DTOZS                            &amp;<a name='1610'>
+             ,RCML,RKHH,RSD1B,RSD2B<a name='1611'>
+<font color=#447700>!<a name='1612'></font>
+      REAL,DIMENSION(KTS:KTE-1) :: CM,CR,DTOZ,RKCT,RSD1,RSD2<a name='1613'>
+<font color=#447700>!<a name='1614'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1615'></font>
+<font color=#447700>!**********************************************************************<a name='1616'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1617'></font>
+      CTHF=0.5*CT<a name='1618'>
+<font color=#447700>!<a name='1619'></font>
+      DO K=KTS,LMH-1<a name='1620'>
+        DTOZ(K)=DTDIF/(Z(K)-Z(K+1))<a name='1621'>
+        CR(K)=-DTOZ(K)*RKH(K)<a name='1622'>
+        RKCT(K)=RKH(K)*(Z(K)-Z(K+2))*CTHF<a name='1623'>
+      ENDDO<a name='1624'>
+<font color=#447700>!<a name='1625'></font>
+      CM(KTS)=DTOZ(KTS)*RKH(KTS)+RHO(KTS)<a name='1626'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1627'></font>
+      RSD1(KTS)=DUST1(KTS)*RHO(KTS)<a name='1628'>
+      RSD2(KTS)=DUST2(KTS)*RHO(KTS)<a name='1629'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1630'></font>
+      DO K=KTS+1,LMH-1<a name='1631'>
+        DTOZL=DTOZ(K)<a name='1632'>
+        CF=-DTOZL*RKH(K-1)/CM(K-1)<a name='1633'>
+        CM(K)=-CR(K-1)*CF+(RKH(K-1)+RKH(K))*DTOZL+RHO(K)<a name='1634'>
+        RSD1(K)=-RSD1(K-1)*CF+DUST1(K)*RHO(K)<a name='1635'>
+        RSD2(K)=-RSD2(K-1)*CF+DUST2(K)*RHO(K)<a name='1636'>
+      ENDDO<a name='1637'>
+<font color=#447700>!<a name='1638'></font>
+      DTOZS=DTDIF/(Z(LMH)-Z(LMH+1))<a name='1639'>
+      RKHH=RKH(LMH-1)<a name='1640'>
+<font color=#447700>!<a name='1641'></font>
+      CF=-DTOZS*RKHH/CM(LMH-1)<a name='1642'>
+<font color=#447700>!<a name='1643'></font>
+      CMB=CR(LMH-1)*CF<a name='1644'>
+      CMDB=-CMB+RKHH*DTOZS+RHO(LMH)<a name='1645'>
+<font color=#447700>!<a name='1646'></font>
+      RSD1B=-RSD1(LMH-1)*CF+DUST1(LMH)*RHO(LMH)<a name='1647'>
+      RSD2B=-RSD2(LMH-1)*CF+DUST2(LMH)*RHO(LMH)<a name='1648'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1649'></font>
+      DUST1(LMH)=RSD1B/CMDB<a name='1650'>
+      DUST2(LMH)=RSD2B/CMDB<a name='1651'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1652'></font>
+      DO K=LMH-1,KTS,-1<a name='1653'>
+        RCML=1./CM(K)<a name='1654'>
+        DUST1(K)=(-CR(K)*DUST1(K+1)+RSD1(K))*RCML<a name='1655'>
+        DUST2(K)=(-CR(K)*DUST2(K+1)+RSD2(K))*RCML<a name='1656'>
+      ENDDO<a name='1657'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1658'></font>
+<font color=#447700>!<a name='1659'></font>
+      END SUBROUTINE VDIFX<a name='1660'>
+<a name='1661'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1662'></font>
+<font color=#447700>!XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX<a name='1663'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1664'></font>
+<A NAME='VDIFV'><A href='../../html_code/phys/module_bl_myjurb.F.html#VDIFV' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1665'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>VDIFV</font>(LMH,DTDIF,UZ0,VZ0,RKMS,U,V,RKM_IN,Z,RHO        &amp; <A href='../../call_to/VDIFV.html' TARGET='index'>3</A><a name='1666'>
+<font color=#447700>! Variables added for Bep<a name='1667'></font>
+     &amp;                ,A_UK,A_VK,B_UK,B_VK,SFK,VLK                    &amp;<a name='1668'>
+<font color=#447700>! Bep end<a name='1669'></font>
+     &amp;                ,IDS,IDE,JDS,JDE,KDS,KDE                        &amp;<a name='1670'>
+     &amp;                ,IMS,IME,JMS,JME,KMS,KME                        &amp;<a name='1671'>
+                      ,ITS,ITE,JTS,JTE,KTS,KTE,I,J)<a name='1672'>
+<font color=#447700>!     ***************************************************************<a name='1673'></font>
+<font color=#447700>!     *                                                             *<a name='1674'></font>
+<font color=#447700>!     *        VERTICAL DIFFUSION OF VELOCITY COMPONENTS            *<a name='1675'></font>
+<font color=#447700>!     *                                                             *<a name='1676'></font>
+<font color=#447700>!     ***************************************************************<a name='1677'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1678'></font>
+<font color=#447700>!<a name='1679'></font>
+      IMPLICIT NONE<a name='1680'>
+<font color=#447700>!<a name='1681'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1682'></font>
+      INTEGER,INTENT(IN) :: IDS,IDE,JDS,JDE,KDS,KDE                   &amp;<a name='1683'>
+     &amp;                     ,IMS,IME,JMS,JME,KMS,KME                   &amp;<a name='1684'>
+     &amp;                     ,ITS,ITE,JTS,JTE,KTS,KTE,I,J<a name='1685'>
+<font color=#447700>!<a name='1686'></font>
+      INTEGER,INTENT(IN) :: LMH<a name='1687'>
+<font color=#447700>!<a name='1688'></font>
+      REAL,INTENT(IN) :: RKMS,DTDIF,UZ0,VZ0<a name='1689'>
+<font color=#447700>!<a name='1690'></font>
+      REAL,DIMENSION(KTS:KTE-1),INTENT(IN) :: RKM_IN                    <font color=#447700>!Bep<a name='1691'></font>
+      REAL,DIMENSION(KTS:KTE),INTENT(IN) :: RHO<a name='1692'>
+      REAL,DIMENSION(KTS:KTE+1),INTENT(IN) :: Z<a name='1693'>
+<font color=#447700>!<a name='1694'></font>
+      REAL,DIMENSION(KTS:KTE),INTENT(INOUT) :: U,V<a name='1695'>
+      REAL,DIMENSION(KTS:KTE),INTENT(IN) :: A_UK,A_VK,B_UK,B_VK,VLK     <font color=#447700>!Bep<a name='1696'></font>
+      REAL,DIMENSION(KTS:KTE),INTENT(IN) :: SFK                       <font color=#447700>!Bep<a name='1697'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1698'></font>
+<font color=#447700>!***<a name='1699'></font>
+<font color=#447700>!***  LOCAL VARIABLES<a name='1700'></font>
+<font color=#447700>!***<a name='1701'></font>
+      INTEGER :: K<a name='1702'>
+<font color=#447700>!<a name='1703'></font>
+      REAL :: CFU,RCMLU,RCMVBU<a name='1704'>
+      REAL :: CFV,RCMLV,RCMVBV<a name='1705'>
+      REAL :: DTOZAK,DTOZL,DTOZS,RHOK,RKMH<a name='1706'>
+<font color=#447700>!<a name='1707'></font>
+      REAL,DIMENSION(KTS:KTE-1) :: CMU,CMV,CR,DTOZ,RSU,RSV<a name='1708'>
+      REAL,DIMENSION(KTS:KTE-1) :: RKM                                  <font color=#447700>!Bep<a name='1709'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1710'></font>
+<font color=#447700>!**********************************************************************<a name='1711'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1712'></font>
+      DO K=1,LMH-1<a name='1713'>
+        RKM(K)=RKM_IN(K)*SFK(K)<a name='1714'>
+        DTOZ(K)=DTDIF/(Z(K)-Z(K+1))/VLK(K)<a name='1715'>
+        CR(K)=-DTOZ(K)*RKM(K)                             <font color=#447700>!alpha, gamma<a name='1716'></font>
+      ENDDO<a name='1717'>
+<font color=#447700>!<a name='1718'></font>
+      RHOK=RHO(1)<a name='1719'>
+      CMU(1)=DTOZ(1)*RKM(1)+RHOK*(1.-DTDIF*A_UK(1))        <font color=#447700>!Bep change beta<a name='1720'></font>
+      CMV(1)=DTOZ(1)*RKM(1)+RHOK*(1.-DTDIF*A_VK(1))        <font color=#447700>!Bep change beta<a name='1721'></font>
+      RSU(1)=RHOK*(U(1)+DTDIF*B_UK(1))                     <font color=#447700>!Bep change W<a name='1722'></font>
+      RSV(1)=RHOK*(V(1)+DTDIF*B_VK(1))                     <font color=#447700>!Bep change W<a name='1723'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1724'></font>
+      DO K=2,LMH-1<a name='1725'>
+        DTOZL=DTOZ(K)<a name='1726'>
+        CFU=-DTOZL*RKM(K-1)/CMU(K-1)<a name='1727'>
+        CFV=-DTOZL*RKM(K-1)/CMV(K-1)<a name='1728'>
+        RHOK=RHO(K)<a name='1729'>
+        CMU(K)=-CR(K-1)*CFU+(RKM(K-1)+RKM(K))&amp;<a name='1730'>
+                 &amp;*DTOZL+RHOK*(1.-DTDIF*A_UK(K))                      <font color=#447700>!Bep<a name='1731'></font>
+        CMV(K)=-CR(K-1)*CFV+(RKM(K-1)+RKM(K))&amp;<a name='1732'>
+                 &amp;*DTOZL+RHOK*(1.-DTDIF*A_VK(K))                      <font color=#447700>!Bep<a name='1733'></font>
+        RSU(K)=-RSU(K-1)*CFU+RHOK*(U(K)+DTDIF*B_UK(K))                <font color=#447700>!Bep<a name='1734'></font>
+        RSV(K)=-RSV(K-1)*CFV+RHOK*(V(K)+DTDIF*B_VK(K))                <font color=#447700>!Bep<a name='1735'></font>
+      ENDDO<a name='1736'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1737'></font>
+<font color=#447700>! Bep: change lower BC from value UZ0 at LMH+1 to flux derived BC: Z(LMH+1)=0.<a name='1738'></font>
+      DTOZS=DTDIF/(Z(LMH)-Z(LMH+1))/VLK(LMH)           <font color=#447700>!Bep<a name='1739'></font>
+      RKMH=RKM(LMH-1)                       <font color=#447700>!Bep<a name='1740'></font>
+<font color=#447700>!<a name='1741'></font>
+      CFU=-DTOZS*RKMH/CMU(LMH-1)<a name='1742'>
+      CFV=-DTOZS*RKMH/CMV(LMH-1)<a name='1743'>
+      RHOK=RHO(LMH)<a name='1744'>
+      RCMVBU=1./(RKMH*DTOZS-CR(LMH-1)*CFU+RHOK*(1.-DTDIF*A_UK(LMH)))   <font color=#447700>!Bep<a name='1745'></font>
+      RCMVBV=1./(RKMH*DTOZS-CR(LMH-1)*CFV+RHOK*(1.-DTDIF*A_VK(LMH)))   <font color=#447700>!Bep<a name='1746'></font>
+     <a name='1747'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1748'></font>
+       U(LMH)=(-RSU(LMH-1)*CFU+RHOK*(U(LMH)+DTDIF*B_UK(LMH)))*RCMVBU  <font color=#447700>!Bep<a name='1749'></font>
+       V(LMH)=(-RSV(LMH-1)*CFV+RHOK*(V(LMH)+DTDIF*B_VK(LMH)))*RCMVBV  <font color=#447700>!Bep<a name='1750'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1751'></font>
+      DO K=LMH-1,1,-1<a name='1752'>
+        RCMLU=1./CMU(K)                                  <font color=#447700>!Bep<a name='1753'></font>
+        RCMLV=1./CMV(K)                                  <font color=#447700>!Bep<a name='1754'></font>
+        U(K)=(-CR(K)*U(K+1)+RSU(K))*RCMLU                <font color=#447700>!Bep<a name='1755'></font>
+        V(K)=(-CR(K)*V(K+1)+RSV(K))*RCMLV                <font color=#447700>!Bep<a name='1756'></font>
+      ENDDO<a name='1757'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1758'></font>
+<font color=#447700>!<a name='1759'></font>
+      <a name='1760'>
+      END SUBROUTINE VDIFV<a name='1761'>
+<font color=#447700>!<a name='1762'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1763'></font>
+<font color=#447700>!XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX<a name='1764'></font>
+<font color=#447700>!=======================================================================<a name='1765'></font>
+<A NAME='MYJURBINIT'><A href='../../html_code/phys/module_bl_myjurb.F.html#MYJURBINIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1766'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>MYJURBINIT</font>(RUBLTEN,RVBLTEN,RTHBLTEN,RQVBLTEN,          &amp; <A href='../../call_to/MYJURBINIT.html' TARGET='index'>1</A><a name='1767'>
+     &amp;                      TKE_MYJ,EXCH_H,RESTART,ALLOWED_TO_READ,     &amp;<a name='1768'>
+     &amp;                      IDS,IDE,JDS,JDE,KDS,KDE,                    &amp;<a name='1769'>
+     &amp;                      IMS,IME,JMS,JME,KMS,KME,                    &amp;<a name='1770'>
+     &amp;                      ITS,ITE,JTS,JTE,KTS,KTE                 )<a name='1771'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1772'></font>
+      IMPLICIT NONE<a name='1773'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1774'></font>
+      LOGICAL,INTENT(IN) :: ALLOWED_TO_READ,RESTART<a name='1775'>
+      INTEGER,INTENT(IN) :: IDS,IDE,JDS,JDE,KDS,KDE,                    &amp;<a name='1776'>
+     &amp;                      IMS,IME,JMS,JME,KMS,KME,                    &amp;<a name='1777'>
+     &amp;                      ITS,ITE,JTS,JTE,KTS,KTE<a name='1778'>
+<a name='1779'>
+      REAL,DIMENSION(IMS:IME,KMS:KME,JMS:JME),INTENT(OUT) ::    EXCH_H, &amp;<a name='1780'>
+     &amp;                                                         RUBLTEN, &amp;<a name='1781'>
+     &amp;                                                         RVBLTEN, &amp;<a name='1782'>
+     &amp;                                                        RTHBLTEN, &amp;<a name='1783'>
+     &amp;                                                        RQVBLTEN, &amp;<a name='1784'>
+     &amp;                                                         TKE_MYJ<a name='1785'>
+      INTEGER :: I,J,K,ITF,JTF,KTF<a name='1786'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1787'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1788'></font>
+<a name='1789'>
+      JTF=MIN0(JTE,JDE-1)<a name='1790'>
+      KTF=MIN0(KTE,KDE-1)<a name='1791'>
+      ITF=MIN0(ITE,IDE-1)<a name='1792'>
+<a name='1793'>
+      IF(.NOT.RESTART)THEN<a name='1794'>
+        DO J=JTS,JTF<a name='1795'>
+        DO K=KTS,KTF<a name='1796'>
+        DO I=ITS,ITF<a name='1797'>
+          TKE_MYJ(I,K,J)=EPSQ2<a name='1798'>
+          RUBLTEN(I,K,J)=0.<a name='1799'>
+          RVBLTEN(I,K,J)=0.<a name='1800'>
+          RTHBLTEN(I,K,J)=0.<a name='1801'>
+          RQVBLTEN(I,K,J)=0.<a name='1802'>
+          EXCH_H(I,K,J)=0.<a name='1803'>
+        ENDDO<a name='1804'>
+        ENDDO<a name='1805'>
+        ENDDO<a name='1806'>
+      ENDIF<a name='1807'>
+<a name='1808'>
+      END SUBROUTINE MYJURBINIT<a name='1809'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1810'></font>
+<font color=#447700>!<a name='1811'></font>
+      END MODULE MODULE_BL_MYJURB<a name='1812'>
+<font color=#447700>!<a name='1813'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1814'></font>
+</pre></body></html>

@@ -1,0 +1,560 @@
+<HTML> <BODY BGCOLOR=#ddeeee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_FORCE_SCM'><A href='../../html_code/dyn_em/module_force_scm.F.html#MODULE_FORCE_SCM' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_force_scm</font> <A href='../../call_to/MODULE_FORCE_SCM.html' TARGET='index'>1</A><a name='3'>
+<a name='4'>
+<font color=#447700>! AUTHOR: Josh Hacker (NCAR/RAL)<a name='5'></font>
+<font color=#447700>! Forces a single-column (3x3) version of WRF<a name='6'></font>
+<a name='7'>
+CONTAINS<a name='8'>
+<a name='9'>
+<A NAME='FORCE_SCM'><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='10'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>force_scm</font>(itimestep, dt, scm_force, dx, num_force_layers       &amp; <A href='../../call_to/FORCE_SCM.html' TARGET='index'>1</A>,<A href='../../call_from/FORCE_SCM.html' TARGET='index'>54</A><a name='11'>
+                             , scm_th_adv, scm_qv_adv                        &amp;<a name='12'>
+                             , scm_ql_adv                                    &amp;<a name='13'>
+                             , scm_wind_adv, scm_vert_adv                    &amp;<a name='14'>
+                             , scm_th_t_tend, scm_qv_t_tend                  &amp;<a name='15'>
+                             , scm_soilT_force, scm_soilQ_force              &amp;<a name='16'>
+                             , scm_force_th_largescale                       &amp;<a name='17'>
+                             , scm_force_qv_largescale                       &amp;<a name='18'>
+                             , scm_force_ql_largescale                       &amp;<a name='19'>
+                             , scm_force_wind_largescale                     &amp;<a name='20'>
+                             , u_base, v_base, z_base                        &amp;<a name='21'>
+                             , z_force, z_force_tend                         &amp;<a name='22'>
+                             , u_g, v_g                                      &amp;<a name='23'>
+                             , u_g_tend, v_g_tend                            &amp;<a name='24'>
+                             , w_subs, w_subs_tend                           &amp;<a name='25'>
+                             , th_upstream_x, th_upstream_x_tend             &amp;<a name='26'>
+                             , th_upstream_y, th_upstream_y_tend             &amp;<a name='27'>
+                             , qv_upstream_x, qv_upstream_x_tend             &amp;<a name='28'>
+                             , qv_upstream_y, qv_upstream_y_tend             &amp;<a name='29'>
+                             , ql_upstream_x, ql_upstream_x_tend             &amp;<a name='30'>
+                             , ql_upstream_y, ql_upstream_y_tend             &amp;<a name='31'>
+                             , u_upstream_x, u_upstream_x_tend               &amp;<a name='32'>
+                             , u_upstream_y, u_upstream_y_tend               &amp;<a name='33'>
+                             , v_upstream_x, v_upstream_x_tend               &amp;<a name='34'>
+                             , v_upstream_y, v_upstream_y_tend               &amp;<a name='35'>
+                             , th_t_tend, qv_t_tend                          &amp;<a name='36'>
+                             , tau_x, tau_x_tend                             &amp;<a name='37'>
+                             , tau_y, tau_y_tend                             &amp;<a name='38'>
+                             ,th_largescale                                  &amp;<a name='39'>
+                             ,th_largescale_tend                             &amp;<a name='40'>
+                             ,qv_largescale                                  &amp;<a name='41'>
+                             ,qv_largescale_tend                             &amp;<a name='42'>
+                             ,ql_largescale                                  &amp;<a name='43'>
+                             ,ql_largescale_tend                             &amp;<a name='44'>
+                             ,u_largescale                                   &amp;<a name='45'>
+                             ,u_largescale_tend                              &amp;<a name='46'>
+                             ,v_largescale                                   &amp;<a name='47'>
+                             ,v_largescale_tend                              &amp;<a name='48'>
+                             ,tau_largescale                                 &amp;<a name='49'>
+                             ,tau_largescale_tend                            &amp;<a name='50'>
+                             , num_force_soil_layers, num_soil_layers        &amp;<a name='51'>
+                             , soil_depth_force, zs                          &amp;<a name='52'>
+                             , tslb, smois                                   &amp;<a name='53'>
+                             , t_soil_forcing_val, t_soil_forcing_tend       &amp;<a name='54'>
+                             , q_soil_forcing_val, q_soil_forcing_tend       &amp;<a name='55'>
+                             , tau_soil                                      &amp;<a name='56'>
+                             , z, z_at_w, th, qv, ql, u, v                   &amp;<a name='57'>
+                             , thten, qvten, qlten, uten, vten               &amp;<a name='58'>
+                             , ids, ide, jds, jde, kds, kde                  &amp;<a name='59'>
+                             , ims, ime, jms, jme, kms, kme                  &amp;<a name='60'>
+                             , ips, ipe, jps, jpe, kps, kpe                  &amp;<a name='61'>
+                             , kts, kte                                      &amp;<a name='62'>
+                            )<a name='63'>
+<a name='64'>
+<font color=#447700>! adds forcing to bl tendencies and also to base state/geostrophic winds.<a name='65'></font>
+<a name='66'>
+   USE <A href='../../html_code/dyn_em/module_init_utilities.F.html#MODULE_INIT_UTILITIES'>module_init_utilities</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_INIT_UTILITIES_1">, ONLY : interp_0<a name='67'>
+   IMPLICIT NONE<a name='68'>
+<a name='69'>
+<a name='70'>
+   INTEGER,    INTENT(IN   )                 :: itimestep<a name='71'>
+   INTEGER,    INTENT(IN   )                 :: num_force_layers, scm_force<a name='72'>
+   REAL,       INTENT(IN   )                 :: dt,dx<a name='73'>
+   LOGICAL,    INTENT(IN   )                 :: scm_th_adv, &amp;<a name='74'>
+                                                scm_qv_adv, &amp;<a name='75'>
+                                                scm_ql_adv, &amp;<a name='76'>
+                                                scm_wind_adv, &amp;<a name='77'>
+                                                scm_vert_adv, &amp;<a name='78'>
+                                                scm_soilT_force, &amp;<a name='79'>
+                                                scm_soilQ_force, &amp;<a name='80'>
+                                                scm_force_th_largescale, &amp;<a name='81'>
+                                                scm_force_qv_largescale, &amp;<a name='82'>
+                                                scm_force_ql_largescale, &amp;<a name='83'>
+                                                scm_force_wind_largescale,&amp;<a name='84'>
+                                                scm_th_t_tend,&amp;<a name='85'>
+                                                scm_qv_t_tend<a name='86'>
+<a name='87'>
+   REAL, DIMENSION(ims:ime,kms:kme,jms:jme), INTENT(IN   ) :: z, th, qv, ql<a name='88'>
+   REAL, DIMENSION(ims:ime,kms:kme,jms:jme), INTENT(IN   ) :: u, v<a name='89'>
+   REAL, DIMENSION(ims:ime,kms:kme,jms:jme), INTENT(IN   ) :: z_at_w<a name='90'>
+   REAL, DIMENSION(ims:ime,kms:kme,jms:jme), INTENT(INOUT) :: thten, qvten<a name='91'>
+   REAL, DIMENSION(ims:ime,kms:kme,jms:jme), INTENT(INOUT) :: qlten<a name='92'>
+   REAL, DIMENSION(ims:ime,kms:kme,jms:jme), INTENT(INOUT) :: uten, vten<a name='93'>
+   REAL, DIMENSION( kms:kme ), INTENT(INOUT)               :: u_base, v_base<a name='94'>
+   REAL, DIMENSION( kms:kme ), INTENT(INOUT)               :: z_base<a name='95'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT)       :: z_force<a name='96'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT)       :: u_g,v_g<a name='97'>
+<a name='98'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: z_force_tend<a name='99'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: u_g_tend,v_g_tend<a name='100'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: w_subs_tend<a name='101'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: th_upstream_x_tend<a name='102'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: th_upstream_y_tend<a name='103'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: qv_upstream_x_tend<a name='104'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: qv_upstream_y_tend<a name='105'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: ql_upstream_x_tend<a name='106'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: ql_upstream_y_tend<a name='107'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: u_upstream_x_tend<a name='108'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: u_upstream_y_tend<a name='109'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: v_upstream_x_tend<a name='110'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: v_upstream_y_tend<a name='111'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: th_t_tend <a name='112'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: qv_t_tend  <a name='113'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: tau_x_tend<a name='114'>
+   REAL, DIMENSION(num_force_layers), INTENT (IN) :: tau_y_tend<a name='115'>
+<a name='116'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: th_upstream_x<a name='117'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: th_upstream_y<a name='118'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: u_upstream_x<a name='119'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: u_upstream_y<a name='120'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: v_upstream_x<a name='121'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: v_upstream_y<a name='122'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: qv_upstream_x<a name='123'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: qv_upstream_y<a name='124'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: ql_upstream_x<a name='125'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: ql_upstream_y<a name='126'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: w_subs<a name='127'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: tau_x<a name='128'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: tau_y<a name='129'>
+<a name='130'>
+<font color=#447700>! WA 1/8/10 for large-scale forcing<a name='131'></font>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: th_largescale<a name='132'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: th_largescale_tend<a name='133'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: u_largescale<a name='134'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: u_largescale_tend<a name='135'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: v_largescale<a name='136'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: v_largescale_tend<a name='137'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: qv_largescale<a name='138'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: qv_largescale_tend<a name='139'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: ql_largescale<a name='140'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: ql_largescale_tend<a name='141'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: tau_largescale<a name='142'>
+   REAL, DIMENSION(num_force_layers), INTENT (INOUT) :: tau_largescale_tend<a name='143'>
+<a name='144'>
+<font color=#447700>! WA 1/3/10 For soil forcing<a name='145'></font>
+   INTEGER,    INTENT(IN   )         :: num_force_soil_layers, num_soil_layers<a name='146'>
+   REAL, DIMENSION(ims:ime,num_soil_layers,jms:jme),INTENT(INOUT) :: tslb, smois<a name='147'>
+   REAL, DIMENSION(num_force_soil_layers), INTENT (INOUT) :: t_soil_forcing_val<a name='148'>
+   REAL, DIMENSION(num_force_soil_layers), INTENT (INOUT) :: t_soil_forcing_tend<a name='149'>
+   REAL, DIMENSION(num_force_soil_layers), INTENT (INOUT) :: q_soil_forcing_val<a name='150'>
+   REAL, DIMENSION(num_force_soil_layers), INTENT (INOUT) :: q_soil_forcing_tend<a name='151'>
+   REAL, DIMENSION(num_force_soil_layers), INTENT (INOUT) :: tau_soil<a name='152'>
+   REAL, DIMENSION(num_force_soil_layers), INTENT (IN   ) :: soil_depth_force<a name='153'>
+   REAL, DIMENSION(num_soil_layers),       INTENT (IN   ) :: zs        <a name='154'>
+<a name='155'>
+   INTEGER,    INTENT(IN   )    ::     ids,ide, jds,jde, kds,kde, &amp;<a name='156'>
+                                       ims,ime, jms,jme, kms,kme, &amp;<a name='157'>
+                                       ips,ipe, jps,jpe, kps,kpe, &amp;<a name='158'>
+                                       kts,kte<a name='159'>
+   <a name='160'>
+<font color=#447700>! Local<a name='161'></font>
+   INTEGER                      :: i,j,k<a name='162'>
+   LOGICAL                      :: debug = .false.<a name='163'>
+   REAL                         :: t_x, t_y, qv_x, qv_y, ql_x, ql_y<a name='164'>
+   REAL                         :: u_x, u_y, v_x, v_y<a name='165'>
+   REAL, DIMENSION(kms:kme)     :: th_adv_tend, qv_adv_tend, ql_adv_tend<a name='166'>
+   REAL, DIMENSION(kms:kme)     :: u_adv_tend, v_adv_tend<a name='167'>
+   REAL, DIMENSION(kms:kme)     :: th_t_tend_interp, qv_t_tend_interp<a name='168'>
+   REAL, DIMENSION(kms:kme)     :: dthdz, dudz, dvdz, dqvdz, dqldz<a name='169'>
+   REAL                         :: w<a name='170'>
+   REAL, DIMENSION(kms:kme)     :: w_dthdz, w_dudz, w_dvdz, w_dqvdz, w_dqldz<a name='171'>
+   REAL, DIMENSION(kms:kme)     :: adv_timescale_x, adv_timescale_y<a name='172'>
+   CHARACTER*256                :: message<a name='173'>
+<font color=#447700>! Large-scale forcing WA 1/8/10<a name='174'></font>
+   REAL                         :: t_ls, qv_ls, ql_ls<a name='175'>
+   REAL                         :: u_ls, v_ls<a name='176'>
+   REAL, DIMENSION(kms:kme)     :: th_ls_tend, qv_ls_tend, ql_ls_tend<a name='177'>
+   REAL, DIMENSION(kms:kme)     :: u_ls_tend, v_ls_tend<a name='178'>
+   REAL, DIMENSION(kms:kme)     :: ls_timescale<a name='179'>
+<font color=#447700>! Soil forcing WA 1/3/10<a name='180'></font>
+   INTEGER                      :: ks<a name='181'>
+   REAL                         :: t_soil, q_soil<a name='182'>
+   REAL, DIMENSION(num_soil_layers) :: t_soil_tend, q_soil_tend<a name='183'>
+   REAL, DIMENSION(num_soil_layers) :: timescale_soil<a name='184'>
+<a name='185'>
+   IF ( scm_force .EQ. 0 ) return<a name='186'>
+ <a name='187'>
+<font color=#447700>! NOTES<a name='188'></font>
+<font color=#447700>! z is kts:kte<a name='189'></font>
+<font color=#447700>! z_at_w is kms:kme<a name='190'></font>
+<a name='191'>
+     <font color=#447700>! this is a good place for checks on the configuration<a name='192'></font>
+     if ( z_force(1) &gt; z(ids,1,jds) ) then<a name='193'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1">("First forcing level must be lower than first WRF half-level")<a name='194'>
+        WRITE( message , * ) 'z forcing = ',z_force(1), 'z = ',z(ids,1,jds)<a name='195'>
+<font color=#447700>!       print*,"z forcing = ",z_force(1), "z = ",z(ids,1,jds)<a name='196'></font>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_25">( message )<a name='197'>
+     endif<a name='198'>
+<a name='199'>
+     z_force = z_force + dt*z_force_tend <a name='200'>
+     u_g = u_g + dt*u_g_tend <a name='201'>
+     v_g = v_g + dt*v_g_tend <a name='202'>
+     tau_x = tau_x + dt*tau_x_tend <a name='203'>
+     tau_y = tau_y + dt*tau_y_tend <a name='204'>
+     tau_largescale = tau_largescale + dt*tau_largescale_tend <a name='205'>
+<a name='206'>
+     if ( scm_th_adv .AND. th_upstream_x(1) &gt; 0.) then<a name='207'>
+       th_upstream_x = th_upstream_x + dt*th_upstream_x_tend<a name='208'>
+       th_upstream_y = th_upstream_y + dt*th_upstream_y_tend<a name='209'>
+     endif<a name='210'>
+     if ( scm_qv_adv .AND. qv_upstream_x(1) &gt; 0.) then<a name='211'>
+       qv_upstream_x = qv_upstream_x + dt*qv_upstream_x_tend<a name='212'>
+       qv_upstream_y = qv_upstream_y + dt*qv_upstream_y_tend<a name='213'>
+     endif<a name='214'>
+     if ( scm_ql_adv .AND. ql_upstream_x(1) &gt; 0.) then<a name='215'>
+       ql_upstream_x = ql_upstream_x + dt*ql_upstream_x_tend<a name='216'>
+       ql_upstream_y = ql_upstream_y + dt*ql_upstream_y_tend<a name='217'>
+     endif<a name='218'>
+     if ( scm_wind_adv .AND. u_upstream_x(1) &gt; -900.) then<a name='219'>
+       u_upstream_x = u_upstream_x + dt*u_upstream_x_tend<a name='220'>
+       u_upstream_y = u_upstream_y + dt*u_upstream_y_tend<a name='221'>
+       v_upstream_x = v_upstream_x + dt*v_upstream_x_tend<a name='222'>
+       v_upstream_y = v_upstream_y + dt*v_upstream_y_tend<a name='223'>
+     endif<a name='224'>
+     if ( scm_vert_adv ) then<a name='225'>
+       w_subs = w_subs + dt*w_subs_tend<a name='226'>
+     endif<a name='227'>
+<a name='228'>
+     if ( scm_force_th_largescale .AND. th_largescale(1) &gt; 0.) then<a name='229'>
+       th_largescale = th_largescale + dt*th_largescale_tend<a name='230'>
+     endif<a name='231'>
+     if ( scm_force_qv_largescale .AND. qv_largescale(1) &gt; 0.) then<a name='232'>
+       qv_largescale = qv_largescale + dt*qv_largescale_tend<a name='233'>
+     endif<a name='234'>
+     if ( scm_force_ql_largescale.AND. ql_largescale(1) &gt; 0.) then<a name='235'>
+       ql_largescale = ql_largescale + dt*ql_largescale_tend<a name='236'>
+     endif<a name='237'>
+     if ( scm_force_wind_largescale .AND. u_largescale(1) &gt; -900.) then<a name='238'>
+       u_largescale = u_largescale + dt*u_largescale_tend<a name='239'>
+       v_largescale = v_largescale + dt*v_largescale_tend<a name='240'>
+     endif<a name='241'>
+<a name='242'>
+     if ( scm_soilT_force ) then<a name='243'>
+       t_soil_forcing_val = t_soil_forcing_val + dt*t_soil_forcing_tend<a name='244'>
+     endif<a name='245'>
+     if ( scm_soilQ_force ) then<a name='246'>
+       q_soil_forcing_val = q_soil_forcing_val + dt*q_soil_forcing_tend<a name='247'>
+     endif<a name='248'>
+<a name='249'>
+<font color=#447700>! 0 everything in case we don't set it later<a name='250'></font>
+     th_adv_tend = 0.0<a name='251'>
+     qv_adv_tend = 0.0<a name='252'>
+     ql_adv_tend = 0.0<a name='253'>
+     u_adv_tend  = 0.0<a name='254'>
+     v_adv_tend  = 0.0<a name='255'>
+     th_ls_tend = 0.0<a name='256'>
+     qv_ls_tend = 0.0<a name='257'>
+     ql_ls_tend = 0.0<a name='258'>
+     u_ls_tend  = 0.0<a name='259'>
+     v_ls_tend  = 0.0<a name='260'>
+     w_dthdz     = 0.0<a name='261'>
+     w_dqvdz     = 0.0<a name='262'>
+     w_dqldz     = 0.0<a name='263'>
+     w_dudz      = 0.0<a name='264'>
+     w_dvdz      = 0.0<a name='265'>
+     adv_timescale_x = 0.0<a name='266'>
+     adv_timescale_y = 0.0<a name='267'>
+     th_t_tend_interp =0.0<a name='268'>
+     qv_t_tend_interp =0.0<a name='269'>
+ <a name='270'>
+<font color=#447700>! now interpolate forcing to model vertical grid<a name='271'></font>
+<a name='272'>
+<font color=#447700>!    if ( debug ) print*,' z u_base v_base '<a name='273'></font>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_10">(100,'k z_base  u_base  v_base')<a name='274'>
+     do k = kms,kme-1<a name='275'>
+       z_base(k) = z(ids,k,jds)<a name='276'>
+       u_base(k) = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_1">(u_g,z_force,z_base(k),num_force_layers)<a name='277'>
+       v_base(k) = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_2">(v_g,z_force,z_base(k),num_force_layers)<a name='278'>
+<font color=#447700>!      if ( debug ) print*,z_base(k),u_base(k),v_base(k)<a name='279'></font>
+       WRITE( message, '(i4,3f12.4)' ) k,z_base(k),u_base(k),v_base(k)<a name='280'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_11"> ( 100, message )<a name='281'>
+    enddo<a name='282'>
+<a name='283'>
+    if ( scm_th_adv .or. scm_qv_adv .or. scm_ql_adv .or. scm_wind_adv ) then<a name='284'>
+       if ( scm_th_adv ) CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_12"> ( 100, 'k  tau_x  tau_y t_ups_x t_ups_y t_m ' )<a name='285'>
+       do k = kms,kme-1<a name='286'>
+          adv_timescale_x(k) = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_3">(tau_x,z_force,z(ids,k,jds),num_force_layers)<a name='287'>
+          adv_timescale_y(k) = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_4">(tau_y,z_force,z(ids,k,jds),num_force_layers)<a name='288'>
+       enddo<a name='289'>
+    endif<a name='290'>
+<a name='291'>
+    if ( scm_th_adv ) then<a name='292'>
+       if ( th_upstream_x(1) &gt; 0.) then<a name='293'>
+          do k = kms,kme-1<a name='294'>
+             t_x = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_5">(th_upstream_x,z_force,z(ids,k,jds),num_force_layers)<a name='295'>
+             t_y = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_6">(th_upstream_y,z_force,z(ids,k,jds),num_force_layers)<a name='296'>
+<a name='297'>
+             th_adv_tend(k) = (t_x-th(ids,k,jds))/adv_timescale_x(k) + (t_y-th(ids,k,jds))/adv_timescale_y(k)<a name='298'>
+             WRITE( message, '(i4,5f12.4)' ) k,adv_timescale_x(k), adv_timescale_y(k), t_x, t_y, th(ids,k,jds)<a name='299'>
+             CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_13"> ( 100, message )<a name='300'>
+          enddo<a name='301'>
+       else <font color=#447700>! WA if upstream is empty, use tendency only not value+tend<a name='302'></font>
+          do k = kms,kme-1<a name='303'>
+             t_x = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_7">(dt*th_upstream_x_tend,z_force,z(ids,k,jds),num_force_layers)<a name='304'>
+             t_y = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_8">(dt*th_upstream_y_tend,z_force,z(ids,k,jds),num_force_layers)<a name='305'>
+<a name='306'>
+             th_adv_tend(k) = t_x/adv_timescale_x(k) + t_y/adv_timescale_y(k)<a name='307'>
+             WRITE( message, '(i4,5f12.4)' ) k,adv_timescale_x(k), adv_timescale_y(k), t_x, t_y, th(ids,k,jds)<a name='308'>
+             CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_14"> ( 100, message )<a name='309'>
+          enddo<a name='310'>
+       endif<a name='311'>
+    endif<a name='312'>
+     if (minval(tau_x) &lt; 0) then<a name='313'>
+       print*,tau_x<a name='314'>
+       stop 'TAU_X'<a name='315'>
+     endif<a name='316'>
+     if (minval(tau_y) &lt; 0) then<a name='317'>
+       print*,z_force<a name='318'>
+       print*,tau_y<a name='319'>
+       stop 'TAU_Y'<a name='320'>
+     endif<a name='321'>
+<a name='322'>
+    if ( scm_qv_adv ) then<a name='323'>
+       if ( qv_upstream_x(1) &gt; 0.) then<a name='324'>
+          do k = kms,kme-1<a name='325'>
+             qv_x = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_9">(qv_upstream_x,z_force,z(ids,k,jds),num_force_layers)<a name='326'>
+             qv_y = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_10">(qv_upstream_y,z_force,z(ids,k,jds),num_force_layers)<a name='327'>
+<a name='328'>
+             qv_adv_tend(k) = (qv_x-qv(ids,k,jds))/adv_timescale_x(k) + (qv_y-qv(ids,k,jds))/adv_timescale_y(k)<a name='329'>
+             WRITE( message, * ) 'qv_adv_tend branch 1',k,adv_timescale_x(k), qv_upstream_x(k), adv_timescale_y(k), &amp;<a name='330'>
+                                  qv_x, qv_y, qv(ids,k,jds), qv_adv_tend(k)<a name='331'>
+             CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_15"> ( 100, message )<a name='332'>
+          enddo<a name='333'>
+       else <font color=#447700>! WA if upstream is empty, use tendency only not value+tend<a name='334'></font>
+          do k = kms,kme-1<a name='335'>
+             qv_x = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_11">(dt*qv_upstream_x_tend,z_force,z(ids,k,jds),num_force_layers)<a name='336'>
+             qv_y = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_12">(dt*qv_upstream_y_tend,z_force,z(ids,k,jds),num_force_layers)<a name='337'>
+<a name='338'>
+             qv_adv_tend(k) = qv_x/adv_timescale_x(k) + qv_y/adv_timescale_y(k)<a name='339'>
+             WRITE( message, * ) 'qv_adv_tend branch 2',k,adv_timescale_x(k), adv_timescale_y(k), qv_upstream_x(k), &amp;<a name='340'>
+                                  qv_x, qv_y, qv(ids,k,jds), qv_adv_tend(k)<a name='341'>
+             CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_16"> ( 100, message )<a name='342'>
+          enddo<a name='343'>
+       endif<a name='344'>
+    endif<a name='345'>
+<a name='346'>
+    if ( scm_ql_adv ) then<a name='347'>
+       if ( ql_upstream_x(1) &gt; 0.) then<a name='348'>
+          do k = kms,kme-1<a name='349'>
+             ql_x = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_13">(ql_upstream_x,z_force,z(ids,k,jds),num_force_layers)<a name='350'>
+             ql_y = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_14">(ql_upstream_y,z_force,z(ids,k,jds),num_force_layers)<a name='351'>
+<a name='352'>
+             ql_adv_tend(k) = (ql_x-ql(ids,k,jds))/adv_timescale_x(k) + (ql_y-ql(ids,k,jds))/adv_timescale_y(k)<a name='353'>
+          enddo<a name='354'>
+       else <font color=#447700>! WA if upstream is empty, use tendency only not value+tend<a name='355'></font>
+          do k = kms,kme-1<a name='356'>
+             ql_x = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_15">(dt*ql_upstream_x_tend,z_force,z(ids,k,jds),num_force_layers)<a name='357'>
+             ql_y = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_16">(dt*ql_upstream_y_tend,z_force,z(ids,k,jds),num_force_layers)<a name='358'>
+<a name='359'>
+             ql_adv_tend(k) = ql_x/adv_timescale_x(k) + ql_y/adv_timescale_y(k)<a name='360'>
+          enddo<a name='361'>
+       endif<a name='362'>
+    endif<a name='363'>
+<a name='364'>
+    if ( scm_wind_adv ) then<a name='365'>
+       if ( u_upstream_x(1) &gt; -900.) then<a name='366'>
+          do k = kms,kme-1<a name='367'>
+             u_x = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_17">(u_upstream_x,z_force,z(ids,k,jds),num_force_layers)<a name='368'>
+             u_y = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_18">(u_upstream_y,z_force,z(ids,k,jds),num_force_layers)<a name='369'>
+<a name='370'>
+             v_x = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_19">(v_upstream_x,z_force,z(ids,k,jds),num_force_layers)<a name='371'>
+             v_y = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_20">(v_upstream_y,z_force,z(ids,k,jds),num_force_layers)<a name='372'>
+<a name='373'>
+             u_adv_tend(k) = (u_x-u(ids,k,jds))/adv_timescale_x(k) + (u_y-u(ids,k,jds))/adv_timescale_y(k)<a name='374'>
+             v_adv_tend(k) = (v_x-v(ids,k,jds))/adv_timescale_x(k) + (v_y-v(ids,k,jds))/adv_timescale_y(k)<a name='375'>
+          enddo<a name='376'>
+       else <font color=#447700>! WA if upstream is empty, use tendency only not value+tend<a name='377'></font>
+          do k = kms,kme-1<a name='378'>
+             u_x = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_21">(dt*u_upstream_x_tend,z_force,z(ids,k,jds),num_force_layers)<a name='379'>
+             u_y = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_22">(dt*u_upstream_y_tend,z_force,z(ids,k,jds),num_force_layers)<a name='380'>
+<a name='381'>
+             v_x = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_23">(dt*v_upstream_x_tend,z_force,z(ids,k,jds),num_force_layers)<a name='382'>
+             v_y = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_24">(dt*v_upstream_y_tend,z_force,z(ids,k,jds),num_force_layers)<a name='383'>
+<a name='384'>
+             u_adv_tend(k) = u_x/adv_timescale_x(k) + u_y/adv_timescale_y(k)<a name='385'>
+             v_adv_tend(k) = v_x/adv_timescale_x(k) + v_y/adv_timescale_y(k)<a name='386'>
+          enddo<a name='387'>
+       endif<a name='388'>
+    endif<a name='389'>
+<a name='390'>
+<a name='391'>
+<a name='392'>
+    if ( scm_th_t_tend ) then<a name='393'>
+       do k = kms,kme-1<a name='394'>
+          th_t_tend_interp(k) = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_25">(th_t_tend,z_force,z(ids,k,jds),num_force_layers) <a name='395'>
+       enddo<a name='396'>
+    endif<a name='397'>
+<a name='398'>
+    if ( scm_qv_t_tend ) then<a name='399'>
+       do k = kms,kme-1<a name='400'>
+          qv_t_tend_interp(k) = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_26">(qv_t_tend,z_force,z(ids,k,jds),num_force_layers) <a name='401'>
+          write(*,'(i3, f20.15)') k, qv_t_tend_interp(k)<a name='402'>
+       enddo<a name='403'>
+    endif<a name='404'>
+<a name='405'>
+<a name='406'>
+<font color=#447700>! Large scale forcing starts here 1/8/10 WA<a name='407'></font>
+    if ( scm_force_th_largescale .or. scm_force_qv_largescale .or. scm_force_ql_largescale .or. scm_force_wind_largescale ) then<a name='408'>
+       do k = kms,kme-1<a name='409'>
+          ls_timescale(k) = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_27">(tau_largescale,z_force,z(ids,k,jds),num_force_layers)<a name='410'>
+       enddo<a name='411'>
+    endif<a name='412'>
+<a name='413'>
+    if ( scm_force_th_largescale ) then<a name='414'>
+       if ( th_largescale(1) &gt; 0.) then<a name='415'>
+          do k = kms,kme-1<a name='416'>
+             t_ls = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_28">(th_largescale,z_force,z(ids,k,jds),num_force_layers)<a name='417'>
+             th_ls_tend(k) = (t_ls-th(ids,k,jds))/ls_timescale(k)<a name='418'>
+          enddo<a name='419'>
+       else <font color=#447700>! WA if upstream is empty, use tendency only not value+tend<a name='420'></font>
+          do k = kms,kme-1<a name='421'>
+             t_ls = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_29">(dt*th_largescale_tend,z_force,z(ids,k,jds),num_force_layers)<a name='422'>
+             th_ls_tend(k) = t_ls/ls_timescale(k)<a name='423'>
+          enddo<a name='424'>
+       endif<a name='425'>
+    endif<a name='426'>
+<a name='427'>
+    if ( scm_force_qv_largescale ) then<a name='428'>
+       if ( qv_largescale(1) &gt; 0.) then<a name='429'>
+          do k = kms,kme-1<a name='430'>
+             qv_ls = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_30">(qv_largescale,z_force,z(ids,k,jds),num_force_layers)<a name='431'>
+             qv_ls_tend(k) = (qv_ls-qv(ids,k,jds))/ls_timescale(k)<a name='432'>
+          enddo<a name='433'>
+       else <font color=#447700>! WA if upstream is empty, use tendency only not value+tend<a name='434'></font>
+          do k = kms,kme-1<a name='435'>
+             qv_ls = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_31">(dt*qv_largescale_tend,z_force,z(ids,k,jds),num_force_layers)<a name='436'>
+             qv_ls_tend(k) = qv_ls/ls_timescale(k)<a name='437'>
+          enddo<a name='438'>
+       endif<a name='439'>
+    endif<a name='440'>
+<a name='441'>
+    if ( scm_force_ql_largescale ) then<a name='442'>
+       if ( ql_largescale(1) &gt; 0.) then<a name='443'>
+          do k = kms,kme-1<a name='444'>
+             ql_ls = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_32">(ql_largescale,z_force,z(ids,k,jds),num_force_layers)<a name='445'>
+             ql_ls_tend(k) = (ql_ls-ql(ids,k,jds))/ls_timescale(k)<a name='446'>
+          enddo<a name='447'>
+       else <font color=#447700>! WA if upstream is empty, use tendency only not value+tend<a name='448'></font>
+          do k = kms,kme-1<a name='449'>
+             ql_ls = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_33">(dt*ql_largescale_tend,z_force,z(ids,k,jds),num_force_layers)<a name='450'>
+             ql_ls_tend(k) = ql_ls/ls_timescale(k)<a name='451'>
+          enddo<a name='452'>
+       endif<a name='453'>
+    endif<a name='454'>
+<a name='455'>
+    if ( scm_force_wind_largescale ) then<a name='456'>
+       if ( u_largescale(1) &gt; -900.) then<a name='457'>
+          do k = kms,kme-1<a name='458'>
+             u_ls = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_34">(u_largescale,z_force,z(ids,k,jds),num_force_layers)<a name='459'>
+             v_ls = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_35">(v_largescale,z_force,z(ids,k,jds),num_force_layers)<a name='460'>
+             u_ls_tend(k) = (u_ls-u(ids,k,jds))/ls_timescale(k)<a name='461'>
+             v_ls_tend(k) = (v_ls-v(ids,k,jds))/ls_timescale(k)<a name='462'>
+          enddo<a name='463'>
+       else <font color=#447700>! WA if upstream is empty, use tendency only not value+tend<a name='464'></font>
+          do k = kms,kme-1<a name='465'>
+             u_ls = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_36">(dt*u_largescale_tend,z_force,z(ids,k,jds),num_force_layers)<a name='466'>
+             v_ls = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_37">(dt*v_largescale_tend,z_force,z(ids,k,jds),num_force_layers)<a name='467'>
+             u_ls_tend(k) = u_ls/ls_timescale(k)<a name='468'>
+             v_ls_tend(k) = v_ls/ls_timescale(k)<a name='469'>
+          enddo<a name='470'>
+       endif<a name='471'>
+    endif<a name='472'>
+<a name='473'>
+<font color=#447700>! Now do vertical advection.  Note that no large-scale vertical advection<a name='474'></font>
+<font color=#447700>! is implemented at this time, may not make sense anyway (WA).<a name='475'></font>
+<font color=#447700>! loops are set so that the top and bottom (w=0) are handled correctly<a name='476'></font>
+<font color=#447700>! vertical derivatives<a name='477'></font>
+    do k = kms+1,kme-1<a name='478'>
+       dthdz(k) = (th(2,k,2)-th(2,k-1,2))/(z(2,k,2)-z(2,k-1,2))<a name='479'>
+       dqvdz(k) = (qv(2,k,2)-qv(2,k-1,2))/(z(2,k,2)-z(2,k-1,2))<a name='480'>
+       dqldz(k) = (ql(2,k,2)-ql(2,k-1,2))/(z(2,k,2)-z(2,k-1,2))<a name='481'>
+       dudz(k)  = (u(2,k,2)-u(2,k-1,2))/(z(2,k,2)-z(2,k-1,2))<a name='482'>
+       dvdz(k)  = (v(2,k,2)-v(2,k-1,2))/(z(2,k,2)-z(2,k-1,2))<a name='483'>
+    enddo<a name='484'>
+<a name='485'>
+<font color=#447700>! w on full levels, then advect<a name='486'></font>
+    if ( scm_vert_adv ) then<a name='487'>
+       do k = kms+1,kme-1<a name='488'>
+          w = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_38">(w_subs,z_force,z_at_w(ids,k,jds),num_force_layers)<a name='489'>
+          w_dthdz(k) = -w*dthdz(k)<a name='490'>
+          w_dqvdz(k) = -w*dqvdz(k)<a name='491'>
+          w_dqldz(k) = -w*dqldz(k)<a name='492'>
+          w_dudz(k)  = -w*dudz(k)<a name='493'>
+          w_dvdz(k)  = -w*dvdz(k)<a name='494'>
+       enddo<a name='495'>
+    endif<a name='496'>
+<a name='497'>
+<font color=#447700>! set tendencies for return<a name='498'></font>
+<font color=#447700>! vertical advection tendencies need to be interpolated back to half levels<a name='499'></font>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_17"> ( 100, 'j, k, th_adv_ten, qv_adv_ten, ql_adv_ten, u_adv_ten, v_adv_ten')<a name='500'>
+    do j = jms,jme<a name='501'>
+    do k = kms,kme-1<a name='502'>
+    if(j==1) WRITE( message, * ) k,th_adv_tend(k),qv_adv_tend(k),ql_adv_tend(k), u_adv_tend(k),v_adv_tend(k)<a name='503'>
+    if(j==1) CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_18"> ( 100, message )<a name='504'>
+    do i = ims,ime<a name='505'>
+       thten(i,k,j) = thten(i,k,j) + th_adv_tend(k) +              &amp;<a name='506'>
+                      0.5*(w_dthdz(k) + w_dthdz(k+1)) + th_t_tend_interp(k)&amp;<a name='507'>
+                      + th_ls_tend(k)<a name='508'>
+       qvten(i,k,j) = qvten(i,k,j) + qv_adv_tend(k) +              &amp;<a name='509'>
+                      0.5*(w_dqvdz(k) + w_dqvdz(k+1)) + qv_t_tend_interp(k)&amp;<a name='510'>
+                      + qv_ls_tend(k)<a name='511'>
+       qlten(i,k,j) = qlten(i,k,j) + ql_adv_tend(k) +              &amp;<a name='512'>
+                      0.5*(w_dqldz(k) + w_dqldz(k+1))              &amp;<a name='513'>
+                      + ql_ls_tend(k)<a name='514'>
+       uten(i,k,j)  = uten(i,k,j) + u_adv_tend(k) +                &amp;<a name='515'>
+                      0.5*(w_dudz(k) + w_dudz(k+1))                &amp;<a name='516'>
+                      + u_ls_tend(k)<a name='517'>
+       vten(i,k,j)  = vten(i,k,j) + v_adv_tend(k) +                &amp;<a name='518'>
+                      0.5*(w_dvdz(k) + w_dvdz(k+1))                &amp; <a name='519'>
+                      + v_ls_tend(k)<a name='520'>
+    enddo<a name='521'>
+    enddo<a name='522'>
+    enddo<a name='523'>
+<a name='524'>
+<font color=#447700>! soil forcing 1/3/10 WA<a name='525'></font>
+    if ( scm_soilT_force ) then<a name='526'>
+       do ks = 1,num_soil_layers<a name='527'>
+          t_soil = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_39">(t_soil_forcing_val,soil_depth_force,zs(ks),num_force_soil_layers)<a name='528'>
+          timescale_soil(ks) = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_40">(tau_soil,soil_depth_force,zs(ks),num_force_soil_layers)<a name='529'>
+          t_soil_tend(ks) = (t_soil-tslb(ids,ks,jds))/timescale_soil(ks)<a name='530'>
+       enddo<a name='531'>
+       do j = jms,jme<a name='532'>
+          do ks = 1,num_soil_layers<a name='533'>
+             do i = ims,ime<a name='534'>
+                tslb(ids,ks,jds) = tslb(ids,ks,jds) + t_soil_tend(ks)<a name='535'>
+             enddo<a name='536'>
+          enddo<a name='537'>
+       enddo<a name='538'>
+    endif<a name='539'>
+    if ( scm_soilQ_force ) then<a name='540'>
+       do ks = 1,num_soil_layers<a name='541'>
+          q_soil = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_41">(q_soil_forcing_val,soil_depth_force,zs(ks),num_force_soil_layers)<a name='542'>
+          timescale_soil(ks) = <A href='../../html_code/dyn_em/module_init_utilities.F.html#INTERP_0'>interp_0</A><A href='../../html_code/dyn_em/module_force_scm.F.html#FORCE_SCM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERP_0_42">(tau_soil,soil_depth_force,zs(ks),num_force_soil_layers)<a name='543'>
+          q_soil_tend(ks) = (q_soil-smois(ids,ks,jds))/timescale_soil(ks)<a name='544'>
+       enddo<a name='545'>
+       do j = jms,jme<a name='546'>
+          do ks = 1,num_soil_layers<a name='547'>
+             do i = ims,ime<a name='548'>
+                smois(ids,ks,jds) = smois(ids,ks,jds) + q_soil_tend(ks)<a name='549'>
+             enddo<a name='550'>
+          enddo<a name='551'>
+       enddo<a name='552'>
+    endif<a name='553'>
+<a name='554'>
+    RETURN<a name='555'>
+<a name='556'>
+   END SUBROUTINE force_scm<a name='557'>
+<a name='558'>
+END MODULE module_force_scm<a name='559'>
+</pre></body></html>

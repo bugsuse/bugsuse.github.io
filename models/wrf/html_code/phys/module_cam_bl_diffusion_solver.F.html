@@ -1,0 +1,982 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#define WRF_PORT<a name='2'>
+#define MODAL_AERO<a name='3'>
+<font color=#447700>! Updated to CESM1.0.3 (CAM5.1.01) by Balwinder.Singh@pnnl.gov<a name='4'></font>
+<A NAME='DIFFUSION_SOLVER'><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#DIFFUSION_SOLVER' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='5'>
+  <font color=#993300>module </font><font color=#cc0000>diffusion_solver</font> <A href='../../call_to/DIFFUSION_SOLVER.html' TARGET='index'>6</A>,<A href='../../call_from/DIFFUSION_SOLVER.html' TARGET='index'>3</A><a name='6'>
+<a name='7'>
+  <font color=#447700>!------------------------------------------------------------------------------------ !<a name='8'></font>
+  <font color=#447700>! Module to solve vertical diffusion equations using a tri-diagonal solver.           !<a name='9'></font>
+  <font color=#447700>! The module will also apply countergradient fluxes, and apply molecular              ! <a name='10'></font>
+  <font color=#447700>! diffusion for constituents.                                                         !<a name='11'></font>
+  <font color=#447700>!                                                                                     !<a name='12'></font>
+  <font color=#447700>! Public interfaces :                                                                 ! <a name='13'></font>
+  <font color=#447700>!    init_vdiff       initializes time independent coefficients                       !<a name='14'></font>
+  <font color=#447700>!    compute_vdiff    solves diffusion equations                                      !<a name='15'></font>
+  <font color=#447700>!    vd_lu_solve      tridiagonal solver also used by gwd (should be private)         !<a name='16'></font>
+  <font color=#447700>!    vd_lu_decomp     tridiagonal solver also used by gwd (should be private)         !<a name='17'></font>
+  <font color=#447700>!    vdiff_selector   type for storing fields selected to be diffused                 !<a name='18'></font>
+  <font color=#447700>!    vdiff_select     selects fields to be diffused                                   !<a name='19'></font>
+  <font color=#447700>!    operator(.not.)  extends .not. to operate on type vdiff_selector                 !<a name='20'></font>
+  <font color=#447700>!    any              provides functionality of intrinsic any for type vdiff_selector !<a name='21'></font>
+  <font color=#447700>!                                                                                     !<a name='22'></font>
+  <font color=#447700>!------------------------------------ Code History ---------------------------------- !<a name='23'></font>
+  <font color=#447700>! Initial subroutines :  B. Boville and others, 1991-2004                             !<a name='24'></font>
+  <font color=#447700>! Modularization      :  J. McCaa, September 2004                                     !<a name='25'></font>
+  <font color=#447700>! Most Recent Code    :  Sungsu Park, Aug. 2006, Dec. 2008, Jan. 2010.                !<a name='26'></font>
+  <font color=#447700>!------------------------------------------------------------------------------------ !<a name='27'></font>
+#ifndef WRF_PORT<a name='28'>
+  use cam_logfile,   only : iulog<a name='29'>
+#else<a name='30'>
+  use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#DIFFUSION_SOLVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_4">,   only : iulog<a name='31'>
+#endif<a name='32'>
+<a name='33'>
+  implicit none<a name='34'>
+  private       <a name='35'>
+  save<a name='36'>
+<a name='37'>
+  integer, parameter :: r8 = selected_real_kind(12)      <font color=#447700>! 8 byte real<a name='38'></font>
+<a name='39'>
+  <font color=#447700>! ----------------- !<a name='40'></font>
+  <font color=#447700>! Public interfaces !<a name='41'></font>
+  <font color=#447700>! ----------------- !<a name='42'></font>
+<a name='43'>
+  public init_vdiff                                      <font color=#447700>! Initialization<a name='44'></font>
+  public compute_vdiff                                   <font color=#447700>! Full routine<a name='45'></font>
+  public vd_lu_solve                                     <font color=#447700>! Tridiagonal solver also used by gwd ( should be private! )<a name='46'></font>
+  public vd_lu_decomp                                    <font color=#447700>! Tridiagonal solver also used by gwd ( should be private! )<a name='47'></font>
+  public vdiff_selector                                  <font color=#447700>! Type for storing fields selected to be diffused<a name='48'></font>
+  public vdiff_select                                    <font color=#447700>! Selects fields to be diffused<a name='49'></font>
+  public operator(.not.)                                 <font color=#447700>! Extends .not. to operate on type vdiff_selector<a name='50'></font>
+  public any                                             <font color=#447700>! Provides functionality of intrinsic any for type vdiff_selector<a name='51'></font>
+<a name='52'>
+  integer, public   :: nbot_molec                        <font color=#447700>! Bottom level where molecular diffusivity is applied<a name='53'></font>
+ <a name='54'>
+  <font color=#447700>! Below stores logical array of fields to be diffused<a name='55'></font>
+<a name='56'>
+  type vdiff_selector <a name='57'>
+       private<a name='58'>
+       logical, pointer, dimension(:) :: fields<a name='59'>
+  end type vdiff_selector<a name='60'>
+<a name='61'>
+  <font color=#447700>! Below extends .not. to operate on type vdiff_selector<a name='62'></font>
+<a name='63'>
+<A NAME='OPERATOR'><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#OPERATOR' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='64'>
+  <font color=#993300>interface </font><font color=#cc0000>operator</font>(.not.)<a name='65'>
+       module procedure <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#NOT'>not</A><A NAME="NOT_1"><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#DIFFUSION_SOLVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='66'>
+  end interface<a name='67'>
+<a name='68'>
+  <font color=#447700>! Below provides functionality of intrinsic any for type vdiff_selector<a name='69'></font>
+<a name='70'>
+<A NAME='ANY'><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#ANY' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='71'>
+  <font color=#993300>interface </font><font color=#cc0000>any</font>                           <a name='72'>
+       module procedure <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#MY_ANY'>my_any</A><A NAME="MY_ANY_1"><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#DIFFUSION_SOLVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='73'>
+  end interface<a name='74'>
+<a name='75'>
+  <font color=#447700>! ------------ !<a name='76'></font>
+  <font color=#447700>! Private data !<a name='77'></font>
+  <font color=#447700>! ------------ !<a name='78'></font>
+<a name='79'>
+  real(r8), private   :: cpair                           <font color=#447700>! Specific heat of dry air<a name='80'></font>
+  real(r8), private   :: gravit                          <font color=#447700>! Acceleration due to gravity<a name='81'></font>
+  real(r8), private   :: rair                            <font color=#447700>! Gas constant for dry air<a name='82'></font>
+  real(r8), private   :: zvir                            <font color=#447700>! rh2o/rair - 1<a name='83'></font>
+  real(r8), private   :: latvap                          <font color=#447700>! Latent heat of vaporization<a name='84'></font>
+  real(r8), private   :: karman                          <font color=#447700>! von Karman constant<a name='85'></font>
+<a name='86'>
+  <font color=#447700>! Parameters used for Turbulent Mountain Stress<a name='87'></font>
+<a name='88'>
+  real(r8), parameter :: z0fac   = 0.025_r8              <font color=#447700>! Factor determining z_0 from orographic standard deviation<a name='89'></font>
+  real(r8), parameter :: z0max   = 100._r8               <font color=#447700>! Max value of z_0 for orography<a name='90'></font>
+  real(r8), parameter :: horomin = 10._r8                <font color=#447700>! Min value of subgrid orographic height for mountain stress<a name='91'></font>
+  real(r8), parameter :: dv2min  = 0.01_r8               <font color=#447700>! Minimum shear squared<a name='92'></font>
+  real(r8), private   :: oroconst                        <font color=#447700>! Converts from standard deviation to height<a name='93'></font>
+<a name='94'>
+  contains<a name='95'>
+<a name='96'>
+  <font color=#447700>! =============================================================================== !<a name='97'></font>
+  <font color=#447700>!                                                                                 !<a name='98'></font>
+  <font color=#447700>! =============================================================================== !<a name='99'></font>
+<a name='100'>
+<A NAME='INIT_VDIFF'><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#INIT_VDIFF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='101'>
+  <font color=#993300>subroutine </font><font color=#cc0000>init_vdiff</font>( kind, ncnst, rair_in, gravit_in, fieldlist_wet, fieldlist_dry, errstring ) <A href='../../call_to/INIT_VDIFF.html' TARGET='index'>2</A>,<A href='../../call_from/INIT_VDIFF.html' TARGET='index'>1</A><a name='102'>
+<a name='103'>
+    integer,              intent(in)  :: kind            <font color=#447700>! Kind used for reals<a name='104'></font>
+    integer,              intent(in)  :: ncnst           <font color=#447700>! Number of constituents<a name='105'></font>
+    real(r8),             intent(in)  :: rair_in         <font color=#447700>! Input gas constant for dry air<a name='106'></font>
+    real(r8),             intent(in)  :: gravit_in       <font color=#447700>! Input gravititational acceleration<a name='107'></font>
+    type(vdiff_selector), intent(out) :: fieldlist_wet   <font color=#447700>! List of fields to be diffused using moist mixing ratio<a name='108'></font>
+    type(vdiff_selector), intent(out) :: fieldlist_dry   <font color=#447700>! List of fields to be diffused using dry   mixing ratio<a name='109'></font>
+    character(128),       intent(out) :: errstring       <font color=#447700>! Output status<a name='110'></font>
+    <a name='111'>
+    errstring = ''<a name='112'>
+    if( kind .ne. r8 ) then<a name='113'>
+        write(iulog,*) 'KIND of reals passed to init_vdiff -- exiting.'<a name='114'>
+#ifdef WRF_PORT<a name='115'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#INIT_VDIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_537">(iulog)<a name='116'>
+#endif        <a name='117'>
+        errstring = 'init_vdiff'<a name='118'>
+        return<a name='119'>
+    endif<a name='120'>
+<a name='121'>
+    rair   = rair_in     <a name='122'>
+    gravit = gravit_in <a name='123'>
+<a name='124'>
+    allocate( fieldlist_wet%fields( 3 + ncnst ) )<a name='125'>
+    fieldlist_wet%fields(:) = .false.<a name='126'>
+<a name='127'>
+    allocate( fieldlist_dry%fields( 3 + ncnst ) )<a name='128'>
+    fieldlist_dry%fields(:) = .false.<a name='129'>
+<a name='130'>
+  end subroutine init_vdiff<a name='131'>
+<a name='132'>
+  <font color=#447700>! =============================================================================== !<a name='133'></font>
+  <font color=#447700>!                                                                                 !<a name='134'></font>
+  <font color=#447700>! =============================================================================== !<a name='135'></font>
+<a name='136'>
+<A NAME='COMPUTE_VDIFF'><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#COMPUTE_VDIFF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='137'>
+  <font color=#993300>subroutine </font><font color=#cc0000>compute_vdiff</font>( lchnk           ,                                                                   &amp; <A href='../../call_to/COMPUTE_VDIFF.html' TARGET='index'>3</A>,<A href='../../call_from/COMPUTE_VDIFF.html' TARGET='index'>9</A><a name='138'>
+                            pcols           , pver               , ncnst         , ncol         , pmid        , &amp;<a name='139'>
+                            pint            , rpdel              , t             , ztodt        , taux        , &amp;<a name='140'>
+                            tauy            , shflx              , cflx          , ntop         , nbot        , &amp;<a name='141'>
+                            kvh             , kvm                , kvq           , cgs          , cgh         , &amp;<a name='142'>
+                            zi              , ksrftms            , qmincg        , fieldlist    ,               &amp;<a name='143'>
+                            u               , v                  , q             , dse          ,               &amp;<a name='144'>
+                            tautmsx         , tautmsy            , dtk           , topflx       , errstring   , &amp;<a name='145'>
+                            tauresx         , tauresy            , itaures       ,                              &amp;<a name='146'>
+                            do_molec_diff   , compute_molec_diff , vd_lu_qdecomp )<a name='147'>
+<a name='148'>
+    <font color=#447700>!-------------------------------------------------------------------------- !<a name='149'></font>
+    <font color=#447700>! Driver routine to compute vertical diffusion of momentum, moisture, trace !<a name='150'></font>
+    <font color=#447700>! constituents and dry static energy. The new temperature is computed from  !<a name='151'></font>
+    <font color=#447700>! the diffused dry static energy.                                           ! <a name='152'></font>
+    <font color=#447700>! Turbulent diffusivities and boundary layer nonlocal transport terms are   !<a name='153'></font>
+    <font color=#447700>! obtained from the turbulence module.                                      !<a name='154'></font>
+    <font color=#447700>!-------------------------------------------------------------------------- !<a name='155'></font>
+#ifndef WRF_PORT <a name='156'>
+    use phys_debug_util,    only : phys_debug_col<a name='157'>
+    use time_manager,       only : is_first_step, get_nstep<a name='158'>
+    use phys_control,       only : phys_getopts<a name='159'>
+#endif<a name='160'>
+  <a name='161'>
+  <font color=#447700>! Modification : Ideally, we should diffuse 'liquid-ice static energy' (sl), not the dry static energy.<a name='162'></font>
+  <font color=#447700>!                Also, vertical diffusion of cloud droplet number concentration and aerosol number<a name='163'></font>
+  <font color=#447700>!                concentration should be done very carefully in the future version.<a name='164'></font>
+<a name='165'>
+    <font color=#447700>! --------------- !<a name='166'></font>
+    <font color=#447700>! Input Arguments !<a name='167'></font>
+    <font color=#447700>! --------------- !<a name='168'></font>
+<a name='169'>
+    integer,  intent(in)    :: lchnk                   <a name='170'>
+    integer,  intent(in)    :: pcols<a name='171'>
+    integer,  intent(in)    :: pver<a name='172'>
+    integer,  intent(in)    :: ncnst<a name='173'>
+    integer,  intent(in)    :: ncol                      <font color=#447700>! Number of atmospheric columns<a name='174'></font>
+    integer,  intent(in)    :: ntop                      <font color=#447700>! Top    interface level to which vertical diffusion is applied ( = 1 ).<a name='175'></font>
+    integer,  intent(in)    :: nbot                      <font color=#447700>! Bottom interface level to which vertical diffusion is applied ( = pver ).<a name='176'></font>
+    integer,  intent(in)    :: itaures                   <font color=#447700>! Indicator determining whether 'tauresx,tauresy' is updated (1) or non-updated (0) in this subroutine.   <a name='177'></font>
+<a name='178'>
+    real(r8), intent(in)    :: pmid(pcols,pver)          <font color=#447700>! Mid-point pressures [ Pa ]<a name='179'></font>
+    real(r8), intent(in)    :: pint(pcols,pver+1)        <font color=#447700>! Interface pressures [ Pa ]<a name='180'></font>
+    real(r8), intent(in)    :: rpdel(pcols,pver)         <font color=#447700>! 1./pdel<a name='181'></font>
+    real(r8), intent(in)    :: t(pcols,pver)             <font color=#447700>! Temperature [ K ]<a name='182'></font>
+    real(r8), intent(in)    :: ztodt                     <font color=#447700>! 2 delta-t [ s ]<a name='183'></font>
+    real(r8), intent(in)    :: taux(pcols)               <font color=#447700>! Surface zonal      stress. Input u-momentum per unit time per unit area into the atmosphere [ N/m2 ]<a name='184'></font>
+    real(r8), intent(in)    :: tauy(pcols)               <font color=#447700>! Surface meridional stress. Input v-momentum per unit time per unit area into the atmosphere [ N/m2 ]<a name='185'></font>
+    real(r8), intent(in)    :: shflx(pcols)              <font color=#447700>! Surface sensible heat flux [ W/m2 ]<a name='186'></font>
+    real(r8), intent(in)    :: cflx(pcols,ncnst)         <font color=#447700>! Surface constituent flux [ kg/m2/s ]<a name='187'></font>
+    real(r8), intent(in)    :: zi(pcols,pver+1)          <font color=#447700>! Interface heights [ m ]<a name='188'></font>
+    real(r8), intent(in)    :: ksrftms(pcols)            <font color=#447700>! Surface drag coefficient for turbulent mountain stress. &gt; 0. [ kg/s/m2 ]<a name='189'></font>
+    real(r8), intent(in)    :: qmincg(ncnst)             <font color=#447700>! Minimum constituent mixing ratios from cg fluxes<a name='190'></font>
+<a name='191'>
+    logical,  intent(in)         :: do_molec_diff        <font color=#447700>! Flag indicating multiple constituent diffusivities<a name='192'></font>
+    integer,  external, optional :: compute_molec_diff   <font color=#447700>! Constituent-independent moleculuar diffusivity routine<a name='193'></font>
+    integer,  external, optional :: vd_lu_qdecomp        <font color=#447700>! Constituent-dependent moleculuar diffusivity routine<a name='194'></font>
+    type(vdiff_selector), intent(in) :: fieldlist        <font color=#447700>! Array of flags selecting which fields to diffuse<a name='195'></font>
+<a name='196'>
+    <font color=#447700>! ---------------------- !<a name='197'></font>
+    <font color=#447700>! Input-Output Arguments !<a name='198'></font>
+    <font color=#447700>! ---------------------- !<a name='199'></font>
+<a name='200'>
+    real(r8), intent(inout) :: kvh(pcols,pver+1)         <font color=#447700>! Eddy diffusivity for heat [ m2/s ]<a name='201'></font>
+    real(r8), intent(inout) :: kvm(pcols,pver+1)         <font color=#447700>! Eddy viscosity ( Eddy diffusivity for momentum ) [ m2/s ]<a name='202'></font>
+    real(r8), intent(inout) :: kvq(pcols,pver+1)         <font color=#447700>! Eddy diffusivity for constituents<a name='203'></font>
+    real(r8), intent(inout) :: cgs(pcols,pver+1)         <font color=#447700>! Counter-gradient star [ cg/flux ]<a name='204'></font>
+    real(r8), intent(inout) :: cgh(pcols,pver+1)         <font color=#447700>! Counter-gradient term for heat<a name='205'></font>
+<a name='206'>
+    real(r8), intent(inout) :: u(pcols,pver)             <font color=#447700>! U wind. This input is the 'raw' input wind to PBL scheme without iterative provisional update. [ m/s ]<a name='207'></font>
+    real(r8), intent(inout) :: v(pcols,pver)             <font color=#447700>! V wind. This input is the 'raw' input wind to PBL scheme without iterative provisional update. [ m/s ]<a name='208'></font>
+    real(r8), intent(inout) :: q(pcols,pver,ncnst)       <font color=#447700>! Moisture and trace constituents [ kg/kg, #/kg ? ]<a name='209'></font>
+    real(r8), intent(inout) :: dse(pcols,pver)           <font color=#447700>! Dry static energy [ J/kg ]<a name='210'></font>
+<a name='211'>
+    real(r8), intent(inout) :: tauresx(pcols)            <font color=#447700>! Input  : Reserved surface stress at previous time step<a name='212'></font>
+    real(r8), intent(inout) :: tauresy(pcols)            <font color=#447700>! Output : Reserved surface stress at current  time step<a name='213'></font>
+<a name='214'>
+    <font color=#447700>! ---------------- !<a name='215'></font>
+    <font color=#447700>! Output Arguments !<a name='216'></font>
+    <font color=#447700>! ---------------- !<a name='217'></font>
+<a name='218'>
+    real(r8), intent(out)   :: dtk(pcols,pver)           <font color=#447700>! T tendency from KE dissipation<a name='219'></font>
+    real(r8), intent(out)   :: tautmsx(pcols)            <font color=#447700>! Implicit zonal      turbulent mountain surface stress [ N/m2 = kg m/s /s/m2 ]<a name='220'></font>
+    real(r8), intent(out)   :: tautmsy(pcols)            <font color=#447700>! Implicit meridional turbulent mountain surface stress [ N/m2 = kg m/s /s/m2 ]<a name='221'></font>
+    real(r8), intent(out)   :: topflx(pcols)             <font color=#447700>! Molecular heat flux at the top interface<a name='222'></font>
+    character(128), intent(out) :: errstring             <font color=#447700>! Output status<a name='223'></font>
+<a name='224'>
+    <font color=#447700>! --------------- !<a name='225'></font>
+    <font color=#447700>! Local Variables ! <a name='226'></font>
+    <font color=#447700>! --------------- !<a name='227'></font>
+<a name='228'>
+    integer  :: i, k, m, icol                            <font color=#447700>! Longitude, level, constituent indices<a name='229'></font>
+    integer  :: status                                   <font color=#447700>! Status indicator<a name='230'></font>
+    integer  :: ntop_molec                               <font color=#447700>! Top level where molecular diffusivity is applied<a name='231'></font>
+    logical  :: lqtst(pcols)                             <font color=#447700>! Adjust vertical profiles<a name='232'></font>
+    logical  :: need_decomp                              <font color=#447700>! Whether to compute a new decomposition<a name='233'></font>
+    logical  :: cnst_fixed_ubc(ncnst)                    <font color=#447700>! Whether upper boundary condition is fixed<a name='234'></font>
+    logical  :: do_iss                                   <font color=#447700>! Use implicit turbulent surface stress computation<a name='235'></font>
+<a name='236'>
+    real(r8) :: tmpm(pcols,pver)                         <font color=#447700>! Potential temperature, ze term in tri-diag sol'n<a name='237'></font>
+    real(r8) :: ca(pcols,pver)                           <font color=#447700>! - Upper diag of tri-diag matrix<a name='238'></font>
+    real(r8) :: cc(pcols,pver)                           <font color=#447700>! - Lower diag of tri-diag matrix<a name='239'></font>
+    real(r8) :: dnom(pcols,pver)                         <font color=#447700>! 1./(1. + ca(k) + cc(k) - cc(k)*ze(k-1))<a name='240'></font>
+<a name='241'>
+    real(r8) :: tmp1(pcols)                              <font color=#447700>! Temporary storage<a name='242'></font>
+    real(r8) :: tmpi1(pcols,pver+1)                      <font color=#447700>! Interface KE dissipation<a name='243'></font>
+    real(r8) :: tint(pcols,pver+1)                       <font color=#447700>! Interface temperature<a name='244'></font>
+    real(r8) :: rhoi(pcols,pver+1)                       <font color=#447700>! rho at interfaces<a name='245'></font>
+    real(r8) :: tmpi2(pcols,pver+1)                      <font color=#447700>! dt*(g*rho)**2/dp at interfaces<a name='246'></font>
+    real(r8) :: rrho(pcols)                              <font color=#447700>! 1./bottom level density <a name='247'></font>
+<a name='248'>
+    real(r8) :: zero(pcols)                              <font color=#447700>! Zero array for surface heat exchange coefficients <a name='249'></font>
+    real(r8) :: tautotx(pcols)                           <font color=#447700>! Total surface stress ( zonal )<a name='250'></font>
+    real(r8) :: tautoty(pcols)                           <font color=#447700>! Total surface stress ( meridional )<a name='251'></font>
+<a name='252'>
+    real(r8) :: dinp_u(pcols,pver+1)                     <font color=#447700>! Vertical difference at interfaces, input u<a name='253'></font>
+    real(r8) :: dinp_v(pcols,pver+1)                     <font color=#447700>! Vertical difference at interfaces, input v<a name='254'></font>
+    real(r8) :: dout_u                                   <font color=#447700>! Vertical difference at interfaces, output u<a name='255'></font>
+    real(r8) :: dout_v                                   <font color=#447700>! Vertical difference at interfaces, output v<a name='256'></font>
+    real(r8) :: dse_top(pcols)                           <font color=#447700>! dse on top boundary<a name='257'></font>
+    real(r8) :: cc_top(pcols)                            <font color=#447700>! Lower diagonal at top interface<a name='258'></font>
+    real(r8) :: cd_top(pcols)                            <font color=#447700>! <a name='259'></font>
+    real(r8) :: rghd(pcols,pver+1)                       <font color=#447700>! (1/H_i - 1/H) *(g*rho)^(-1)<a name='260'></font>
+<a name='261'>
+    real(r8) :: qtm(pcols,pver)                          <font color=#447700>! Temporary copy of q<a name='262'></font>
+    real(r8) :: kq_scal(pcols,pver+1)                    <font color=#447700>! kq_fac*sqrt(T)*m_d/rho for molecular diffusivity<a name='263'></font>
+    real(r8) :: mw_fac(ncnst)                            <font color=#447700>! sqrt(1/M_q + 1/M_d) for this constituent<a name='264'></font>
+    real(r8) :: cnst_mw(ncnst)                           <font color=#447700>! Molecular weight [ kg/kmole ]<a name='265'></font>
+    real(r8) :: ubc_mmr(pcols,ncnst)                     <font color=#447700>! Upper boundary mixing ratios [ kg/kg ]<a name='266'></font>
+    real(r8) :: ubc_t(pcols)                             <font color=#447700>! Upper boundary temperature [ K ]<a name='267'></font>
+<a name='268'>
+    real(r8) :: ws(pcols)                                <font color=#447700>! Lowest-level wind speed [ m/s ]<a name='269'></font>
+    real(r8) :: tau(pcols)                               <font color=#447700>! Turbulent surface stress ( not including mountain stress )<a name='270'></font>
+    real(r8) :: ksrfturb(pcols)                          <font color=#447700>! Surface drag coefficient of 'normal' stress. &gt; 0. Virtual mass input per unit time per unit area [ kg/s/m2 ]<a name='271'></font>
+    real(r8) :: ksrf(pcols)                              <font color=#447700>! Surface drag coefficient of 'normal' stress + Surface drag coefficient of 'tms' stress.  &gt; 0. [ kg/s/m2 ] <a name='272'></font>
+    real(r8) :: usum_in(pcols)                           <font color=#447700>! Vertical integral of input u-momentum. Total zonal     momentum per unit area in column  [ sum of u*dp/g = kg m/s m-2 ]<a name='273'></font>
+    real(r8) :: vsum_in(pcols)                           <font color=#447700>! Vertical integral of input v-momentum. Total meridional momentum per unit area in column [ sum of v*dp/g = kg m/s m-2 ]<a name='274'></font>
+    real(r8) :: usum_mid(pcols)                          <font color=#447700>! Vertical integral of u-momentum after adding explicit residual stress<a name='275'></font>
+    real(r8) :: vsum_mid(pcols)                          <font color=#447700>! Vertical integral of v-momentum after adding explicit residual stress<a name='276'></font>
+    real(r8) :: usum_out(pcols)                          <font color=#447700>! Vertical integral of u-momentum after doing implicit diffusion<a name='277'></font>
+    real(r8) :: vsum_out(pcols)                          <font color=#447700>! Vertical integral of v-momentum after doing implicit diffusion<a name='278'></font>
+    real(r8) :: tauimpx(pcols)                           <font color=#447700>! Actual net stress added at the current step other than mountain stress<a name='279'></font>
+    real(r8) :: tauimpy(pcols)                           <font color=#447700>! Actual net stress added at the current step other than mountain stress<a name='280'></font>
+    real(r8) :: wsmin                                    <font color=#447700>! Minimum sfc wind speed for estimating frictional transfer velocity ksrf. [ m/s ]<a name='281'></font>
+    real(r8) :: ksrfmin                                  <font color=#447700>! Minimum surface drag coefficient [ kg/s/m^2 ]<a name='282'></font>
+    real(r8) :: timeres                                  <font color=#447700>! Relaxation time scale of residual stress ( &gt;= dt ) [ s ]<a name='283'></font>
+    real(r8) :: ramda                                    <font color=#447700>! dt/timeres [ no unit ]<a name='284'></font>
+    real(r8) :: psum<a name='285'>
+    real(r8) :: u_in, u_res, tauresx_in<a name='286'>
+    real(r8) :: v_in, v_res, tauresy_in  <a name='287'>
+<a name='288'>
+    <font color=#447700>! ------------------------------------------------ !<a name='289'></font>
+    <font color=#447700>! Parameters for implicit surface stress treatment !<a name='290'></font>
+    <font color=#447700>! ------------------------------------------------ !<a name='291'></font>
+<a name='292'>
+    wsmin    = 1._r8                                     <font color=#447700>! Minimum wind speed for ksrfturb computation        [ m/s ]<a name='293'></font>
+    ksrfmin  = 1.e-4_r8                                  <font color=#447700>! Minimum surface drag coefficient                   [ kg/s/m^2 ]<a name='294'></font>
+    timeres  = 7200._r8                                  <font color=#447700>! Relaxation time scale of residual stress ( &gt;= dt ) [ s ]<a name='295'></font>
+#ifndef WRF_PORT <a name='296'>
+    call phys_getopts( do_iss_out = do_iss )<a name='297'>
+#else<a name='298'>
+    do_iss = .true. <font color=#447700>!hardwired to true<a name='299'></font>
+#endif<a name='300'>
+<a name='301'>
+    <font color=#447700>! ----------------------- !<a name='302'></font>
+    <font color=#447700>! Main Computation Begins !<a name='303'></font>
+    <font color=#447700>! ----------------------- !<a name='304'></font>
+<a name='305'>
+    errstring = ''<a name='306'>
+    if( ( diffuse(fieldlist,'u') .or. diffuse(fieldlist,'v') ) .and. .not. diffuse(fieldlist,'s') ) then<a name='307'>
+          errstring = 'diffusion_solver.compute_vdiff: must diffuse s if diffusing u or v'<a name='308'>
+          return<a name='309'>
+    end if<a name='310'>
+    zero(:) = 0._r8<a name='311'>
+<a name='312'>
+    <font color=#447700>! Compute 'rho' and 'dt*(g*rho)^2/dp' at interfaces<a name='313'></font>
+<a name='314'>
+    tint(:ncol,1) = t(:ncol,1)<a name='315'>
+    rhoi(:ncol,1) = pint(:ncol,1) / (rair*tint(:ncol,1))<a name='316'>
+    do k = 2, pver<a name='317'>
+       do i = 1, ncol<a name='318'>
+          tint(i,k)  = 0.5_r8 * ( t(i,k) + t(i,k-1) )<a name='319'>
+          rhoi(i,k)  = pint(i,k) / (rair*tint(i,k))<a name='320'>
+          tmpi2(i,k) = ztodt * ( gravit*rhoi(i,k) )**2 / ( pmid(i,k) - pmid(i,k-1) )<a name='321'>
+       end do<a name='322'>
+    end do<a name='323'>
+    tint(:ncol,pver+1) = t(:ncol,pver)<a name='324'>
+    rhoi(:ncol,pver+1) = pint(:ncol,pver+1) / ( rair*tint(:ncol,pver+1) )<a name='325'>
+<a name='326'>
+    rrho(:ncol) = rair  * t(:ncol,pver) / pmid(:ncol,pver)<a name='327'>
+    tmp1(:ncol) = ztodt * gravit * rpdel(:ncol,pver)<a name='328'>
+<a name='329'>
+    <font color=#447700>!--------------------------------------- !<a name='330'></font>
+    <font color=#447700>! Computation of Molecular Diffusivities !<a name='331'></font>
+    <font color=#447700>!--------------------------------------- !<a name='332'></font>
+<a name='333'>
+  <font color=#447700>! Modification : Why 'kvq' is not changed by molecular diffusion ? <a name='334'></font>
+<a name='335'>
+    if( do_molec_diff ) then<a name='336'>
+<a name='337'>
+        if( (.not.present(compute_molec_diff)) .or. (.not.present(vd_lu_qdecomp)) ) then<a name='338'>
+              errstring = 'compute_vdiff: do_molec_diff true but compute_molec_diff or vd_lu_qdecomp missing'<a name='339'>
+              return<a name='340'>
+        endif<a name='341'>
+<a name='342'>
+      <font color=#447700>! The next subroutine 'compute_molec_diff' :<a name='343'></font>
+      <font color=#447700>!     Modifies : kvh, kvm, tint, rhoi, and tmpi2<a name='344'></font>
+      <font color=#447700>!     Returns  : kq_scal, ubc_t, ubc_mmr, dse_top, cc_top, cd_top, cnst_mw, <a name='345'></font>
+      <font color=#447700>!                cnst_fixed_ubc , mw_fac , ntop_molec <a name='346'></font>
+<a name='347'>
+        status = <A href='../../html_code/phys/module_cam_molec_diff.F.html#COMPUTE_MOLEC_DIFF'>compute_molec_diff</A><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#COMPUTE_VDIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="COMPUTE_MOLEC_DIFF_1">( lchnk          ,                                                                &amp;<a name='348'>
+                                     pcols          , pver    , ncnst      , ncol      , t      , pmid   , pint    , &amp;<a name='349'>
+                                     zi             , ztodt   , kvh        , kvm       , tint   , rhoi   , tmpi2   , &amp;<a name='350'>
+                                     kq_scal        , ubc_t   , ubc_mmr    , dse_top   , cc_top , cd_top , cnst_mw , &amp;<a name='351'>
+                                     cnst_fixed_ubc , mw_fac  , ntop_molec , nbot_molec )<a name='352'>
+<a name='353'>
+    else<a name='354'>
+<a name='355'>
+        kq_scal(:,:) = 0._r8<a name='356'>
+        cd_top(:)    = 0._r8<a name='357'>
+        cc_top(:)    = 0._r8<a name='358'>
+<a name='359'>
+    endif<a name='360'>
+<a name='361'>
+    <font color=#447700>!---------------------------- !<a name='362'></font>
+    <font color=#447700>! Diffuse Horizontal Momentum !<a name='363'></font>
+    <font color=#447700>!---------------------------- !<a name='364'></font>
+<a name='365'>
+    if( diffuse(fieldlist,'u') .or. diffuse(fieldlist,'v') ) then<a name='366'>
+<a name='367'>
+        <font color=#447700>! Compute the vertical upward differences of the input u,v for KE dissipation<a name='368'></font>
+        <font color=#447700>! at each interface.<a name='369'></font>
+        <font color=#447700>! Velocity = 0 at surface, so difference at the bottom interface is -u,v(pver)<a name='370'></font>
+        <font color=#447700>! These 'dinp_u, dinp_v' are computed using the non-diffused input wind.<a name='371'></font>
+<a name='372'>
+        do i = 1, ncol<a name='373'>
+           dinp_u(i,1) = 0._r8<a name='374'>
+           dinp_v(i,1) = 0._r8<a name='375'>
+           dinp_u(i,pver+1) = -u(i,pver)<a name='376'>
+           dinp_v(i,pver+1) = -v(i,pver)<a name='377'>
+        end do<a name='378'>
+        do k = 2, pver<a name='379'>
+           do i = 1, ncol<a name='380'>
+              dinp_u(i,k) = u(i,k) - u(i,k-1)<a name='381'>
+              dinp_v(i,k) = v(i,k) - v(i,k-1)<a name='382'>
+           end do<a name='383'>
+        end do<a name='384'>
+<a name='385'>
+       <font color=#447700>! -------------------------------------------------------------- !<a name='386'></font>
+       <font color=#447700>! Do 'Implicit Surface Stress' treatment for numerical stability !<a name='387'></font>
+       <font color=#447700>! in the lowest model layer.                                     !<a name='388'></font>
+       <font color=#447700>! -------------------------------------------------------------- !<a name='389'></font>
+<a name='390'>
+       if( do_iss ) then<a name='391'>
+<a name='392'>
+         <font color=#447700>! Compute surface drag coefficient for implicit diffusion <a name='393'></font>
+         <font color=#447700>! including turbulent turbulent mountain stress. <a name='394'></font>
+<a name='395'>
+           do i = 1, ncol<a name='396'>
+              ws(i)       = max( sqrt( u(i,pver)**2._r8 + v(i,pver)**2._r8 ), wsmin )<a name='397'>
+              tau(i)      = sqrt( taux(i)**2._r8 + tauy(i)**2._r8 )<a name='398'>
+              ksrfturb(i) = max( tau(i) / ws(i), ksrfmin )<a name='399'>
+           end do              <a name='400'>
+           ksrf(:ncol) = ksrfturb(:ncol) + ksrftms(:ncol)  <font color=#447700>! Do all surface stress ( normal + tms ) implicitly<a name='401'></font>
+<a name='402'>
+         <font color=#447700>! Vertical integration of input momentum. <a name='403'></font>
+         <font color=#447700>! This is total horizontal momentum per unit area [ kg*m/s/m2 ] in each column.<a name='404'></font>
+         <font color=#447700>! Note (u,v) are the raw input to the PBL scheme, not the<a name='405'></font>
+         <font color=#447700>! provisionally-marched ones within the iteration loop of the PBL scheme.  <a name='406'></font>
+<a name='407'>
+           do i = 1, ncol<a name='408'>
+              usum_in(i) = 0._r8<a name='409'>
+              vsum_in(i) = 0._r8<a name='410'>
+              do k = 1, pver<a name='411'>
+                 usum_in(i) = usum_in(i) + (1._r8/gravit)*u(i,k)/rpdel(i,k)<a name='412'>
+                 vsum_in(i) = vsum_in(i) + (1._r8/gravit)*v(i,k)/rpdel(i,k)<a name='413'>
+              end do<a name='414'>
+           end do              <a name='415'>
+<a name='416'>
+         <font color=#447700>! Add residual stress of previous time step explicitly into the lowest<a name='417'></font>
+         <font color=#447700>! model layer with a relaxation time scale of 'timeres'.<a name='418'></font>
+<a name='419'>
+           ramda         = ztodt / timeres<a name='420'>
+           u(:ncol,pver) = u(:ncol,pver) + tmp1(:ncol)*tauresx(:ncol)*ramda<a name='421'>
+           v(:ncol,pver) = v(:ncol,pver) + tmp1(:ncol)*tauresy(:ncol)*ramda<a name='422'>
+<a name='423'>
+         <font color=#447700>! Vertical integration of momentum after adding explicit residual stress<a name='424'></font>
+         <font color=#447700>! into the lowest model layer.<a name='425'></font>
+<a name='426'>
+           do i = 1, ncol<a name='427'>
+              usum_mid(i) = 0._r8<a name='428'>
+              vsum_mid(i) = 0._r8<a name='429'>
+              do k = 1, pver<a name='430'>
+                 usum_mid(i) = usum_mid(i) + (1._r8/gravit)*u(i,k)/rpdel(i,k)<a name='431'>
+                 vsum_mid(i) = vsum_mid(i) + (1._r8/gravit)*v(i,k)/rpdel(i,k)<a name='432'>
+              end do<a name='433'>
+           end do              <a name='434'>
+<a name='435'>
+         <font color=#447700>! Debug <a name='436'></font>
+         <font color=#447700>! icol = phys_debug_col(lchnk) <a name='437'></font>
+         <font color=#447700>! if ( icol &gt; 0 .and. get_nstep() .ge. 1 ) then<a name='438'></font>
+         <font color=#447700>!      tauresx_in = tauresx(icol)<a name='439'></font>
+         <font color=#447700>!      tauresy_in = tauresy(icol)<a name='440'></font>
+         <font color=#447700>!      u_in  = u(icol,pver) - tmp1(icol) * tauresx(icol) * ramda<a name='441'></font>
+         <font color=#447700>!      v_in  = v(icol,pver) - tmp1(icol) * tauresy(icol) * ramda<a name='442'></font>
+         <font color=#447700>!      u_res = u(icol,pver)<a name='443'></font>
+         <font color=#447700>!      v_res = v(icol,pver)<a name='444'></font>
+         <font color=#447700>! endif<a name='445'></font>
+         <font color=#447700>! Debug<a name='446'></font>
+<a name='447'>
+       else<a name='448'>
+<a name='449'>
+         <font color=#447700>! In this case, do 'turbulent mountain stress' implicitly, <a name='450'></font>
+         <font color=#447700>! but do 'normal turbulent stress' explicitly.<a name='451'></font>
+         <font color=#447700>! In this case, there is no 'redisual stress' as long as 'tms' is<a name='452'></font>
+         <font color=#447700>! treated in a fully implicit wway, which is true.<a name='453'></font>
+<a name='454'>
+         <font color=#447700>! 1. Do 'tms' implicitly<a name='455'></font>
+<a name='456'>
+           ksrf(:ncol) = ksrftms(:ncol) <a name='457'>
+<a name='458'>
+         <font color=#447700>! 2. Do 'normal stress' explicitly<a name='459'></font>
+<a name='460'>
+           u(:ncol,pver) = u(:ncol,pver) + tmp1(:ncol)*taux(:ncol)<a name='461'>
+           v(:ncol,pver) = v(:ncol,pver) + tmp1(:ncol)*tauy(:ncol)<a name='462'>
+<a name='463'>
+       end if  <font color=#447700>! End of 'do iss' ( implicit surface stress )<a name='464'></font>
+<a name='465'>
+       <font color=#447700>! --------------------------------------------------------------------------------------- !<a name='466'></font>
+       <font color=#447700>! Diffuse horizontal momentum implicitly using tri-diagnonal matrix.                      !<a name='467'></font>
+       <font color=#447700>! The 'u,v' are input-output: the output 'u,v' are implicitly diffused winds.             !<a name='468'></font>
+       <font color=#447700>!    For implicit 'normal' stress : ksrf = ksrftms + ksrfturb,                            !<a name='469'></font>
+       <font color=#447700>!                                   u(pver) : explicitly include 'redisual normal' stress !<a name='470'></font>
+       <font color=#447700>!    For explicit 'normal' stress : ksrf = ksrftms                                        !<a name='471'></font>
+       <font color=#447700>!                                   u(pver) : explicitly include 'normal' stress          !                                              <a name='472'></font>
+       <font color=#447700>! Note that in all the two cases above, 'tms' is fully implicitly treated.                !<a name='473'></font>
+       <font color=#447700>! --------------------------------------------------------------------------------------- !<a name='474'></font>
+<a name='475'>
+       call <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#VD_LU_DECOMP'>vd_lu_decomp</A><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#COMPUTE_VDIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VD_LU_DECOMP_1">( pcols , pver , ncol  ,                        &amp;<a name='476'>
+                          ksrf  , kvm  , tmpi2 , rpdel , ztodt , zero , &amp;<a name='477'>
+                          ca    , cc   , dnom  , tmpm  , ntop  , nbot )<a name='478'>
+<a name='479'>
+       call <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#VD_LU_SOLVE'>vd_lu_solve</A><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#COMPUTE_VDIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VD_LU_SOLVE_1">(  pcols , pver , ncol  ,                        &amp;<a name='480'>
+                          u     , ca   , tmpm  , dnom  , ntop  , nbot , zero )<a name='481'>
+<a name='482'>
+       call <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#VD_LU_SOLVE'>vd_lu_solve</A><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#COMPUTE_VDIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VD_LU_SOLVE_2">(  pcols , pver , ncol  ,                        &amp;<a name='483'>
+                          v     , ca   , tmpm  , dnom  , ntop  , nbot , zero )<a name='484'>
+<a name='485'>
+       <font color=#447700>! ---------------------------------------------------------------------- !<a name='486'></font>
+       <font color=#447700>! Calculate 'total' ( tautotx ) and 'tms' ( tautmsx ) stresses that      !<a name='487'></font>
+       <font color=#447700>! have been actually added into the atmosphere at the current time step. ! <a name='488'></font>
+       <font color=#447700>! Also, update residual stress, if required.                             !<a name='489'></font>
+       <font color=#447700>! ---------------------------------------------------------------------- !<a name='490'></font>
+<a name='491'>
+       do i = 1, ncol<a name='492'>
+<a name='493'>
+          <font color=#447700>! Compute the implicit 'tms' using the updated winds.<a name='494'></font>
+          <font color=#447700>! Below 'tautmsx(i),tautmsy(i)' are pure implicit mountain stresses<a name='495'></font>
+          <font color=#447700>! that has been actually added into the atmosphere both for explicit<a name='496'></font>
+          <font color=#447700>! and implicit approach. <a name='497'></font>
+<a name='498'>
+          tautmsx(i) = -ksrftms(i)*u(i,pver)<a name='499'>
+          tautmsy(i) = -ksrftms(i)*v(i,pver)<a name='500'>
+<a name='501'>
+          if( do_iss ) then<a name='502'>
+<a name='503'>
+            <font color=#447700>! Compute vertical integration of final horizontal momentum<a name='504'></font>
+<a name='505'>
+              usum_out(i) = 0._r8<a name='506'>
+              vsum_out(i) = 0._r8<a name='507'>
+              do k = 1, pver<a name='508'>
+                 usum_out(i) = usum_out(i) + (1._r8/gravit)*u(i,k)/rpdel(i,k)<a name='509'>
+                 vsum_out(i) = vsum_out(i) + (1._r8/gravit)*v(i,k)/rpdel(i,k)<a name='510'>
+              end do<a name='511'>
+<a name='512'>
+            <font color=#447700>! Compute net stress added into the atmosphere at the current time step.<a name='513'></font>
+            <font color=#447700>! Note that the difference between 'usum_in' and 'usum_out' are induced<a name='514'></font>
+            <font color=#447700>! by 'explicit residual stress + implicit total stress' for implicit case, while<a name='515'></font>
+            <font color=#447700>! by 'explicit normal   stress + implicit tms   stress' for explicit case. <a name='516'></font>
+            <font color=#447700>! Here, 'tautotx(i)' is net stress added into the air at the current time step.<a name='517'></font>
+<a name='518'>
+              tauimpx(i) = ( usum_out(i) - usum_in(i) ) / ztodt<a name='519'>
+              tauimpy(i) = ( vsum_out(i) - vsum_in(i) ) / ztodt<a name='520'>
+<a name='521'>
+              tautotx(i) = tauimpx(i) <a name='522'>
+              tautoty(i) = tauimpy(i) <a name='523'>
+<a name='524'>
+            <font color=#447700>! Compute redisual stress and update if required.<a name='525'></font>
+            <font color=#447700>! Note that the total stress we should have added at the current step is<a name='526'></font>
+            <font color=#447700>! the sum of 'taux(i) - ksrftms(i)*u(i,pver) + tauresx(i)'.<a name='527'></font>
+<a name='528'>
+              if( itaures .eq. 1 ) then<a name='529'>
+                  tauresx(i) = taux(i) + tautmsx(i) + tauresx(i) - tauimpx(i)<a name='530'>
+                  tauresy(i) = tauy(i) + tautmsy(i) + tauresy(i) - tauimpy(i)<a name='531'>
+              endif<a name='532'>
+<a name='533'>
+          else<a name='534'>
+<a name='535'>
+              tautotx(i) = tautmsx(i) + taux(i)<a name='536'>
+              tautoty(i) = tautmsy(i) + tauy(i)<a name='537'>
+              tauresx(i) = 0._r8<a name='538'>
+              tauresy(i) = 0._r8<a name='539'>
+<a name='540'>
+          end if  <font color=#447700>! End of 'do_iss' routine<a name='541'></font>
+<a name='542'>
+       end do <font color=#447700>! End of 'do i = 1, ncol' routine<a name='543'></font>
+<a name='544'>
+     <font color=#447700>! Debug <a name='545'></font>
+     <font color=#447700>! icol = phys_debug_col(lchnk) <a name='546'></font>
+     <font color=#447700>! if ( icol &gt; 0 .and. get_nstep() .ge. 1 ) then<a name='547'></font>
+     <font color=#447700>!      write(iulog,*)<a name='548'></font>
+     <font color=#447700>!      write(iulog,*)  'diffusion_solver debug'  <a name='549'></font>
+     <font color=#447700>!      write(iulog,*)<a name='550'></font>
+     <font color=#447700>!      write(iulog,*)  'u_in, u_res, u_out'<a name='551'></font>
+     <font color=#447700>!      write(iulog,*)   u_in, u_res, u(icol,pver)<a name='552'></font>
+     <font color=#447700>!      write(iulog,*)  'tauresx_in, tautmsx, tauimpx(actual), tauimpx(derived), tauresx_out, taux'<a name='553'></font>
+     <font color=#447700>!      write(iulog,*)   tauresx_in, tautmsx(icol), tauimpx(icol), -ksrf(icol)*u(icol,pver), tauresx(icol), taux(icol)<a name='554'></font>
+     <font color=#447700>!      write(iulog,*)<a name='555'></font>
+     <font color=#447700>!      write(iulog,*)  'v_in, v_res, v_out'<a name='556'></font>
+     <font color=#447700>!      write(iulog,*)   v_in, v_res, v(icol,pver)<a name='557'></font>
+     <font color=#447700>!      write(iulog,*)  'tauresy_in, tautmsy, tauimpy(actual), tauimpy(derived), tauresy_out, tauy'<a name='558'></font>
+     <font color=#447700>!      write(iulog,*)   tauresy_in, tautmsy(icol), tauimpy(icol), -ksrf(icol)*v(icol,pver), tauresy(icol), tauy(icol)<a name='559'></font>
+     <font color=#447700>!      write(iulog,*)<a name='560'></font>
+     <font color=#447700>!      write(iulog,*)  'itaures, ksrf, ksrfturb, ksrftms'<a name='561'></font>
+     <font color=#447700>!      write(iulog,*)   itaures, ksrf(icol), ksrfturb(icol), ksrftms(icol)<a name='562'></font>
+     <font color=#447700>!      write(iulog,*) <a name='563'></font>
+     <font color=#447700>! endif<a name='564'></font>
+     <font color=#447700>! Debug<a name='565'></font>
+<a name='566'>
+       <font color=#447700>! ------------------------------------ !<a name='567'></font>
+       <font color=#447700>! Calculate kinetic energy dissipation !<a name='568'></font>
+       <font color=#447700>! ------------------------------------ !       <a name='569'></font>
+<a name='570'>
+     <font color=#447700>! Modification : In future, this should be set exactly same as <a name='571'></font>
+     <font color=#447700>!                the ones in the convection schemes <a name='572'></font>
+<a name='573'>
+       <font color=#447700>! 1. Compute dissipation term at interfaces<a name='574'></font>
+       <font color=#447700>!    Note that 'u,v' are already diffused wind, and 'tautotx,tautoty' are <a name='575'></font>
+       <font color=#447700>!    implicit stress that has been actually added. On the other hand,<a name='576'></font>
+       <font color=#447700>!    'dinp_u, dinp_v' were computed using non-diffused input wind.<a name='577'></font>
+<a name='578'>
+     <font color=#447700>! Modification : I should check whether non-consistency between 'u' and 'dinp_u'<a name='579'></font>
+     <font color=#447700>!                is correctly intended approach. I think so.<a name='580'></font>
+<a name='581'>
+       k = pver + 1<a name='582'>
+       do i = 1, ncol<a name='583'>
+          tmpi1(i,1) = 0._r8<a name='584'>
+          tmpi1(i,k) = 0.5_r8 * ztodt * gravit * &amp;<a name='585'>
+                       ( (-u(i,k-1) + dinp_u(i,k))*tautotx(i) + (-v(i,k-1) + dinp_v(i,k))*tautoty(i) )<a name='586'>
+       end do<a name='587'>
+<a name='588'>
+       do k = 2, pver<a name='589'>
+          do i = 1, ncol<a name='590'>
+             dout_u = u(i,k) - u(i,k-1)<a name='591'>
+             dout_v = v(i,k) - v(i,k-1)<a name='592'>
+             tmpi1(i,k) = 0.25_r8 * tmpi2(i,k) * kvm(i,k) * &amp;<a name='593'>
+                          ( dout_u**2 + dout_v**2 + dout_u*dinp_u(i,k) + dout_v*dinp_v(i,k) )<a name='594'>
+          end do<a name='595'>
+       end do<a name='596'>
+<a name='597'>
+       <font color=#447700>! 2. Compute dissipation term at midpoints, add to dry static energy<a name='598'></font>
+<a name='599'>
+       do k = 1, pver<a name='600'>
+          do i = 1, ncol<a name='601'>
+             dtk(i,k) = ( tmpi1(i,k+1) + tmpi1(i,k) ) * rpdel(i,k)<a name='602'>
+             dse(i,k) = dse(i,k) + dtk(i,k)<a name='603'>
+          end do<a name='604'>
+       end do<a name='605'>
+<a name='606'>
+    end if <font color=#447700>! End of diffuse horizontal momentum, diffuse(fieldlist,'u') routine<a name='607'></font>
+<a name='608'>
+    <font color=#447700>!-------------------------- !<a name='609'></font>
+    <font color=#447700>! Diffuse Dry Static Energy !<a name='610'></font>
+    <font color=#447700>!-------------------------- !<a name='611'></font>
+<a name='612'>
+  <font color=#447700>! Modification : In future, we should diffuse the fully conservative <a name='613'></font>
+  <font color=#447700>!                moist static energy,not the dry static energy.<a name='614'></font>
+<a name='615'>
+    if( diffuse(fieldlist,'s') ) then<a name='616'>
+<a name='617'>
+      <font color=#447700>! Add counter-gradient to input static energy profiles<a name='618'></font>
+<a name='619'>
+        do k = 1, pver<a name='620'>
+           dse(:ncol,k) = dse(:ncol,k) + ztodt * rpdel(:ncol,k) * gravit  *                &amp;<a name='621'>
+                                       ( rhoi(:ncol,k+1) * kvh(:ncol,k+1) * cgh(:ncol,k+1) &amp;<a name='622'>
+                                       - rhoi(:ncol,k  ) * kvh(:ncol,k  ) * cgh(:ncol,k  ) )<a name='623'>
+       end do<a name='624'>
+<a name='625'>
+     <font color=#447700>! Add the explicit surface fluxes to the lowest layer<a name='626'></font>
+<a name='627'>
+       dse(:ncol,pver) = dse(:ncol,pver) + tmp1(:ncol) * shflx(:ncol)<a name='628'>
+<a name='629'>
+     <font color=#447700>! Diffuse dry static energy<a name='630'></font>
+<a name='631'>
+       call <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#VD_LU_DECOMP'>vd_lu_decomp</A><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#COMPUTE_VDIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VD_LU_DECOMP_2">( pcols , pver , ncol  ,                         &amp;<a name='632'>
+                          zero  , kvh  , tmpi2 , rpdel , ztodt , cc_top, &amp;<a name='633'>
+                          ca    , cc   , dnom  , tmpm  , ntop  , nbot    )<a name='634'>
+<a name='635'>
+       call <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#VD_LU_SOLVE'>vd_lu_solve</A><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#COMPUTE_VDIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VD_LU_SOLVE_3">(  pcols , pver , ncol  ,                         &amp;<a name='636'>
+                          dse   , ca   , tmpm  , dnom  , ntop  , nbot  , cd_top )<a name='637'>
+<a name='638'>
+     <font color=#447700>! Calculate flux at top interface<a name='639'></font>
+     <a name='640'>
+     <font color=#447700>! Modification : Why molecular diffusion does not work for dry static energy in all layers ?<a name='641'></font>
+<a name='642'>
+       if( do_molec_diff ) then<a name='643'>
+           topflx(:ncol) =  - kvh(:ncol,ntop_molec) * tmpi2(:ncol,ntop_molec) / (ztodt*gravit) * &amp;<a name='644'>
+                            ( dse(:ncol,ntop_molec) - dse_top(:ncol) )<a name='645'>
+       end if<a name='646'>
+<a name='647'>
+    endif<a name='648'>
+<a name='649'>
+    <font color=#447700>!---------------------------- !<a name='650'></font>
+    <font color=#447700>! Diffuse Water Vapor Tracers !<a name='651'></font>
+    <font color=#447700>!---------------------------- !<a name='652'></font>
+<a name='653'>
+  <font color=#447700>! Modification : For aerosols, I need to use separate treatment <a name='654'></font>
+  <font color=#447700>!                for aerosol mass and aerosol number. <a name='655'></font>
+<a name='656'>
+    <font color=#447700>! Loop through constituents<a name='657'></font>
+<a name='658'>
+    need_decomp = .true.<a name='659'>
+<a name='660'>
+    do m = 1, ncnst<a name='661'>
+<a name='662'>
+       if( diffuse(fieldlist,'q',m) ) then<a name='663'>
+<a name='664'>
+           <font color=#447700>! Add the nonlocal transport terms to constituents in the PBL.<a name='665'></font>
+           <font color=#447700>! Check for neg q's in each constituent and put the original vertical<a name='666'></font>
+           <font color=#447700>! profile back if a neg value is found. A neg value implies that the<a name='667'></font>
+           <font color=#447700>! quasi-equilibrium conditions assumed for the countergradient term are<a name='668'></font>
+           <font color=#447700>! strongly violated.<a name='669'></font>
+<a name='670'>
+           qtm(:ncol,:pver) = q(:ncol,:pver,m)<a name='671'>
+<a name='672'>
+           do k = 1, pver<a name='673'>
+              q(:ncol,k,m) = q(:ncol,k,m) + &amp;<a name='674'>
+                             ztodt * rpdel(:ncol,k) * gravit  * ( cflx(:ncol,m) * rrho(:ncol) ) * &amp;<a name='675'>
+                           ( rhoi(:ncol,k+1) * kvh(:ncol,k+1) * cgs(:ncol,k+1)                    &amp;<a name='676'>
+                           - rhoi(:ncol,k  ) * kvh(:ncol,k  ) * cgs(:ncol,k  ) )<a name='677'>
+           end do<a name='678'>
+           lqtst(:ncol) = all(q(:ncol,1:pver,m) &gt;= qmincg(m), 2)<a name='679'>
+           do k = 1, pver<a name='680'>
+              q(:ncol,k,m) = merge( q(:ncol,k,m), qtm(:ncol,k), lqtst(:ncol) )<a name='681'>
+           end do<a name='682'>
+<a name='683'>
+           <font color=#447700>! Add the explicit surface fluxes to the lowest layer<a name='684'></font>
+<a name='685'>
+           q(:ncol,pver,m) = q(:ncol,pver,m) + tmp1(:ncol) * cflx(:ncol,m)<a name='686'>
+<a name='687'>
+           <font color=#447700>! Diffuse constituents.<a name='688'></font>
+<a name='689'>
+           if( need_decomp ) then<a name='690'>
+<a name='691'>
+               call <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#VD_LU_DECOMP'>vd_lu_decomp</A><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#COMPUTE_VDIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VD_LU_DECOMP_3">( pcols , pver , ncol  ,                         &amp;<a name='692'>
+                                  zero  , kvq  , tmpi2 , rpdel , ztodt , zero  , &amp;<a name='693'>
+                                  ca    , cc   , dnom  , tmpm  , ntop  , nbot )<a name='694'>
+<a name='695'>
+               if( do_molec_diff ) then<a name='696'>
+<a name='697'>
+                 <font color=#447700>! Update decomposition in molecular diffusion range, include separation velocity term<a name='698'></font>
+<a name='699'>
+                   status = <A href='../../html_code/phys/module_cam_molec_diff.F.html#VD_LU_QDECOMP'>vd_lu_qdecomp</A><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#COMPUTE_VDIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VD_LU_QDECOMP_1">( pcols , pver   , ncol      , cnst_fixed_ubc(m), cnst_mw(m), ubc_mmr(:,m), &amp;<a name='700'>
+                                           kvq   , kq_scal, mw_fac(m) , tmpi2            , rpdel     ,               &amp;<a name='701'>
+                                           ca    , cc     , dnom      , tmpm             , rhoi      ,               &amp;<a name='702'>
+                                           tint  , ztodt  , ntop_molec, nbot_molec       , cd_top )<a name='703'>
+               else<a name='704'>
+                   need_decomp =  .false.<a name='705'>
+               endif<a name='706'>
+           end if<a name='707'>
+<a name='708'>
+           call <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#VD_LU_SOLVE'>vd_lu_solve</A><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#COMPUTE_VDIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VD_LU_SOLVE_4">(  pcols , pver , ncol  ,                         &amp;<a name='709'>
+                              q(1,1,m) , ca, tmpm  , dnom  , ntop  , nbot  , cd_top )<a name='710'>
+       end if<a name='711'>
+    end do<a name='712'>
+<a name='713'>
+    return<a name='714'>
+  end subroutine compute_vdiff<a name='715'>
+<a name='716'>
+  <font color=#447700>! =============================================================================== !<a name='717'></font>
+  <font color=#447700>!                                                                                 !<a name='718'></font>
+  <font color=#447700>! =============================================================================== !<a name='719'></font>
+<a name='720'>
+<A NAME='VD_LU_DECOMP'><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#VD_LU_DECOMP' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='721'>
+  <font color=#993300>subroutine </font><font color=#cc0000>vd_lu_decomp</font>( pcols, pver, ncol ,                        &amp; <A href='../../call_to/VD_LU_DECOMP.html' TARGET='index'>3</A><a name='722'>
+                           ksrf , kv  , tmpi , rpdel, ztodt , cc_top, &amp;<a name='723'>
+                           ca   , cc  , dnom , ze   , ntop  , nbot    )<a name='724'>
+    <font color=#447700>!---------------------------------------------------------------------- !<a name='725'></font>
+    <font color=#447700>! Determine superdiagonal (ca(k)) and subdiagonal (cc(k)) coeffs of the ! <a name='726'></font>
+    <font color=#447700>! tridiagonal diffusion matrix.                                         ! <a name='727'></font>
+    <font color=#447700>! The diagonal elements (1+ca(k)+cc(k)) are not required by the solver. !<a name='728'></font>
+    <font color=#447700>! Also determine ze factor and denominator for ze and zf (see solver).  !<a name='729'></font>
+    <font color=#447700>!---------------------------------------------------------------------- !<a name='730'></font>
+<a name='731'>
+    <font color=#447700>! --------------------- !<a name='732'></font>
+    <font color=#447700>! Input-Output Argument !<a name='733'></font>
+    <font color=#447700>! --------------------- !<a name='734'></font>
+<a name='735'>
+    integer,  intent(in)  :: pcols                 <font color=#447700>! Number of allocated atmospheric columns<a name='736'></font>
+    integer,  intent(in)  :: pver                  <font color=#447700>! Number of allocated atmospheric levels <a name='737'></font>
+    integer,  intent(in)  :: ncol                  <font color=#447700>! Number of computed atmospheric columns<a name='738'></font>
+    integer,  intent(in)  :: ntop                  <font color=#447700>! Top level to operate on<a name='739'></font>
+    integer,  intent(in)  :: nbot                  <font color=#447700>! Bottom level to operate on<a name='740'></font>
+    real(r8), intent(in)  :: ksrf(pcols)           <font color=#447700>! Surface "drag" coefficient [ kg/s/m2 ]<a name='741'></font>
+    real(r8), intent(in)  :: kv(pcols,pver+1)      <font color=#447700>! Vertical diffusion coefficients [ m2/s ]<a name='742'></font>
+    real(r8), intent(in)  :: tmpi(pcols,pver+1)    <font color=#447700>! dt*(g/R)**2/dp*pi(k+1)/(.5*(tm(k+1)+tm(k))**2<a name='743'></font>
+    real(r8), intent(in)  :: rpdel(pcols,pver)     <font color=#447700>! 1./pdel  (thickness bet interfaces)<a name='744'></font>
+    real(r8), intent(in)  :: ztodt                 <font color=#447700>! 2 delta-t [ s ]<a name='745'></font>
+    real(r8), intent(in)  :: cc_top(pcols)         <font color=#447700>! Lower diagonal on top interface (for fixed ubc only)<a name='746'></font>
+<a name='747'>
+    real(r8), intent(out) :: ca(pcols,pver)        <font color=#447700>! Upper diagonal<a name='748'></font>
+    real(r8), intent(out) :: cc(pcols,pver)        <font color=#447700>! Lower diagonal<a name='749'></font>
+    real(r8), intent(out) :: dnom(pcols,pver)      <font color=#447700>! 1./(1. + ca(k) + cc(k) - cc(k)*ze(k-1))<a name='750'></font>
+    real(r8), intent(out) :: ze(pcols,pver)        <font color=#447700>! Term in tri-diag. matrix system<a name='751'></font>
+<a name='752'>
+    <font color=#447700>! --------------- !<a name='753'></font>
+    <font color=#447700>! Local Variables !<a name='754'></font>
+    <font color=#447700>! --------------- !<a name='755'></font>
+<a name='756'>
+    integer :: i                                   <font color=#447700>! Longitude index<a name='757'></font>
+    integer :: k                                   <font color=#447700>! Vertical  index<a name='758'></font>
+<a name='759'>
+    <font color=#447700>! ----------------------- !<a name='760'></font>
+    <font color=#447700>! Main Computation Begins !<a name='761'></font>
+    <font color=#447700>! ----------------------- !<a name='762'></font>
+<a name='763'>
+    <font color=#447700>! Determine superdiagonal (ca(k)) and subdiagonal (cc(k)) coeffs of the <a name='764'></font>
+    <font color=#447700>! tridiagonal diffusion matrix. The diagonal elements  (cb=1+ca+cc) are<a name='765'></font>
+    <font color=#447700>! a combination of ca and cc; they are not required by the solver.<a name='766'></font>
+<a name='767'>
+    do k = nbot - 1, ntop, -1<a name='768'>
+       do i = 1, ncol<a name='769'>
+          ca(i,k  ) = kv(i,k+1) * tmpi(i,k+1) * rpdel(i,k  )<a name='770'>
+          cc(i,k+1) = kv(i,k+1) * tmpi(i,k+1) * rpdel(i,k+1)<a name='771'>
+       end do<a name='772'>
+    end do<a name='773'>
+<a name='774'>
+    <font color=#447700>! The bottom element of the upper diagonal (ca) is zero (element not used).<a name='775'></font>
+    <font color=#447700>! The subdiagonal (cc) is not needed in the solver.<a name='776'></font>
+<a name='777'>
+    do i = 1, ncol<a name='778'>
+       ca(i,nbot) = 0._r8<a name='779'>
+    end do<a name='780'>
+<a name='781'>
+    <font color=#447700>! Calculate e(k).  This term is <a name='782'></font>
+    <font color=#447700>! required in solution of tridiagonal matrix defined by implicit diffusion eqn.<a name='783'></font>
+<a name='784'>
+    do i = 1, ncol<a name='785'>
+       dnom(i,nbot) = 1._r8/(1._r8 + cc(i,nbot) + ksrf(i)*ztodt*gravit*rpdel(i,nbot))<a name='786'>
+       ze(i,nbot)   = cc(i,nbot)*dnom(i,nbot)<a name='787'>
+    end do<a name='788'>
+<a name='789'>
+    do k = nbot - 1, ntop + 1, -1<a name='790'>
+       do i = 1, ncol<a name='791'>
+          dnom(i,k) = 1._r8/(1._r8 + ca(i,k) + cc(i,k) - ca(i,k)*ze(i,k+1))<a name='792'>
+          ze(i,k)   = cc(i,k)*dnom(i,k)<a name='793'>
+       end do<a name='794'>
+    end do<a name='795'>
+<a name='796'>
+    do i = 1, ncol<a name='797'>
+       dnom(i,ntop) = 1._r8/(1._r8 + ca(i,ntop) + cc_top(i) - ca(i,ntop)*ze(i,ntop+1))<a name='798'>
+    end do<a name='799'>
+<a name='800'>
+    return<a name='801'>
+  end subroutine vd_lu_decomp<a name='802'>
+<a name='803'>
+  <font color=#447700>! =============================================================================== !<a name='804'></font>
+  <font color=#447700>!                                                                                 !<a name='805'></font>
+  <font color=#447700>! =============================================================================== !<a name='806'></font>
+<a name='807'>
+<A NAME='VD_LU_SOLVE'><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#VD_LU_SOLVE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='808'>
+  <font color=#993300>subroutine </font><font color=#cc0000>vd_lu_solve</font>( pcols , pver , ncol , &amp; <A href='../../call_to/VD_LU_SOLVE.html' TARGET='index'>4</A>,<A href='../../call_from/VD_LU_SOLVE.html' TARGET='index'>1</A><a name='809'>
+                          q     , ca   , ze   , dnom , ntop , nbot , cd_top )<a name='810'>
+    <font color=#447700>!----------------------------------------------------------------------------------- !<a name='811'></font>
+    <font color=#447700>! Solve the implicit vertical diffusion equation with zero flux boundary conditions. !<a name='812'></font>
+    <font color=#447700>! Procedure for solution of the implicit equation follows Richtmyer and              !<a name='813'></font>
+    <font color=#447700>! Morton (1967,pp 198-200).                                                          !<a name='814'></font>
+    <font color=#447700>!                                                                                    !<a name='815'></font>
+    <font color=#447700>! The equation solved is                                                             !<a name='816'></font>
+    <font color=#447700>!                                                                                    !  <a name='817'></font>
+    <font color=#447700>!     -ca(k)*q(k+1) + cb(k)*q(k) - cc(k)*q(k-1) = <A href='../../html_code/share/dfi.F.html#D'>d</A><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#VD_LU_SOLVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="D_19">(k),                              !<a name='818'></font>
+    <font color=#447700>!                                                                                    !<a name='819'></font>
+    <font color=#447700>! where d(k) is the input profile and q(k) is the output profile                     !<a name='820'></font>
+    <font color=#447700>!                                                                                    ! <a name='821'></font>
+    <font color=#447700>! The solution has the form                                                          !<a name='822'></font>
+    <font color=#447700>!                                                                                    !<a name='823'></font>
+    <font color=#447700>!     q(k) = ze(k)*q(k-1) + zf(k)                                                    !<a name='824'></font>
+    <font color=#447700>!                                                                                    !<a name='825'></font>
+    <font color=#447700>!     ze(k) = cc(k) * dnom(k)                                                        !<a name='826'></font>
+    <font color=#447700>!                                                                                    !  <a name='827'></font>
+    <font color=#447700>!     zf(k) = [d(k) + ca(k)*zf(k+1)] * dnom(k)                                       !<a name='828'></font>
+    <font color=#447700>!                                                                                    !<a name='829'></font>
+    <font color=#447700>!     dnom(k) = 1/[cb(k) - ca(k)*ze(k+1)] =  1/[1 + ca(k) + cc(k) - ca(k)*ze(k+1)]   !<a name='830'></font>
+    <font color=#447700>!                                                                                    !<a name='831'></font>
+    <font color=#447700>! Note that the same routine is used for temperature, momentum and tracers,          !<a name='832'></font>
+    <font color=#447700>! and that input variables are replaced.                                             !<a name='833'></font>
+    <font color=#447700>! ---------------------------------------------------------------------------------- ! <a name='834'></font>
+<a name='835'>
+    <font color=#447700>! --------------------- !<a name='836'></font>
+    <font color=#447700>! Input-Output Argument !<a name='837'></font>
+    <font color=#447700>! --------------------- !<a name='838'></font>
+<a name='839'>
+    integer,  intent(in)    :: pcols                  <font color=#447700>! Number of allocated atmospheric columns<a name='840'></font>
+    integer,  intent(in)    :: pver                   <font color=#447700>! Number of allocated atmospheric levels <a name='841'></font>
+    integer,  intent(in)    :: ncol                   <font color=#447700>! Number of computed atmospheric columns<a name='842'></font>
+    integer,  intent(in)    :: ntop                   <font color=#447700>! Top level to operate on<a name='843'></font>
+    integer,  intent(in)    :: nbot                   <font color=#447700>! Bottom level to operate on<a name='844'></font>
+    real(r8), intent(in)    :: ca(pcols,pver)         <font color=#447700>! -Upper diag coeff.of tri-diag matrix<a name='845'></font>
+    real(r8), intent(in)    :: ze(pcols,pver)         <font color=#447700>! Term in tri-diag solution<a name='846'></font>
+    real(r8), intent(in)    :: dnom(pcols,pver)       <font color=#447700>! 1./(1. + ca(k) + cc(k) - ca(k)*ze(k+1))<a name='847'></font>
+    real(r8), intent(in)    :: cd_top(pcols)          <font color=#447700>! cc_top * ubc value<a name='848'></font>
+<a name='849'>
+    real(r8), intent(inout) :: q(pcols,pver)          <font color=#447700>! Constituent field<a name='850'></font>
+<a name='851'>
+    <font color=#447700>! --------------- !<a name='852'></font>
+    <font color=#447700>! Local Variables ! <a name='853'></font>
+    <font color=#447700>! --------------- !<a name='854'></font>
+<a name='855'>
+    real(r8)                :: zf(pcols,pver)         <font color=#447700>! Term in tri-diag solution<a name='856'></font>
+    integer                    i, k                   <font color=#447700>! Longitude, vertical indices<a name='857'></font>
+<a name='858'>
+    <font color=#447700>! ----------------------- !<a name='859'></font>
+    <font color=#447700>! Main Computation Begins !<a name='860'></font>
+    <font color=#447700>! ----------------------- !<a name='861'></font>
+<a name='862'>
+    <font color=#447700>! Calculate zf(k). Terms zf(k) and ze(k) are required in solution of <a name='863'></font>
+    <font color=#447700>! tridiagonal matrix defined by implicit diffusion equation.<a name='864'></font>
+    <font color=#447700>! Note that only levels ntop through nbot need be solved for.<a name='865'></font>
+<a name='866'>
+    do i = 1, ncol<a name='867'>
+       zf(i,nbot) = q(i,nbot)*dnom(i,nbot)<a name='868'>
+    end do<a name='869'>
+<a name='870'>
+    do k = nbot - 1, ntop + 1, -1<a name='871'>
+       do i = 1, ncol<a name='872'>
+          zf(i,k) = (q(i,k) + ca(i,k)*zf(i,k+1))*dnom(i,k)<a name='873'>
+       end do<a name='874'>
+    end do<a name='875'>
+<a name='876'>
+    <font color=#447700>! Include boundary condition on top element<a name='877'></font>
+<a name='878'>
+    k = ntop<a name='879'>
+    do i = 1, ncol<a name='880'>
+       zf(i,k) = (q(i,k) + cd_top(i) + ca(i,k)*zf(i,k+1))*dnom(i,k)<a name='881'>
+    end do<a name='882'>
+<a name='883'>
+    <font color=#447700>! Perform back substitution<a name='884'></font>
+<a name='885'>
+    do i = 1, ncol<a name='886'>
+       q(i,ntop) = zf(i,ntop)<a name='887'>
+    end do<a name='888'>
+<a name='889'>
+    do k = ntop + 1, nbot, +1<a name='890'>
+       do i = 1, ncol<a name='891'>
+          q(i,k) = zf(i,k) + ze(i,k)*q(i,k-1)<a name='892'>
+       end do<a name='893'>
+    end do<a name='894'>
+<a name='895'>
+    return<a name='896'>
+  end subroutine vd_lu_solve<a name='897'>
+<a name='898'>
+  <font color=#447700>! =============================================================================== !<a name='899'></font>
+  <font color=#447700>!                                                                                 !<a name='900'></font>
+  <font color=#447700>! =============================================================================== !<a name='901'></font>
+  <a name='902'>
+<A NAME='VDIFF_SELECT'><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#VDIFF_SELECT' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='903'>
+  character(128) <font color=#993300>function </font><font color=#cc0000>vdiff_select</font>( fieldlist, name, qindex )<a name='904'>
+    <font color=#447700>! --------------------------------------------------------------------- !<a name='905'></font>
+    <font color=#447700>! This function sets the field with incoming name as one to be diffused !<a name='906'></font>
+    <font color=#447700>! --------------------------------------------------------------------- !<a name='907'></font>
+    type(vdiff_selector), intent(inout)        :: fieldlist<a name='908'>
+    character(*),         intent(in)           :: name<a name='909'>
+    integer,              intent(in), optional :: qindex<a name='910'>
+    <a name='911'>
+    vdiff_select = ''<a name='912'>
+    select case (name)<a name='913'>
+    case ('u','U')<a name='914'>
+       fieldlist%fields(1) = .true.<a name='915'>
+    case ('v','V')<a name='916'>
+       fieldlist%fields(2) = .true.<a name='917'>
+    case ('s','S')<a name='918'>
+       fieldlist%fields(3) = .true.<a name='919'>
+    case ('q','Q')<a name='920'>
+       if( present(qindex) ) then<a name='921'>
+           fieldlist%fields(3 + qindex) = .true.<a name='922'>
+       else<a name='923'>
+           fieldlist%fields(4) = .true.<a name='924'>
+       endif<a name='925'>
+    case default<a name='926'>
+       write(vdiff_select,*) 'Bad argument to vdiff_index: ', name<a name='927'>
+    end select<a name='928'>
+    return<a name='929'>
+    <a name='930'>
+  end function vdiff_select<a name='931'>
+<a name='932'>
+<A NAME='NOT'><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#NOT' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='933'>
+  type(vdiff_selector) <font color=#993300>function </font><font color=#cc0000>not</font>(a) <A href='../../call_to/NOT.html' TARGET='index'>1</A><a name='934'>
+    <font color=#447700>! ------------------------------------------------------------- !<a name='935'></font>
+    <font color=#447700>! This function extends .not. to operate on type vdiff_selector !<a name='936'></font>
+    <font color=#447700>! ------------------------------------------------------------- !    <a name='937'></font>
+    type(vdiff_selector), intent(in)  :: a<a name='938'>
+    allocate(not%fields(size(a%fields)))<a name='939'>
+    not%fields(:) = .not. a%fields(:)<a name='940'>
+  end function not<a name='941'>
+<a name='942'>
+<A NAME='MY_ANY'><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#MY_ANY' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='943'>
+  logical <font color=#993300>function </font><font color=#cc0000>my_any</font>(a) <A href='../../call_to/MY_ANY.html' TARGET='index'>1</A><a name='944'>
+    <font color=#447700>! -------------------------------------------------- !<a name='945'></font>
+    <font color=#447700>! This function extends the intrinsic function 'any' ! <a name='946'></font>
+    <font color=#447700>! to operate on type vdiff_selector                  ! <a name='947'></font>
+    <font color=#447700>! -------------------------------------------------- !<a name='948'></font>
+    type(vdiff_selector), intent(in) :: a<a name='949'>
+    my_any = any(a%fields)<a name='950'>
+  end function my_any<a name='951'>
+<a name='952'>
+<A NAME='DIFFUSE'><A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#DIFFUSE' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='953'>
+  logical <font color=#993300>function </font><font color=#cc0000>diffuse</font>(fieldlist,name,qindex)<a name='954'>
+    <font color=#447700>! ---------------------------------------------------------------------------- !<a name='955'></font>
+    <font color=#447700>! This function reports whether the field with incoming name is to be diffused !<a name='956'></font>
+    <font color=#447700>! ---------------------------------------------------------------------------- !<a name='957'></font>
+    type(vdiff_selector), intent(in)           :: fieldlist<a name='958'>
+    character(*),         intent(in)           :: name<a name='959'>
+    integer,              intent(in), optional :: qindex<a name='960'>
+    <a name='961'>
+    select case (name)<a name='962'>
+    case ('u','U')<a name='963'>
+       diffuse = fieldlist%fields(1)<a name='964'>
+    case ('v','V')<a name='965'>
+       diffuse = fieldlist%fields(2)<a name='966'>
+    case ('s','S')<a name='967'>
+       diffuse = fieldlist%fields(3)<a name='968'>
+    case ('q','Q')<a name='969'>
+       if( present(qindex) ) then<a name='970'>
+           diffuse = fieldlist%fields(3 + qindex)<a name='971'>
+       else<a name='972'>
+           diffuse = fieldlist%fields(4)<a name='973'>
+       endif<a name='974'>
+    case default<a name='975'>
+       diffuse = .false.<a name='976'>
+    end select<a name='977'>
+    return<a name='978'>
+  end function diffuse<a name='979'>
+<a name='980'>
+end module diffusion_solver<a name='981'>
+</pre></body></html>

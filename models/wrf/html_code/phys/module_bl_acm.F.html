@@ -1,0 +1,1687 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:MODEL_LAYER:PHYSICS<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<A NAME='MODULE_BL_ACM'><A href='../../html_code/phys/module_bl_acm.F.html#MODULE_BL_ACM' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='4'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_bl_acm</font> <A href='../../call_to/MODULE_BL_ACM.html' TARGET='index'>2</A><a name='5'>
+<a name='6'>
+<font color=#447700>!  USE module_model_constants<a name='7'></font>
+<a name='8'>
+  REAL, PARAMETER      :: RIC    = 0.25                <font color=#447700>! critical Richardson number<a name='9'></font>
+  REAL, PARAMETER      :: CRANKP = 0.5                 <font color=#447700>! CRANK-NIC PARAMETER<a name='10'></font>
+<a name='11'>
+CONTAINS<a name='12'>
+<a name='13'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='14'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='15'></font>
+<A NAME='ACMPBL'><A href='../../html_code/phys/module_bl_acm.F.html#ACMPBL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='16'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ACMPBL</font>(XTIME,    DTPBL,    ZNW,   SIGMAH,               &amp; <A href='../../call_to/ACMPBL.html' TARGET='index'>1</A>,<A href='../../call_from/ACMPBL.html' TARGET='index'>1</A><a name='17'>
+                     U3D,      V3D,      PP3D,  DZ8W, TH3D, T3D,      &amp;<a name='18'>
+                     QV3D,     QC3D,     QI3D,  RR3D,                 &amp;<a name='19'>
+#if (WRF_CHEM == 1)<a name='20'>
+                     CHEM3D,   VD3D,     NCHEM,                       &amp;  <font color=#447700>! For WRF-Chem<a name='21'></font>
+                     KDVEL, NDVEL, NUM_VERT_MIX,                      &amp;  <font color=#447700>! For WRF-Chem<a name='22'></font>
+#endif<a name='23'>
+                     UST,      HFX,      QFX,   TSK,                  &amp;<a name='24'>
+                     PSFC,     EP1,      G,                           &amp;<a name='25'>
+                     ROVCP,    RD,       CPD,                         &amp;<a name='26'>
+                     PBLH,     KPBL2D,   EXCH_H, REGIME,              &amp;<a name='27'>
+                     GZ1OZ0,   WSPD,     PSIM, MUT, RMOL,             &amp;<a name='28'>
+                     RUBLTEN,  RVBLTEN,  RTHBLTEN,                    &amp;<a name='29'>
+                     RQVBLTEN, RQCBLTEN, RQIBLTEN,                    &amp;<a name='30'>
+                     ids,ide, jds,jde, kds,kde,                       &amp;<a name='31'>
+                     ims,ime, jms,jme, kms,kme,                       &amp;<a name='32'>
+                     its,ite, jts,jte, kts,kte)<a name='33'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='34'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='35'></font>
+<a name='36'>
+<font color=#447700>!   THIS MODULE COMPUTES VERTICAL MIXING IN AND ABOVE THE PBL ACCORDING TO <a name='37'></font>
+<font color=#447700>!   THE ASYMMETRICAL CONVECTIVE MODEL, VERSION 2  (ACM2), WHICH IS A COMBINED <a name='38'></font>
+<font color=#447700>!   LOCAL NON-LOCAL CLOSURE SCHEME BASED ON THE ORIGINAL ACM (PLEIM AND CHANG 1992)<a name='39'></font>
+<font color=#447700>!<a name='40'></font>
+<font color=#447700>!   REFERENCES: <a name='41'></font>
+<font color=#447700>!   Pleim (2007) A combined local and non-local closure model for the atmospheric<a name='42'></font>
+<font color=#447700>!                boundary layer.  Part1: Model description and testing.  <a name='43'></font>
+<font color=#447700>!                JAMC, 46, 1383-1395<a name='44'></font>
+<font color=#447700>!   Pleim (2007) A combined local and non-local closure model for the atmospheric<a name='45'></font>
+<font color=#447700>!                boundary layer.  Part2: Application and evaluation in a mesoscale<a name='46'></font>
+<font color=#447700>!                meteorology model.  JAMC, 46, 1396-1409<a name='47'></font>
+<font color=#447700>!<a name='48'></font>
+<font color=#447700>!  REVISION HISTORY:<a name='49'></font>
+<font color=#447700>!     AX        3/2005   - developed WRF version based on the MM5 PX LSM<a name='50'></font>
+<font color=#447700>!     RG and JP 7/2006   - Finished WRF adaptation<a name='51'></font>
+<font color=#447700>!     JP 12/2011 12/2011 - ACM2 modified so it's not dependent on first layer thickness. <a name='52'></font>
+<font color=#447700>!     JP        3/2013   - WRFChem version. Mixing of chemical species are added<a name='53'></font>
+<font color=#447700>!     JP 12/2014         - Km and Kh updated. New Richardson number stability function.<a name='54'></font>
+<font color=#447700>!                          Reduces day and night 2-m temperature bias.<a name='55'></font>
+<font color=#447700>!     JP 12/2014         - Minimum PBL height bug caused PBLH lower than first level thickness in very stable <a name='56'></font>
+<font color=#447700>!                          conditions. Fixed so PBLH minimum is layer 1 thickness.<a name='57'></font>
+<font color=#447700>!     JP 12/2015         - RMOL updated after initial calculation in the PX-SFCLAY.<a name='58'></font>
+<font color=#447700>!                                                  <a name='59'></font>
+<font color=#447700>!<a name='60'></font>
+<font color=#447700>!**********************************************************************<a name='61'></font>
+<font color=#447700>!   ARGUMENT LIST:<a name='62'></font>
+<font color=#447700>!<a name='63'></font>
+<font color=#447700>!... Inputs:<a name='64'></font>
+<font color=#447700>!-- XTIME           Time since simulation start (min)<a name='65'></font>
+<font color=#447700>!-- DTPBL           PBL time step<a name='66'></font>
+<font color=#447700>!-- ZNW             Sigma at full layer<a name='67'></font>
+<font color=#447700>!-- SIGMAH          Sigma at half layer<a name='68'></font>
+<font color=#447700>!-- U3D             3D u-velocity interpolated to theta points (m/s)<a name='69'></font>
+<font color=#447700>!-- V3D             3D v-velocity interpolated to theta points (m/s)<a name='70'></font>
+<font color=#447700>!-- PP3D            Pressure at half levels (Pa)<a name='71'></font>
+<font color=#447700>!-- DZ8W            dz between full levels (m)<a name='72'></font>
+<font color=#447700>!-- TH3D            Potential Temperature (K)<a name='73'></font>
+<font color=#447700>!-- T3D             Temperature (K)<a name='74'></font>
+<font color=#447700>!-- QV3D            3D water vapor mixing ratio (Kg/Kg)<a name='75'></font>
+<font color=#447700>!-- QC3D            3D cloud mixing ratio (Kg/Kg)<a name='76'></font>
+<font color=#447700>!-- QI3D            3D ice mixing ratio (Kg/Kg)<a name='77'></font>
+<font color=#447700>!-- RR3D            3D dry air density (kg/m^3)<a name='78'></font>
+<font color=#447700>!-- CHEM3D          Chemical species mixing ratios (ppm)  Optional for WRFChem   <a name='79'></font>
+<font color=#447700>!-- VD3D            Dry deposition velocity (m/s)         Optional for WRFChem<a name='80'></font>
+<font color=#447700>!-- NCHEM           Number of chemical species            Optional for WRFChem<a name='81'></font>
+<font color=#447700>!-- UST             Friction Velocity (m/s)<a name='82'></font>
+<font color=#447700>!-- HFX		    Upward heat flux at the surface (w/m^2)<a name='83'></font>
+<font color=#447700>!-- QFX		    Upward moisture flux at the surface (Kg/m^2/s)<a name='84'></font>
+<font color=#447700>!-- TSK             Surface temperature (K)<a name='85'></font>
+<font color=#447700>!-- PSFC            Pressure at the surface (Pa)<a name='86'></font>
+<font color=#447700>!-- EP1             Constant for virtual temperature (r_v/r_d-1) (dimensionless)<a name='87'></font>
+<font color=#447700>!-- G               Gravity (m/s^2)<a name='88'></font>
+<font color=#447700>!-- ROVCP           r/cp<a name='89'></font>
+<font color=#447700>!-- RD              gas constant for dry air (j/kg/k)<a name='90'></font>
+<font color=#447700>!-- CPD             heat capacity at constant pressure for dry air (j/kg/k)<a name='91'></font>
+<font color=#447700>!-- GZ1OZ0          log(z/z0) where z0 is roughness length<a name='92'></font>
+<font color=#447700>!-- WSPD            wind speed at lowest model level (m/s)<a name='93'></font>
+<font color=#447700>!-- PSIM            similarity stability function for momentum<a name='94'></font>
+<font color=#447700>!-- MUT             Total Mu : Psfc - Ptop<a name='95'></font>
+<font color=#447700>!-- RMOL            inverse (1/MOL) of Monin-Obukhov length (m)  (added for v3.8)<a name='96'></font>
+ <a name='97'>
+<font color=#447700>!-- ids             start index for i in domain<a name='98'></font>
+<font color=#447700>!-- ide             end index for i in domain<a name='99'></font>
+<font color=#447700>!-- jds             start index for j in domain<a name='100'></font>
+<font color=#447700>!-- jde             end index for j in domain<a name='101'></font>
+<font color=#447700>!-- kds             start index for k in domain<a name='102'></font>
+<font color=#447700>!-- kde             end index for k in domain<a name='103'></font>
+<font color=#447700>!-- ims             start index for i in memory<a name='104'></font>
+<font color=#447700>!-- ime             end index for i in memory<a name='105'></font>
+<font color=#447700>!-- jms             start index for j in memory<a name='106'></font>
+<font color=#447700>!-- jme             end index for j in memory<a name='107'></font>
+<font color=#447700>!-- kms             start index for k in memory<a name='108'></font>
+<font color=#447700>!-- kme             end index for k in memory<a name='109'></font>
+<font color=#447700>!-- jts             start index for j in tile<a name='110'></font>
+<font color=#447700>!-- jte             end index for j in tile<a name='111'></font>
+<font color=#447700>!-- kts             start index for k in tile<a name='112'></font>
+<font color=#447700>!-- kte             end index for k in tile<a name='113'></font>
+<font color=#447700>!<a name='114'></font>
+<font color=#447700>!... Outputs: <a name='115'></font>
+<font color=#447700>!-- PBLH            PBL height (m)<a name='116'></font>
+<font color=#447700>!-- KPBL2D          K index for PBL layer<a name='117'></font>
+<font color=#447700>!-- REGIME          Flag indicating PBL regime (stable, unstable, etc.)<a name='118'></font>
+<font color=#447700>!-- RUBLTEN         U tendency due to PBL parameterization (m/s^2)<a name='119'></font>
+<font color=#447700>!-- RVBLTEN         V tendency due to PBL parameterization (m/s^2)<a name='120'></font>
+<font color=#447700>!-- RTHBLTEN        Theta tendency due to PBL parameterization (K/s)<a name='121'></font>
+<font color=#447700>!-- RQVBLTEN        Qv tendency due to PBL parameterization (kg/kg/s)<a name='122'></font>
+<font color=#447700>!-- RQCBLTEN        Qc tendency due to PBL parameterization (kg/kg/s)<a name='123'></font>
+<font color=#447700>!-- RQIBLTEN        Qi tendency due to PBL parameterization (kg/kg/s)<a name='124'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='125'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='126'></font>
+     IMPLICIT NONE<a name='127'>
+<a name='128'>
+<font color=#447700>!.......Arguments<a name='129'></font>
+<font color=#447700>! DECLARATIONS - INTEGER<a name='130'></font>
+    INTEGER,  INTENT(IN   )   ::      ids,ide, jds,jde, kds,kde, &amp;<a name='131'>
+                                      ims,ime, jms,jme, kms,kme, &amp;<a name='132'>
+                                      its,ite, jts,jte, kts,kte, XTIME<a name='133'>
+<a name='134'>
+<font color=#447700>! DECLARATIONS - REAL<a name='135'></font>
+    REAL,                                INTENT(IN)  ::  DTPBL, EP1,   &amp;<a name='136'>
+                                                        G, ROVCP, RD, CPD<a name='137'>
+<a name='138'>
+    REAL,    DIMENSION( kms:kme ),       INTENT(IN)  :: ZNW, SIGMAH<a name='139'>
+<a name='140'>
+    REAL,    DIMENSION( ims:ime, kms:kme, jms:jme ),                         &amp;<a name='141'>
+             INTENT(IN) ::                              U3D, V3D,            &amp;<a name='142'>
+                                                        PP3D, DZ8W, T3D,     &amp;<a name='143'>
+                                                        QV3D, QC3D, QI3D,    &amp;<a name='144'>
+                                                        RR3D, TH3D<a name='145'>
+<a name='146'>
+    REAL,    DIMENSION( ims:ime, jms:jme ), INTENT(IN) :: PSIM, GZ1OZ0,     &amp;<a name='147'>
+                                                          HFX, QFX, TSK,    &amp;<a name='148'>
+                                                          PSFC, WSPD, MUT<a name='149'>
+<a name='150'>
+    REAL,    DIMENSION( ims:ime, jms:jme ), INTENT(INOUT) ::  PBLH, REGIME,  &amp;<a name='151'>
+                                                              UST, RMOL<a name='152'>
+<a name='153'>
+    REAL,    DIMENSION( ims:ime, kms:kme, jms:jme ),                         &amp;<a name='154'>
+             INTENT(INOUT)   ::                         RUBLTEN, RVBLTEN,    &amp;<a name='155'>
+                                                        RTHBLTEN, RQVBLTEN,  &amp;<a name='156'>
+                                                        RQCBLTEN, RQIBLTEN<a name='157'>
+<a name='158'>
+   real,     dimension( ims:ime, kms:kme, jms:jme ),                         &amp;<a name='159'>
+             intent(inout)   ::                         exch_h<a name='160'>
+<a name='161'>
+    INTEGER, DIMENSION( ims:ime, jms:jme ), INTENT(OUT  ) ::  KPBL2D<a name='162'>
+<a name='163'>
+ <a name='164'>
+#if (WRF_CHEM == 1)<a name='165'>
+<font color=#447700>!... Chem<a name='166'></font>
+    INTEGER, INTENT(IN   )   ::   nchem, kdvel, ndvel, num_vert_mix<a name='167'>
+    REAL,    DIMENSION( ims:ime, kms:kme, jms:jme, nchem ), INTENT(INOUT) :: CHEM3D<a name='168'>
+    REAL,    DIMENSION( ims:ime, kdvel, jms:jme, ndvel ), INTENT(IN) :: VD3D<a name='169'>
+#endif<a name='170'>
+<font color=#447700>!... Local Variables<a name='171'></font>
+<a name='172'>
+<font color=#447700>!... Integer<a name='173'></font>
+      INTEGER :: I, J, K, L<a name='174'>
+<font color=#447700>!... Real<a name='175'></font>
+      REAL, DIMENSION( kts:kte ) :: DSIGH, DSIGHI, DSIGFI<a name='176'>
+      REAL, DIMENSION( 0:kte )   :: SIGMAF<a name='177'>
+      REAL  RDT<a name='178'>
+      REAL, PARAMETER :: KARMAN = 0.4<a name='179'>
+<a name='180'>
+#if (WRF_CHEM == 1)<a name='181'>
+<font color=#447700>!... Chem<a name='182'></font>
+    REAL,    DIMENSION( ims:ime, kms:kme, nchem ) :: CHEM2D<a name='183'>
+    REAL,    DIMENSION( ims:ime, kdvel, ndvel ) :: VD2D<a name='184'>
+#endif<a name='185'>
+<font color=#447700>!...<a name='186'></font>
+<a name='187'>
+   RDT = 1.0 / DTPBL<a name='188'>
+<a name='189'>
+   DO K = 1, kte<a name='190'>
+     SIGMAF(K-1) = ZNW(K)<a name='191'>
+   ENDDO<a name='192'>
+   SIGMAF(kte) = 0.0<a name='193'>
+<a name='194'>
+   DO K = 1, kte<a name='195'>
+     DSIGH(K)  = SIGMAF(K) - SIGMAF(K-1)<a name='196'>
+     DSIGHI(K) = 1.0 / DSIGH(K)<a name='197'>
+   ENDDO<a name='198'>
+<a name='199'>
+   DO K = kts,kte-1<a name='200'>
+     DSIGFI(K) = 1.0 / (SIGMAH(K+1) - SIGMAH(K))<a name='201'>
+   ENDDO<a name='202'>
+<a name='203'>
+   DSIGFI(kte) = DSIGFI(kte-1)<a name='204'>
+   <a name='205'>
+   DO j = jts,jte   <a name='206'>
+#if (WRF_CHEM == 1)<a name='207'>
+      DO L = 1, nchem<a name='208'>
+      DO K = kms,kme<a name='209'>
+      DO I = ims, ime<a name='210'>
+        CHEM2D(i,k,l) = chem3d(i,k,j,l)<a name='211'>
+      ENDDO<a name='212'>
+      ENDDO<a name='213'>
+      ENDDO<a name='214'>
+<a name='215'>
+      DO L = 1, ndvel<a name='216'>
+      DO K = 1, kdvel<a name='217'>
+      DO I = ims, ime<a name='218'>
+        VD2D(i,k,l) = VD3D(i,k,j,l)<a name='219'>
+      ENDDO<a name='220'>
+      ENDDO<a name='221'>
+      ENDDO<a name='222'>
+#endif<a name='223'>
+      CALL <A href='../../html_code/phys/module_bl_acm.F.html#ACM2D'>ACM2D</A><A href='../../html_code/phys/module_bl_acm.F.html#ACMPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ACM2D_1">(j=J,xtime=XTIME, dtpbl=DTPBL, sigmaf=SIGMAF, sigmah=SIGMAH    &amp;<a name='224'>
+              ,dsigfi=DSIGFI,dsighi=DSIGHI,dsigh=DSIGH             &amp;<a name='225'>
+              ,us=u3d(ims,kms,j),vs=v3d(ims,kms,j)                 &amp;<a name='226'>
+              ,theta=th3d(ims,kms,j),tt=t3d(ims,kms,j)             &amp;<a name='227'>
+              ,qvs=qv3d(ims,kms,j),qcs=qc3d(ims,kms,j)             &amp;<a name='228'>
+              ,qis=qi3d(ims,kms,j)                                 &amp;<a name='229'>
+#if (WRF_CHEM == 1)<a name='230'>
+              ,chem=chem2d                                         &amp;<a name='231'>
+              ,vd=vd2d                                             &amp;<a name='232'>
+              ,nchem=nchem,kdvel=kdvel,ndvel=ndvel                 &amp;<a name='233'>
+              ,num_vert_mix=num_vert_mix                           &amp;<a name='234'>
+#endif<a name='235'>
+              ,dzf=DZ8W(ims,kms,j)                                 &amp;<a name='236'>
+              ,densx=RR3D(ims,kms,j)                               &amp;<a name='237'>
+              ,utnp=rublten(ims,kms,j),vtnp=rvblten(ims,kms,j)     &amp;<a name='238'>
+              ,ttnp=rthblten(ims,kms,j),qvtnp=rqvblten(ims,kms,j)  &amp;<a name='239'>
+              ,qctnp=rqcblten(ims,kms,j),qitnp=rqiblten(ims,kms,j) &amp;<a name='240'>
+              ,cpd=cpd,g=g,rovcp=rovcp,rd=rd,rdt=rdt               &amp;<a name='241'>
+              ,psfcpa=psfc(ims,j),ust=ust(ims,j)                   &amp;<a name='242'>
+              ,pbl=pblh(ims,j)                                     &amp;<a name='243'>
+              ,exch_hx=exch_h(ims,kms,j)                           &amp;<a name='244'>
+              ,regime=regime(ims,j),psim=psim(ims,j)               &amp;<a name='245'>
+              ,hfx=hfx(ims,j),qfx=qfx(ims,j)                       &amp;<a name='246'>
+              ,tg=tsk(ims,j),gz1oz0=gz1oz0(ims,j)                  &amp;<a name='247'>
+              ,wspd=wspd(ims,j) ,klpbl=kpbl2d(ims,j)               &amp;<a name='248'>
+              ,mut=mut(ims,j), rmol=rmol(ims,j)                    &amp;<a name='249'>
+              ,ep1=ep1,karman=karman                               &amp;<a name='250'>
+              ,ids=ids,ide=ide, jds=jds,jde=jde, kds=kds,kde=kde   &amp;<a name='251'>
+              ,ims=ims,ime=ime, jms=jms,jme=jme, kms=kms,kme=kme   &amp;<a name='252'>
+              ,its=its,ite=ite, jts=jts,jte=jte, kts=kts,kte=kte   )<a name='253'>
+#if (WRF_CHEM == 1)<a name='254'>
+      DO L = 1, nchem<a name='255'>
+      DO I = ims, ime<a name='256'>
+        chem3d(i,kms:kme,j,l) = CHEM2D(i,kms:kme,l)<a name='257'>
+      ENDDO<a name='258'>
+      ENDDO<a name='259'>
+#endif<a name='260'>
+   ENDDO<a name='261'>
+<a name='262'>
+   END SUBROUTINE ACMPBL<a name='263'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='264'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='265'></font>
+<a name='266'>
+<a name='267'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='268'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='269'></font>
+<A NAME='ACM2D'><A href='../../html_code/phys/module_bl_acm.F.html#ACM2D' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='270'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ACM2D</font>(j,XTIME, DTPBL, sigmaf, sigmah          &amp; <A href='../../call_to/ACM2D.html' TARGET='index'>1</A>,<A href='../../call_from/ACM2D.html' TARGET='index'>5</A><a name='271'>
+              ,dsigfi,dsighi,dsigh                          &amp;<a name='272'>
+              ,us,vs,theta,tt,qvs,qcs,qis                   &amp;<a name='273'>
+#if (WRF_CHEM == 1)<a name='274'>
+              ,chem,  vd, nchem, kdvel, ndvel               &amp;<a name='275'>
+              ,num_vert_mix                                 &amp;<a name='276'>
+#endif<a name='277'>
+              ,dzf,densx,utnp,vtnp,ttnp,qvtnp,qctnp,qitnp   &amp;<a name='278'>
+              ,cpd,g,rovcp,rd,rdt,psfcpa,ust                &amp;<a name='279'>
+              ,pbl,exch_hx,regime,psim                      &amp;<a name='280'>
+              ,hfx,qfx,tg,gz1oz0,wspd ,klpbl                &amp;<a name='281'>
+              ,mut, rmol                                    &amp;<a name='282'>
+              ,ep1,karman                                   &amp;<a name='283'>
+              ,ids,ide, jds,jde, kds,kde   &amp;<a name='284'>
+              ,ims,ime, jms,jme, kms,kme   &amp;<a name='285'>
+              ,its,ite, jts,jte, kts,kte   )<a name='286'>
+<a name='287'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='288'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='289'></font>
+      IMPLICIT NONE<a name='290'>
+<a name='291'>
+<font color=#447700>!.......Arguments<a name='292'></font>
+<a name='293'>
+<font color=#447700>!... Real<a name='294'></font>
+      REAL, DIMENSION( 0:kte ),             INTENT(IN)  :: SIGMAF<a name='295'>
+      REAL, DIMENSION( kms:kme ),           INTENT(IN)  :: SIGMAH<a name='296'>
+      REAL, DIMENSION( kts:kte ),           INTENT(IN)  :: DSIGH, DSIGHI, DSIGFI<a name='297'>
+      REAL ,                                INTENT(IN)  :: DTPBL, G, RD,ep1,karman,CPD,ROVCP,RDT<a name='298'>
+      REAL , DIMENSION( ims:ime ),          INTENT(INOUT)  :: PBL, UST<a name='299'>
+      <a name='300'>
+      REAL , DIMENSION( ims:ime, kms:kme ), INTENT(IN)  :: US,VS, THETA, TT,   &amp;<a name='301'>
+                                                           QVS, QCS, QIS, DENSX<a name='302'>
+      REAL,  DIMENSION( ims:ime, kms:kme ), intent(in)  :: DZF<a name='303'>
+      REAL,  DIMENSION( ims:ime, kms:kme ), intent(inout)   ::  utnp, &amp;<a name='304'>
+							        vtnp, &amp;<a name='305'>
+							        ttnp, &amp;<a name='306'>
+							        qvtnp, &amp;<a name='307'>
+							        qctnp, &amp;<a name='308'>
+							        qitnp<a name='309'>
+      real,     dimension( ims:ime ), intent(in   )   ::   psfcpa<a name='310'>
+      real,     dimension( ims:ime ), intent(in   )   ::   tg<a name='311'>
+      real,     dimension( ims:ime ), intent(inout)   ::   regime, rmol<a name='312'>
+      real,     dimension( ims:ime ), intent(in)      ::   wspd, psim, gz1oz0<a name='313'>
+      real,     dimension( ims:ime ), intent(in)      ::   hfx, qfx<a name='314'>
+      real,     dimension( ims:ime ), intent(in)      ::   mut<a name='315'>
+      real,     dimension( ims:ime, kms:kme ),                    &amp;<a name='316'>
+                intent(inout)                         ::   exch_hx<a name='317'>
+<font color=#447700>!... Integer<a name='318'></font>
+      INTEGER, DIMENSION( ims:ime ),       INTENT(OUT):: KLPBL<a name='319'>
+      INTEGER,  INTENT(IN)      ::      XTIME<a name='320'>
+      integer,  intent(in   )   ::      ids,ide, jds,jde, kds,kde, &amp;<a name='321'>
+                                        ims,ime, jms,jme, kms,kme, &amp;<a name='322'>
+                                        its,ite, jts,jte, kts,kte, j<a name='323'>
+#if (WRF_CHEM == 1)<a name='324'>
+<font color=#447700>!....Chem<a name='325'></font>
+      INTEGER,  INTENT(IN)      ::      NCHEM, KDVEL,NDVEL,NUM_VERT_MIX<a name='326'>
+      REAL , DIMENSION( ims:ime, kms:kme, NCHEM ), INTENT(INOUT)  :: CHEM<a name='327'>
+      REAL , DIMENSION( ims:ime, KDVEL, NDVEL ), INTENT(IN)  :: VD<a name='328'>
+#endif<a name='329'>
+<font color=#447700>!--------------------------------------------------------------------<a name='330'></font>
+<font color=#447700>!--Local <a name='331'></font>
+      INTEGER I, K     <a name='332'>
+      INTEGER :: KPBLHT<a name='333'>
+      INTEGER, DIMENSION( its:ite ) :: KPBLH, NOCONV<a name='334'>
+<a name='335'>
+<font color=#447700>!... Real<a name='336'></font>
+      REAL    ::  TVCON, WSS, TCONV, TH1, TOG, DTMP, WSSQ<a name='337'>
+      REAL    ::  ZH1,UH1,VH1                                   <font color=#447700>! NEW FOR V3.7<a name='338'></font>
+      REAL    ::  psix, THV1<a name='339'>
+      REAL, DIMENSION( its:ite )          :: FINT, PSTAR, CPAIR<a name='340'>
+      REAL, DIMENSION( its:ite, kts:kte ) :: THETAV, RIB,             &amp;<a name='341'>
+                                             EDDYZ, EDDYZM, UX, VX, THETAX,   &amp;<a name='342'>
+                                             QVX, QCX, QIX, ZA<a name='343'>
+      REAL, DIMENSION( its:ite, 0:kte )   :: ZF<a name='344'>
+      REAL,    DIMENSION( its:ite)           :: WST, TST, QST, USTM, TSTV<a name='345'>
+      REAL,    DIMENSION( its:ite )          :: PBLSIG, MOL<a name='346'>
+      REAL    ::  FINTT, ZMIX, UMIX, VMIX<a name='347'>
+      REAL    ::  TMPFX, TMPVTCON, TMPP, TMPTHS, TMPTH1, TMPVCONV, WS1, DTH<a name='348'>
+	REAL    ::  A,TST12,RL,ZFUNC,DENSF<a name='349'>
+<font color=#447700>!    REAL, PARAMETER :: KARMAN = 0.4<a name='350'></font>
+<a name='351'>
+<font color=#447700>!... Integer<a name='352'></font>
+      INTEGER :: KL, jtf, ktf, itf, KMIX, KSRC<a name='353'>
+<font color=#447700>!...<a name='354'></font>
+        character*512 :: message<a name='355'>
+<font color=#447700>!-----initialize vertical tendencies and<a name='356'></font>
+<a name='357'>
+      DO i = its,ite<a name='358'>
+        DO k = kts,kte<a name='359'>
+          utnp(i,k) = 0.<a name='360'>
+          vtnp(i,k) = 0.<a name='361'>
+          ttnp(i,k) = 0.<a name='362'>
+        ENDDO<a name='363'>
+      ENDDO<a name='364'>
+<a name='365'>
+      DO k = kts,kte<a name='366'>
+        DO i = its,ite<a name='367'>
+          qvtnp(i,k) = 0.<a name='368'>
+        ENDDO<a name='369'>
+      ENDDO<a name='370'>
+<a name='371'>
+      DO k = kts,kte<a name='372'>
+        DO i = its,ite<a name='373'>
+          qctnp(i,k) = 0.<a name='374'>
+          qitnp(i,k) = 0.<a name='375'>
+        ENDDO<a name='376'>
+      ENDDO<a name='377'>
+<a name='378'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='379'></font>
+<font color=#447700>!!!  Compute Micromet Scaling variables, not availiable in WRF for ACM<a name='380'></font>
+     DO I = its,ite<a name='381'>
+           CPAIR(I)  = CPD * (1.0 + 0.84 * QVS(I,1))                    <font color=#447700>! J/(K KG)<a name='382'></font>
+           TMPFX     = HFX(I)  / (cpair(i) * DENSX(I,1))<a name='383'>
+           TMPVTCON  = 1.0 + EP1 * QVS(I,1)                             <font color=#447700>! COnversion factor for virtual temperature<a name='384'></font>
+           WS1       = SQRT(US(I,1)**2 + VS(I,1)**2)                    <font color=#447700>! Level 1 wind speed<a name='385'></font>
+           TST(I)    = -TMPFX / UST(I)<a name='386'>
+           QST(I)    = -QFX(I) / (UST(I)*DENSX(I,1))<a name='387'>
+           USTM(I)   = UST(I) * WS1 / wspd(i)<a name='388'>
+           THV1      = TMPVTCON * THETA(I,1) <a name='389'>
+           TSTV(I)   = TST(I)*TMPVTCON + THV1*EP1*QST(I)<a name='390'>
+           IF(ABS(TSTV(I)).LT.1.0E-6) THEN<a name='391'>
+             TSTV(I) = SIGN(1.0E-6,TSTV(I))<a name='392'>
+           ENDIF<a name='393'>
+           MOL(I)    = THV1 * UST(i)**2/(KARMAN*G*TSTV(I))<a name='394'>
+           RMOL(I)   = 1./MOL(I)<a name='395'>
+           WST(I)    = UST(I) * (PBL(I)/(KARMAN*ABS(MOL(I)))) ** 0.333333       <a name='396'>
+           PSTAR(I)  =  MUT(I)/1000.                                     <font color=#447700>! P* in cb <a name='397'></font>
+     ENDDO<a name='398'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='399'></font>
+<a name='400'>
+<font color=#447700>!... Compute PBL height<a name='401'></font>
+<a name='402'>
+<font color=#447700>!... compute the height of full- and half-sigma level above ground level<a name='403'></font>
+     DO I = its,ite<a name='404'>
+       ZF(I,0)    = 0.0<a name='405'>
+       KLPBL(I)   = 1<a name='406'>
+     ENDDO<a name='407'>
+<a name='408'>
+     DO K = kts, kte<a name='409'>
+       DO I = its,ite<a name='410'>
+         ZF(I,K) = DZF(I,K) + ZF(I,K-1)<a name='411'>
+         ZA(I,K) = 0.5 * (ZF(I,K) + ZF(I,K-1))<a name='412'>
+       ENDDO<a name='413'>
+     ENDDO<a name='414'>
+<a name='415'>
+     DO K = kts, kte<a name='416'>
+       DO I = its,ite<a name='417'>
+         TVCON       = 1.0 + EP1 * QVS(I,K)<a name='418'>
+         THETAV(I,K) = <A href='../../html_code/phys/module_diag_afwa.F.html#THETA'>THETA</A><A href='../../html_code/phys/module_bl_acm.F.html#ACM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="THETA_5">(I,K) * TVCON<a name='419'>
+       ENDDO<a name='420'>
+     ENDDO<a name='421'>
+<a name='422'>
+<a name='423'>
+<font color=#447700>!...  COMPUTE PBL WHERE RICHARDSON NUMBER = RIC (0.25) HOLTSLAG ET AL 1990  <a name='424'></font>
+     DO 100 I = its,ite<a name='425'>
+       DO K = 1,kte<a name='426'>
+         KSRC = K<a name='427'>
+         IF (SIGMAF(K).lT.0.9955) GO TO 69<a name='428'>
+       ENDDO<a name='429'>
+69     CONTINUE<a name='430'>
+       TH1 = 0.0<a name='431'>
+       ZH1 = 0.0<a name='432'>
+       UH1 = 0.0<a name='433'>
+       VH1 = 0.0<a name='434'>
+       DO K = 1,KSRC<a name='435'>
+         TH1 = TH1 + THETAV(I,K)  <a name='436'>
+         ZH1 = ZH1 + ZA(I,K)<a name='437'>
+         UH1 = UH1 + US(I,K)<a name='438'>
+         VH1 = VH1 + VS(I,K)<a name='439'>
+       ENDDO  <a name='440'>
+       TH1 = TH1/KSRC<a name='441'>
+       ZH1 = ZH1/KSRC<a name='442'>
+       UH1 = UH1/KSRC<a name='443'>
+       VH1 = VH1/KSRC<a name='444'>
+       IF(MOL(I).LT.0.0 .AND. XTIME.GT.1) then<a name='445'>
+         WSS   = (UST(I) ** 3 + 0.6 * WST(I) ** 3) ** 0.33333<a name='446'>
+         TCONV = -8.5 * UST(I) * TSTV(I) / WSS<a name='447'>
+         TH1   = TH1 + TCONV<a name='448'>
+       ENDIF<a name='449'>
+<a name='450'>
+99     KMIX = KSRC<a name='451'>
+       DO K = KSRC,kte<a name='452'>
+         DTMP   = THETAV(I,K) - TH1<a name='453'>
+         IF (DTMP.LT.0.0) KMIX = K<a name='454'>
+       ENDDO<a name='455'>
+       IF(KMIX.GT.KSRC) THEN<a name='456'>
+         FINTT = (TH1 - THETAV(I,KMIX)) / (THETAV(I,KMIX+1)               &amp;<a name='457'>
+               - THETAV(I,KMIX))<a name='458'>
+         ZMIX = FINTT * (ZA(I,KMIX+1)-ZA(I,KMIX)) + ZA(I,KMIX)<a name='459'>
+         UMIX = FINTT * (US(I,KMIX+1)-US(I,KMIX)) + US(I,KMIX)<a name='460'>
+         VMIX = FINTT * (VS(I,KMIX+1)-VS(I,KMIX)) + VS(I,KMIX)<a name='461'>
+       ELSE<a name='462'>
+         ZMIX = ZH1<a name='463'>
+         UMIX = UH1<a name='464'>
+         VMIX = VH1<a name='465'>
+       ENDIF<a name='466'>
+       DO K = KMIX,kte<a name='467'>
+         DTMP   = THETAV(I,K) - TH1<a name='468'>
+         TOG = 0.5 * (THETAV(I,K) + TH1) / G<a name='469'>
+         WSSQ = (US(I,K)-UMIX)**2                                     &amp;<a name='470'>
+              + (VS(I,K)-VMIX)**2<a name='471'>
+         IF (KMIX == KSRC) WSSQ = WSSQ + 100.*UST(I)*UST(I) <a name='472'>
+         WSSQ = MAX( WSSQ, 0.1 )<a name='473'>
+         RIB(I,K) = ABS(ZA(I,K)-ZMIX) * DTMP / (TOG * WSSQ)<a name='474'>
+         IF (RIB(I,K) .GE. RIC) GO TO 201<a name='475'>
+       ENDDO<a name='476'>
+<a name='477'>
+       write (message, *)' RIBX never exceeds RIC, RIB(i,kte) = ',rib(i,5),        &amp;<a name='478'>
+               ' THETAV(i,1) = ',thetav(i,1),' MOL=',mol(i),            &amp;<a name='479'>
+               ' TCONV = ',TCONV,' WST = ',WST(I),                      &amp;<a name='480'>
+               ' KMIX = ',kmix,' UST = ',UST(I),                       &amp;<a name='481'>
+               ' TST = ',TST(I),' U,V = ',US(I,1),VS(I,1),              &amp;<a name='482'>
+               ' I,J=',I,J<a name='483'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_bl_acm.F.html#ACM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_582"> ( message )<a name='484'>
+201    CONTINUE<a name='485'>
+<a name='486'>
+       KPBLH(I) = K<a name='487'>
+<a name='488'>
+100  CONTINUE<a name='489'>
+<a name='490'>
+     DO I = its,ite<a name='491'>
+       IF (KPBLH(I) .GT. KSRC) THEN<a name='492'>
+<font color=#447700>!---------INTERPOLATE BETWEEN LEVELS -- jp 7/93<a name='493'></font>
+         FINT(I) = (RIC - RIB(I,KPBLH(I)-1)) / (RIB(I,KPBLH(I)) -       &amp;<a name='494'>
+                    RIB(I,KPBLH(I)-1))<a name='495'>
+         IF (FINT(I) .GT. 0.5) THEN<a name='496'>
+           KPBLHT  = KPBLH(I)<a name='497'>
+           FINT(I) = FINT(I) - 0.5<a name='498'>
+         ELSE<a name='499'>
+           KPBLHT  = KPBLH(I) - 1<a name='500'>
+           FINT(I) = FINT(I) + 0.5<a name='501'>
+         ENDIF<a name='502'>
+         PBL(I)  = FINT(I) * (ZF(I,KPBLHT) - ZF(I,KPBLHT-1)) +          &amp;<a name='503'>
+                     ZF(I,KPBLHT-1)<a name='504'>
+         KLPBL(I) = KPBLHT<a name='505'>
+         PBLSIG(I)   = FINT(I) * DSIGH(KPBLHT) + SIGMAF(KPBLHT-1)    <font color=#447700>! sigma at PBL height<a name='506'></font>
+       ELSE<a name='507'>
+         KLPBL(I) = KSRC<a name='508'>
+         PBL(I)    = ZA(I,KSRC)                                                  <a name='509'>
+         PBLSIG(I)   = SIGMAH(KSRC)                                             <a name='510'>
+       ENDIF<a name='511'>
+<a name='512'>
+     ENDDO<a name='513'>
+<a name='514'>
+     DO I = its,ite       <a name='515'>
+       NOCONV(I) = 0<a name='516'>
+       <a name='517'>
+<font color=#447700>! Check for CBL and identify conv. vs. non-conv cells<a name='518'></font>
+       IF (PBL(I) / MOL(I) .LT. -0.02 .AND. KLPBL(I) .GT. 3        &amp;<a name='519'>
+           .AND. THETAV(I,1) .GT. THETAV(I,2) .AND. XTIME .GT. 1) THEN<a name='520'>
+          NOCONV(I)   = 1<a name='521'>
+          REGIME(I) = 4.0                     <font color=#447700>! FREE CONVECTIVE - ACM<a name='522'></font>
+       ENDIF<a name='523'>
+     ENDDO<a name='524'>
+<a name='525'>
+<font color=#447700>!... Calculate Kz<a name='526'></font>
+     CALL <A href='../../html_code/phys/module_bl_acm.F.html#EDDYX'>EDDYX</A><A href='../../html_code/phys/module_bl_acm.F.html#ACM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EDDYX_1">(DTPBL, ZF,  ZA,     MOL, PBL,  UST,                &amp;<a name='527'>
+                US,    VS,  TT,  THETAV, DENSX, PSTAR,              &amp;<a name='528'>
+                QVS,   QCS, QIS, DSIGFI, G, RD, CPAIR,              &amp;<a name='529'>
+                EDDYZ, EDDYZM, its,ite, kts,kte,ims,ime, kms,kme)<a name='530'>
+<a name='531'>
+     CALL <A href='../../html_code/phys/module_bl_acm.F.html#ACM'>ACM</A><A href='../../html_code/phys/module_bl_acm.F.html#ACM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ACM_1">(DTPBL, PSTAR,  NOCONV, SIGMAF, DSIGH, DSIGHI, J,      &amp;<a name='532'>
+                 KLPBL, PBL,   PBLSIG, MOL,  UST,                  &amp;<a name='533'>
+                 TST, QST,  USTM,   EDDYZ,  DENSX,                  &amp;<a name='534'>
+                 THETA,  QVS,    QCS,    QIS,        &amp;<a name='535'>
+                 THETAX, QVX,    QCX,    QIX,        &amp;<a name='536'>
+#if (WRF_CHEM == 1)<a name='537'>
+                 CHEM,  VD,  NCHEM, KDVEL, NDVEL,NUM_VERT_MIX,      &amp;<a name='538'>
+#endif<a name='539'>
+                 ids,ide, jds,jde, kds,kde,                         &amp;<a name='540'>
+                 ims,ime, jms,jme, kms,kme,                         &amp;<a name='541'>
+                 its,ite, jts,jte, kts,kte)<a name='542'>
+     CALL <A href='../../html_code/phys/module_bl_acm.F.html#ACMM'>ACMM</A><A href='../../html_code/phys/module_bl_acm.F.html#ACM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ACMM_1">(DTPBL, PSTAR,  NOCONV, SIGMAF, DSIGH, DSIGHI, J,      &amp;<a name='543'>
+                 KLPBL, PBL,   PBLSIG, MOL,  UST,                  &amp;<a name='544'>
+                 TST, QST,  USTM,  EDDYZM, DENSX,                  &amp;<a name='545'>
+                 US,    VS,         &amp;<a name='546'>
+                 UX,    VX,         &amp;<a name='547'>
+                 ids,ide, jds,jde, kds,kde,                         &amp;<a name='548'>
+                 ims,ime, jms,jme, kms,kme,                         &amp;<a name='549'>
+                 its,ite, jts,jte, kts,kte)<a name='550'>
+<a name='551'>
+<font color=#447700>!.. Load exch_h for use in CCN activation<a name='552'></font>
+<a name='553'>
+     DO K = kts, kte-1<a name='554'>
+       DO I = its, ite<a name='555'>
+         DENSF     = 0.5 * (DENSX(I,K+1) + DENSX(I,K))<a name='556'>
+         exch_hx(I,K) = EDDYZ(I,K) /( (DENSF * G / PSTAR(I)) ** 2 *  &amp;<a name='557'>
+                       DTPBL * DSIGFI(K)*1E-6 )<a name='558'>
+       ENDDO<a name='559'>
+     ENDDO<a name='560'>
+<a name='561'>
+<font color=#447700>!... Calculate tendency due to PBL parameterization<a name='562'></font>
+<a name='563'>
+     DO K = kts, kte<a name='564'>
+       DO I = its, ite<a name='565'>
+         UTNP(I,K)  = UTNP(I,K) + (UX(I,K) - US(I,K)) * RDT<a name='566'>
+         VTNP(I,K)  = VTNP(I,K) + (VX(I,K) - VS(I,K)) * RDT<a name='567'>
+         TTNP(I,K)  = TTNP(I,K) + (THETAX(I,K) - THETA(I,K)) * RDT<a name='568'>
+         QVTNP(I,K) = QVTNP(I,K) + (QVX(I,K) - QVS(I,K)) * RDT<a name='569'>
+         QCTNP(I,K) = QCTNP(I,K) + (QCX(I,K) - QCS(I,K)) * RDT<a name='570'>
+         QITNP(I,K) = QITNP(I,K) + (QIX(I,K) - QIS(I,K)) * RDT<a name='571'>
+       ENDDO<a name='572'>
+     ENDDO<a name='573'>
+<a name='574'>
+   END SUBROUTINE ACM2D<a name='575'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='576'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='577'></font>
+<a name='578'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='579'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='580'></font>
+<A NAME='ACMINIT'><A href='../../html_code/phys/module_bl_acm.F.html#ACMINIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='581'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ACMINIT</font>(RUBLTEN,RVBLTEN,RTHBLTEN,RQVBLTEN,           &amp; <A href='../../call_to/ACMINIT.html' TARGET='index'>1</A><a name='582'>
+                      RQCBLTEN,RQIBLTEN,P_QI,P_FIRST_SCALAR,       &amp;<a name='583'>
+                      restart, allowed_to_read ,                   &amp;<a name='584'>
+                      ids, ide, jds, jde, kds, kde,                &amp;<a name='585'>
+                      ims, ime, jms, jme, kms, kme,                &amp;<a name='586'>
+                      its, ite, jts, jte, kts, kte                 )<a name='587'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='588'></font>
+<font color=#447700>!<a name='589'></font>
+<font color=#447700>!    This subroutine is for preparing ACM PBL variables. <a name='590'></font>
+<font color=#447700>!    Called from module_physics_init.F<a name='591'></font>
+<font color=#447700>!<a name='592'></font>
+<font color=#447700>!  REVISION HISTORY:<a name='593'></font>
+<font color=#447700>!     AX     3/2005 - Originally developed<a name='594'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='595'></font>
+<font color=#447700>!   ARGUMENT LIST:<a name='596'></font>
+<font color=#447700>!<a name='597'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='598'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='599'></font>
+     IMPLICIT NONE<a name='600'>
+<font color=#447700>!<a name='601'></font>
+   LOGICAL , INTENT(IN)          :: restart , allowed_to_read<a name='602'>
+<a name='603'>
+   INTEGER , INTENT(IN)          ::  ids, ide, jds, jde, kds, kde, &amp;<a name='604'>
+                                     ims, ime, jms, jme, kms, kme, &amp;<a name='605'>
+                                     its, ite, jts, jte, kts, kte<a name='606'>
+<a name='607'>
+   INTEGER , INTENT(IN)          ::  P_QI,P_FIRST_SCALAR<a name='608'>
+<a name='609'>
+<font color=#447700>!   REAL , DIMENSION( kms:kme ), INTENT(IN)  :: SHALF<a name='610'></font>
+   REAL , DIMENSION( ims:ime , kms:kme , jms:jme ) , INTENT(OUT) ::         &amp;<a name='611'>
+                                                         RUBLTEN, &amp;<a name='612'>
+                                                         RVBLTEN, &amp;<a name='613'>
+                                                         RTHBLTEN, &amp;<a name='614'>
+                                                         RQVBLTEN, &amp;<a name='615'>
+                                                         RQCBLTEN, &amp; <a name='616'>
+                                                         RQIBLTEN<a name='617'>
+<a name='618'>
+<font color=#447700>!... Local Variables<a name='619'></font>
+   INTEGER :: i, j, k, itf, jtf, ktf<a name='620'>
+<a name='621'>
+<font color=#447700>!<a name='622'></font>
+   jtf=min0(jte,jde-1)<a name='623'>
+   ktf=min0(kte,kde-1)<a name='624'>
+   itf=min0(ite,ide-1)<a name='625'>
+<a name='626'>
+   IF(.not.restart)THEN<a name='627'>
+     DO j=jts,jtf<a name='628'>
+     DO k=kts,ktf<a name='629'>
+     DO i=its,itf<a name='630'>
+        RUBLTEN(i,k,j)=0.<a name='631'>
+        RVBLTEN(i,k,j)=0.<a name='632'>
+        RTHBLTEN(i,k,j)=0.<a name='633'>
+        RQVBLTEN(i,k,j)=0.<a name='634'>
+        RQCBLTEN(i,k,j)=0.<a name='635'>
+     ENDDO<a name='636'>
+     ENDDO<a name='637'>
+     ENDDO<a name='638'>
+   ENDIF<a name='639'>
+<a name='640'>
+   IF (P_QI .ge. P_FIRST_SCALAR .and. .not.restart) THEN<a name='641'>
+      DO j=jts,jtf<a name='642'>
+      DO k=kts,ktf<a name='643'>
+      DO i=its,itf<a name='644'>
+         RQIBLTEN(i,k,j)=0.<a name='645'>
+      ENDDO<a name='646'>
+      ENDDO<a name='647'>
+      ENDDO<a name='648'>
+   ENDIF<a name='649'>
+<a name='650'>
+<a name='651'>
+   END SUBROUTINE acminit<a name='652'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='653'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='654'></font>
+<a name='655'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='656'></font>
+<font color=#447700>!-------------------------------------------------------------------          <a name='657'></font>
+<A NAME='EDDYX'><A href='../../html_code/phys/module_bl_acm.F.html#EDDYX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='658'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>EDDYX</font>(DTPBL, ZF,  ZA,     MOL, PBL,  UST,               &amp; <A href='../../call_to/EDDYX.html' TARGET='index'>1</A><a name='659'>
+                    US,    VS,  TT,  THETAV, DENSX, PSTAR,            &amp;<a name='660'>
+                    QVS,   QCS, QIS, DSIGFI, G, RD, CPAIR,            &amp;<a name='661'>
+                    EDDYZ, EDDYZM, its,ite, kts,kte,ims,ime,kms,kme )<a name='662'>
+<a name='663'>
+<a name='664'>
+<font color=#447700>!**********************************************************************<a name='665'></font>
+<font color=#447700>!   Two methods for computing Kz:<a name='666'></font>
+<font color=#447700>!   1.  Boundary scaling similar to Holtslag and Boville (1993)<a name='667'></font>
+<font color=#447700>!   2.  Local Kz computed as function of local Richardson # and vertical <a name='668'></font>
+<font color=#447700>!       wind shear, similar to LIU &amp; CARROLL (1996)<a name='669'></font>
+<font color=#447700>!<a name='670'></font>
+<font color=#447700>!**********************************************************************<a name='671'></font>
+<font color=#447700>!<a name='672'></font>
+<font color=#447700>!-- DTPBL           time step of the minor loop for the land-surface/pbl model<a name='673'></font>
+<font color=#447700>!-- ZF              height of full sigma level<a name='674'></font>
+<font color=#447700>!-- ZA              height of half sigma level<a name='675'></font>
+<font color=#447700>!-- MOL             Monin-Obukhov length in 1D form<a name='676'></font>
+<font color=#447700>!-- PBL             PBL height in 1D form<a name='677'></font>
+<font color=#447700>!-- UST             friction velocity U* in 1D form (m/s)<a name='678'></font>
+<font color=#447700>!-- US              U wind <a name='679'></font>
+<font color=#447700>!-- VS              V wind<a name='680'></font>
+<font color=#447700>!-- TT              temperature<a name='681'></font>
+<font color=#447700>!-- THETAV          potential virtual temperature<a name='682'></font>
+<font color=#447700>!-- DENSX           dry air density (kg/m^3)<a name='683'></font>
+<font color=#447700>!-- PSTAR           P*=Psfc-Ptop<a name='684'></font>
+<font color=#447700>!-- QVS             water vapor mixing ratio (Kg/Kg)<a name='685'></font>
+<font color=#447700>!-- QCS             cloud mixing ratio (Kg/Kg)<a name='686'></font>
+<font color=#447700>!-- QIS             ice mixing ratio (Kg/Kg)<a name='687'></font>
+<font color=#447700>!-- DSIGFI          inverse of sigma layer delta<a name='688'></font>
+<font color=#447700>!-- G               gravity<a name='689'></font>
+<font color=#447700>!-- RD              gas constant for dry air (j/kg/k)<a name='690'></font>
+<font color=#447700>!-- CPAIR           specific heat of moist air (M^2 S^-2 K^-1)<a name='691'></font>
+<font color=#447700>!-- EDDYZ           eddy diffusivity for heat KZ<a name='692'></font>
+<font color=#447700>!-- EDDYZM          eddy diffusivity for momentum KM<a name='693'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='694'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='695'></font>
+<a name='696'>
+      IMPLICIT NONE<a name='697'>
+<a name='698'>
+<font color=#447700>!.......Arguments<a name='699'></font>
+  <a name='700'>
+<font color=#447700>!... Integer<a name='701'></font>
+      INTEGER,  INTENT(IN)   ::    its,ite, kts,kte,ims,ime,kms,kme<a name='702'>
+<font color=#447700>!... Real<a name='703'></font>
+      REAL , DIMENSION( ims:ime ),          INTENT(IN)  :: PBL, UST<a name='704'>
+      REAL ,                                INTENT(IN)  :: DTPBL, G, RD<a name='705'>
+      REAL , DIMENSION( kts:kte ),          INTENT(IN)  :: DSIGFI<a name='706'>
+      REAL , DIMENSION( its:ite ),          INTENT(IN)  :: MOL, PSTAR, CPAIR<a name='707'>
+<a name='708'>
+      REAL , DIMENSION( ims:ime, kms:kme ), INTENT(IN)  :: US,VS, TT,   &amp;<a name='709'>
+                                                           QVS, QCS, QIS, DENSX<a name='710'>
+      REAL, DIMENSION( its:ite, kts:kte ), INTENT(IN) :: ZA, THETAV<a name='711'>
+      REAL, DIMENSION( its:ite, 0:kte )  , INTENT(IN) :: ZF<a name='712'>
+      <a name='713'>
+      REAL , DIMENSION( its:ite, kts:kte ), INTENT(OUT) :: EDDYZ,EDDYZM<a name='714'>
+<a name='715'>
+<font color=#447700>!.......Local variables<a name='716'></font>
+<a name='717'>
+<font color=#447700>!... Integer<a name='718'></font>
+      INTEGER  :: ILX, KL, KLM, K, I<a name='719'>
+<a name='720'>
+<font color=#447700>!... Real<a name='721'></font>
+      REAL     :: ZOVL, PHIH, WT, ZSOL, ZFUNC, DZF, SS, GOTH, EDYZ<a name='722'>
+      REAL     :: RI, QMEAN, TMEAN, XLV, ALPH, CHI, ZK, SQL, DENSF, KZO<a name='723'>
+      REAL     :: FH, FM<a name='724'>
+      REAL     :: WM, EDYZM, PHIM<a name='725'>
+<font color=#447700>!... Parameters<a name='726'></font>
+      REAL, PARAMETER :: RV     = 461.5<a name='727'>
+      REAL, PARAMETER :: RC     = 0.25<a name='728'>
+      REAL, PARAMETER :: RLAM   = 80.0<a name='729'>
+      REAL, PARAMETER :: GAMH   = 16.0 <font color=#447700>!Dyer74 !15.0  !  Holtslag and Boville (1993)<a name='730'></font>
+      REAL, PARAMETER :: GAMM   = 16.0 <font color=#447700>!Dyer74<a name='731'></font>
+      REAL, PARAMETER :: BETAH  = 5.0   <font color=#447700>!  Holtslag and Boville (1993)  BETAM = BETAH<a name='732'></font>
+      REAL, PARAMETER :: KARMAN = 0.4<a name='733'>
+      REAL, PARAMETER :: P      = 2.0   <font color=#447700>! ZFUNC exponent<a name='734'></font>
+      REAL, PARAMETER :: EDYZ0  = 0.01  <font color=#447700>! New Min Kz<a name='735'></font>
+      REAL, PARAMETER :: PR     = 0.8   <font color=#447700>! Prandtl #<a name='736'></font>
+<font color=#447700>!      REAL, PARAMETER :: EDYZ0  = 0.1<a name='737'></font>
+<font color=#447700>!--   IMVDIF      imvdif=1 for moist adiabat vertical diffusion<a name='738'></font>
+      INTEGER, PARAMETER :: imvdif = 1<a name='739'>
+<font color=#447700>!<a name='740'></font>
+      ILX = ite <a name='741'>
+      KL  = kte<a name='742'>
+      KLM = kte - 1<a name='743'>
+      <a name='744'>
+      DO K = kts,KLM<a name='745'>
+        DO I = its,ILX<a name='746'>
+          EDYZ = 0.0<a name='747'>
+          ZOVL = 0.0<a name='748'>
+          DZF  = ZA(I,K+1) - ZA(I,K)<a name='749'>
+          KZO = EDYZ0<a name='750'>
+<font color=#447700>!--------------------------------------------------------------------------<a name='751'></font>
+          IF (ZF(I,K) .LT. PBL(I)) THEN<a name='752'>
+            ZOVL = ZF(I,K) / MOL(I)<a name='753'>
+            IF (ZOVL .LT. 0.0) THEN<a name='754'>
+              IF (ZF(I,K) .LT. 0.1 * PBL(I)) THEN<a name='755'>
+                PHIH = 1.0 / SQRT(1.0 - GAMH * ZOVL)<a name='756'>
+                PHIM = (1.0 - GAMM * ZOVL)**(-0.25)<a name='757'>
+                WT   = UST(I) / PHIH<a name='758'>
+                WM   = UST(I) / PHIM<a name='759'>
+              ELSE<a name='760'>
+                ZSOL = 0.1 * PBL(I) / MOL(I)<a name='761'>
+                PHIH = 1.0 / SQRT(1.0 - GAMH * ZSOL)<a name='762'>
+                PHIM = (1.0 - GAMM * ZSOL)**(-0.25)<a name='763'>
+                WT   = UST(I) / PHIH<a name='764'>
+                WM   = UST(I) / PHIM<a name='765'>
+              ENDIF<a name='766'>
+            ELSE IF (ZOVL .LT. 1.0) THEN<a name='767'>
+              PHIH = 1.0 + BETAH * ZOVL<a name='768'>
+              WT   = UST(I) / PHIH<a name='769'>
+              WM   = WT<a name='770'>
+            ELSE<a name='771'>
+              PHIH = BETAH + ZOVL<a name='772'>
+              WT   = UST(I) / PHIH<a name='773'>
+              WM   = WT<a name='774'>
+            ENDIF<a name='775'>
+            ZFUNC      = ZF(I,K) * (1.0 - ZF(I,K) / PBL(I)) ** P<a name='776'>
+            EDYZ = KARMAN * WT * ZFUNC<a name='777'>
+            EDYZM = KARMAN * WM * ZFUNC<a name='778'>
+          ENDIF<a name='779'>
+<font color=#447700>!--------------------------------------------------------------------------!--------------------------------------------------------------------------<a name='780'></font>
+          SS   = ((US(I,K+1) - US(I,K)) ** 2 + (VS(I,K+1) - VS(I,K)) ** 2)   &amp;<a name='781'>
+                  / (DZF * DZF) + 1.0E-9<a name='782'>
+          GOTH = 2.0 * G / (THETAV(I,K+1) + THETAV(I,K))<a name='783'>
+          RI   = GOTH * (THETAV(I,K+1) - THETAV(I,K)) / (DZF * SS)<a name='784'>
+<font color=#447700>!--------------------------------------------------------------------------<a name='785'></font>
+<font color=#447700>!         Adjustment to vert diff in Moist air<a name='786'></font>
+          IF(imvdif.eq.1)then<a name='787'>
+            IF ((QCS(I,K)+QIS(I,K)) .GT. 0.01E-3 .OR. (QCS(I,K+1)+             &amp;<a name='788'>
+                 QIS(I,K+1)) .GT. 0.01E-3) THEN<a name='789'>
+              QMEAN = 0.5 * (QVS(I,K) + QVS(I,K+1))<a name='790'>
+              TMEAN = 0.5 * (TT(I,K) + TT(I,K+1))<a name='791'>
+              XLV   = (2.501 - 0.00237 * (TMEAN - 273.15)) * 1.E6<a name='792'>
+              ALPH  =  XLV * QMEAN / RD / TMEAN<a name='793'>
+              CHI   =  XLV * XLV * QMEAN / CPAIR(I) / RV / TMEAN / TMEAN<a name='794'>
+              RI    = (1.0 + ALPH) * (RI -G * G / SS / TMEAN / CPAIR(I) *       &amp;<a name='795'>
+                      ((CHI - ALPH) / (1.0 + CHI)))<a name='796'>
+            ENDIF<a name='797'>
+          ENDIF<a name='798'>
+<font color=#447700>!--------------------------------------------------------------------------<a name='799'></font>
+            <a name='800'>
+	        ZK  = 0.4 * ZF(I,K)<a name='801'>
+          SQL = (ZK * RLAM / (RLAM + ZK)) ** 2<a name='802'>
+            <a name='803'>
+          IF (RI .GE. 0.0) THEN<a name='804'>
+<font color=#447700>!	          IF (ZF(I,K).LT.PBL(I).AND.ZOVL.GT.0.0) THEN<a name='805'></font>
+<font color=#447700>!	            FH = MAX((1.-ZF(I,K)/PBL(I))**2,0.01) * PHIH **(-2)<a name='806'></font>
+<font color=#447700>!                  SQL = ZK ** 2<a name='807'></font>
+<font color=#447700>!	          ELSE<a name='808'></font>
+<font color=#447700>!	            FH = (MAX(1.-RI/RC,0.01))**2<a name='809'></font>
+<font color=#447700>!	          ENDIF<a name='810'></font>
+            FH=1./(1.+10.*RI+50.*RI**2+5000.*RI**4)+0.0012  <font color=#447700>!pleim5<a name='811'></font>
+            FM= PR*FH + 0.00104<a name='812'>
+<a name='813'>
+            EDDYZ(I,K) = KZO + SQRT(SS) * FH * SQL<a name='814'>
+            EDDYZM(I,K) = KZO + SQRT(SS) * FM * SQL<a name='815'>
+          ELSE<a name='816'>
+            EDDYZ(I,K) = KZO + SQRT(SS * (1.0 - 25.0 * RI)) * SQL<a name='817'>
+            EDDYZM(I,K) = EDDYZ(I,K) * PR<a name='818'>
+          ENDIF<a name='819'>
+	  <a name='820'>
+          IF(EDYZ.GT.EDDYZ(I,K)) THEN<a name='821'>
+            EDDYZ(I,K) = EDYZ<a name='822'>
+            EDDYZM(I,K) = MIN(EDYZM,EDYZ*0.8)  <font color=#447700>!PR<a name='823'></font>
+          ENDIF<a name='824'>
+<a name='825'>
+          EDDYZ(I,K) = MIN(1000.0,EDDYZ(I,K))<a name='826'>
+          EDDYZ(I,K) = MAX(KZO,EDDYZ(I,K))<a name='827'>
+          EDDYZM(I,K) = MIN(1000.0,EDDYZM(I,K))<a name='828'>
+          EDDYZM(I,K) = MAX(KZO,EDDYZM(I,K))<a name='829'>
+<a name='830'>
+          DENSF     = 0.5 * (DENSX(I,K+1) + DENSX(I,K))<a name='831'>
+<a name='832'>
+          EDDYZ(I,K) = EDDYZ(I,K) * (DENSF * G / PSTAR(I)) ** 2 *       &amp;<a name='833'>
+                       DTPBL * DSIGFI(K)*1E-6<a name='834'>
+          EDDYZM(I,K) = EDDYZM(I,K) * (DENSF * G / PSTAR(I)) ** 2 *       &amp;<a name='835'>
+                       DTPBL * DSIGFI(K)*1E-6<a name='836'>
+<a name='837'>
+<a name='838'>
+        ENDDO             <font color=#447700>! for I loop<a name='839'></font>
+      ENDDO               <font color=#447700>! for k loop<a name='840'></font>
+<font color=#447700>!<a name='841'></font>
+      DO I = its,ILX<a name='842'>
+        EDDYZ(I,KL) = 0.0 <font color=#447700>! EDDYZ(I,KLM) -- changed jp 3/08<a name='843'></font>
+        EDDYZM(I,KL) = 0.0<a name='844'>
+      ENDDO<a name='845'>
+<a name='846'>
+   END SUBROUTINE EDDYX<a name='847'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='848'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='849'></font>
+<a name='850'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='851'></font>
+<font color=#447700>!-------------------------------------------------------------------          <a name='852'></font>
+<A NAME='ACM'><A href='../../html_code/phys/module_bl_acm.F.html#ACM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='853'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ACM</font> (DTPBL, PSTAR,  NOCONV, SIGMAF, DSIGH, DSIGHI, JX, &amp; <A href='../../call_to/ACM.html' TARGET='index'>1</A>,<A href='../../call_from/ACM.html' TARGET='index'>3</A><a name='854'>
+                   KLPBL, PBL,   PBLSIG, MOL,  UST,                  &amp;<a name='855'>
+                   TST, QST,  USTM,   EDDYZ,  DENSX,               &amp;<a name='856'>
+                   THETA,  QVS,    QCS,    QIS,     &amp;<a name='857'>
+                   THETAX, QVX,    QCX,    QIX,     &amp;<a name='858'>
+#if (WRF_CHEM == 1)<a name='859'>
+                   CHEM,  VD, NCHEM, KDVEL, NDVEL,                 &amp;<a name='860'>
+                   NUM_VERT_MIX,                                   &amp;<a name='861'>
+#endif<a name='862'>
+                   ids,ide, jds,jde, kds,kde,                      &amp;<a name='863'>
+                   ims,ime, jms,jme, kms,kme,                      &amp;<a name='864'>
+                   its,ite, jts,jte, kts,kte)<a name='865'>
+<font color=#447700>!**********************************************************************<a name='866'></font>
+<font color=#447700>!   PBL model called the Asymmetric Convective Model, Version 2 (ACM2) <a name='867'></font>
+<font color=#447700>!   -- See top of module for summary and references<a name='868'></font>
+<font color=#447700>!<a name='869'></font>
+<font color=#447700>!---- REVISION HISTORY:<a name='870'></font>
+<font color=#447700>!   AX     3/2005 - developed WRF version based on ACM2 in the MM5 PX LSM<a name='871'></font>
+<font color=#447700>!   JP and RG 8/2006 - updates<a name='872'></font>
+<font color=#447700>!   JP     3/2013 - Chem additions<a name='873'></font>
+<font color=#447700>!<a name='874'></font>
+<font color=#447700>!**********************************************************************<a name='875'></font>
+<font color=#447700>!  ARGUMENTS:<a name='876'></font>
+<font color=#447700>!-- DTPBL           PBL time step<a name='877'></font>
+<font color=#447700>!-- PSTAR           Psurf - Ptop in cb<a name='878'></font>
+<font color=#447700>!-- NOCONV          If free convection =0, no; =1, yes<a name='879'></font>
+<font color=#447700>!-- SIGMAF          Sigma for full layer<a name='880'></font>
+<font color=#447700>!-- DSIGH           Sigma thickness<a name='881'></font>
+<font color=#447700>!-- DSIGHI          Inverse of sigma thickness<a name='882'></font>
+<font color=#447700>!-- JX              N-S index<a name='883'></font>
+<font color=#447700>!-- KLPBL           PBL level at K index<a name='884'></font>
+<font color=#447700>!-- PBL             PBL height in m<a name='885'></font>
+<font color=#447700>!-- PBLSIG          Sigma level for PBL <a name='886'></font>
+<font color=#447700>!-- MOL             Monin-Obukhov length in 1D form<a name='887'></font>
+<font color=#447700>!-- UST             U* in 1D form<a name='888'></font>
+<font color=#447700>!-- TST             Theta* in 1D form<a name='889'></font>
+<font color=#447700>!-- QST             Q* in 1D form<a name='890'></font>
+<font color=#447700>!-- USTM            U* for computation of momemtum flux <a name='891'></font>
+<font color=#447700>!-- EDDYZ           eddy diffusivity KZ<a name='892'></font>
+<font color=#447700>!-- DENSX           dry air density (kg/m^3)<a name='893'></font>
+<font color=#447700>!-- US              U wind <a name='894'></font>
+<font color=#447700>!-- VS              V wind<a name='895'></font>
+<font color=#447700>!-- THETA           potential temperature<a name='896'></font>
+<font color=#447700>!-- QVS             water vapor mixing ratio (Kg/Kg)<a name='897'></font>
+<font color=#447700>!-- QCS             cloud mixing ratio (Kg/Kg)<a name='898'></font>
+<font color=#447700>!-- QIS             ice mixing ratio (Kg/Kg)<a name='899'></font>
+<font color=#447700>!-- UX              new U wind <a name='900'></font>
+<font color=#447700>!-- VX              new V wind<a name='901'></font>
+<font color=#447700>!-- THETAX          new potential temperature<a name='902'></font>
+<font color=#447700>!-- QVX             new water vapor mixing ratio (Kg/Kg)<a name='903'></font>
+<font color=#447700>!-- QCX             new cloud mixing ratio (Kg/Kg)<a name='904'></font>
+<font color=#447700>!-- QIX             new ice mixing ratio (Kg/Kg)<a name='905'></font>
+<font color=#447700>!-- CHEM            Chemical species mixing ratios (ppm)  WRFChem   <a name='906'></font>
+<font color=#447700>!-- VD              Dry deposition velocity (m/s)         WRFChem<a name='907'></font>
+<font color=#447700>!-- NCHEM           Number of chemical species            WRFChem<a name='908'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='909'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='910'></font>
+<a name='911'>
+      IMPLICIT NONE<a name='912'>
+<a name='913'>
+<font color=#447700>!.......Arguments<a name='914'></font>
+<a name='915'>
+<font color=#447700>!... Integer<a name='916'></font>
+      INTEGER,  INTENT(IN)      ::      ids,ide, jds,jde, kds,kde, &amp;<a name='917'>
+                                        ims,ime, jms,jme, kms,kme, &amp;<a name='918'>
+                                        its,ite, jts,jte, kts,kte, JX<a name='919'>
+      INTEGER,  DIMENSION( its:ite ), INTENT(IN)  :: NOCONV<a name='920'>
+      INTEGER,  DIMENSION( ims:ime ), INTENT(IN)  :: KLPBL<a name='921'>
+<a name='922'>
+<font color=#447700>!... Real<a name='923'></font>
+      REAL , DIMENSION( ims:ime ),          INTENT(IN)  :: PBL, UST<a name='924'>
+      REAL ,                                INTENT(IN)  :: DTPBL<a name='925'>
+      REAL , DIMENSION( its:ite ),          INTENT(IN)  :: PSTAR, PBLSIG,  &amp;<a name='926'>
+                                                           MOL, TST, &amp;<a name='927'>
+                                                           QST, USTM<a name='928'>
+      REAL , DIMENSION( kts:kte ),          INTENT(IN)  :: DSIGHI, DSIGH<a name='929'>
+      REAL , DIMENSION( 0:kte ),            INTENT(IN)  :: SIGMAF<a name='930'>
+      REAL , DIMENSION( its:ite, kts:kte ), INTENT(INOUT)  :: EDDYZ<a name='931'>
+      REAL , DIMENSION( ims:ime, kms:kme ), INTENT(IN)  :: THETA,   &amp;<a name='932'>
+                                                           QVS, QCS, QIS, DENSX<a name='933'>
+      REAL , DIMENSION( its:ite, kts:kte ), INTENT(OUT) :: THETAX,      &amp;<a name='934'>
+                                                           QVX, QCX, QIX<a name='935'>
+#if (WRF_CHEM == 1)<a name='936'>
+<font color=#447700>!......Chem<a name='937'></font>
+      INTEGER,  INTENT(IN)      ::   NCHEM, KDVEL, NDVEL, NUM_VERT_MIX<a name='938'>
+      REAL , DIMENSION( ims:ime, kms:kme, nchem ), INTENT(INOUT)  :: CHEM   <a name='939'>
+      REAL , DIMENSION( ims:ime, KDVEL, NDVEL ), INTENT(IN)  :: VD<a name='940'>
+#endif<a name='941'>
+<font color=#447700>!.......Local variables<a name='942'></font>
+<a name='943'>
+<font color=#447700>!... Parameters<a name='944'></font>
+      INTEGER, PARAMETER :: NSP   = 4 <a name='945'>
+<font color=#447700>!<a name='946'></font>
+<font color=#447700>!......ACM2 Parameters<a name='947'></font>
+<font color=#447700>!     INTEGER, PARAMETER :: IFACM = 0<a name='948'></font>
+<font color=#447700>!<a name='949'></font>
+      REAL,    PARAMETER :: G1000 = 9.8 * 1.0E-3<a name='950'>
+      REAL,    PARAMETER :: XX    = 0.5          <font color=#447700>! FACTOR APPLIED TO CONV MIXING TIME STEP<a name='951'></font>
+      REAL,    PARAMETER :: KARMAN = 0.4<a name='952'>
+<a name='953'>
+<font color=#447700>!... Integer<a name='954'></font>
+      INTEGER :: ILX, KL, KLM, I, K, NSPX, NLP, NL, JJ, L,LL<a name='955'>
+      INTEGER :: KCBLMX<a name='956'>
+      INTEGER, DIMENSION( its:ite ) :: KCBL<a name='957'>
+<a name='958'>
+<font color=#447700>!... Real<a name='959'></font>
+      REAL                               :: G1000I, MBMAX, HOVL, MEDDY, MBAR<a name='960'>
+      REAL                               :: EKZ, RZ, FM, WSPD, DTS, DTRAT, F1<a name='961'>
+      REAL, DIMENSION( its:ite )         :: PSTARI, FSACM, DTLIM<a name='962'>
+      REAL, DIMENSION( kts:kte, its:ite) :: MBARKS, MDWN<a name='963'>
+      REAL, DIMENSION( kts:kte )         :: XPLUS, XMINUS<a name='964'>
+      REAL  DELC<a name='965'>
+      REAL, DIMENSION( kts:kte )                :: AI, BI, CI, EI <font color=#447700>!, Y<a name='966'></font>
+      REAL, ALLOCATABLE, DIMENSION( : , : )     :: DI, UI    <a name='967'>
+      REAL, ALLOCATABLE, DIMENSION( : , : )     :: FS<a name='968'>
+      REAL, ALLOCATABLE, DIMENSION( : , : , : ) :: VCI<a name='969'>
+<a name='970'>
+      CHARACTER*80 :: message<a name='971'>
+<a name='972'>
+<font color=#447700>!<a name='973'></font>
+<font color=#447700>!--Start Exicutable ----<a name='974'></font>
+<a name='975'>
+      ILX = ite<a name='976'>
+      KL  = kte<a name='977'>
+      KLM = kte - 1<a name='978'>
+      NSPX = NSP<a name='979'>
+#if (WRF_CHEM == 1)<a name='980'>
+      NSPX = NSPX + NUM_VERT_MIX <a name='981'>
+#endif<a name='982'>
+<a name='983'>
+      G1000I = 1.0 / G1000<a name='984'>
+      KCBLMX = 0<a name='985'>
+      MBMAX  = 0.0<a name='986'>
+<font color=#447700>!...Allocate species variables<a name='987'></font>
+      ALLOCATE (DI( 1:NSPX,kts:kte ))       <a name='988'>
+      ALLOCATE (UI( 1:NSPX,kts:kte ))  <a name='989'>
+      ALLOCATE (FS( 1:NSPX, its:ite )) <a name='990'>
+      ALLOCATE (VCI( 1:NSPX,its:ite,kts:kte  ))<a name='991'>
+<a name='992'>
+<font color=#447700>!---COMPUTE ACM MIXING RATE<a name='993'></font>
+      DO I = its, ILX<a name='994'>
+        DTLIM(I)  = DTPBL<a name='995'>
+        PSTARI(I) = 1.0 / PSTAR(I)<a name='996'>
+        KCBL(I)   = 1<a name='997'>
+        FSACM(I)  = 0.0<a name='998'>
+<a name='999'>
+        IF (NOCONV(I) .EQ. 1) THEN<a name='1000'>
+          KCBL(I) = KLPBL(I)<a name='1001'>
+<a name='1002'>
+<font color=#447700>!-------MBARKS IS UPWARD MIXING RATE; MDWN IS DOWNWARD MIXING RATE<a name='1003'></font>
+<font color=#447700>!--New couple ACM &amp; EDDY-------------------------------------------------------------<a name='1004'></font>
+          HOVL     = -PBL(I) / MOL(I)<a name='1005'>
+          FSACM(I) = 1./(1.+((KARMAN/(HOVL))**0.3333)/(0.72*KARMAN))<a name='1006'>
+          MEDDY    = EDDYZ(I,1) / (DTPBL * (PBLSIG(I) - SIGMAF(1)))<a name='1007'>
+          MBAR     = MEDDY * FSACM(I)<a name='1008'>
+          DO K = kts,KCBL(I)-1<a name='1009'>
+            EDDYZ(I,K) = EDDYZ(I,K) * (1.0 - FSACM(I))<a name='1010'>
+          ENDDO<a name='1011'>
+<a name='1012'>
+          MBMAX = AMAX1(MBMAX,MBAR)<a name='1013'>
+          DO K = kts+1,KCBL(I)<a name='1014'>
+            MBARKS(K,I) = MBAR<a name='1015'>
+            MDWN(K,I)   = MBAR * (PBLSIG(I) - SIGMAF(K-1)) * DSIGHI(K)<a name='1016'>
+          ENDDO<a name='1017'>
+          MBARKS(1,I) = MBAR<a name='1018'>
+          MBARKS(KCBL(I),I) = MDWN(KCBL(I),I)<a name='1019'>
+          MDWN(KCBL(I)+1,I) = 0.0<a name='1020'>
+        ENDIF<a name='1021'>
+      ENDDO                              <font color=#447700>! end of I loop<a name='1022'></font>
+<a name='1023'>
+      DO K = kts,KLM<a name='1024'>
+        DO I = its,ILX<a name='1025'>
+          EKZ   = EDDYZ(I,K) / DTPBL * DSIGHI(K)<a name='1026'>
+          DTLIM(I) = AMIN1(0.75 / EKZ,DTLIM(I))<a name='1027'>
+        ENDDO<a name='1028'>
+      ENDDO<a name='1029'>
+       <a name='1030'>
+      DO I = its,ILX <a name='1031'>
+        IF (NOCONV(I) .EQ. 1) THEN<a name='1032'>
+          KCBLMX = AMAX0(KLPBL(I),KCBLMX)<a name='1033'>
+          RZ     = (SIGMAF(KCBL(I)) - SIGMAF(1)) * DSIGHI(1)<a name='1034'>
+          DTLIM(I)  = AMIN1(XX / (MBARKS(1,I) * RZ),DTLIM(I))<a name='1035'>
+        ENDIF<a name='1036'>
+      ENDDO<a name='1037'>
+<a name='1038'>
+      DO K = kts,KL<a name='1039'>
+        DO I = its,ILX<a name='1040'>
+          VCI(1,I,K) = <A href='../../html_code/phys/module_diag_afwa.F.html#THETA'>THETA</A><A href='../../html_code/phys/module_bl_acm.F.html#ACM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="THETA_6">(I,K)<a name='1041'>
+          VCI(2,I,K) = QVS(I,K)<a name='1042'>
+          <font color=#447700>! -- Also mix cloud water and ice IF necessary<a name='1043'></font>
+          <font color=#447700>! IF (IMOISTX.NE.1.AND.IMOISTX.NE.3) THEN  !!! Check other PBL models<a name='1044'></font>
+          VCI(3,I,K) = QCS(I,K)<a name='1045'>
+          VCI(4,I,K) = QIS(I,K)<a name='1046'>
+#if (WRF_CHEM == 1)<a name='1047'>
+          DO L= NSP+1, NSPX<a name='1048'>
+             VCI(L,I,K) = CHEM(I,K,L-NSP)<a name='1049'>
+          ENDDO<a name='1050'>
+#endif<a name='1051'>
+        ENDDO<a name='1052'>
+      ENDDO<a name='1053'>
+<a name='1054'>
+      DO I = its,ILX<a name='1055'>
+        FS(1,I) = -UST(I) * TST(I) * DENSX(I,1) * PSTARI(I)<a name='1056'>
+        FS(2,I) = -UST(I) * QST(I) * DENSX(I,1) * PSTARI(I)<a name='1057'>
+        FS(3,I) = 0.0<a name='1058'>
+        FS(4,I) = 0.0                      <font color=#447700>! SURFACE FLUXES OF CLOUD WATER AND ICE = 0<a name='1059'></font>
+#if (WRF_CHEM == 1)<a name='1060'>
+        DO L= NSP+1, NSPX<a name='1061'>
+          FS(L,I) = -VD(I,1,L-NSP) * CHEM(I,1,L-NSP) * DENSX(I,1) * PSTARI(I)<a name='1062'>
+        ENDDO<a name='1063'>
+#endif<a name='1064'>
+      ENDDO<a name='1065'>
+<font color=#447700>!<a name='1066'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1067'></font>
+      DO I = its,ILX      <a name='1068'>
+<a name='1069'>
+        NLP   = INT(DTPBL / DTLIM(I) + 1.0)<a name='1070'>
+        DTS   = (DTPBL / NLP)<a name='1071'>
+        DTRAT = DTS / DTPBL<a name='1072'>
+        DO NL = 1,NLP           <font color=#447700>! LOOP OVER SUB TIME LOOP              <a name='1073'></font>
+<a name='1074'>
+<font color=#447700>!-- COMPUTE ARRAY ELEMENTS THAT ARE INDEPENDANT OF SPECIES<a name='1075'></font>
+<a name='1076'>
+          DO K = kts,kte<a name='1077'>
+            AI(K) = 0.0<a name='1078'>
+            BI(K) = 0.0<a name='1079'>
+            CI(K) = 0.0<a name='1080'>
+            EI(K) = 0.0<a name='1081'>
+          ENDDO<a name='1082'>
+<a name='1083'>
+          DO K = 2, KCBL(I)<a name='1084'>
+            EI(K-1) = -CRANKP * MDWN(K,I) * DTS * DSIGH(K) * DSIGHI(K-1)<a name='1085'>
+            BI(K)   = 1.0 + CRANKP * MDWN(K,I) * DTS<a name='1086'>
+            AI(K)   = -CRANKP * MBARKS(K,I) * DTS<a name='1087'>
+          ENDDO<a name='1088'>
+<a name='1089'>
+          EI(1) = EI(1) -EDDYZ(I,1) * CRANKP * DSIGHI(1 )* DTRAT<a name='1090'>
+          AI(2) = AI(2) -EDDYZ(I,1) * CRANKP * DSIGHI(2) * DTRAT<a name='1091'>
+<a name='1092'>
+          DO K =  KCBL(I)+1, KL<a name='1093'>
+            BI(K) = 1.0<a name='1094'>
+          ENDDO<a name='1095'>
+<a name='1096'>
+          DO K = 2,KL<a name='1097'>
+            XPLUS(K)  = EDDYZ(I,K) * DSIGHI(K) * DTRAT<a name='1098'>
+            XMINUS(K) = EDDYZ(I,K-1) * DSIGHI(K) * DTRAT<a name='1099'>
+            CI(K)     = - XMINUS(K) * CRANKP<a name='1100'>
+            EI(K)     = EI(K) - XPLUS(K) * CRANKP<a name='1101'>
+            BI(K)     = BI(K) + XPLUS(K) * CRANKP + XMINUS(K) * CRANKP<a name='1102'>
+          ENDDO<a name='1103'>
+<a name='1104'>
+          IF (NOCONV(I) .EQ. 1) THEN<a name='1105'>
+            BI(1) = 1.0 + CRANKP * MBARKS(1,I) * (PBLSIG(I) - SIGMAF(1)) *    &amp;<a name='1106'>
+                    DTS * DSIGHI(1) + EDDYZ(I,1) * DSIGHI(1) * CRANKP * DTRAT<a name='1107'>
+          ELSE<a name='1108'>
+            BI(1) = 1.0  + EDDYZ(I,1) * DSIGHI(1) * CRANKP * DTRAT<a name='1109'>
+          ENDIF<a name='1110'>
+<a name='1111'>
+<a name='1112'>
+          DO K = 1,KL<a name='1113'>
+            DO L = 1,NSPX                    <a name='1114'>
+              DI(L,K) = 0.0<a name='1115'>
+            ENDDO<a name='1116'>
+          ENDDO<a name='1117'>
+<font color=#447700>!<a name='1118'></font>
+<font color=#447700>!**   COMPUTE TENDENCY OF CBL CONCENTRATIONS - SEMI-IMPLICIT SOLUTION<a name='1119'></font>
+          DO K = 2,KCBL(I)<a name='1120'>
+            DO L = 1,NSPX                    <a name='1121'>
+              DELC = DTS * (MBARKS(K,I) * VCI(L,I,1) - MDWN(K,I) *          &amp;<a name='1122'>
+                 VCI(L,I,K) + DSIGH(K+1) * DSIGHI(K) *                  &amp;<a name='1123'>
+                        MDWN(K+1,I) * VCI(L,I,K+1))<a name='1124'>
+              DI(L,K)   = VCI(L,I,K) + (1.0 - CRANKP) * DELC<a name='1125'>
+            ENDDO<a name='1126'>
+          ENDDO<a name='1127'>
+<a name='1128'>
+          DO K = KCBL(I)+1, KL<a name='1129'>
+            DO L = 1,NSPX                    <a name='1130'>
+              DI(L,K) = VCI(L,I,K)<a name='1131'>
+            ENDDO<a name='1132'>
+          ENDDO<a name='1133'>
+<a name='1134'>
+          DO K = 2,KL<a name='1135'>
+            IF (K .EQ. KL) THEN<a name='1136'>
+              DO L = 1,NSPX                    <a name='1137'>
+                DI(L,K) = DI(L,K)  - (1.0 - CRANKP) * XMINUS(K) *                  &amp;<a name='1138'>
+                          (VCI(L,I,K) - VCI(L,I,K-1))<a name='1139'>
+              ENDDO<a name='1140'>
+            ELSE<a name='1141'>
+              DO L = 1,NSPX                    <a name='1142'>
+                DI(L,K) = DI(L,K) + (1.0 - CRANKP) * XPLUS(K) *                   &amp;<a name='1143'>
+                          (VCI(L,I,K+1) - VCI(L,I,K))  -                         &amp;<a name='1144'>
+                          (1.0 - CRANKP) * XMINUS(K) *                           &amp;<a name='1145'>
+                          (VCI(L,I,K) - VCI(L,I,K-1))<a name='1146'>
+              ENDDO<a name='1147'>
+            ENDIF<a name='1148'>
+          ENDDO<a name='1149'>
+<a name='1150'>
+          IF (NOCONV(I) .EQ. 1) THEN<a name='1151'>
+            DO L = 1,NSPX                    <a name='1152'>
+              F1    = -G1000I * (MBARKS(1,I) *                                &amp;<a name='1153'>
+                      (PBLSIG(I) - SIGMAF(1)) * VCI(L,I,1) -                  &amp;<a name='1154'>
+                      MDWN(2,I) * VCI(L,I,2) * DSIGH(2))<a name='1155'>
+<a name='1156'>
+              DI(L,1) = VCI(L,I,1) - G1000 * (FS(L,I) - (1.0 - CRANKP)        &amp;<a name='1157'>
+                        * F1) * DSIGHI(1) * DTS<a name='1158'>
+            ENDDO<a name='1159'>
+          ELSE<a name='1160'>
+            DO L = 1,NSPX                    <a name='1161'>
+              DI(L,1) = VCI(L,I,1) - G1000 * FS(L,I) * DSIGHI(1) * DTS<a name='1162'>
+            ENDDO<a name='1163'>
+          ENDIF<a name='1164'>
+          DO L = 1,NSPX                    <a name='1165'>
+            DI(L,1) = DI(L,1) + (1.0 - CRANKP) * EDDYZ(I,1) * DSIGHI(1)      &amp;<a name='1166'>
+                     * DTRAT * (VCI(L,I,2) - VCI(L,I,1))<a name='1167'>
+          ENDDO<a name='1168'>
+          IF ( NOCONV(I) .EQ. 1 ) THEN<a name='1169'>
+            CALL <A href='../../html_code/phys/module_bl_acm.F.html#MATRIX'>MATRIX</A><A href='../../html_code/phys/module_bl_acm.F.html#ACM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MATRIX_1"> (AI, BI, CI, DI, EI, UI, KL, NSPX)<a name='1170'>
+          ELSE<a name='1171'>
+            CALL <A href='../../html_code/phys/module_bl_acm.F.html#TRI'>TRI</A><A href='../../html_code/phys/module_bl_acm.F.html#ACM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRI_1"> (CI, BI, EI, DI, UI, KL, NSPX)<a name='1172'>
+          END IF<a name='1173'>
+<font color=#447700>!<a name='1174'></font>
+<font color=#447700>!-- COMPUTE NEW THETAV AND Q<a name='1175'></font>
+          DO K = 1,KL<a name='1176'>
+            DO L = 1,NSPX                    <a name='1177'>
+              VCI(L,I,K) = UI(L,K)<a name='1178'>
+            ENDDO<a name='1179'>
+          ENDDO<a name='1180'>
+<a name='1181'>
+        ENDDO                   <font color=#447700>! END I LOOP<a name='1182'></font>
+      ENDDO                     <font color=#447700>! END SUB TIME LOOP<a name='1183'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1184'></font>
+<a name='1185'>
+<font color=#447700>!<a name='1186'></font>
+      DO K = kts,KL<a name='1187'>
+        DO I = its,ILX<a name='1188'>
+          THETAX(I,K) = VCI(1,I,K)<a name='1189'>
+          QVX(I,K)    = VCI(2,I,K)<a name='1190'>
+          QCX(I,K)    = VCI(3,I,K)<a name='1191'>
+          QIX(I,K)    = VCI(4,I,K)<a name='1192'>
+#if (WRF_CHEM == 1)<a name='1193'>
+          DO LL= 7, NSPX<a name='1194'>
+             CHEM(I,K,LL-NSP) = VCI(LL,I,K) <a name='1195'>
+          ENDDO<a name='1196'>
+#endif<a name='1197'>
+      ENDDO<a name='1198'>
+      ENDDO<a name='1199'>
+<a name='1200'>
+      DEALLOCATE (DI)       <a name='1201'>
+      DEALLOCATE (UI)  <a name='1202'>
+      DEALLOCATE (FS)<a name='1203'>
+      DEALLOCATE (VCI)<a name='1204'>
+<a name='1205'>
+   END SUBROUTINE ACM<a name='1206'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1207'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1208'></font>
+<font color=#447700>!-------------------------------------------------------------------          <a name='1209'></font>
+<A NAME='ACMM'><A href='../../html_code/phys/module_bl_acm.F.html#ACMM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1210'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ACMM</font> (DTPBL, PSTAR,  NOCONV, SIGMAF, DSIGH, DSIGHI, JX, &amp; <A href='../../call_to/ACMM.html' TARGET='index'>1</A>,<A href='../../call_from/ACMM.html' TARGET='index'>2</A><a name='1211'>
+                   KLPBL, PBL,   PBLSIG, MOL,  UST,                  &amp;<a name='1212'>
+                   TST, QST,  USTM,   EDDYZM, DENSX,        &amp;<a name='1213'>
+                   US,    VS,     &amp;<a name='1214'>
+                   UX,    VX,     &amp;<a name='1215'>
+                   ids,ide, jds,jde, kds,kde,                      &amp;<a name='1216'>
+                   ims,ime, jms,jme, kms,kme,                      &amp;<a name='1217'>
+                   its,ite, jts,jte, kts,kte)<a name='1218'>
+<font color=#447700>!**********************************************************************<a name='1219'></font>
+<font color=#447700>!   PBL model called the Asymmetric Convective Model, Version 2 (ACM2) <a name='1220'></font>
+<font color=#447700>!   -- See top of module for summary and references<a name='1221'></font>
+<font color=#447700>!<a name='1222'></font>
+<font color=#447700>!---- REVISION HISTORY:<a name='1223'></font>
+<font color=#447700>!   AX     3/2005 - developed WRF version based on ACM2 in the MM5 PX LSM<a name='1224'></font>
+<font color=#447700>!   JP and RG 8/2006 - updates<a name='1225'></font>
+<font color=#447700>!<a name='1226'></font>
+<font color=#447700>!**********************************************************************<a name='1227'></font>
+<font color=#447700>!  ARGUMENTS:<a name='1228'></font>
+<font color=#447700>!-- DTPBL           PBL time step<a name='1229'></font>
+<font color=#447700>!-- PSTAR           Psurf - Ptop in cb<a name='1230'></font>
+<font color=#447700>!-- NOCONV          If free convection =0, no; =1, yes<a name='1231'></font>
+<font color=#447700>!-- SIGMAF          Sigma for full layer<a name='1232'></font>
+<font color=#447700>!-- DSIGH           Sigma thickness<a name='1233'></font>
+<font color=#447700>!-- DSIGHI          Inverse of sigma thickness<a name='1234'></font>
+<font color=#447700>!-- JX              N-S index<a name='1235'></font>
+<font color=#447700>!-- KLPBL           PBL level at K index<a name='1236'></font>
+<font color=#447700>!-- PBL             PBL height in m<a name='1237'></font>
+<font color=#447700>!-- PBLSIG          Sigma level for PBL <a name='1238'></font>
+<font color=#447700>!-- MOL             Monin-Obukhov length in 1D form<a name='1239'></font>
+<font color=#447700>!-- UST             U* in 1D form<a name='1240'></font>
+<font color=#447700>!-- TST             Theta* in 1D form<a name='1241'></font>
+<font color=#447700>!-- QST             Q* in 1D form<a name='1242'></font>
+<font color=#447700>!-- USTM            U* for computation of momemtum flux <a name='1243'></font>
+<font color=#447700>!-- EDDYZM          eddy diffusivity for momentum KM<a name='1244'></font>
+<font color=#447700>!-- DENSX           dry air density (kg/m^3)<a name='1245'></font>
+<font color=#447700>!-- US              U wind <a name='1246'></font>
+<font color=#447700>!-- VS              V wind<a name='1247'></font>
+<font color=#447700>!-- THETA           potential temperature<a name='1248'></font>
+<font color=#447700>!-- QVS             water vapor mixing ratio (Kg/Kg)<a name='1249'></font>
+<font color=#447700>!-- QCS             cloud mixing ratio (Kg/Kg)<a name='1250'></font>
+<font color=#447700>!-- QIS             ice mixing ratio (Kg/Kg)<a name='1251'></font>
+<font color=#447700>!-- UX              new U wind <a name='1252'></font>
+<font color=#447700>!-- VX              new V wind<a name='1253'></font>
+<font color=#447700>!-- THETAX          new potential temperature<a name='1254'></font>
+<font color=#447700>!-- QVX             new water vapor mixing ratio (Kg/Kg)<a name='1255'></font>
+<font color=#447700>!-- QCX             new cloud mixing ratio (Kg/Kg)<a name='1256'></font>
+<font color=#447700>!-- QIX             new ice mixing ratio (Kg/Kg)<a name='1257'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1258'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1259'></font>
+<a name='1260'>
+      IMPLICIT NONE<a name='1261'>
+<a name='1262'>
+<font color=#447700>!.......Arguments<a name='1263'></font>
+<a name='1264'>
+<font color=#447700>!... Integer<a name='1265'></font>
+      INTEGER,  INTENT(IN)      ::      ids,ide, jds,jde, kds,kde, &amp;<a name='1266'>
+                                        ims,ime, jms,jme, kms,kme, &amp;<a name='1267'>
+                                        its,ite, jts,jte, kts,kte, JX<a name='1268'>
+      INTEGER,  DIMENSION( its:ite ), INTENT(IN)  :: NOCONV<a name='1269'>
+      INTEGER,  DIMENSION( ims:ime ), INTENT(IN)  :: KLPBL<a name='1270'>
+<a name='1271'>
+<font color=#447700>!... Real<a name='1272'></font>
+      REAL , DIMENSION( ims:ime ),          INTENT(IN)  :: PBL, UST<a name='1273'>
+      REAL ,                                INTENT(IN)  :: DTPBL<a name='1274'>
+      REAL , DIMENSION( its:ite ),          INTENT(IN)  :: PSTAR, PBLSIG,  &amp;<a name='1275'>
+                                                           MOL, TST, &amp;<a name='1276'>
+                                                           QST, USTM<a name='1277'>
+      REAL , DIMENSION( kts:kte ),          INTENT(IN)  :: DSIGHI, DSIGH<a name='1278'>
+      REAL , DIMENSION( 0:kte ),            INTENT(IN)  :: SIGMAF<a name='1279'>
+      REAL , DIMENSION( its:ite, kts:kte ), INTENT(INOUT)  :: EDDYZM<a name='1280'>
+      REAL , DIMENSION( ims:ime, kms:kme ), INTENT(IN)  :: US,VS,    &amp;<a name='1281'>
+                                                           DENSX<a name='1282'>
+      REAL , DIMENSION( its:ite, kts:kte ), INTENT(OUT) :: UX, VX<a name='1283'>
+<font color=#447700>!.......Local variables<a name='1284'></font>
+<a name='1285'>
+<font color=#447700>!... Parameters<a name='1286'></font>
+      INTEGER, PARAMETER :: NSP   = 2<a name='1287'>
+<font color=#447700>!<a name='1288'></font>
+<font color=#447700>!......ACM2 Parameters<a name='1289'></font>
+<font color=#447700>!     INTEGER, PARAMETER :: IFACM = 0<a name='1290'></font>
+<font color=#447700>!<a name='1291'></font>
+      REAL,    PARAMETER :: G1000 = 9.8 * 1.0E-3<a name='1292'>
+      REAL,    PARAMETER :: XX    = 0.5          <font color=#447700>! FACTOR APPLIED TO CONV MIXING TIME STEP<a name='1293'></font>
+      REAL,    PARAMETER :: KARMAN = 0.4<a name='1294'>
+<a name='1295'>
+<font color=#447700>!... Integer<a name='1296'></font>
+      INTEGER :: ILX, KL, KLM, I, K, NSPX, NLP, NL, JJ, L<a name='1297'>
+      INTEGER :: KCBLMX<a name='1298'>
+      INTEGER, DIMENSION( its:ite ) :: KCBL<a name='1299'>
+<a name='1300'>
+<font color=#447700>!... Real<a name='1301'></font>
+      REAL                               :: G1000I, MBMAX, HOVL, MEDDY, MBAR<a name='1302'>
+      REAL                               :: EKZ, RZ, FM, WSPD, DTS, DTRAT, F1<a name='1303'>
+      REAL, DIMENSION( its:ite )         :: PSTARI, FSACM, DTLIM<a name='1304'>
+      REAL, DIMENSION( kts:kte, its:ite) :: MBARKS, MDWN<a name='1305'>
+      REAL, DIMENSION( 1:NSP, its:ite )  :: FS<a name='1306'>
+      REAL, DIMENSION( kts:kte )         :: XPLUS, XMINUS<a name='1307'>
+      REAL  DELC<a name='1308'>
+      REAL, DIMENSION( 1:NSP,its:ite,kts:kte  ) :: VCI<a name='1309'>
+<a name='1310'>
+      REAL, DIMENSION( kts:kte )               :: AI, BI, CI, EI <font color=#447700>!, Y<a name='1311'></font>
+      REAL, DIMENSION( 1:NSP,kts:kte )         :: DI, UI    <a name='1312'>
+<font color=#447700>!<a name='1313'></font>
+<font color=#447700>!--Start Exicutable ----<a name='1314'></font>
+<a name='1315'>
+      ILX = ite<a name='1316'>
+      KL  = kte<a name='1317'>
+      KLM = kte - 1<a name='1318'>
+<a name='1319'>
+      G1000I = 1.0 / G1000<a name='1320'>
+      KCBLMX = 0<a name='1321'>
+      MBMAX  = 0.0<a name='1322'>
+<a name='1323'>
+<font color=#447700>!---COMPUTE ACM MIXING RATE<a name='1324'></font>
+      DO I = its, ILX<a name='1325'>
+        DTLIM(I)  = DTPBL<a name='1326'>
+        PSTARI(I) = 1.0 / PSTAR(I)<a name='1327'>
+        KCBL(I)   = 1<a name='1328'>
+        FSACM(I)  = 0.0<a name='1329'>
+<a name='1330'>
+        IF (NOCONV(I) .EQ. 1) THEN<a name='1331'>
+          KCBL(I) = KLPBL(I)<a name='1332'>
+<a name='1333'>
+<font color=#447700>!-------MBARKS IS UPWARD MIXING RATE; MDWN IS DOWNWARD MIXING RATE<a name='1334'></font>
+<font color=#447700>!--New couple ACM &amp; EDDY-------------------------------------------------------------<a name='1335'></font>
+          HOVL     = -PBL(I) / MOL(I)<a name='1336'>
+          FSACM(I) = 1./(1.+((KARMAN/(HOVL))**0.3333)/(0.72*KARMAN))<a name='1337'>
+          MEDDY    = EDDYZM(I,1) / (DTPBL * (PBLSIG(I) - SIGMAF(1)))<a name='1338'>
+          MBAR     = MEDDY * FSACM(I)<a name='1339'>
+          DO K = kts,KCBL(I)-1<a name='1340'>
+            EDDYZM(I,K) = EDDYZM(I,K) * (1.0 - FSACM(I))<a name='1341'>
+          ENDDO<a name='1342'>
+<a name='1343'>
+          MBMAX = AMAX1(MBMAX,MBAR)<a name='1344'>
+          DO K = kts+1,KCBL(I)<a name='1345'>
+            MBARKS(K,I) = MBAR<a name='1346'>
+            MDWN(K,I)   = MBAR * (PBLSIG(I) - SIGMAF(K-1)) * DSIGHI(K)<a name='1347'>
+          ENDDO<a name='1348'>
+          MBARKS(1,I) = MBAR<a name='1349'>
+          MBARKS(KCBL(I),I) = MDWN(KCBL(I),I)<a name='1350'>
+          MDWN(KCBL(I)+1,I) = 0.0<a name='1351'>
+        ENDIF<a name='1352'>
+      ENDDO                              <font color=#447700>! end of I loop<a name='1353'></font>
+<a name='1354'>
+      DO K = kts,KLM<a name='1355'>
+        DO I = its,ILX<a name='1356'>
+          EKZ   = EDDYZM(I,K) / DTPBL * DSIGHI(K)<a name='1357'>
+          DTLIM(I) = AMIN1(0.75 / EKZ,DTLIM(I))<a name='1358'>
+        ENDDO<a name='1359'>
+      ENDDO<a name='1360'>
+       <a name='1361'>
+      DO I = its,ILX <a name='1362'>
+        IF (NOCONV(I) .EQ. 1) THEN<a name='1363'>
+          KCBLMX = AMAX0(KLPBL(I),KCBLMX)<a name='1364'>
+          RZ     = (SIGMAF(KCBL(I)) - SIGMAF(1)) * DSIGHI(1)<a name='1365'>
+          DTLIM(I)  = AMIN1(XX / (MBARKS(1,I) * RZ),DTLIM(I))<a name='1366'>
+        ENDIF<a name='1367'>
+      ENDDO<a name='1368'>
+<a name='1369'>
+      DO K = kts,KL<a name='1370'>
+        DO I = its,ILX<a name='1371'>
+          VCI(1,I,K) = US(I,K)<a name='1372'>
+          VCI(2,I,K) = VS(I,K)<a name='1373'>
+        ENDDO<a name='1374'>
+      ENDDO<a name='1375'>
+<a name='1376'>
+      NSPX=2<a name='1377'>
+<a name='1378'>
+      DO I = its,ILX<a name='1379'>
+        FM      = -USTM(I) * USTM(I) * DENSX(I,1) * PSTARI(I)<a name='1380'>
+        WSPD    = SQRT(US(I,1) * US(I,1) + VS(I,1) * VS(I,1)) + 1.E-9<a name='1381'>
+        FS(1,I) = FM * US(I,1) / WSPD<a name='1382'>
+        FS(2,I) = FM * VS(I,1) / WSPD<a name='1383'>
+      ENDDO<a name='1384'>
+<font color=#447700>!<a name='1385'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1386'></font>
+      DO I = its,ILX      <a name='1387'>
+<a name='1388'>
+        NLP   = INT(DTPBL / DTLIM(I) + 1.0)<a name='1389'>
+        DTS   = (DTPBL / NLP)<a name='1390'>
+        DTRAT = DTS / DTPBL<a name='1391'>
+        DO NL = 1,NLP           <font color=#447700>! LOOP OVER SUB TIME LOOP              <a name='1392'></font>
+<a name='1393'>
+<font color=#447700>!-- COMPUTE ARRAY ELEMENTS THAT ARE INDEPENDANT OF SPECIES<a name='1394'></font>
+<a name='1395'>
+          DO K = kts,KL<a name='1396'>
+            AI(K) = 0.0<a name='1397'>
+            BI(K) = 0.0<a name='1398'>
+            CI(K) = 0.0<a name='1399'>
+            EI(K) = 0.0<a name='1400'>
+          ENDDO<a name='1401'>
+<a name='1402'>
+          DO K = 2, KCBL(I)<a name='1403'>
+            EI(K-1) = -CRANKP * MDWN(K,I) * DTS * DSIGH(K) * DSIGHI(K-1)<a name='1404'>
+            BI(K)   = 1.0 + CRANKP * MDWN(K,I) * DTS<a name='1405'>
+            AI(K)   = -CRANKP * MBARKS(K,I) * DTS<a name='1406'>
+          ENDDO<a name='1407'>
+<a name='1408'>
+          EI(1) = EI(1) -EDDYZM(I,1) * CRANKP * DSIGHI(1 )* DTRAT<a name='1409'>
+          AI(2) = AI(2) -EDDYZM(I,1) * CRANKP * DSIGHI(2) * DTRAT<a name='1410'>
+<a name='1411'>
+          DO K =  KCBL(I)+1, KL<a name='1412'>
+            BI(K) = 1.0<a name='1413'>
+          ENDDO<a name='1414'>
+<a name='1415'>
+          DO K = 2,KL<a name='1416'>
+            XPLUS(K)  = EDDYZM(I,K) * DSIGHI(K) * DTRAT<a name='1417'>
+            XMINUS(K) = EDDYZM(I,K-1) * DSIGHI(K) * DTRAT<a name='1418'>
+            CI(K)     = - XMINUS(K) * CRANKP<a name='1419'>
+            EI(K)     = EI(K) - XPLUS(K) * CRANKP<a name='1420'>
+            BI(K)     = BI(K) + XPLUS(K) * CRANKP + XMINUS(K) * CRANKP<a name='1421'>
+          ENDDO<a name='1422'>
+<a name='1423'>
+          IF (NOCONV(I) .EQ. 1) THEN<a name='1424'>
+            BI(1) = 1.0 + CRANKP * MBARKS(1,I) * (PBLSIG(I) - SIGMAF(1)) *    &amp;<a name='1425'>
+                    DTS * DSIGHI(1) + EDDYZM(I,1) * DSIGHI(1) * CRANKP * DTRAT<a name='1426'>
+          ELSE<a name='1427'>
+            BI(1) = 1.0  + EDDYZM(I,1) * DSIGHI(1) * CRANKP * DTRAT<a name='1428'>
+          ENDIF<a name='1429'>
+<a name='1430'>
+<a name='1431'>
+          DO K = 1,KL<a name='1432'>
+            DO L = 1,NSPX                    <a name='1433'>
+              DI(L,K) = 0.0<a name='1434'>
+            ENDDO<a name='1435'>
+          ENDDO<a name='1436'>
+<font color=#447700>!<a name='1437'></font>
+<font color=#447700>!**   COMPUTE TENDENCY OF CBL CONCENTRATIONS - SEMI-IMPLICIT SOLUTION<a name='1438'></font>
+          DO K = 2,KCBL(I)<a name='1439'>
+            DO L = 1,NSPX                    <a name='1440'>
+              DELC = DTS * (MBARKS(K,I) * VCI(L,I,1) - MDWN(K,I) *          &amp;<a name='1441'>
+                 VCI(L,I,K) + DSIGH(K+1) * DSIGHI(K) *                  &amp;<a name='1442'>
+                        MDWN(K+1,I) * VCI(L,I,K+1))<a name='1443'>
+              DI(L,K)   = VCI(L,I,K) + (1.0 - CRANKP) * DELC<a name='1444'>
+            ENDDO<a name='1445'>
+          ENDDO<a name='1446'>
+<a name='1447'>
+          DO K = KCBL(I)+1, KL<a name='1448'>
+            DO L = 1,NSPX                    <a name='1449'>
+              DI(L,K) = VCI(L,I,K)<a name='1450'>
+            ENDDO<a name='1451'>
+          ENDDO<a name='1452'>
+<a name='1453'>
+          DO K = 2,KL<a name='1454'>
+            IF (K .EQ. KL) THEN<a name='1455'>
+              DO L = 1,NSPX                    <a name='1456'>
+                DI(L,K) = DI(L,K)  - (1.0 - CRANKP) * XMINUS(K) *                  &amp;<a name='1457'>
+                          (VCI(L,I,K) - VCI(L,I,K-1))<a name='1458'>
+              ENDDO<a name='1459'>
+            ELSE<a name='1460'>
+              DO L = 1,NSPX                    <a name='1461'>
+                DI(L,K) = DI(L,K) + (1.0 - CRANKP) * XPLUS(K) *                   &amp;<a name='1462'>
+                          (VCI(L,I,K+1) - VCI(L,I,K))  -                         &amp;<a name='1463'>
+                          (1.0 - CRANKP) * XMINUS(K) *                           &amp;<a name='1464'>
+                          (VCI(L,I,K) - VCI(L,I,K-1))<a name='1465'>
+              ENDDO<a name='1466'>
+            ENDIF<a name='1467'>
+          ENDDO<a name='1468'>
+<a name='1469'>
+          IF (NOCONV(I) .EQ. 1) THEN<a name='1470'>
+            DO L = 1,NSPX                    <a name='1471'>
+              F1    = -G1000I * (MBARKS(1,I) *                                &amp;<a name='1472'>
+                      (PBLSIG(I) - SIGMAF(1)) * VCI(L,I,1) -                  &amp;<a name='1473'>
+                      MDWN(2,I) * VCI(L,I,2) * DSIGH(2))<a name='1474'>
+<a name='1475'>
+              DI(L,1) = VCI(L,I,1) - G1000 * (FS(L,I) - (1.0 - CRANKP)        &amp;<a name='1476'>
+                        * F1) * DSIGHI(1) * DTS<a name='1477'>
+            ENDDO<a name='1478'>
+          ELSE<a name='1479'>
+            DO L = 1,NSPX                    <a name='1480'>
+              DI(L,1) = VCI(L,I,1) - G1000 * FS(L,I) * DSIGHI(1) * DTS<a name='1481'>
+            ENDDO<a name='1482'>
+          ENDIF<a name='1483'>
+          DO L = 1,NSPX                    <a name='1484'>
+            DI(L,1) = DI(L,1) + (1.0 - CRANKP) * EDDYZM(I,1) * DSIGHI(1)      &amp;<a name='1485'>
+                     * DTRAT * (VCI(L,I,2) - VCI(L,I,1))<a name='1486'>
+          ENDDO<a name='1487'>
+          IF ( NOCONV(I) .EQ. 1 ) THEN<a name='1488'>
+            CALL <A href='../../html_code/phys/module_bl_acm.F.html#MATRIX'>MATRIX</A><A href='../../html_code/phys/module_bl_acm.F.html#ACMM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MATRIX_2"> (AI, BI, CI, DI, EI, UI, KL, NSPX)<a name='1489'>
+          ELSE<a name='1490'>
+            CALL <A href='../../html_code/phys/module_bl_acm.F.html#TRI'>TRI</A><A href='../../html_code/phys/module_bl_acm.F.html#ACMM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRI_2"> (CI, BI, EI, DI, UI, KL, NSPX)<a name='1491'>
+          END IF<a name='1492'>
+<font color=#447700>!<a name='1493'></font>
+<font color=#447700>!-- COMPUTE NEW THETAV AND Q<a name='1494'></font>
+          DO K = 1,KL<a name='1495'>
+            DO L = 1,NSPX                    <a name='1496'>
+              VCI(L,I,K) = UI(L,K)<a name='1497'>
+            ENDDO<a name='1498'>
+          ENDDO<a name='1499'>
+<a name='1500'>
+        ENDDO                   <font color=#447700>! END I LOOP<a name='1501'></font>
+      ENDDO                     <font color=#447700>! END SUB TIME LOOP<a name='1502'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1503'></font>
+<a name='1504'>
+<font color=#447700>!<a name='1505'></font>
+      DO K = kts,KL<a name='1506'>
+        DO I = its,ILX<a name='1507'>
+          UX(I,K)     = VCI(1,I,K)<a name='1508'>
+          VX(I,K)     = VCI(2,I,K)<a name='1509'>
+        ENDDO<a name='1510'>
+      ENDDO<a name='1511'>
+<a name='1512'>
+   END SUBROUTINE ACMM<a name='1513'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1514'></font>
+<a name='1515'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1516'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1517'></font>
+<A NAME='MATRIX'><A href='../../html_code/phys/module_bl_acm.F.html#MATRIX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1518'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>MATRIX</font>(A,B,C,D,E,X,KL,NSP) <A href='../../call_to/MATRIX.html' TARGET='index'>2</A>,<A href='../../call_from/MATRIX.html' TARGET='index'>2</A><a name='1519'>
+   <a name='1520'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1521'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1522'></font>
+   IMPLICIT NONE<a name='1523'>
+<font color=#447700>!<a name='1524'></font>
+<font color=#447700>!-- Bordered band diagonal matrix solver for ACM2<a name='1525'></font>
+<a name='1526'>
+<font color=#447700>!-- ACM2 Matrix is in this form:<a name='1527'></font>
+<font color=#447700>!   B1 E1<a name='1528'></font>
+<font color=#447700>!   A2 B2 E2<a name='1529'></font>
+<font color=#447700>!   A3 C3 B3 E3<a name='1530'></font>
+<font color=#447700>!   A4    C4 B4 E4<a name='1531'></font>
+<font color=#447700>!   A5       C5 B5 E5<a name='1532'></font>
+<font color=#447700>!   A6          C6 B6<a name='1533'></font>
+<a name='1534'>
+<font color=#447700>!--Upper Matrix is<a name='1535'></font>
+<font color=#447700>!  U11 U12<a name='1536'></font>
+<font color=#447700>!      U22 U23<a name='1537'></font>
+<font color=#447700>!          U33 U34<a name='1538'></font>
+<font color=#447700>!              U44 U45<a name='1539'></font>
+<font color=#447700>!                  U55 U56<a name='1540'></font>
+<font color=#447700>!                      U66<a name='1541'></font>
+<a name='1542'>
+<font color=#447700>!--Lower Matrix is:<a name='1543'></font>
+<font color=#447700>!  1<a name='1544'></font>
+<font color=#447700>! L21  1<a name='1545'></font>
+<font color=#447700>! L31 L32  1<a name='1546'></font>
+<font color=#447700>! L41 L42 L43  1<a name='1547'></font>
+<font color=#447700>! L51 L52 L53 L54  1<a name='1548'></font>
+<font color=#447700>! L61 L62 L63 L64 L65 1<a name='1549'></font>
+<font color=#447700>!---------------------------------------------------------<a name='1550'></font>
+<font color=#447700>!...Arguments<a name='1551'></font>
+      INTEGER, INTENT(IN)   :: KL<a name='1552'>
+      INTEGER, INTENT(IN)   :: NSP<a name='1553'>
+      REAL A(KL),B(KL),E(KL)<a name='1554'>
+      REAL C(KL),D(NSP,KL),X(NSP,KL)<a name='1555'>
+<a name='1556'>
+<font color=#447700>!...Locals<a name='1557'></font>
+      REAL Y(NSP,KL),AIJ,SUM<a name='1558'>
+      REAL L(KL,KL),UII(KL),UIIP1(KL),RUII(KL)<a name='1559'>
+      INTEGER I,J,V<a name='1560'>
+<a name='1561'>
+<font color=#447700>!-- Define Upper and Lower matrices<a name='1562'></font>
+      L(1,1) = 1.<a name='1563'>
+      UII(1) = B(1)<a name='1564'>
+      RUII(1) = 1./UII(1)<a name='1565'>
+      DO I = 2, KL<a name='1566'>
+	      L(I,I) = 1.<a name='1567'>
+	      L(I,1) = A(I)/B(1)<a name='1568'>
+        UIIP1(I-1)=E(I-1)<a name='1569'>
+	      IF(I.GE.3) THEN<a name='1570'>
+	        DO J = 2,I-1<a name='1571'>
+	          IF(I.EQ.J+1) THEN<a name='1572'>
+	            AIJ = C(I)<a name='1573'>
+	          ELSE<a name='1574'>
+	            AIJ = 0.<a name='1575'>
+	          ENDIF<a name='1576'>
+	          L(I,J) = (AIJ-L(I,J-1)*E(J-1))/      &amp;<a name='1577'>
+                      (B(J)-L(J,J-1)*E(J-1))<a name='1578'>
+	        ENDDO<a name='1579'>
+	      ENDIF<a name='1580'>
+      ENDDO<a name='1581'>
+	  <a name='1582'>
+      DO I = 2,KL<a name='1583'>
+        UII(I) = B(I)-L(I,I-1)*E(I-1)<a name='1584'>
+        RUII(I) = 1./UII(I)<a name='1585'>
+      ENDDO<a name='1586'>
+  <a name='1587'>
+<font color=#447700>!-- Forward sub for Ly=d<a name='1588'></font>
+      DO V= 1, NSP<a name='1589'>
+        Y(V,1) = <A href='../../html_code/share/dfi.F.html#D'>D</A><A href='../../html_code/phys/module_bl_acm.F.html#MATRIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="D_5">(V,1)<a name='1590'>
+        DO I=2,KL<a name='1591'>
+	        SUM = <A href='../../html_code/share/dfi.F.html#D'>D</A><A href='../../html_code/phys/module_bl_acm.F.html#MATRIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="D_6">(V,I)<a name='1592'>
+	        DO J=1,I-1<a name='1593'>
+	          SUM = SUM - L(I,J)*Y(V,J)<a name='1594'>
+	        ENDDO<a name='1595'>
+	        Y(V,I) = SUM<a name='1596'>
+        ENDDO<a name='1597'>
+      ENDDO<a name='1598'>
+<a name='1599'>
+<font color=#447700>!-- Back sub for Ux=y<a name='1600'></font>
+<a name='1601'>
+      DO V= 1, NSP<a name='1602'>
+        X(V,KL) = Y(V,KL)*RUII(KL)<a name='1603'>
+      ENDDO<a name='1604'>
+      DO I = KL-1,1,-1<a name='1605'>
+        DO V= 1, NSP<a name='1606'>
+         X(V,I) = (Y(V,I)-UIIP1(I)*X(V,I+1))*RUII(I)<a name='1607'>
+        ENDDO<a name='1608'>
+      ENDDO<a name='1609'>
+<a name='1610'>
+   END SUBROUTINE MATRIX<a name='1611'>
+<a name='1612'>
+<a name='1613'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1614'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1615'></font>
+<A NAME='TRI'><A href='../../html_code/phys/module_bl_acm.F.html#TRI' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1616'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>TRI</font> ( L, D, U, B, X,KL,NSP) <A href='../../call_to/TRI.html' TARGET='index'>2</A><a name='1617'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1618'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1619'></font>
+<a name='1620'>
+<font color=#447700>!  FUNCTION:<a name='1621'></font>
+<font color=#447700>!    Solves tridiagonal system by Thomas algorithm. <a name='1622'></font>
+<font color=#447700>!   The associated tri-diagonal system is stored in 3 arrays<a name='1623'></font>
+<font color=#447700>!   D : diagonal<a name='1624'></font>
+<font color=#447700>!   L : sub-diagonal<a name='1625'></font>
+<font color=#447700>!   U : super-diagonal<a name='1626'></font>
+<font color=#447700>!   B : right hand side function<a name='1627'></font>
+<font color=#447700>!   X : return solution from tridiagonal solver<a name='1628'></font>
+<a name='1629'>
+<font color=#447700>!     [ D(1) U(1) 0    0    0 ...       0     ]<a name='1630'></font>
+<font color=#447700>!     [ L(2) D(2) U(2) 0    0 ...       .     ]<a name='1631'></font>
+<font color=#447700>!     [ 0    L(3) D(3) U(3) 0 ...       .     ]<a name='1632'></font>
+<font color=#447700>!     [ .       .     .     .           .     ] X(i) = B(i)<a name='1633'></font>
+<font color=#447700>!     [ .             .     .     .     0     ]<a name='1634'></font>
+<font color=#447700>!     [ .                   .     .     .     ]<a name='1635'></font>
+<font color=#447700>!     [ 0                           L(n) D(n) ]<a name='1636'></font>
+<a name='1637'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1638'></font>
+<a name='1639'>
+      IMPLICIT NONE<a name='1640'>
+<a name='1641'>
+<font color=#447700>! Arguments:<a name='1642'></font>
+<a name='1643'>
+      INTEGER, INTENT(IN)   :: KL<a name='1644'>
+      INTEGER, INTENT(IN)   :: NSP<a name='1645'>
+<a name='1646'>
+      REAL        L( KL )               <font color=#447700>! subdiagonal<a name='1647'></font>
+      REAL        D(KL)   <font color=#447700>! diagonal<a name='1648'></font>
+      REAL        U( KL )               <font color=#447700>! superdiagonal<a name='1649'></font>
+      REAL        B(NSP,KL )   <font color=#447700>! R.H. side<a name='1650'></font>
+      REAL        X( NSP,KL )   <font color=#447700>! solution<a name='1651'></font>
+<a name='1652'>
+<font color=#447700>! Local Variables:<a name='1653'></font>
+<a name='1654'>
+      REAL        GAM( KL )<a name='1655'>
+      REAL        BET<a name='1656'>
+      INTEGER     V, K<a name='1657'>
+<a name='1658'>
+<font color=#447700>! Decomposition and forward substitution:<a name='1659'></font>
+      BET = 1.0 / D( 1 )<a name='1660'>
+      DO V = 1, NSP<a name='1661'>
+         X( V,1 ) = BET * B(V,1 )<a name='1662'>
+      ENDDO<a name='1663'>
+<a name='1664'>
+      DO K = 2, KL<a name='1665'>
+        GAM(K ) = BET * U( K-1 )<a name='1666'>
+        BET = 1.0 / ( D( K ) - L( K ) * GAM( K ) )<a name='1667'>
+	      DO V = 1, NSP<a name='1668'>
+           X( V, K ) = BET * ( B( V,K ) - L( K ) * X( V,K-1 ) )<a name='1669'>
+	      ENDDO<a name='1670'>
+      ENDDO<a name='1671'>
+<a name='1672'>
+<font color=#447700>! Back-substitution:<a name='1673'></font>
+<a name='1674'>
+      DO K = KL - 1, 1, -1<a name='1675'>
+        DO V = 1, NSP<a name='1676'>
+          X( V,K ) = X( V,K ) - GAM( K+1 ) * X( V,K+1 )<a name='1677'>
+        ENDDO<a name='1678'>
+      ENDDO<a name='1679'>
+     <a name='1680'>
+  END SUBROUTINE TRI<a name='1681'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1682'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1683'></font>
+<a name='1684'>
+END MODULE module_bl_acm<a name='1685'>
+                        <a name='1686'>
+</pre></body></html>

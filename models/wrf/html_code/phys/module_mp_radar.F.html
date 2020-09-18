@@ -1,0 +1,641 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='2'></font>
+<font color=#447700>!..This set of routines facilitates computing radar reflectivity.<a name='3'></font>
+<font color=#447700>!.. This module is more library code whereas the individual microphysics<a name='4'></font>
+<font color=#447700>!.. schemes contains specific details needed for the final computation,<a name='5'></font>
+<font color=#447700>!.. so refer to location within each schemes calling the routine named<a name='6'></font>
+<font color=#447700>!.. rayleigh_soak_wetgraupel.<a name='7'></font>
+<font color=#447700>!.. The bulk of this code originated from Ulrich Blahak (Germany) and<a name='8'></font>
+<font color=#447700>!.. was adapted to WRF by G. Thompson.  This version of code is only<a name='9'></font>
+<font color=#447700>!.. intended for use when Rayleigh scattering principles dominate and<a name='10'></font>
+<font color=#447700>!.. is not intended for wavelengths in which Mie scattering is a<a name='11'></font>
+<font color=#447700>!.. significant portion.  Therefore, it is well-suited to use with<a name='12'></font>
+<font color=#447700>!.. 5 or 10 cm wavelength like USA NEXRAD radars.<a name='13'></font>
+<font color=#447700>!.. This code makes some rather simple assumptions about water<a name='14'></font>
+<font color=#447700>!.. coating on outside of frozen species (snow/graupel).  Fraction of<a name='15'></font>
+<font color=#447700>!.. meltwater is simply the ratio of mixing ratio below melting level<a name='16'></font>
+<font color=#447700>!.. divided by mixing ratio at level just above highest T&gt;0C.  Also,<a name='17'></font>
+<font color=#447700>!.. immediately 90% of the melted water exists on the ice's surface<a name='18'></font>
+<font color=#447700>!.. and 10% is embedded within ice.  No water is "shed" at all in these<a name='19'></font>
+<font color=#447700>!.. assumptions. The code is quite slow because it does the reflectivity<a name='20'></font>
+<font color=#447700>!.. calculations based on 50 individual size bins of the distributions.<a name='21'></font>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='22'></font>
+<a name='23'>
+<A NAME='MODULE_MP_RADAR'><A href='../../html_code/phys/module_mp_radar.F.html#MODULE_MP_RADAR' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='24'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_mp_radar</font> <A href='../../call_to/MODULE_MP_RADAR.html' TARGET='index'>10</A><a name='25'>
+<a name='26'>
+      USE <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/phys/module_mp_radar.F.html#module_mp_radar.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_64"><a name='27'>
+<a name='28'>
+      PUBLIC :: rayleigh_soak_wetgraupel<a name='29'>
+      PUBLIC :: radar_init<a name='30'>
+      PRIVATE :: m_complex_water_ray<a name='31'>
+      PRIVATE :: m_complex_ice_maetzler<a name='32'>
+      PRIVATE :: m_complex_maxwellgarnett<a name='33'>
+      PRIVATE :: get_m_mix_nested<a name='34'>
+      PRIVATE :: get_m_mix<a name='35'>
+      PRIVATE :: WGAMMA<a name='36'>
+      PRIVATE :: GAMMLN<a name='37'>
+<a name='38'>
+<a name='39'>
+      INTEGER, PARAMETER, PUBLIC:: nrbins = 50<a name='40'>
+      DOUBLE PRECISION, DIMENSION(nrbins+1), PUBLIC:: xxDx<a name='41'>
+      DOUBLE PRECISION, DIMENSION(nrbins), PUBLIC:: xxDs,xdts,xxDg,xdtg<a name='42'>
+      DOUBLE PRECISION, PARAMETER, PUBLIC:: lamda_radar = 0.10           <font color=#447700>! in meters<a name='43'></font>
+      DOUBLE PRECISION, PUBLIC:: K_w, PI5, lamda4<a name='44'>
+      COMPLEX*16, PUBLIC:: m_w_0, m_i_0<a name='45'>
+      DOUBLE PRECISION, DIMENSION(nrbins+1), PUBLIC:: simpson<a name='46'>
+      DOUBLE PRECISION, DIMENSION(3), PARAMETER, PUBLIC:: basis =       &amp;<a name='47'>
+                           (/1.d0/3.d0, 4.d0/3.d0, 1.d0/3.d0/)<a name='48'>
+      REAL, DIMENSION(4), PUBLIC:: xcre, xcse, xcge, xcrg, xcsg, xcgg<a name='49'>
+      REAL, PUBLIC:: xam_r, xbm_r, xmu_r, xobmr<a name='50'>
+      REAL, PUBLIC:: xam_s, xbm_s, xmu_s, xoams, xobms, xocms<a name='51'>
+      REAL, PUBLIC:: xam_g, xbm_g, xmu_g, xoamg, xobmg, xocmg<a name='52'>
+      REAL, PUBLIC:: xorg2, xosg2, xogg2<a name='53'>
+<a name='54'>
+      INTEGER, PARAMETER, PUBLIC:: slen = 20<a name='55'>
+      CHARACTER(len=slen), PUBLIC::                                     &amp;<a name='56'>
+              mixingrulestring_s, matrixstring_s, inclusionstring_s,    &amp;<a name='57'>
+              hoststring_s, hostmatrixstring_s, hostinclusionstring_s,  &amp;<a name='58'>
+              mixingrulestring_g, matrixstring_g, inclusionstring_g,    &amp;<a name='59'>
+              hoststring_g, hostmatrixstring_g, hostinclusionstring_g<a name='60'>
+<a name='61'>
+<font color=#447700>!..Single melting snow/graupel particle 90% meltwater on external sfc<a name='62'></font>
+      DOUBLE PRECISION, PARAMETER:: melt_outside_s = 0.9d0<a name='63'>
+      DOUBLE PRECISION, PARAMETER:: melt_outside_g = 0.9d0<a name='64'>
+<a name='65'>
+      CHARACTER*256:: radar_debug<a name='66'>
+<a name='67'>
+CONTAINS<a name='68'>
+<a name='69'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='70'></font>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='71'></font>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='72'></font>
+<a name='73'>
+<A NAME='RADAR_INIT'><A href='../../html_code/phys/module_mp_radar.F.html#RADAR_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='74'>
+      <font color=#993300>subroutine </font><font color=#cc0000>radar_init</font> <A href='../../call_to/RADAR_INIT.html' TARGET='index'>10</A>,<A href='../../call_from/RADAR_INIT.html' TARGET='index'>3</A><a name='75'>
+<a name='76'>
+      IMPLICIT NONE<a name='77'>
+      INTEGER:: n<a name='78'>
+      PI5 = 3.14159*3.14159*3.14159*3.14159*3.14159<a name='79'>
+      lamda4 = lamda_radar*lamda_radar*lamda_radar*lamda_radar<a name='80'>
+      m_w_0 = m_complex_water_ray (lamda_radar, 0.0d0)<a name='81'>
+      m_i_0 = m_complex_ice_maetzler (lamda_radar, 0.0d0)<a name='82'>
+      K_w = (ABS( (m_w_0*m_w_0 - 1.0) /(m_w_0*m_w_0 + 2.0) ))**2<a name='83'>
+<a name='84'>
+      do n = 1, nrbins+1<a name='85'>
+         simpson(n) = 0.0d0<a name='86'>
+      enddo<a name='87'>
+      do n = 1, nrbins-1, 2<a name='88'>
+         simpson(n) = simpson(n) + basis(1)<a name='89'>
+         simpson(n+1) = simpson(n+1) + basis(2)<a name='90'>
+         simpson(n+2) = simpson(n+2) + basis(3)<a name='91'>
+      enddo<a name='92'>
+<a name='93'>
+      do n = 1, slen<a name='94'>
+         mixingrulestring_s(n:n) = char(0)<a name='95'>
+         matrixstring_s(n:n) = char(0)<a name='96'>
+         inclusionstring_s(n:n) = char(0)<a name='97'>
+         hoststring_s(n:n) = char(0)<a name='98'>
+         hostmatrixstring_s(n:n) = char(0)<a name='99'>
+         hostinclusionstring_s(n:n) = char(0)<a name='100'>
+         mixingrulestring_g(n:n) = char(0)<a name='101'>
+         matrixstring_g(n:n) = char(0)<a name='102'>
+         inclusionstring_g(n:n) = char(0)<a name='103'>
+         hoststring_g(n:n) = char(0)<a name='104'>
+         hostmatrixstring_g(n:n) = char(0)<a name='105'>
+         hostinclusionstring_g(n:n) = char(0)<a name='106'>
+      enddo<a name='107'>
+<a name='108'>
+      mixingrulestring_s = 'maxwellgarnett'<a name='109'>
+      hoststring_s = 'air'<a name='110'>
+      matrixstring_s = 'water'<a name='111'>
+      inclusionstring_s = 'spheroidal'<a name='112'>
+      hostmatrixstring_s = 'icewater'<a name='113'>
+      hostinclusionstring_s = 'spheroidal'<a name='114'>
+<a name='115'>
+      mixingrulestring_g = 'maxwellgarnett'<a name='116'>
+      hoststring_g = 'air'<a name='117'>
+      matrixstring_g = 'water'<a name='118'>
+      inclusionstring_g = 'spheroidal'<a name='119'>
+      hostmatrixstring_g = 'icewater'<a name='120'>
+      hostinclusionstring_g = 'spheroidal'<a name='121'>
+<a name='122'>
+<font color=#447700>!..Create bins of snow (from 100 microns up to 2 cm).<a name='123'></font>
+      xxDx(1) = 100.D-6<a name='124'>
+      xxDx(nrbins+1) = 0.02d0<a name='125'>
+      do n = 2, nrbins<a name='126'>
+         xxDx(n) = DEXP(DFLOAT(n-1)/DFLOAT(nrbins) &amp;<a name='127'>
+                  *DLOG(xxDx(nrbins+1)/xxDx(1)) +DLOG(xxDx(1)))<a name='128'>
+      enddo<a name='129'>
+      do n = 1, nrbins<a name='130'>
+         xxDs(n) = DSQRT(xxDx(n)*xxDx(n+1))<a name='131'>
+         xdts(n) = xxDx(n+1) - xxDx(n)<a name='132'>
+      enddo<a name='133'>
+<a name='134'>
+<font color=#447700>!..Create bins of graupel (from 100 microns up to 5 cm).<a name='135'></font>
+      xxDx(1) = 100.D-6<a name='136'>
+      xxDx(nrbins+1) = 0.05d0<a name='137'>
+      do n = 2, nrbins<a name='138'>
+         xxDx(n) = DEXP(DFLOAT(n-1)/DFLOAT(nrbins) &amp;<a name='139'>
+                  *DLOG(xxDx(nrbins+1)/xxDx(1)) +DLOG(xxDx(1)))<a name='140'>
+      enddo<a name='141'>
+      do n = 1, nrbins<a name='142'>
+         xxDg(n) = DSQRT(xxDx(n)*xxDx(n+1))<a name='143'>
+         xdtg(n) = xxDx(n+1) - xxDx(n)<a name='144'>
+      enddo<a name='145'>
+<a name='146'>
+<a name='147'>
+<font color=#447700>!..The calling program must set the m(D) relations and gamma shape<a name='148'></font>
+<font color=#447700>!.. parameter mu for rain, snow, and graupel.  Easily add other types<a name='149'></font>
+<font color=#447700>!.. based on the template here.  For majority of schemes with simpler<a name='150'></font>
+<font color=#447700>!.. exponential number distribution, mu=0.<a name='151'></font>
+<a name='152'>
+      xcre(1) = 1. + xbm_r<a name='153'>
+      xcre(2) = 1. + xmu_r<a name='154'>
+      xcre(3) = 1. + xbm_r + xmu_r<a name='155'>
+      xcre(4) = 1. + 2.*xbm_r + xmu_r<a name='156'>
+      do n = 1, 4<a name='157'>
+         xcrg(n) = <A href='../../html_code/phys/module_mp_thompson.F.html#WGAMMA'>WGAMMA</A><A href='../../html_code/phys/module_mp_radar.F.html#RADAR_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WGAMMA_3">(xcre(n))<a name='158'>
+      enddo<a name='159'>
+      xorg2 = 1./xcrg(2)<a name='160'>
+<a name='161'>
+      xcse(1) = 1. + xbm_s<a name='162'>
+      xcse(2) = 1. + xmu_s<a name='163'>
+      xcse(3) = 1. + xbm_s + xmu_s<a name='164'>
+      xcse(4) = 1. + 2.*xbm_s + xmu_s<a name='165'>
+      do n = 1, 4<a name='166'>
+         xcsg(n) = <A href='../../html_code/phys/module_mp_thompson.F.html#WGAMMA'>WGAMMA</A><A href='../../html_code/phys/module_mp_radar.F.html#RADAR_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WGAMMA_4">(xcse(n))<a name='167'>
+      enddo<a name='168'>
+      xosg2 = 1./xcsg(2)<a name='169'>
+<a name='170'>
+      xcge(1) = 1. + xbm_g<a name='171'>
+      xcge(2) = 1. + xmu_g<a name='172'>
+      xcge(3) = 1. + xbm_g + xmu_g<a name='173'>
+      xcge(4) = 1. + 2.*xbm_g + xmu_g<a name='174'>
+      do n = 1, 4<a name='175'>
+         xcgg(n) = <A href='../../html_code/phys/module_mp_thompson.F.html#WGAMMA'>WGAMMA</A><A href='../../html_code/phys/module_mp_radar.F.html#RADAR_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WGAMMA_5">(xcge(n))<a name='176'>
+      enddo<a name='177'>
+      xogg2 = 1./xcgg(2)<a name='178'>
+<a name='179'>
+      xobmr = 1./xbm_r<a name='180'>
+      xoams = 1./xam_s<a name='181'>
+      xobms = 1./xbm_s<a name='182'>
+      xocms = xoams**xobms<a name='183'>
+      xoamg = 1./xam_g<a name='184'>
+      xobmg = 1./xbm_g<a name='185'>
+      xocmg = xoamg**xobmg<a name='186'>
+<a name='187'>
+<a name='188'>
+      end subroutine radar_init<a name='189'>
+<a name='190'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='191'></font>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='192'></font>
+<a name='193'>
+<A NAME='M_COMPLEX_WATER_RAY'><A href='../../html_code/phys/module_mp_radar.F.html#M_COMPLEX_WATER_RAY' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='194'>
+      COMPLEX*16 <font color=#993300>FUNCTION </font><font color=#cc0000>m_complex_water_ray</font>(lambda,T)<a name='195'>
+<a name='196'>
+<font color=#447700>!      Complex refractive Index of Water as function of Temperature T<a name='197'></font>
+<font color=#447700>!      [deg C] and radar wavelength lambda [m]; valid for<a name='198'></font>
+<font color=#447700>!      lambda in [0.001,1.0] m; T in [-10.0,30.0] deg C<a name='199'></font>
+<font color=#447700>!      after Ray (1972)<a name='200'></font>
+<a name='201'>
+      IMPLICIT NONE<a name='202'>
+      DOUBLE PRECISION, INTENT(IN):: T,lambda<a name='203'>
+      DOUBLE PRECISION:: epsinf,epss,epsr,epsi<a name='204'>
+      DOUBLE PRECISION:: alpha,lambdas,sigma,nenner<a name='205'>
+      COMPLEX*16, PARAMETER:: i = (0d0,1d0)<a name='206'>
+      DOUBLE PRECISION, PARAMETER:: PIx=3.1415926535897932384626434d0<a name='207'>
+<a name='208'>
+      epsinf  = 5.27137d0 + 0.02164740d0 * T - 0.00131198d0 * T*T<a name='209'>
+      epss    = 78.54d+0 * (1.0 - 4.579d-3 * (T - 25.0)                 &amp;<a name='210'>
+              + 1.190d-5 * (T - 25.0)*(T - 25.0)                        &amp;<a name='211'>
+              - 2.800d-8 * (T - 25.0)*(T - 25.0)*(T - 25.0))<a name='212'>
+      alpha   = -16.8129d0/(T+273.16) + 0.0609265d0<a name='213'>
+      lambdas = 0.00033836d0 * exp(2513.98d0/(T+273.16)) * 1e-2<a name='214'>
+<a name='215'>
+      nenner = 1.d0+2.d0*(lambdas/lambda)**(1d0-alpha)*sin(alpha*PIx*0.5) &amp;<a name='216'>
+             + (lambdas/lambda)**(2d0-2d0*alpha)<a name='217'>
+      epsr = epsinf + ((epss-epsinf) * ((lambdas/lambda)**(1d0-alpha)   &amp;<a name='218'>
+           * sin(alpha*PIx*0.5)+1d0)) / nenner<a name='219'>
+      epsi = ((epss-epsinf) * ((lambdas/lambda)**(1d0-alpha)            &amp;<a name='220'>
+           * cos(alpha*PIx*0.5)+0d0)) / nenner                           &amp;<a name='221'>
+           + lambda*1.25664/1.88496<a name='222'>
+      <a name='223'>
+      m_complex_water_ray = SQRT(CMPLX(epsr,-epsi))<a name='224'>
+      <a name='225'>
+      END FUNCTION m_complex_water_ray<a name='226'>
+<a name='227'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='228'></font>
+      <a name='229'>
+<A NAME='M_COMPLEX_ICE_MAETZLER'><A href='../../html_code/phys/module_mp_radar.F.html#M_COMPLEX_ICE_MAETZLER' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='230'>
+      COMPLEX*16 <font color=#993300>FUNCTION </font><font color=#cc0000>m_complex_ice_maetzler</font>(lambda,T)<a name='231'>
+      <a name='232'>
+<font color=#447700>!      complex refractive index of ice as function of Temperature T<a name='233'></font>
+<font color=#447700>!      [deg C] and radar wavelength lambda [m]; valid for<a name='234'></font>
+<font color=#447700>!      lambda in [0.0001,30] m; T in [-250.0,0.0] C<a name='235'></font>
+<font color=#447700>!      Original comment from the Matlab-routine of Prof. Maetzler:<a name='236'></font>
+<font color=#447700>!      Function for calculating the relative permittivity of pure ice in<a name='237'></font>
+<font color=#447700>!      the microwave region, according to C. Maetzler, "Microwave<a name='238'></font>
+<font color=#447700>!      properties of ice and snow", in B. Schmitt et al. (eds.) Solar<a name='239'></font>
+<font color=#447700>!      System Ices, Astrophys. and Space Sci. Library, Vol. 227, Kluwer<a name='240'></font>
+<font color=#447700>!      Academic Publishers, Dordrecht, pp. 241-257 (1998). Input:<a name='241'></font>
+<font color=#447700>!      TK = temperature (K), range 20 to 273.15<a name='242'></font>
+<font color=#447700>!      f = frequency in GHz, range 0.01 to 3000<a name='243'></font>
+         <a name='244'>
+      IMPLICIT NONE<a name='245'>
+      DOUBLE PRECISION, INTENT(IN):: T,lambda<a name='246'>
+      DOUBLE PRECISION:: f,c,TK,B1,B2,b,deltabeta,betam,beta,theta,alfa<a name='247'>
+<a name='248'>
+      c = 2.99d8<a name='249'>
+      TK = T + 273.16<a name='250'>
+      f = c / lambda * 1d-9<a name='251'>
+<a name='252'>
+      B1 = 0.0207<a name='253'>
+      B2 = 1.16d-11<a name='254'>
+      b = 335.0d0<a name='255'>
+      deltabeta = EXP(-10.02 + 0.0364*(TK-273.16))<a name='256'>
+      betam = (B1/TK) * ( EXP(b/TK) / ((EXP(b/TK)-1)**2) ) + B2*f*f<a name='257'>
+      beta = betam + deltabeta<a name='258'>
+      theta = 300. / TK - 1.<a name='259'>
+      alfa = (0.00504d0 + 0.0062d0*theta) * EXP(-22.1d0*theta)<a name='260'>
+      m_complex_ice_maetzler = 3.1884 + 9.1e-4*(TK-273.16)<a name='261'>
+      m_complex_ice_maetzler = m_complex_ice_maetzler                   &amp;<a name='262'>
+                             + CMPLX(0.0d0, (alfa/f + beta*f)) <a name='263'>
+      m_complex_ice_maetzler = SQRT(CONJG(m_complex_ice_maetzler))<a name='264'>
+      <a name='265'>
+      END FUNCTION m_complex_ice_maetzler<a name='266'>
+<a name='267'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='268'></font>
+<a name='269'>
+<A NAME='RAYLEIGH_SOAK_WETGRAUPEL'><A href='../../html_code/phys/module_mp_radar.F.html#RAYLEIGH_SOAK_WETGRAUPEL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='270'>
+      <font color=#993300>subroutine </font><font color=#cc0000>rayleigh_soak_wetgraupel</font> (x_g, a_geo, b_geo, fmelt,    &amp; <A href='../../call_to/RAYLEIGH_SOAK_WETGRAUPEL.html' TARGET='index'>18</A><a name='271'>
+                     meltratio_outside, m_w, m_i, lambda, C_back,       &amp;<a name='272'>
+                     mixingrule,matrix,inclusion,                       &amp;<a name='273'>
+                     host,hostmatrix,hostinclusion)<a name='274'>
+<a name='275'>
+      IMPLICIT NONE<a name='276'>
+<a name='277'>
+      DOUBLE PRECISION, INTENT(in):: x_g, a_geo, b_geo, fmelt, lambda,  &amp;<a name='278'>
+                                     meltratio_outside<a name='279'>
+      DOUBLE PRECISION, INTENT(out):: C_back<a name='280'>
+      COMPLEX*16, INTENT(in):: m_w, m_i<a name='281'>
+      CHARACTER(len=*), INTENT(in):: mixingrule, matrix, inclusion,     &amp;<a name='282'>
+                                     host, hostmatrix, hostinclusion<a name='283'>
+<a name='284'>
+      COMPLEX*16:: m_core, m_air<a name='285'>
+      DOUBLE PRECISION:: D_large, D_g, rhog, x_w, xw_a, fm, fmgrenz,    &amp;<a name='286'>
+                         volg, vg, volair, volice, volwater,            &amp;<a name='287'>
+                         meltratio_outside_grenz, mra<a name='288'>
+      INTEGER:: error<a name='289'>
+      DOUBLE PRECISION, PARAMETER:: PIx=3.1415926535897932384626434d0<a name='290'>
+<a name='291'>
+<font color=#447700>!     refractive index of air:<a name='292'></font>
+      m_air = (1.0d0,0.0d0)<a name='293'>
+<a name='294'>
+<font color=#447700>!     Limiting the degree of melting --- for safety: <a name='295'></font>
+      fm = DMAX1(DMIN1(fmelt, 1.0d0), 0.0d0)<a name='296'>
+<font color=#447700>!     Limiting the ratio of (melting on outside)/(melting on inside):<a name='297'></font>
+      mra = DMAX1(DMIN1(meltratio_outside, 1.0d0), 0.0d0)<a name='298'>
+<a name='299'>
+<font color=#447700>!    ! The relative portion of meltwater melting at outside should increase<a name='300'></font>
+<font color=#447700>!    ! from the given input value (between 0 and 1)<a name='301'></font>
+<font color=#447700>!    ! to 1 as the degree of melting approaches 1,<a name='302'></font>
+<font color=#447700>!    ! so that the melting particle "converges" to a water drop.<a name='303'></font>
+<font color=#447700>!    ! Simplest assumption is linear:<a name='304'></font>
+      mra = mra + (1.0d0-mra)*fm<a name='305'>
+<a name='306'>
+      x_w = x_g * fm<a name='307'>
+<a name='308'>
+      D_g = a_geo * x_g**b_geo<a name='309'>
+<a name='310'>
+      if (D_g .ge. 1d-12) then<a name='311'>
+<a name='312'>
+       vg = PIx/6. * D_g**3<a name='313'>
+       rhog = DMAX1(DMIN1(x_g / vg, 900.0d0), 10.0d0)<a name='314'>
+       vg = x_g / rhog<a name='315'>
+      <a name='316'>
+       meltratio_outside_grenz = 1.0d0 - rhog / 1000.<a name='317'>
+<a name='318'>
+       if (mra .le. meltratio_outside_grenz) then<a name='319'>
+        <font color=#447700>!..In this case, it cannot happen that, during melting, all the<a name='320'></font>
+        <font color=#447700>!.. air inclusions within the ice particle get filled with<a name='321'></font>
+        <font color=#447700>!.. meltwater. This only happens at the end of all melting.<a name='322'></font>
+        volg = vg * (1.0d0 - mra * fm)<a name='323'>
+ <a name='324'>
+       else<a name='325'>
+        <font color=#447700>!..In this case, at some melting degree fm, all the air<a name='326'></font>
+        <font color=#447700>!.. inclusions get filled with meltwater.<a name='327'></font>
+        fmgrenz=(900.0-rhog)/(mra*900.0-rhog+900.0*rhog/1000.)<a name='328'>
+<a name='329'>
+        if (fm .le. fmgrenz) then<a name='330'>
+         <font color=#447700>!.. not all air pockets are filled:<a name='331'></font>
+         volg = (1.0 - mra * fm) * vg<a name='332'>
+        else<a name='333'>
+         <font color=#447700>!..all air pockets are filled with meltwater, now the<a name='334'></font>
+         <font color=#447700>!.. entire ice sceleton melts homogeneously:<a name='335'></font>
+         volg = (x_g - x_w) / 900.0 + x_w / 1000.<a name='336'>
+        endif<a name='337'>
+<a name='338'>
+       endif<a name='339'>
+<a name='340'>
+       D_large  = (6.0 / PIx * volg) ** (1./3.)<a name='341'>
+       volice = (x_g - x_w) / (volg * 900.0)<a name='342'>
+       volwater = x_w / (1000. * volg)<a name='343'>
+       volair = 1.0 - volice - volwater<a name='344'>
+      <a name='345'>
+       <font color=#447700>!..complex index of refraction for the ice-air-water mixture<a name='346'></font>
+       <font color=#447700>!.. of the particle:<a name='347'></font>
+       m_core = get_m_mix_nested (m_air, m_i, m_w, volair, volice,      &amp;<a name='348'>
+                         volwater, mixingrule, host, matrix, inclusion, &amp;<a name='349'>
+                         hostmatrix, hostinclusion, error)<a name='350'>
+       if (error .ne. 0) then<a name='351'>
+        C_back = 0.0d0<a name='352'>
+        return<a name='353'>
+       endif<a name='354'>
+<a name='355'>
+       <font color=#447700>!..Rayleigh-backscattering coefficient of melting particle: <a name='356'></font>
+       C_back = (ABS((m_core**2-1.0d0)/(m_core**2+2.0d0)))**2           &amp;<a name='357'>
+                * PI5 * D_large**6 / lamda4<a name='358'>
+<a name='359'>
+      else<a name='360'>
+       C_back = 0.0d0<a name='361'>
+      endif<a name='362'>
+<a name='363'>
+      end subroutine rayleigh_soak_wetgraupel<a name='364'>
+<a name='365'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='366'></font>
+<a name='367'>
+<A NAME='GET_M_MIX_NESTED'><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX_NESTED' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='368'>
+      complex*16 <font color=#993300>function </font><font color=#cc0000>get_m_mix_nested</font> (m_a, m_i, m_w, volair,      &amp;,<A href='../../call_from/GET_M_MIX_NESTED.html' TARGET='index'>8</A><a name='369'>
+                     volice, volwater, mixingrule, host, matrix,        &amp;<a name='370'>
+                     inclusion, hostmatrix, hostinclusion, cumulerror)<a name='371'>
+<a name='372'>
+      IMPLICIT NONE<a name='373'>
+<a name='374'>
+      DOUBLE PRECISION, INTENT(in):: volice, volair, volwater<a name='375'>
+      COMPLEX*16, INTENT(in):: m_a, m_i, m_w<a name='376'>
+      CHARACTER(len=*), INTENT(in):: mixingrule, host, matrix,          &amp;<a name='377'>
+                     inclusion, hostmatrix, hostinclusion<a name='378'>
+      INTEGER, INTENT(out):: cumulerror<a name='379'>
+<a name='380'>
+      DOUBLE PRECISION:: vol1, vol2<a name='381'>
+      COMPLEX*16:: mtmp<a name='382'>
+      INTEGER:: error<a name='383'>
+<a name='384'>
+      <font color=#447700>!..Folded: ( (m1 + m2) + m3), where m1,m2,m3 could each be<a name='385'></font>
+      <font color=#447700>!.. air, ice, or water<a name='386'></font>
+<a name='387'>
+      cumulerror = 0<a name='388'>
+      get_m_mix_nested = CMPLX(1.0d0,0.0d0)<a name='389'>
+<a name='390'>
+      if (host .eq. 'air') then<a name='391'>
+<a name='392'>
+       if (matrix .eq. 'air') then<a name='393'>
+        write(radar_debug,*) 'GET_M_MIX_NESTED: bad matrix: ', matrix<a name='394'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX_NESTED' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_646">(150, radar_debug)<a name='395'>
+        cumulerror = cumulerror + 1<a name='396'>
+       else<a name='397'>
+        vol1 = volice / MAX(volice+volwater,1d-10)<a name='398'>
+        vol2 = 1.0d0 - vol1<a name='399'>
+        mtmp = get_m_mix (m_a, m_i, m_w, 0.0d0, vol1, vol2,             &amp;<a name='400'>
+                         mixingrule, matrix, inclusion, error)<a name='401'>
+        cumulerror = cumulerror + error<a name='402'>
+          <a name='403'>
+        if (hostmatrix .eq. 'air') then<a name='404'>
+         get_m_mix_nested = get_m_mix (m_a, mtmp, 2.0*m_a,              &amp;<a name='405'>
+                         volair, (1.0d0-volair), 0.0d0, mixingrule,     &amp;<a name='406'>
+                         hostmatrix, hostinclusion, error)<a name='407'>
+         cumulerror = cumulerror + error<a name='408'>
+        elseif (hostmatrix .eq. 'icewater') then<a name='409'>
+         get_m_mix_nested = get_m_mix (m_a, mtmp, 2.0*m_a,              &amp;<a name='410'>
+                         volair, (1.0d0-volair), 0.0d0, mixingrule,     &amp;<a name='411'>
+                         'ice', hostinclusion, error)<a name='412'>
+         cumulerror = cumulerror + error<a name='413'>
+        else<a name='414'>
+         write(radar_debug,*) 'GET_M_MIX_NESTED: bad hostmatrix: ',        &amp;<a name='415'>
+                           hostmatrix<a name='416'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX_NESTED' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_647">(150, radar_debug)<a name='417'>
+         cumulerror = cumulerror + 1<a name='418'>
+        endif<a name='419'>
+       endif<a name='420'>
+<a name='421'>
+      elseif (host .eq. 'ice') then<a name='422'>
+<a name='423'>
+       if (matrix .eq. 'ice') then<a name='424'>
+        write(radar_debug,*) 'GET_M_MIX_NESTED: bad matrix: ', matrix<a name='425'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX_NESTED' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_648">(150, radar_debug)<a name='426'>
+        cumulerror = cumulerror + 1<a name='427'>
+       else<a name='428'>
+        vol1 = volair / MAX(volair+volwater,1d-10)<a name='429'>
+        vol2 = 1.0d0 - vol1<a name='430'>
+        mtmp = get_m_mix (m_a, m_i, m_w, vol1, 0.0d0, vol2,             &amp;<a name='431'>
+                         mixingrule, matrix, inclusion, error)<a name='432'>
+        cumulerror = cumulerror + error<a name='433'>
+<a name='434'>
+        if (hostmatrix .eq. 'ice') then<a name='435'>
+         get_m_mix_nested = get_m_mix (mtmp, m_i, 2.0*m_a,              &amp;<a name='436'>
+                         (1.0d0-volice), volice, 0.0d0, mixingrule,     &amp;<a name='437'>
+                         hostmatrix, hostinclusion, error)<a name='438'>
+         cumulerror = cumulerror + error<a name='439'>
+        elseif (hostmatrix .eq. 'airwater') then<a name='440'>
+         get_m_mix_nested = get_m_mix (mtmp, m_i, 2.0*m_a,              &amp;<a name='441'>
+                         (1.0d0-volice), volice, 0.0d0, mixingrule,     &amp;<a name='442'>
+                         'air', hostinclusion, error)<a name='443'>
+         cumulerror = cumulerror + error          <a name='444'>
+        else<a name='445'>
+         write(radar_debug,*) 'GET_M_MIX_NESTED: bad hostmatrix: ',        &amp;<a name='446'>
+                           hostmatrix<a name='447'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX_NESTED' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_649">(150, radar_debug)<a name='448'>
+         cumulerror = cumulerror + 1<a name='449'>
+        endif<a name='450'>
+       endif<a name='451'>
+<a name='452'>
+      elseif (host .eq. 'water') then<a name='453'>
+<a name='454'>
+       if (matrix .eq. 'water') then<a name='455'>
+        write(radar_debug,*) 'GET_M_MIX_NESTED: bad matrix: ', matrix<a name='456'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX_NESTED' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_650">(150, radar_debug)<a name='457'>
+        cumulerror = cumulerror + 1<a name='458'>
+       else<a name='459'>
+        vol1 = volair / MAX(volice+volair,1d-10)<a name='460'>
+        vol2 = 1.0d0 - vol1<a name='461'>
+        mtmp = get_m_mix (m_a, m_i, m_w, vol1, vol2, 0.0d0,             &amp;<a name='462'>
+                         mixingrule, matrix, inclusion, error)<a name='463'>
+        cumulerror = cumulerror + error<a name='464'>
+<a name='465'>
+        if (hostmatrix .eq. 'water') then<a name='466'>
+         get_m_mix_nested = get_m_mix (2*m_a, mtmp, m_w,                &amp;<a name='467'>
+                         0.0d0, (1.0d0-volwater), volwater, mixingrule, &amp;<a name='468'>
+                         hostmatrix, hostinclusion, error)<a name='469'>
+         cumulerror = cumulerror + error<a name='470'>
+        elseif (hostmatrix .eq. 'airice') then<a name='471'>
+         get_m_mix_nested = get_m_mix (2*m_a, mtmp, m_w,                &amp;<a name='472'>
+                         0.0d0, (1.0d0-volwater), volwater, mixingrule, &amp;<a name='473'>
+                         'ice', hostinclusion, error)<a name='474'>
+         cumulerror = cumulerror + error          <a name='475'>
+        else<a name='476'>
+         write(radar_debug,*) 'GET_M_MIX_NESTED: bad hostmatrix: ',         &amp;<a name='477'>
+                           hostmatrix<a name='478'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX_NESTED' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_651">(150, radar_debug)<a name='479'>
+         cumulerror = cumulerror + 1<a name='480'>
+        endif<a name='481'>
+       endif<a name='482'>
+<a name='483'>
+      elseif (host .eq. 'none') then<a name='484'>
+<a name='485'>
+       get_m_mix_nested = get_m_mix (m_a, m_i, m_w,                     &amp;<a name='486'>
+                       volair, volice, volwater, mixingrule,            &amp;<a name='487'>
+                       matrix, inclusion, error)<a name='488'>
+       cumulerror = cumulerror + error<a name='489'>
+        <a name='490'>
+      else<a name='491'>
+       write(radar_debug,*) 'GET_M_MIX_NESTED: unknown matrix: ', host<a name='492'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX_NESTED' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_652">(150, radar_debug)<a name='493'>
+       cumulerror = cumulerror + 1<a name='494'>
+      endif<a name='495'>
+<a name='496'>
+      IF (cumulerror .ne. 0) THEN<a name='497'>
+       write(radar_debug,*) 'GET_M_MIX_NESTED: error encountered'<a name='498'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX_NESTED' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_653">(150, radar_debug)<a name='499'>
+       get_m_mix_nested = CMPLX(1.0d0,0.0d0)    <a name='500'>
+      endif<a name='501'>
+<a name='502'>
+      end function get_m_mix_nested<a name='503'>
+<a name='504'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='505'></font>
+<a name='506'>
+<A NAME='GET_M_MIX'><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='507'>
+      COMPLEX*16 <font color=#993300>FUNCTION </font><font color=#cc0000>get_m_mix</font> (m_a, m_i, m_w, volair, volice,     &amp;,<A href='../../call_from/GET_M_MIX.html' TARGET='index'>6</A><a name='508'>
+                     volwater, mixingrule, matrix, inclusion, error)<a name='509'>
+<a name='510'>
+      IMPLICIT NONE<a name='511'>
+<a name='512'>
+      DOUBLE PRECISION, INTENT(in):: volice, volair, volwater<a name='513'>
+      COMPLEX*16, INTENT(in):: m_a, m_i, m_w<a name='514'>
+      CHARACTER(len=*), INTENT(in):: mixingrule, matrix, inclusion<a name='515'>
+      INTEGER, INTENT(out):: error<a name='516'>
+<a name='517'>
+      error = 0<a name='518'>
+      get_m_mix = CMPLX(1.0d0,0.0d0)<a name='519'>
+<a name='520'>
+      if (mixingrule .eq. 'maxwellgarnett') then<a name='521'>
+       if (matrix .eq. 'ice') then<a name='522'>
+        get_m_mix = <A href='../../html_code/phys/module_mp_radar.F.html#M_COMPLEX_MAXWELLGARNETT'>m_complex_maxwellgarnett</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="M_COMPLEX_MAXWELLGARNETT_1">(volice, volair, volwater,  &amp;<a name='523'>
+                           m_i, m_a, m_w, inclusion, error)<a name='524'>
+       elseif (matrix .eq. 'water') then<a name='525'>
+        get_m_mix = <A href='../../html_code/phys/module_mp_radar.F.html#M_COMPLEX_MAXWELLGARNETT'>m_complex_maxwellgarnett</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="M_COMPLEX_MAXWELLGARNETT_2">(volwater, volair, volice,  &amp;<a name='526'>
+                           m_w, m_a, m_i, inclusion, error)<a name='527'>
+       elseif (matrix .eq. 'air') then<a name='528'>
+        get_m_mix = <A href='../../html_code/phys/module_mp_radar.F.html#M_COMPLEX_MAXWELLGARNETT'>m_complex_maxwellgarnett</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="M_COMPLEX_MAXWELLGARNETT_3">(volair, volwater, volice,  &amp;<a name='529'>
+                           m_a, m_w, m_i, inclusion, error)<a name='530'>
+       else<a name='531'>
+        write(radar_debug,*) 'GET_M_MIX: unknown matrix: ', matrix<a name='532'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_654">(150, radar_debug)<a name='533'>
+        error = 1<a name='534'>
+       endif<a name='535'>
+<a name='536'>
+      else<a name='537'>
+       write(radar_debug,*) 'GET_M_MIX: unknown mixingrule: ', mixingrule<a name='538'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_655">(150, radar_debug)<a name='539'>
+       error = 2<a name='540'>
+      endif<a name='541'>
+<a name='542'>
+      if (error .ne. 0) then<a name='543'>
+       write(radar_debug,*) 'GET_M_MIX: error encountered'<a name='544'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#GET_M_MIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_656">(150, radar_debug)<a name='545'>
+      endif<a name='546'>
+<a name='547'>
+      END FUNCTION get_m_mix<a name='548'>
+<a name='549'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='550'></font>
+<a name='551'>
+<A NAME='M_COMPLEX_MAXWELLGARNETT'><A href='../../html_code/phys/module_mp_radar.F.html#M_COMPLEX_MAXWELLGARNETT' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='552'>
+      COMPLEX*16 <font color=#993300>FUNCTION </font><font color=#cc0000>m_complex_maxwellgarnett</font>(vol1, vol2, vol3,    &amp; <A href='../../call_to/M_COMPLEX_MAXWELLGARNETT.html' TARGET='index'>3</A>,<A href='../../call_from/M_COMPLEX_MAXWELLGARNETT.html' TARGET='index'>2</A><a name='553'>
+                     m1, m2, m3, inclusion, error)<a name='554'>
+<a name='555'>
+      IMPLICIT NONE<a name='556'>
+<a name='557'>
+      COMPLEX*16 :: m1, m2, m3<a name='558'>
+      DOUBLE PRECISION :: vol1, vol2, vol3<a name='559'>
+      CHARACTER(len=*) :: inclusion<a name='560'>
+<a name='561'>
+      COMPLEX*16 :: beta2, beta3, m1t, m2t, m3t<a name='562'>
+      INTEGER, INTENT(out) :: error<a name='563'>
+<a name='564'>
+      error = 0<a name='565'>
+<a name='566'>
+      if (DABS(vol1+vol2+vol3-1.0d0) .gt. 1d-6) then<a name='567'>
+       write(radar_debug,*) 'M_COMPLEX_MAXWELLGARNETT: sum of the ',       &amp;<a name='568'>
+              'partial volume fractions is not 1...ERROR'<a name='569'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#M_COMPLEX_MAXWELLGARNETT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_657">(150, radar_debug)<a name='570'>
+       m_complex_maxwellgarnett=CMPLX(-999.99d0,-999.99d0)<a name='571'>
+       error = 1<a name='572'>
+       return<a name='573'>
+      endif<a name='574'>
+<a name='575'>
+      m1t = m1**2<a name='576'>
+      m2t = m2**2<a name='577'>
+      m3t = m3**2<a name='578'>
+<a name='579'>
+      if (inclusion .eq. 'spherical') then<a name='580'>
+       beta2 = 3.0d0*m1t/(m2t+2.0d0*m1t)<a name='581'>
+       beta3 = 3.0d0*m1t/(m3t+2.0d0*m1t)<a name='582'>
+      elseif (inclusion .eq. 'spheroidal') then<a name='583'>
+       beta2 = 2.0d0*m1t/(m2t-m1t) * (m2t/(m2t-m1t)*LOG(m2t/m1t)-1.0d0)<a name='584'>
+       beta3 = 2.0d0*m1t/(m3t-m1t) * (m3t/(m3t-m1t)*LOG(m3t/m1t)-1.0d0)<a name='585'>
+      else<a name='586'>
+       write(radar_debug,*) 'M_COMPLEX_MAXWELLGARNETT: ',                  &amp;<a name='587'>
+                         'unknown inclusion: ', inclusion<a name='588'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_mp_radar.F.html#M_COMPLEX_MAXWELLGARNETT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_658">(150, radar_debug)<a name='589'>
+       m_complex_maxwellgarnett=DCMPLX(-999.99d0,-999.99d0)<a name='590'>
+       error = 1<a name='591'>
+       return<a name='592'>
+      endif<a name='593'>
+<a name='594'>
+      m_complex_maxwellgarnett = &amp;<a name='595'>
+       SQRT(((1.0d0-vol2-vol3)*m1t + vol2*beta2*m2t + vol3*beta3*m3t) / &amp;<a name='596'>
+       (1.0d0-vol2-vol3+vol2*beta2+vol3*beta3))<a name='597'>
+<a name='598'>
+      END FUNCTION m_complex_maxwellgarnett<a name='599'>
+<a name='600'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='601'></font>
+<A NAME='GAMMLN'><A href='../../html_code/phys/module_mp_radar.F.html#GAMMLN' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='602'>
+      REAL <font color=#993300>FUNCTION </font><font color=#cc0000>GAMMLN</font>(XX) <A href='../../call_to/GAMMLN.html' TARGET='index'>4</A><a name='603'>
+<font color=#447700>!     --- RETURNS THE VALUE LN(GAMMA(XX)) FOR XX &gt; 0.<a name='604'></font>
+      IMPLICIT NONE<a name='605'>
+      REAL, INTENT(IN):: XX<a name='606'>
+      DOUBLE PRECISION, PARAMETER:: STP = 2.5066282746310005D0<a name='607'>
+      DOUBLE PRECISION, DIMENSION(6), PARAMETER:: &amp;<a name='608'>
+               COF = (/76.18009172947146D0, -86.50532032941677D0, &amp;<a name='609'>
+                       24.01409824083091D0, -1.231739572450155D0, &amp;<a name='610'>
+                      .1208650973866179D-2, -.5395239384953D-5/)<a name='611'>
+      DOUBLE PRECISION:: SER,TMP,X,Y<a name='612'>
+      INTEGER:: J<a name='613'>
+<a name='614'>
+      X=XX<a name='615'>
+      Y=X<a name='616'>
+      TMP=X+5.5D0<a name='617'>
+      TMP=(X+0.5D0)*LOG(TMP)-TMP<a name='618'>
+      SER=1.000000000190015D0<a name='619'>
+      DO 11 J=1,6<a name='620'>
+        Y=Y+1.D0<a name='621'>
+        SER=SER+COF(J)/Y<a name='622'>
+11    CONTINUE<a name='623'>
+      GAMMLN=TMP+LOG(STP*SER/X)<a name='624'>
+      END FUNCTION GAMMLN<a name='625'>
+<font color=#447700>!  (C) Copr. 1986-92 Numerical Recipes Software 2.02<a name='626'></font>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='627'></font>
+<A NAME='WGAMMA'><A href='../../html_code/phys/module_mp_radar.F.html#WGAMMA' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='628'>
+      REAL <font color=#993300>FUNCTION </font><font color=#cc0000>WGAMMA</font>(y) <A href='../../call_to/WGAMMA.html' TARGET='index'>20</A><a name='629'>
+<a name='630'>
+      IMPLICIT NONE<a name='631'>
+      REAL, INTENT(IN):: y<a name='632'>
+<a name='633'>
+      WGAMMA = EXP(GAMMLN(y))<a name='634'>
+<a name='635'>
+      END FUNCTION WGAMMA<a name='636'>
+<a name='637'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='638'></font>
+END MODULE module_mp_radar<a name='639'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='640'></font>
+</pre></body></html>

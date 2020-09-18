@@ -1,0 +1,184 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_LTNG_LPI'><A href='../../html_code/phys/module_ltng_lpi.F.html#MODULE_LTNG_LPI' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_ltng_lpi</font> <A href='../../call_to/MODULE_LTNG_LPI.html' TARGET='index'>1</A><a name='3'>
+<font color=#447700>!Yair, Y., B. Lynn, C. Price, V. Kotroni, K. Lagouvardos, E. Morin,<a name='4'></font>
+<font color=#447700>!A. Magnai, and M. del Carmen Llasat (2010), Predicting the potential for<a name='5'></font>
+<font color=#447700>!lightning activity in Mediterranean storms based on the Weather<a name='6'></font>
+<font color=#447700>!Research and Forecasting (WRF) model dynamic and microphysical<a name='7'></font>
+<font color=#447700>!fields, J. Geophys. Res., 115, D04205, doi:10.1029/2008JD010868.<a name='8'></font>
+<font color=#447700>! However, we don't check for collapsing cell (so as not to require use of halo).<a name='9'></font>
+<font color=#447700>! This means that lpi is also calculated in cells that are no longer (on average) growing<a name='10'></font>
+<font color=#447700>! For a "complete" lightning forecast scheme, please see:<a name='11'></font>
+<font color=#447700>!http://journals.ametsoc.org/doi/abs/10.1175/WAF-D-11-00144.1<a name='12'></font>
+<font color=#447700>!(Predicting Cloud-to-Ground and Intracloud Lightning in Weather Forecast Models)<a name='13'></font>
+<a name='14'>
+CONTAINS<a name='15'>
+<font color=#447700>!===================================================================<a name='16'></font>
+<font color=#447700>!<a name='17'></font>
+<A NAME='CALCLPI'><A href='../../html_code/phys/module_ltng_lpi.F.html#CALCLPI' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='18'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>calclpi</font>(qv,qc, qr, qi, qs, qg, qh                            &amp; <A href='../../call_to/CALCLPI.html' TARGET='index'>1</A><a name='19'>
+                 ,w,z,dz8w,pi_phy,th_phy,p_phy,rho_phy                    &amp;<a name='20'>
+                 ,lpi&amp;<a name='21'>
+                 ,ids,ide, jds,jde, kds,kde                        &amp;<a name='22'>
+                 ,ims,ime, jms,jme, kms,kme                        &amp;<a name='23'>
+                 ,its,ite, jts,jte, kts,kte                        &amp;<a name='24'>
+                                                                   )<a name='25'>
+<font color=#447700>!-------------------------------------------------------------------<a name='26'></font>
+  IMPLICIT NONE<a name='27'>
+<font color=#447700>!-------------------------------------------------------------------<a name='28'></font>
+<font color=#447700>!<a name='29'></font>
+<font color=#447700>!<a name='30'></font>
+  INTEGER,      INTENT(IN   )    ::   ids,ide, jds,jde, kds,kde , &amp;<a name='31'>
+                                      ims,ime, jms,jme, kms,kme , &amp;<a name='32'>
+                                      its,ite, jts,jte, kts,kte<a name='33'>
+  REAL, DIMENSION( ims:ime , kms:kme , jms:jme ),                 &amp;<a name='34'>
+        INTENT(IN) ::                                          &amp;<a name='35'>
+                                                              qv, &amp;<a name='36'>
+                                                              qc, &amp;<a name='37'>
+                                                              qi, &amp;<a name='38'>
+                                                              qr, &amp;<a name='39'>
+                                                              qs, &amp;<a name='40'>
+                                                              qg,qh<a name='41'>
+<a name='42'>
+      REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                  &amp;<a name='43'>
+         INTENT(IN ) ::  w, z<a name='44'>
+      REAL, INTENT(IN),     DIMENSION(ims:ime, kms:kme, jms:jme)::      &amp;<a name='45'>
+     &amp;                      dz8w,pi_phy,p_phy,rho_phy<a name='46'>
+      REAL, INTENT(IN),  DIMENSION(ims:ime, kms:kme, jms:jme)::      &amp;<a name='47'>
+     &amp;                      th_phy<a name='48'>
+      REAL, INTENT(INOUT),  DIMENSION(ims:ime,jms:jme)::      &amp;<a name='49'>
+     &amp;                      LPI<a name='50'>
+<a name='51'>
+<a name='52'>
+<a name='53'>
+<a name='54'>
+      REAL, DIMENSION(kms:kme)::    tempk,rh<a name='55'>
+      REAL, DIMENSION(kms:kme):: qv1d,p1d,rho1d,qti1d<a name='56'>
+      REAL, DIMENSION(kms:kme):: temp,qc1d,ql1d,qi1d,qs1d,qg1d,lpi1d<a name='57'>
+      REAL, DIMENSION(0:kme):: w1d,height<a name='58'>
+      REAL, DIMENSION(kms:kme):: e1d,height_t,w1d_t<a name='59'>
+      REAL z_full,qrs,teten,RELHUM,LOC,Td_850,Td_700,PC_DWPT<a name='60'>
+      INTEGER level<a name='61'>
+      REAL :: dt_lpi,t_base,t_top<a name='62'>
+      INTEGER I_COLLAPSE<a name='63'>
+      LOGICAL LOOK_T<a name='64'>
+      INTEGER I_START,I_END,J_START,J_END<a name='65'>
+<a name='66'>
+<a name='67'>
+  INTEGER ::               i,j,k<a name='68'>
+<font color=#447700>!-------------------------------------------------------------------<a name='69'></font>
+      DO j = jts,jte<a name='70'>
+      DO i = its,ite<a name='71'>
+        z_full=0.<a name='72'>
+        height(0)=z_full<a name='73'>
+        w1d(0)=w(i,1,j)<a name='74'>
+      DO k = kts,kte-1<a name='75'>
+          if (k.lt.kte-1)then<a name='76'>
+           w1d(k)=w(i,k+1,j)<a name='77'>
+          else<a name='78'>
+           w1d(k)=0.<a name='79'>
+          end if<a name='80'>
+          temp(k) = th_phy(i,k,j)*pi_phy(i,k,j)-273.16<a name='81'>
+          tempk(k) = th_phy(i,k,j)*pi_phy(i,k,j)<a name='82'>
+          qv1d(k)=qv(i,k,j)<a name='83'>
+          p1d(k)=p_phy(i,k,j)<a name='84'>
+          rho1d(k)=rho_phy(i,k,j)<a name='85'>
+          z_full=z_full+dz8w(i,k,j)<a name='86'>
+          height(k)=z_full<a name='87'>
+          qc1d(k)=qc(i,k,j)<a name='88'>
+          ql1d(k)=qc(i,k,j)+qr(i,k,j)<a name='89'>
+          qi1d(k)=qi(i,k,j)<a name='90'>
+          qti1d(k)=qi(i,k,j)+qs(i,k,j)+qg(i,k,j)+qh(i,k,j)<a name='91'>
+          qs1d(k)=qs(i,k,j)<a name='92'>
+<font color=#447700>!         qg1d(k)=qg(i,k,j)+qh(i,k,j)<a name='93'></font>
+<font color=#447700>! Hail doesn't usually charge<a name='94'></font>
+          qg1d(k)=qg(i,k,j)<a name='95'>
+<font color=#447700>! For conservative advection multiply by rho1d and divide by it below<a name='96'></font>
+      ENDDO<a name='97'>
+      do k = kts,kte-1<a name='98'>
+       height_t(k)=0.5*(height(k-1)+height(k))<a name='99'>
+       w1d_t(k)=0.5*(w1d(k-1)+w1d(k))<a name='100'>
+      end do<a name='101'>
+      t_base=-0<a name='102'>
+      t_top=-20<a name='103'>
+      call calc_lpi(ql1d,qi1d,qs1d,qg1d,w1d,temp,height,lpi(i,j),t_base,t_top,kme,kte)<a name='104'>
+      END DO<a name='105'>
+      END DO<a name='106'>
+      return<a name='107'>
+      end subroutine calclpi<a name='108'>
+      subroutine &amp;<a name='109'>
+     &amp;  calc_lpi(ql3d,qi3d,qs3d,qg3d,w3d,t3d,height,lpi,t_base,t_top,nk,nke)<a name='110'>
+      implicit none<a name='111'>
+      integer nk,nke<a name='112'>
+      real t_base,t_top<a name='113'>
+      real ql3d(nk)<a name='114'>
+      real qg3d(nk)<a name='115'>
+      real qi3d(nk)<a name='116'>
+      real qs3d(nk)<a name='117'>
+      real w3d(0:nk)<a name='118'>
+      real t3d(nk)<a name='119'>
+      real height(0:nk)<a name='120'>
+      real lpi<a name='121'>
+      real del_z(nk)<a name='122'>
+      real w_ave(nk)<a name='123'>
+      integer ic,jc,icnt,i,j,k,i_collapse<a name='124'>
+      real i_dist,j_dist,del_z_tot<a name='125'>
+      real top, bot<a name='126'>
+      real num,den,ave_z<a name='127'>
+      real num_s,den_s<a name='128'>
+      real num_i,den_i<a name='129'>
+      real q_isg<a name='130'>
+      icnt=0<a name='131'>
+      do k=1,nke<a name='132'>
+        top=height(k)<a name='133'>
+        bot=height(k-1)<a name='134'>
+        del_z(k)=top-bot<a name='135'>
+        w_ave(k)=0.5*(w3d(k)+w3d(k-1))<a name='136'>
+      end do<a name='137'>
+<font color=#447700>!<a name='138'></font>
+<font color=#447700>!     Check for collapsing cell<a name='139'></font>
+<font color=#447700>! Here, we don't check, since it requires a halo.<a name='140'></font>
+      ave_z=0<a name='141'>
+      del_z_tot=0<a name='142'>
+      lpi=0<a name='143'>
+      do k=1,nke-1<a name='144'>
+       if (t3d(k).le.t_base.and.t3d(k).gt.t_top)then <font color=#447700>! set temp range<a name='145'></font>
+        <a name='146'>
+        den_i = qi3d(k)+qg3d(k)     <a name='147'>
+        den_s = qs3d(k)+qg3d(k)<a name='148'>
+        if (qs3d(k).eq.0.or.qg3d(k).eq.0.)then <font color=#447700>!checks for zeroes<a name='149'></font>
+         den_s=10000.<a name='150'>
+         num_s = 0.<a name='151'>
+        else<a name='152'>
+         num_s = sqrt(qs3d(k)*qg3d(k))   <a name='153'>
+        end if<a name='154'>
+        if (qi3d(k).eq.0.or.qg3d(k).eq.0.)then  <font color=#447700>! checks for zeroes<a name='155'></font>
+         den_i=10000.<a name='156'>
+         num_i = 0.<a name='157'>
+        else<a name='158'>
+         num_i = sqrt(qi3d(k)*qg3d(k))<a name='159'>
+        end if<a name='160'>
+        q_isg = qg3d(k)*(num_i/den_i+num_s/den_s)  <font color=#447700>! ice "fract"-content<a name='161'></font>
+<a name='162'>
+        if (ql3d(k).eq.0.or.q_isg.eq.0)then<a name='163'>
+          num=0<a name='164'>
+          den=10000.<a name='165'>
+        else<a name='166'>
+         num = sqrt(ql3d(k)*q_isg)<a name='167'>
+         den = ql3d(k)+q_isg<a name='168'>
+        end if<a name='169'>
+        del_z_tot=del_z_tot+del_z(k)<a name='170'>
+        if (num.gt.0)then<a name='171'>
+         ave_z=ave_z+del_z(k)*(2.*num/den)*w_ave(k)**2 <font color=#447700>! lightning potential index J/unit-mass<a name='172'></font>
+        end if<a name='173'>
+       end if<a name='174'>
+      end do<a name='175'>
+<font color=#447700>!<a name='176'></font>
+      if (del_z_tot.eq.0)del_z_tot=100000<a name='177'>
+      lpi=ave_z/del_z_tot<a name='178'>
+       <a name='179'>
+<font color=#447700>!<a name='180'></font>
+      return<a name='181'>
+      end subroutine calc_lpi<a name='182'>
+  END MODULE module_ltng_lpi<a name='183'>
+</pre></body></html>

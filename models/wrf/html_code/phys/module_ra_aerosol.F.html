@@ -1,0 +1,1471 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>! Aerosol optical properties from AOD at 550 nm, aerosol type and relative humidity<a name='2'></font>
+<font color=#447700>! Author: Jose A. Ruiz-Arias<a name='3'></font>
+<font color=#447700>! Init date: 11/2012<a name='4'></font>
+<font color=#447700>!<a name='5'></font>
+<font color=#447700>! Changes:<a name='6'></font>
+<font color=#447700>!    12/2012, jararias: re-inception using aer_*_opt and aer_*_val options<a name='7'></font>
+<font color=#447700>! 16/07/2013, jararias: Angstrom exponent limited to values greater than -0.3. Personal<a name='8'></font>
+<font color=#447700>!                       communication con Chris Gueymard<a name='9'></font>
+<font color=#447700>! 16/07/2013, jararias: Added generation of mean values of angexp, ssa and asy between 0.4 um<a name='10'></font>
+<font color=#447700>!                       and 1 um to be promoted to the wrfout when parameterization is used (*_opt=3)<a name='11'></font>
+<font color=#447700>! 12/2013, jararias: integration in the official WRFv3.6<a name='12'></font>
+<a name='13'>
+<A NAME='MODULE_RA_AEROSOL'><A href='../../html_code/phys/module_ra_aerosol.F.html#MODULE_RA_AEROSOL' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='14'>
+<font color=#993300>module </font><font color=#cc0000>module_ra_aerosol</font> <A href='../../call_to/MODULE_RA_AEROSOL.html' TARGET='index'>1</A><a name='15'>
+<a name='16'>
+<font color=#447700>! global variables<a name='17'></font>
+<a name='18'>
+contains<a name='19'>
+<a name='20'>
+<a name='21'>
+<font color=#447700>!--------------------------------------------------------------<a name='22'></font>
+<font color=#447700>!       INDICES CONVENTION<a name='23'></font>
+<font color=#447700>!--------------------------------------------------------------       <a name='24'></font>
+<font color=#447700>!       kms:kme define the range for full-level indices<a name='25'></font>
+<font color=#447700>!       kts:kte define the range for half-level indices<a name='26'></font>
+<font color=#447700>!       <a name='27'></font>
+<font color=#447700>!       kms=1 is the first full level at surface<a name='28'></font>
+<font color=#447700>!       kts=1 is the first half level at surface<a name='29'></font>
+<font color=#447700>!       <a name='30'></font>
+<font color=#447700>!       kme is the last full level at toa<a name='31'></font>
+<font color=#447700>!       kte is the last half level at toa<a name='32'></font>
+<font color=#447700>!       <a name='33'></font>
+<font color=#447700>!       There is one more full level than half levels.<a name='34'></font>
+<font color=#447700>!       Therefore, kme=kte+1. I checked it in one of my<a name='35'></font>
+<font color=#447700>!       simulations:<a name='36'></font>
+<font color=#447700>!       <a name='37'></font>
+<font color=#447700>!         namelist.input:<a name='38'></font>
+<font color=#447700>!              s_vert=1  e_vert=28        <a name='39'></font>
+<font color=#447700>!         code:<a name='40'></font>
+<font color=#447700>!              kms= 1    kts= 1<a name='41'></font>
+<font color=#447700>!              kms=28    kte=27<a name='42'></font>
+<font color=#447700>!       <a name='43'></font>
+<font color=#447700>!       In the vertical dimension there is no tiling for<a name='44'></font>
+<font color=#447700>!       parallelization as in the horizontal dimensions.<a name='45'></font>
+<font color=#447700>!       For i-dim and j-dim, the t-indices define the<a name='46'></font>
+<font color=#447700>!       range of indices over which each tile runs.<a name='47'></font>
+<font color=#447700>!--------------------------------------------------------------<a name='48'></font>
+<font color=#447700>!<a name='49'></font>
+<font color=#447700>!  namelist options:<a name='50'></font>
+<font color=#447700>!    aer_aod550_opt = [1,2] : <a name='51'></font>
+<font color=#447700>!        1 = input constant value for AOD at 550 nm from namelist. <a name='52'></font>
+<font color=#447700>!            In this case, the value is read from aer_aod550_val; <a name='53'></font>
+<font color=#447700>!        2 = input value from auxiliary input 15. It is a time-varying 2D grid in netcdf wrf-compatible <a name='54'></font>
+<font color=#447700>!            format. The default operation is aer_aod550_opt=1 and aer_aod550_val=0.12<a name='55'></font>
+<font color=#447700>!    aer_angexp_opt = [1,2,3] : <a name='56'></font>
+<font color=#447700>!        1 = input constant value for Angstrom exponent from namelist. In this case, the value is read <a name='57'></font>
+<font color=#447700>!            from aer_angexp_val; <a name='58'></font>
+<font color=#447700>!        2 = input value from auxiliary input 15, as in aer_aod550_opt; <a name='59'></font>
+<font color=#447700>!        3 = Angstrom exponent value estimated from the aerosol type defined in aer_type, and modulated <a name='60'></font>
+<font color=#447700>!            with the RH in WRF. Default operation is aer_angexp_opt = 1, and aer_angexp_val=1.3.<a name='61'></font>
+<font color=#447700>!    aer_ssa_opt and aer_asy_opt are similar to aer_angexp_opt.<a name='62'></font>
+<font color=#447700>!<a name='63'></font>
+<font color=#447700>!    aer_type = [1,2,3] : 1 for rural, 2 is urban and 3 is maritime.<a name='64'></font>
+<font color=#447700>!--------------------------------------------------------------<a name='65'></font>
+<a name='66'>
+<A NAME='CALC_AEROSOL_GODDARD_SW'><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='67'>
+<font color=#993300>subroutine </font><font color=#cc0000>calc_aerosol_goddard_sw</font>(ht,dz8w,p,t3d,qv3d,aer_type,                               &amp; <A href='../../call_to/CALC_AEROSOL_GODDARD_SW.html' TARGET='index'>1</A>,<A href='../../call_from/CALC_AEROSOL_GODDARD_SW.html' TARGET='index'>33</A><a name='68'>
+                                   aer_aod550_opt, aer_angexp_opt, aer_ssa_opt, aer_asy_opt,  &amp;<a name='69'>
+                                   aer_aod550_val, aer_angexp_val, aer_ssa_val, aer_asy_val,  &amp;<a name='70'>
+                                   aod5502d, angexp2d, aerssa2d, aerasy2d,                    &amp;<a name='71'>
+                                   ims,ime,jms,jme,kms,kme,its,ite,jts,jte,kts,kte,           &amp;<a name='72'>
+                                   tauaer, ssaaer, asyaer                                     )<a name='73'>
+<a name='74'>
+    USE <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_69"> , ONLY : wrf_err_message<a name='75'>
+    <a name='76'>
+    implicit none<a name='77'>
+<a name='78'>
+    <font color=#447700>! constants<a name='79'></font>
+    integer, parameter :: N_BANDS=11<a name='80'>
+<a name='81'>
+    <font color=#447700>! mid-band wavelength / 550. nm<a name='82'></font>
+    real :: lower_wvl(N_BANDS),upper_wvl(N_BANDS)<a name='83'>
+    integer :: kk<a name='84'>
+    data (lower_wvl(kk),kk=1,N_BANDS) /0.175,0.225,0.245,0.280,0.295,0.310,0.325,0.400,0.700,1.220,2.270/<a name='85'>
+    data (upper_wvl(kk),kk=1,N_BANDS) /0.225,0.245,0.280,0.295,0.310,0.325,0.400,0.700,1.220,2.270,10.00/<a name='86'>
+<a name='87'>
+    <font color=#447700>! I/O variables<a name='88'></font>
+    integer, intent(in) :: ims,ime,jms,jme,kms,kme, &amp;<a name='89'>
+                           its,ite,jts,jte,kts,kte<a name='90'>
+    real, dimension(ims:ime, kms:kme, jms:jme), intent(in) :: p,     &amp; <font color=#447700>! pressure (Pa)<a name='91'></font>
+                                                              t3d,   &amp; <font color=#447700>! temperature (K)<a name='92'></font>
+                                                              dz8w,  &amp; <font color=#447700>! dz between full levels (m)<a name='93'></font>
+                                                              qv3d     <font color=#447700>! water vapor mixing ratio (kg/kg)<a name='94'></font>
+    integer, intent(in) :: aer_type<a name='95'>
+    integer, intent(in) :: aer_aod550_opt, aer_angexp_opt, aer_ssa_opt, aer_asy_opt<a name='96'>
+    real, intent(in)    :: aer_aod550_val, aer_angexp_val, aer_ssa_val, aer_asy_val<a name='97'>
+<a name='98'>
+    real, dimension(ims:ime, jms:jme),                     intent(in)    :: ht<a name='99'>
+    real, dimension(ims:ime, jms:jme),           optional, intent(inout) :: aod5502d, angexp2d, aerssa2d, aerasy2d<a name='100'>
+    real, dimension(ims:ime, kms:kme, jms:jme, 1:N_BANDS), intent(inout) :: tauaer, ssaaer, asyaer<a name='101'>
+<a name='102'>
+    <font color=#447700>! local variables<a name='103'></font>
+    integer :: i,j,k,nb<a name='104'>
+    real :: aod_rate,angexp_val,x,xy,xx<a name='105'>
+    real, dimension(ims:ime, jms:jme, 1:N_BANDS) :: aod550spc<a name='106'>
+    real, dimension(ims:ime, kms:kme, jms:jme)   :: rh  <font color=#447700>! relative humidity<a name='107'></font>
+<a name='108'>
+    call <A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_RELATIVE_HUMIDITY'>calc_relative_humidity</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALC_RELATIVE_HUMIDITY_1">(p,t3d,qv3d,                 &amp;<a name='109'>
+                                ims,ime,jms,jme,kms,kme,    &amp;<a name='110'>
+                                its,ite,jts,jte,kts,kte,    &amp;<a name='111'>
+                                rh                          )<a name='112'>
+<a name='113'>
+    aer_aod550_opt_select: select case(aer_aod550_opt)<a name='114'>
+       <font color=#447700>!case(0)<a name='115'></font>
+       <font color=#447700>! reserved for climatology<a name='116'></font>
+       case(1)<a name='117'>
+          if (aer_aod550_val .lt. 0 ) then<a name='118'>
+             write(wrf_err_message,'("aer_aod550_val must be positive. Negative value ",F7.4," found")') aer_aod550_val<a name='119'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_948">(wrf_err_message)<a name='120'>
+          end if<a name='121'>
+          write( wrf_err_message, '("aer_aod550_opt=",I1,": AOD@550 nm fixed to value ",F6.3)') aer_aod550_opt,aer_aod550_val<a name='122'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_727">(100, wrf_err_message )<a name='123'>
+          do j=jts,jte<a name='124'>
+             do i=its,ite<a name='125'>
+                aod5502d(i,j)=aer_aod550_val<a name='126'>
+             end do<a name='127'>
+          end do<a name='128'>
+<a name='129'>
+       case(2) <a name='130'>
+          if (.not.(present(aod5502d))) then<a name='131'>
+             write(wrf_err_message,*) 'Expected gridded total AOD@550 nm, but it is not in the radiation driver'<a name='132'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_949">(wrf_err_message)<a name='133'>
+          end if<a name='134'>
+          if (minval(aod5502d) .lt. 0) then<a name='135'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_950">('AOD@550 must be positive. Negative value(s) found in auxinput')<a name='136'>
+          end if<a name='137'>
+          write( wrf_err_message, '("aer_aod550_opt=",I1,": AOD@550 nm read from auxinput (min=",F6.3," max=",F6.3,")")') &amp;<a name='138'>
+                                  aer_aod550_opt,minval(aod5502d),maxval(aod5502d)<a name='139'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_728">(100, wrf_err_message )<a name='140'>
+<a name='141'>
+       case default<a name='142'>
+          write(wrf_err_message,*) 'Expected aer_aod550_opt=[1,2]. Got',aer_aod550_opt<a name='143'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_951">(wrf_err_message)<a name='144'>
+    end select aer_aod550_opt_select<a name='145'>
+<a name='146'>
+<a name='147'>
+    <font color=#447700>! here, the 3d aod550 is calculated according to the aer_angexp_opt case<a name='148'></font>
+    aer_angexp_opt_select: select case(aer_angexp_opt)<a name='149'>
+       <font color=#447700>!case(0)<a name='150'></font>
+       <font color=#447700>! reserved for climatology<a name='151'></font>
+       case(1)<a name='152'>
+          if (aer_angexp_val .lt. -0.3) then<a name='153'>
+             write(wrf_err_message,'("WARNING: aer_angexp_val limited to -0.3. Illegal value ",F7.4," found")') aer_angexp_val<a name='154'>
+             call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_729">(100,wrf_err_message)<a name='155'>
+          end if<a name='156'>
+          if (aer_angexp_val .gt. 2.5) then<a name='157'>
+             write(wrf_err_message,'("WARNING: aer_angexp_val limited to 2.5. Illegal value ",F7.4," found")') aer_angexp_val<a name='158'>
+             call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_730">(100,wrf_err_message)<a name='159'>
+          end if<a name='160'>
+          write( wrf_err_message , '("aer_angexp_opt=",I1,": Aerosol Angstrom exponent fixed to value ",F6.3)') &amp;<a name='161'>
+                                      aer_angexp_opt,aer_angexp_val<a name='162'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_731">(100, wrf_err_message )<a name='163'>
+          angexp_val=min(2.5,max(-0.3,aer_angexp_val))<a name='164'>
+          do nb=1,N_BANDS<a name='165'>
+             if ((angexp_val .lt. 0.999) .or. (angexp_val .gt. 1.001)) then<a name='166'>
+                aod_rate=((0.55**angexp_val)*(upper_wvl(nb)**(1.-angexp_val)- &amp;<a name='167'>
+                          lower_wvl(nb)**(1.-angexp_val)))/((1.-angexp_val)*(upper_wvl(nb)-lower_wvl(nb)))<a name='168'>
+             else<a name='169'>
+                aod_rate=(0.55/(upper_wvl(nb)-lower_wvl(nb)))*log(upper_wvl(nb)/lower_wvl(nb))<a name='170'>
+             end if<a name='171'>
+             do j=jts,jte<a name='172'>
+                do i=its,ite<a name='173'>
+                   aod550spc(i,j,nb)=aod5502d(i,j)*aod_rate<a name='174'>
+                end do<a name='175'>
+             end do<a name='176'>
+          end do<a name='177'>
+          do j=jts,jte<a name='178'>
+             do i=its,ite<a name='179'>
+                angexp2d(i,j)=angexp_val<a name='180'>
+             end do<a name='181'>
+          end do<a name='182'>
+       case(2)<a name='183'>
+          if (.not.(present(angexp2d))) then<a name='184'>
+             write(wrf_err_message,*) 'Expected gridded aerosol Angstrom exponent, but it is not in the radiation driver'<a name='185'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_952">(wrf_err_message)<a name='186'>
+          end if<a name='187'>
+          write( wrf_err_message, '("aer_angexp_opt=",I1,": Angstrom exponent read from auxinput (min=",F6.3," max=",F6.3,")")') &amp;<a name='188'>
+                                  aer_angexp_opt,minval(angexp2d),maxval(angexp2d)<a name='189'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_732">(100, wrf_err_message )<a name='190'>
+          do j=jts,jte<a name='191'>
+             do i=its,ite<a name='192'>
+                angexp_val=min(2.5,max(-0.3,angexp2d(i,j)))<a name='193'>
+                do nb=1,N_BANDS<a name='194'>
+                   if ((angexp_val .lt. 0.999) .or. (angexp_val .gt. 1.001)) then<a name='195'>
+                      aod_rate=((0.55**angexp_val)*(upper_wvl(nb)**(1.-angexp_val)- &amp;<a name='196'>
+                                lower_wvl(nb)**(1.-angexp_val)))/((1.-angexp_val)*(upper_wvl(nb)-lower_wvl(nb)))<a name='197'>
+                   else<a name='198'>
+                      aod_rate=(0.55/(upper_wvl(nb)-lower_wvl(nb)))*log(upper_wvl(nb)/lower_wvl(nb))<a name='199'>
+                   end if<a name='200'>
+                   aod550spc(i,j,nb)=aod5502d(i,j)*aod_rate<a name='201'>
+                end do<a name='202'>
+             end do<a name='203'>
+          end do<a name='204'>
+<a name='205'>
+       case(3)<a name='206'>
+          <font color=#447700>! spectral disaggregation based on prescribed aerosol type and relative humidity<a name='207'></font>
+          write( wrf_err_message, '("aer_angexp_opt=",I1,": Angstrom exponent calculated from RH and aer_type ",I1)') &amp;<a name='208'>
+                                     aer_angexp_opt,aer_type<a name='209'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_733">(100, wrf_err_message )<a name='210'>
+          call <A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_SPECTRAL_AOD_GODDARD_SW'>calc_spectral_aod_goddard_sw</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALC_SPECTRAL_AOD_GODDARD_SW_1">(ims,ime,jms,jme,kms,kme,  &amp;<a name='211'>
+                                            its,ite,jts,jte,kts,kte,  &amp;<a name='212'>
+                                            rh,aer_type,aod5502d,     &amp;<a name='213'>
+                                            aod550spc                 )<a name='214'>
+          <font color=#447700>! added July, 16th, 2013: angexp2d is in the wrfout when aer_angexp_opt=3. It is the average<a name='215'></font>
+          <font color=#447700>! value in the spectral bands between 0.4 and 1. um<a name='216'></font>
+          do j=jts,jte<a name='217'>
+             do i=its,ite<a name='218'>
+                xy=0<a name='219'>
+                xx=0<a name='220'>
+                do nb=8,9  <font color=#447700>! bands between 0.4 and  1.0 um<a name='221'></font>
+                   <font color=#447700>! the slope of a linear regression with intercept=0 is m=E(xy)/E(x^2), where y=m*x<a name='222'></font>
+                   x=log(0.5*(lower_wvl(nb)+upper_wvl(nb))/0.55)<a name='223'>
+                   xy=xy+x*log(aod550spc(i,j,nb)/aod5502d(i,j))<a name='224'>
+                   xx=xx+x*x<a name='225'>
+                end do<a name='226'>
+                angexp2d(i,j)=-xy/xx<a name='227'>
+             end do<a name='228'>
+          end do<a name='229'>
+<a name='230'>
+       case default<a name='231'>
+          write(wrf_err_message,*) 'Expected aer_angexp_opt=[1,2,3]. Got',aer_angexp_opt<a name='232'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_953">(wrf_err_message)<a name='233'>
+    end select aer_angexp_opt_select<a name='234'>
+<a name='235'>
+    <font color=#447700>! exponental -vertical- profile<a name='236'></font>
+    call <A href='../../html_code/phys/module_ra_aerosol.F.html#AOD_PROFILER'>aod_profiler</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="AOD_PROFILER_1">(ht,dz8w,aod550spc,n_bands,ims,ime,jms,jme,kms,kme, &amp;<a name='237'>
+                      its,ite,jts,jte,kts,kte,tauaer                     )<a name='238'>
+<a name='239'>
+    aer_ssa_opt_select: select case(aer_ssa_opt)<a name='240'>
+       <font color=#447700>!case(0)<a name='241'></font>
+       <font color=#447700>! reserved for climatology<a name='242'></font>
+       case(1)<a name='243'>
+          if ((aer_ssa_val .lt. 0) .or. (aer_ssa_val .gt. 1)) then<a name='244'>
+             write(wrf_err_message,'("aer_ssa_val must be within [0,1]. Illegal value ",F7.4," found")') aer_ssa_val<a name='245'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_954">(wrf_err_message)<a name='246'>
+          end if<a name='247'>
+          write( wrf_err_message , '("aer_ssa_opt=",I1,": single-scattering albedo fixed to value ",F6.3)') &amp;<a name='248'>
+                                      aer_ssa_opt,aer_ssa_val<a name='249'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_734">(100, wrf_err_message )<a name='250'>
+          do j=jts,jte<a name='251'>
+             do i=its,ite<a name='252'>
+                do k=kts,kte<a name='253'>
+                   do nb=1,N_BANDS<a name='254'>
+                      <font color=#447700>! no spectral disaggregation<a name='255'></font>
+                      ssaaer(i,k,j,nb)=aer_ssa_val<a name='256'>
+                   end do<a name='257'>
+                end do<a name='258'>
+             end do<a name='259'>
+          end do<a name='260'>
+<a name='261'>
+       case(2)<a name='262'>
+          if (.not.(present(aerssa2d))) then<a name='263'>
+             write(wrf_err_message,*) &amp;<a name='264'>
+                  'Expected gridded aerosol single-scattering albedo, but it is not in the radiation driver'<a name='265'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_955">(wrf_err_message)<a name='266'>
+          end if<a name='267'>
+          if ((minval(aerssa2d) .lt. 0) .or. (maxval(aerssa2d) .gt. 1)) then<a name='268'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_956">('Aerosol single-scattering albedo must be within [0,1]. ' // &amp;<a name='269'>
+                                  'Out of bounds value(s) found in auxinput')<a name='270'>
+          end if<a name='271'>
+          write( wrf_err_message, &amp;<a name='272'>
+              '("aer_ssa_opt=",I1,": single-scattering albedo read from auxinput (min=",F6.3," max=",F6.3,")")') &amp;<a name='273'>
+                                  aer_ssa_opt,minval(aerssa2d),maxval(aerssa2d)<a name='274'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_735">(100, wrf_err_message )<a name='275'>
+          do j=jts,jte<a name='276'>
+             do i=its,ite<a name='277'>
+                do k=kts,kte<a name='278'>
+                   do nb=1,N_BANDS<a name='279'>
+                      <font color=#447700>! no spectral disaggregation<a name='280'></font>
+                      ssaaer(i,k,j,nb)=aerssa2d(i,j)<a name='281'>
+                   end do<a name='282'>
+                end do<a name='283'>
+             end do<a name='284'>
+          end do<a name='285'>
+<a name='286'>
+       case(3)<a name='287'>
+          <font color=#447700>! spectral disaggregation based on prescribed aerosol type and relative humidity<a name='288'></font>
+          write( wrf_err_message, '("aer_ssa_opt=",I1,": single-scattering albedo calculated from RH and aer_type ",I1)') &amp;<a name='289'>
+                                     aer_ssa_opt,aer_type<a name='290'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_736">(100, wrf_err_message )<a name='291'>
+          call <A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_SPECTRAL_SSA_GODDARD_SW'>calc_spectral_ssa_goddard_sw</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALC_SPECTRAL_SSA_GODDARD_SW_1">(ims,ime,jms,jme,kms,kme,  &amp;<a name='292'>
+                                            its,ite,jts,jte,kts,kte,  &amp;<a name='293'>
+                                            rh,aer_type,ssaaer        )<a name='294'>
+          <font color=#447700>! added July, 16th, 2013: aerssa2d is in the wrfout when aer_ssa_opt=3. It is the average<a name='295'></font>
+          <font color=#447700>! value in the spectral bands between 0.4 and 1. um<a name='296'></font>
+          do j=jts,jte<a name='297'>
+             do i=its,ite<a name='298'>
+                aerssa2d(i,j)=0<a name='299'>
+             end do<a name='300'>
+          end do<a name='301'>
+          do j=jts,jte<a name='302'>
+             do i=its,ite<a name='303'>
+                do nb=8,9  <font color=#447700>! bands between 0.4 and 1.0 um<a name='304'></font>
+                   aerssa2d(i,j)=aerssa2d(i,j)+ssaaer(i,kts,j,nb)<a name='305'>
+                end do<a name='306'>
+                aerssa2d(i,j)=aerssa2d(i,j)/2.<a name='307'>
+             end do<a name='308'>
+          end do<a name='309'>
+<a name='310'>
+       case default<a name='311'>
+          write(wrf_err_message,*) 'Expected aer_ssa_opt=[1,2,3]. Got',aer_ssa_opt<a name='312'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_957">(wrf_err_message)<a name='313'>
+    end select aer_ssa_opt_select<a name='314'>
+<a name='315'>
+    aer_asy_opt_select: select case(aer_asy_opt)<a name='316'>
+       <font color=#447700>!case(0)<a name='317'></font>
+       <font color=#447700>! reserved for climatology<a name='318'></font>
+       case(1)<a name='319'>
+          if ((aer_asy_val .lt. -1) .or. (aer_asy_val .gt. 1)) then<a name='320'>
+             write(wrf_err_message,'("aer_asy_val must be withing [-1,1]. Illegal value ",F7.4," found")') aer_asy_val<a name='321'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_958">(wrf_err_message)<a name='322'>
+          end if<a name='323'>
+          write( wrf_err_message , '("aer_asy_opt=",I1,": asymmetry parameter fixed to value ",F6.3)') aer_asy_opt,aer_asy_val<a name='324'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_737">(100, wrf_err_message )<a name='325'>
+          do j=jts,jte<a name='326'>
+             do i=its,ite<a name='327'>
+                do k=kts,kte<a name='328'>
+                   do nb=1,N_BANDS<a name='329'>
+                      asyaer(i,k,j,nb)=aer_asy_val<a name='330'>
+                   end do<a name='331'>
+                end do<a name='332'>
+             end do<a name='333'>
+          end do<a name='334'>
+<a name='335'>
+       case(2)<a name='336'>
+          if (.not.(present(aerasy2d))) then<a name='337'>
+             write(wrf_err_message,*) 'Expected gridded aerosol asymmetry parameter, but it is not in the radiation driver'<a name='338'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_959">(wrf_err_message)<a name='339'>
+          end if<a name='340'>
+          if ((minval(aerasy2d) .lt. -1) .or. (maxval(aerasy2d) .gt. 1)) then<a name='341'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_960">('Aerosol asymmetry parameter must be within [-1,1]. Out of bounds value(s) found in auxinput')<a name='342'>
+          end if<a name='343'>
+          write( wrf_err_message, '("aer_asy_opt=",I1,": asymmetry parameter read from auxinput (min=",F6.3," max=",F6.3,")")') &amp;<a name='344'>
+                                  aer_asy_opt,minval(aerasy2d),maxval(aerasy2d)<a name='345'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_738">(100, wrf_err_message )<a name='346'>
+          do j=jts,jte<a name='347'>
+             do i=its,ite<a name='348'>
+                do k=kts,kte<a name='349'>
+                   do nb=1,N_BANDS<a name='350'>
+                      asyaer(i,k,j,nb)=aerasy2d(i,j)<a name='351'>
+                   end do<a name='352'>
+                end do<a name='353'>
+             end do<a name='354'>
+          end do<a name='355'>
+<a name='356'>
+       case(3)<a name='357'>
+          <font color=#447700>! spectral disaggregation based on a prescribed aerosol type and relative humidity<a name='358'></font>
+          write( wrf_err_message, '("aer_asy_opt=",I1,": asymmetry parameter calculated from RH and aer_type ",I1)') &amp;<a name='359'>
+                                     aer_asy_opt,aer_type<a name='360'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_739">(100, wrf_err_message )<a name='361'>
+          call <A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_SPECTRAL_ASY_GODDARD_SW'>calc_spectral_asy_goddard_sw</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALC_SPECTRAL_ASY_GODDARD_SW_1">(ims,ime,jms,jme,kms,kme,  &amp;<a name='362'>
+                                            its,ite,jts,jte,kts,kte,  &amp;<a name='363'>
+                                            rh,aer_type,asyaer        )<a name='364'>
+          <font color=#447700>! added July, 16th, 2013: aerasy2d is in the wrfout when aer_asy_opt=3. It is the average<a name='365'></font>
+          <font color=#447700>! value in the spectral bands between 0.4 and 1. um<a name='366'></font>
+          do j=jts,jte<a name='367'>
+             do i=its,ite<a name='368'>
+                aerasy2d(i,j)=0<a name='369'>
+             end do<a name='370'>
+          end do<a name='371'>
+          do j=jts,jte<a name='372'>
+             do i=its,ite<a name='373'>
+                do nb=8,9  <font color=#447700>! bands between 0.4 and 1.0 um<a name='374'></font>
+                   aerasy2d(i,j)=aerasy2d(i,j)+asyaer(i,kts,j,nb)<a name='375'>
+                end do<a name='376'>
+                aerasy2d(i,j)=aerasy2d(i,j)/2.<a name='377'>
+             end do<a name='378'>
+          end do<a name='379'>
+<a name='380'>
+       case default<a name='381'>
+          write(wrf_err_message,*) 'Expected aer_asy_opt=[1,2,3]. Got',aer_asy_opt<a name='382'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_GODDARD_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_961">(wrf_err_message)<a name='383'>
+    end select aer_asy_opt_select<a name='384'>
+end subroutine calc_aerosol_goddard_sw<a name='385'>
+<a name='386'>
+<a name='387'>
+<A NAME='CALC_AEROSOL_RRTMG_SW'><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='388'>
+<font color=#993300>subroutine </font><font color=#cc0000>calc_aerosol_rrtmg_sw</font>(ht,dz8w,p,t3d,qv3d,aer_type,                               &amp; <A href='../../call_to/CALC_AEROSOL_RRTMG_SW.html' TARGET='index'>2</A>,<A href='../../call_from/CALC_AEROSOL_RRTMG_SW.html' TARGET='index'>33</A><a name='389'>
+                                 aer_aod550_opt, aer_angexp_opt, aer_ssa_opt, aer_asy_opt,  &amp;<a name='390'>
+                                 aer_aod550_val, aer_angexp_val, aer_ssa_val, aer_asy_val,  &amp;<a name='391'>
+                                 aod5502d, angexp2d, aerssa2d, aerasy2d,                    &amp;<a name='392'>
+                                 ims,ime,jms,jme,kms,kme,its,ite,jts,jte,kts,kte,           &amp;<a name='393'>
+                                 tauaer, ssaaer, asyaer, aod5503d                           )<a name='394'>
+<a name='395'>
+    USE <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_70"> , ONLY : wrf_err_message<a name='396'>
+    <a name='397'>
+    implicit none<a name='398'>
+<a name='399'>
+    <font color=#447700>! constants<a name='400'></font>
+    integer, parameter :: N_BANDS=14<a name='401'>
+    <font color=#447700>! local index variables<a name='402'></font>
+    integer :: i,j,k,nb<a name='403'>
+<a name='404'>
+    real :: lower_wvl(N_BANDS),upper_wvl(N_BANDS)<a name='405'>
+    data (lower_wvl(i),i=1,N_BANDS) /3.077,2.500,2.150,1.942,1.626,1.299,1.242,0.7782,0.6250,0.4415,0.3448,0.2632,0.2000,3.846/<a name='406'>
+    data (upper_wvl(i),i=1,N_BANDS) /3.846,3.077,2.500,2.150,1.942,1.626,1.299,1.2420,0.7782,0.6250,0.4415,0.3448,0.2632,12.195/<a name='407'>
+<a name='408'>
+    <font color=#447700>! I/O variables<a name='409'></font>
+    real, dimension(ims:ime, kms:kme, jms:jme), intent(in) :: p,     &amp; <font color=#447700>! pressure (Pa)<a name='410'></font>
+                                                              t3d,   &amp; <font color=#447700>! temperature (K)<a name='411'></font>
+                                                              dz8w,  &amp; <font color=#447700>! dz between full levels (m)<a name='412'></font>
+                                                              qv3d     <font color=#447700>! water vapor mixing ratio (kg/kg)<a name='413'></font>
+    integer, intent(in) :: ims,ime,jms,jme,kms,kme, &amp;<a name='414'>
+                           its,ite,jts,jte,kts,kte<a name='415'>
+    integer, intent(in) :: aer_type<a name='416'>
+    integer, intent(in) :: aer_aod550_opt, aer_angexp_opt, aer_ssa_opt, aer_asy_opt<a name='417'>
+    real, intent(in)    :: aer_aod550_val, aer_angexp_val, aer_ssa_val, aer_asy_val<a name='418'>
+<a name='419'>
+    real, dimension(ims:ime, jms:jme), intent(in)    :: ht<a name='420'>
+    real, dimension(ims:ime, jms:jme), optional, intent(inout) :: aod5502d, angexp2d, aerssa2d, aerasy2d<a name='421'>
+    real, dimension(ims:ime, kms:kme, jms:jme, 1:N_BANDS), intent(inout) :: tauaer, ssaaer, asyaer<a name='422'>
+<a name='423'>
+    real, dimension(ims:ime, kms:kme, jms:jme), optional, intent(in) :: aod5503d   <font color=#447700>! trude<a name='424'></font>
+<a name='425'>
+    <font color=#447700>! local variables<a name='426'></font>
+    real :: angexp_val,aod_rate,x,xy,xx<a name='427'>
+    real, dimension(ims:ime, jms:jme, 1:N_BANDS) :: aod550spc<a name='428'>
+    real, dimension(ims:ime, kms:kme, jms:jme, 1:N_BANDS) :: aod550spc3d    <font color=#447700>!  trude<a name='429'></font>
+    real, dimension(ims:ime, kms:kme, jms:jme)   :: rh  <font color=#447700>! relative humidity<a name='430'></font>
+<a name='431'>
+    call <A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_RELATIVE_HUMIDITY'>calc_relative_humidity</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALC_RELATIVE_HUMIDITY_2">(p,t3d,qv3d,                 &amp;<a name='432'>
+                                ims,ime,jms,jme,kms,kme,    &amp;<a name='433'>
+                                its,ite,jts,jte,kts,kte,    &amp;<a name='434'>
+                                rh                          )<a name='435'>
+<a name='436'>
+    aer_aod550_opt_select: select case(aer_aod550_opt)<a name='437'>
+       <font color=#447700>!case(0)<a name='438'></font>
+       <font color=#447700>! reserved for climatology<a name='439'></font>
+       case(1)<a name='440'>
+          if (aer_aod550_val .lt. 0) then<a name='441'>
+             write(wrf_err_message,'("aer_aod550_val must be positive. Negative value ",F7.4," found")') aer_aod550_val<a name='442'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_962">(wrf_err_message)<a name='443'>
+          end if<a name='444'>
+          write( wrf_err_message, '("aer_aod550_opt=",I1,": AOD@550 nm fixed to value ",F6.3)') aer_aod550_opt,aer_aod550_val<a name='445'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_740">(100, wrf_err_message )<a name='446'>
+          do j=jts,jte<a name='447'>
+             do i=its,ite<a name='448'>
+                aod5502d(i,j)=aer_aod550_val<a name='449'>
+             end do<a name='450'>
+          end do<a name='451'>
+<a name='452'>
+       case(2) <a name='453'>
+          if (.not.(present(aod5502d))) then<a name='454'>
+             write(wrf_err_message,*) 'Expected gridded total AOD@550 nm, but it is not in the radiation driver'<a name='455'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_963">(wrf_err_message)<a name='456'>
+          end if<a name='457'>
+          if (minval(aod5502d) .lt. 0) then<a name='458'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_964">('AOD@550 must be positive. Negative value(s) found in auxinput')<a name='459'>
+          end if<a name='460'>
+          write( wrf_err_message, '("aer_aod550_opt=",I1,": AOD@550 nm read from auxinput (min=",F6.3," max=",F6.3,")")') &amp;<a name='461'>
+                                  aer_aod550_opt,minval(aod5502d),maxval(aod5502d)<a name='462'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_741">(100, wrf_err_message )<a name='463'>
+<a name='464'>
+       case default<a name='465'>
+          write(wrf_err_message,*) 'Expected aer_aod550_opt=[1,2]. Got',aer_aod550_opt<a name='466'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_965">(wrf_err_message)<a name='467'>
+    end select aer_aod550_opt_select<a name='468'>
+<a name='469'>
+<a name='470'>
+    <font color=#447700>! here, the 3d aod550 is calculated according to the aer_angexp_opt case<a name='471'></font>
+    aer_angexp_opt_select: select case(aer_angexp_opt)<a name='472'>
+       <font color=#447700>!case(0)<a name='473'></font>
+       <font color=#447700>! reserved for climatology<a name='474'></font>
+       case(1)<a name='475'>
+          if (aer_angexp_val .lt. -0.3) then<a name='476'>
+             write(wrf_err_message,'("WARNING: aer_angexp_val limited to -0.3. Illegal value ",F7.4," found")') aer_angexp_val<a name='477'>
+             call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_742">(100,wrf_err_message)<a name='478'>
+          end if<a name='479'>
+          if (aer_angexp_val .gt. 2.5) then<a name='480'>
+             write(wrf_err_message,'("WARNING: aer_angexp_val limited to 2.5. Illegal value ",F7.4," found")') aer_angexp_val<a name='481'>
+             call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_743">(100,wrf_err_message)<a name='482'>
+          end if<a name='483'>
+          write( wrf_err_message , '("aer_angexp_opt=",I1,": Aerosol Angstrom exponent fixed to value ",F6.3)') &amp;<a name='484'>
+                                      aer_angexp_opt,aer_angexp_val<a name='485'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_744">(100, wrf_err_message )<a name='486'>
+          angexp_val=min(2.5,max(-0.3,aer_angexp_val))<a name='487'>
+          do nb=1,N_BANDS<a name='488'>
+             if ((angexp_val .lt. 0.999) .or. (angexp_val .gt. 1.001)) then<a name='489'>
+                aod_rate=((0.55**angexp_val)*(upper_wvl(nb)**(1.-angexp_val)- &amp;<a name='490'>
+                          lower_wvl(nb)**(1.-angexp_val)))/((1.-angexp_val)*(upper_wvl(nb)-lower_wvl(nb)))<a name='491'>
+             else<a name='492'>
+                aod_rate=(0.55/(upper_wvl(nb)-lower_wvl(nb)))*log(upper_wvl(nb)/lower_wvl(nb))<a name='493'>
+             end if<a name='494'>
+             do j=jts,jte<a name='495'>
+                do i=its,ite<a name='496'>
+                   aod550spc(i,j,nb)=aod5502d(i,j)*aod_rate<a name='497'>
+                end do<a name='498'>
+             end do<a name='499'>
+          end do<a name='500'>
+          do j=jts,jte<a name='501'>
+             do i=its,ite<a name='502'>
+                angexp2d(i,j)=angexp_val<a name='503'>
+             end do<a name='504'>
+          end do<a name='505'>
+       case(2)<a name='506'>
+          if (.not.(present(angexp2d))) then<a name='507'>
+             write(wrf_err_message,*) 'Expected gridded aerosol Angstrom exponent, but it is not in the radiation driver'<a name='508'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_966">(wrf_err_message)<a name='509'>
+          end if<a name='510'>
+          write( wrf_err_message, '("aer_angexp_opt=",I1,": Angstrom exponent read from auxinput (min=",F6.3," max=",F6.3,")")') &amp;<a name='511'>
+                                  aer_angexp_opt,minval(angexp2d),maxval(angexp2d)<a name='512'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_745">(100, wrf_err_message )<a name='513'>
+          do j=jts,jte<a name='514'>
+             do i=its,ite<a name='515'>
+                angexp_val=min(2.5,max(-0.3,angexp2d(i,j)))<a name='516'>
+                do nb=1,N_BANDS<a name='517'>
+                   if ((angexp_val .lt. 0.999) .or. (angexp_val .gt. 1.001)) then<a name='518'>
+                      aod_rate=((0.55**angexp_val)*(upper_wvl(nb)**(1.-angexp_val)- &amp;<a name='519'>
+                                lower_wvl(nb)**(1.-angexp_val)))/((1.-angexp_val)*(upper_wvl(nb)-lower_wvl(nb)))<a name='520'>
+                   else<a name='521'>
+                      aod_rate=(0.55/(upper_wvl(nb)-lower_wvl(nb)))*log(upper_wvl(nb)/lower_wvl(nb))<a name='522'>
+                   end if<a name='523'>
+                   aod550spc(i,j,nb)=aod5502d(i,j)*aod_rate<a name='524'>
+                end do<a name='525'>
+             end do<a name='526'>
+          end do<a name='527'>
+<a name='528'>
+       case(3)<a name='529'>
+          <font color=#447700>! spectral disaggregation based on a prescribed aerosol type and relative humidity<a name='530'></font>
+          write( wrf_err_message, '("aer_angexp_opt=",I1,": Angstrom exponent calculated from RH and aer_type ",I1)') &amp;<a name='531'>
+                                     aer_angexp_opt,aer_type<a name='532'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_746">(100, wrf_err_message )<a name='533'>
+          call <A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_SPECTRAL_AOD_RRTMG_SW'>calc_spectral_aod_rrtmg_sw</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALC_SPECTRAL_AOD_RRTMG_SW_1">(ims,ime,jms,jme,kms,kme,      &amp;<a name='534'>
+                                          its,ite,jts,jte,kts,kte,      &amp;<a name='535'>
+                                          rh,aer_type,aod5502d,         &amp;<a name='536'>
+                                          aod550spc,                    &amp;<a name='537'>
+                                          aod5503d, aod550spc3d)         <font color=#447700>! trude<a name='538'></font>
+<a name='539'>
+          do j=jts,jte<a name='540'>
+            do i=its,ite<a name='541'>
+              angexp2d(i,j) = 0.0<a name='542'>
+            enddo<a name='543'>
+          enddo<a name='544'>
+<a name='545'>
+          if (present(aod5503d)) then<a name='546'>
+            do j=jts,jte<a name='547'>
+             do k=kts,kte<a name='548'>
+              do i=its,ite<a name='549'>
+                xy=0<a name='550'>
+                xx=0<a name='551'>
+                do nb=8,N_BANDS-3  <font color=#447700>! bands between 0.4 and  1.0 um<a name='552'></font>
+                   <font color=#447700>! the slope of a linear regression with intercept=0 is m=E(xy)/E(x^2), where y=m*x<a name='553'></font>
+                   x=log(0.5*(lower_wvl(nb)+upper_wvl(nb))/0.55)<a name='554'>
+                   xy=xy+x*log(aod550spc3d(i,k,j,nb)/aod5503d(i,k,j))<a name='555'>
+                   xx=xx+x*x<a name='556'>
+                end do<a name='557'>
+                angexp2d(i,j) = angexp2d(i,j) - (xy/(N_BANDS-3-8+1))/(xx/(N_BANDS-3-8+1))<a name='558'>
+              enddo<a name='559'>
+             enddo<a name='560'>
+            enddo<a name='561'>
+          else<a name='562'>
+<a name='563'>
+          <font color=#447700>! added July, 16th, 2013: angexp2d is in the wrfout when aer_angexp_opt=3. It is the average<a name='564'></font>
+          <font color=#447700>! value in the spectral bands between 0.4 and 1. um<a name='565'></font>
+          do j=jts,jte<a name='566'>
+             do i=its,ite<a name='567'>
+                xy=0<a name='568'>
+                xx=0<a name='569'>
+                do nb=8,N_BANDS-3  <font color=#447700>! bands between 0.4 and  1.0 um<a name='570'></font>
+                   <font color=#447700>! the slope of a linear regression with intercept=0 is m=E(xy)/E(x^2), where y=m*x<a name='571'></font>
+                   x=log(0.5*(lower_wvl(nb)+upper_wvl(nb))/0.55)<a name='572'>
+                   xy=xy+x*log(aod550spc(i,j,nb)/aod5502d(i,j))<a name='573'>
+                   xx=xx+x*x<a name='574'>
+                end do<a name='575'>
+                angexp2d(i,j)=-(xy/(N_BANDS-3-8+1))/(xx/(N_BANDS-3-8+1))<a name='576'>
+             end do<a name='577'>
+          end do<a name='578'>
+          endif<a name='579'>
+<a name='580'>
+       case default<a name='581'>
+          write(wrf_err_message,*) 'Expected aer_angexp_opt=[1,2,3]. Got',aer_angexp_opt<a name='582'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_967">(wrf_err_message)<a name='583'>
+    end select aer_angexp_opt_select<a name='584'>
+<a name='585'>
+<font color=#447700>!..If 3D AOD (at 550nm) was provided explicitly, then no need to assume a<a name='586'></font>
+<font color=#447700>!.. vertical distribution, just use what was provided.  (Trude)<a name='587'></font>
+<a name='588'>
+      if (present(aod5503d)) then<a name='589'>
+         do nb=1,N_BANDS<a name='590'>
+          do j=jts,jte<a name='591'>
+           do k=kts,kte<a name='592'>
+            do i=its,ite<a name='593'>
+               tauaer(i,k,j,nb) = aod550spc3d(i,k,j,nb)<a name='594'>
+            enddo<a name='595'>
+           enddo<a name='596'>
+          enddo<a name='597'>
+         enddo<a name='598'>
+      else<a name='599'>
+         <font color=#447700>! exponental -vertical- profile<a name='600'></font>
+         call <A href='../../html_code/phys/module_ra_aerosol.F.html#AOD_PROFILER'>aod_profiler</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="AOD_PROFILER_2">(ht,dz8w,aod550spc,n_bands,ims,ime,jms,jme,kms,kme, &amp;<a name='601'>
+                      its,ite,jts,jte,kts,kte,tauaer                     )<a name='602'>
+      endif<a name='603'>
+<a name='604'>
+    aer_ssa_opt_select: select case(aer_ssa_opt)<a name='605'>
+       <font color=#447700>!case(0)<a name='606'></font>
+       <font color=#447700>! reserved for climatology<a name='607'></font>
+       case(1)<a name='608'>
+          if ((aer_ssa_val .lt. 0) .or. (aer_ssa_val .gt. 1)) then<a name='609'>
+             write(wrf_err_message,'("aer_ssa_val must be within [0,1]. Illegal value ",F7.4," found")') aer_ssa_val<a name='610'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_968">(wrf_err_message)<a name='611'>
+          end if<a name='612'>
+          write( wrf_err_message, &amp;<a name='613'>
+                '("aer_ssa_opt=",I1,": single-scattering albedo fixed to value ",F6.3)') aer_ssa_opt,aer_ssa_val<a name='614'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_747">(100, wrf_err_message )<a name='615'>
+          do j=jts,jte<a name='616'>
+             do i=its,ite<a name='617'>
+                do k=kts,kte<a name='618'>
+                   do nb=1,N_BANDS<a name='619'>
+                      <font color=#447700>! no spectral disaggregation<a name='620'></font>
+                      ssaaer(i,k,j,nb)=aer_ssa_val<a name='621'>
+                   end do<a name='622'>
+                end do<a name='623'>
+             end do<a name='624'>
+          end do<a name='625'>
+          do j=jts,jte<a name='626'>
+             do i=its,ite<a name='627'>
+                aerssa2d(i,j)=aer_ssa_val<a name='628'>
+             end do<a name='629'>
+          end do<a name='630'>
+<a name='631'>
+       case(2)<a name='632'>
+          if (.not.(present(aerssa2d))) then<a name='633'>
+             write(wrf_err_message,*) 'Expected gridded aerosol single-scattering albedo, but it is not in the radiation driver'<a name='634'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_969">(wrf_err_message)<a name='635'>
+          end if<a name='636'>
+          if ((minval(aerssa2d) .lt. 0) .or. (maxval(aerssa2d) .gt. 1)) then<a name='637'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_970">('Aerosol single-scattering albedo must be within [0,1]. ' // &amp;<a name='638'>
+                                  'Out of bounds value(s) found in auxinput')<a name='639'>
+          end if<a name='640'>
+          write( wrf_err_message, '("aer_ssa_opt=",I1,": single-scattering albedo from auxinput (min=",F6.3," max=",F6.3,")")') &amp;<a name='641'>
+                                  aer_ssa_opt,minval(aerssa2d),maxval(aerssa2d)<a name='642'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_748">(100, wrf_err_message )<a name='643'>
+          do j=jts,jte<a name='644'>
+             do i=its,ite<a name='645'>
+                do k=kts,kte<a name='646'>
+                   do nb=1,N_BANDS<a name='647'>
+                      <font color=#447700>! no spectral disaggregation<a name='648'></font>
+                      ssaaer(i,k,j,nb)=aerssa2d(i,j)<a name='649'>
+                   end do<a name='650'>
+                end do<a name='651'>
+             end do<a name='652'>
+          end do<a name='653'>
+<a name='654'>
+       case(3)<a name='655'>
+          <font color=#447700>! spectral disaggregation based on a prescribed aerosol type and relative humidity<a name='656'></font>
+          write( wrf_err_message, '("aer_ssa_opt=",I1,": single-scattering albedo calculated from RH and aer_type ",I1)') &amp;<a name='657'>
+                                     aer_ssa_opt,aer_type<a name='658'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_749">(100, wrf_err_message )<a name='659'>
+          call <A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_SPECTRAL_SSA_RRTMG_SW'>calc_spectral_ssa_rrtmg_sw</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALC_SPECTRAL_SSA_RRTMG_SW_1">(ims,ime,jms,jme,kms,kme,  &amp;<a name='660'>
+                                          its,ite,jts,jte,kts,kte,  &amp;<a name='661'>
+                                          rh,aer_type,ssaaer        )<a name='662'>
+          <font color=#447700>! added July, 16th, 2013: aerssa2d is in the wrfout when aer_ssa_opt=3. It is the average<a name='663'></font>
+          <font color=#447700>! value in the spectral bands between 0.4 and 1. um<a name='664'></font>
+          do j=jts,jte<a name='665'>
+             do i=its,ite<a name='666'>
+                aerssa2d(i,j)=0<a name='667'>
+             end do<a name='668'>
+          end do<a name='669'>
+          do j=jts,jte<a name='670'>
+             do i=its,ite<a name='671'>
+                do nb=8,N_BANDS-3  <font color=#447700>! bands between 0.4 and 1.0 um<a name='672'></font>
+                   aerssa2d(i,j)=aerssa2d(i,j)+ssaaer(i,kts,j,nb)<a name='673'>
+                end do<a name='674'>
+                aerssa2d(i,j)=aerssa2d(i,j)/(N_BANDS-3-8+1)<a name='675'>
+             end do<a name='676'>
+          end do<a name='677'>
+<a name='678'>
+       case default<a name='679'>
+          write(wrf_err_message,*) 'Expected aer_ssa_opt=[1,2,3]. Got',aer_ssa_opt<a name='680'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_971">(wrf_err_message)<a name='681'>
+    end select aer_ssa_opt_select<a name='682'>
+<a name='683'>
+    aer_asy_opt_select: select case(aer_asy_opt)<a name='684'>
+       <font color=#447700>!case(0)<a name='685'></font>
+       <font color=#447700>! reserved for climatology<a name='686'></font>
+       case(1)<a name='687'>
+          if ((aer_asy_val .lt. 0) .or. (aer_asy_val .gt. 1)) then<a name='688'>
+             write(wrf_err_message,'("aer_asy_val must be withing [-1,1]. Illegal value ",F7.4," found")') aer_asy_val<a name='689'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_972">(wrf_err_message)<a name='690'>
+          end if<a name='691'>
+          write( wrf_err_message , '("aer_asy_opt=",I1,": asymmetry parameter fixed to value ",F6.3)') aer_asy_opt,aer_asy_val<a name='692'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_750">(100, wrf_err_message )<a name='693'>
+          do j=jts,jte<a name='694'>
+             do i=its,ite<a name='695'>
+                do k=kts,kte<a name='696'>
+                   do nb=1,N_BANDS<a name='697'>
+                      asyaer(i,k,j,nb)=aer_asy_val<a name='698'>
+                   end do<a name='699'>
+                end do<a name='700'>
+             end do<a name='701'>
+          end do<a name='702'>
+          do j=jts,jte<a name='703'>
+             do i=its,ite<a name='704'>
+                aerasy2d(i,j)=aer_asy_val<a name='705'>
+             end do<a name='706'>
+          end do<a name='707'>
+<a name='708'>
+       case(2)<a name='709'>
+          if (.not.(present(aerasy2d))) then<a name='710'>
+             write(wrf_err_message,*) 'Expected gridded aerosol asymmetry parameter, but it is not in the radiation driver'<a name='711'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_973">(wrf_err_message)<a name='712'>
+          end if<a name='713'>
+          if ((minval(aerasy2d) .lt. -1) .or. (maxval(aerasy2d) .gt. 1)) then<a name='714'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_974">('Aerosol asymmetry parameter must be within [-1,1]. Out of bounds value(s) found in auxinput')<a name='715'>
+          end if<a name='716'>
+          write( wrf_err_message, '("aer_asy_opt=",I1,": asymmetry parameter read from auxinput (min=",F6.3," max=",F6.3,")")') &amp;<a name='717'>
+                                  aer_asy_opt,minval(aerasy2d),maxval(aerasy2d)<a name='718'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_751">(100, wrf_err_message )<a name='719'>
+          do j=jts,jte<a name='720'>
+             do i=its,ite<a name='721'>
+                do k=kts,kte<a name='722'>
+                   do nb=1,N_BANDS<a name='723'>
+                      asyaer(i,k,j,nb)=aerasy2d(i,j)<a name='724'>
+                   end do<a name='725'>
+                end do<a name='726'>
+             end do<a name='727'>
+          end do<a name='728'>
+<a name='729'>
+       case(3)<a name='730'>
+          <font color=#447700>! spectral disaggregation based on a prescribed aerosol type and relative humidity<a name='731'></font>
+          write( wrf_err_message, '("aer_asy_opt=",I1,": asymmetry parameter calculated from RH and aer_type ",I1)') &amp;<a name='732'>
+                                     aer_asy_opt,aer_type<a name='733'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_752">(100, wrf_err_message )<a name='734'>
+          call <A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_SPECTRAL_ASY_RRTMG_SW'>calc_spectral_asy_rrtmg_sw</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALC_SPECTRAL_ASY_RRTMG_SW_1">(ims,ime,jms,jme,kms,kme,  &amp;<a name='735'>
+                                          its,ite,jts,jte,kts,kte,  &amp;<a name='736'>
+                                          rh,aer_type,asyaer        )<a name='737'>
+          <font color=#447700>! added July, 16th, 2013: aerasy2d is in the wrfout when aer_asy_opt=3. It is the average<a name='738'></font>
+          <font color=#447700>! value in the spectral bands between 0.4 and 1. um<a name='739'></font>
+          do j=jts,jte<a name='740'>
+             do i=its,ite<a name='741'>
+                aerasy2d(i,j)=0<a name='742'>
+             end do<a name='743'>
+          end do<a name='744'>
+          do j=jts,jte<a name='745'>
+             do i=its,ite<a name='746'>
+                do nb=8,N_BANDS-3  <font color=#447700>! bands between 0.4 and 1.0 um<a name='747'></font>
+                   aerasy2d(i,j)=aerasy2d(i,j)+asyaer(i,kts,j,nb)<a name='748'>
+                end do<a name='749'>
+                aerasy2d(i,j)=aerasy2d(i,j)/(N_BANDS-3-8+1)<a name='750'>
+             end do<a name='751'>
+          end do<a name='752'>
+<a name='753'>
+       case default<a name='754'>
+          write(wrf_err_message,*) 'Expected aer_asy_opt=[1,2,3]. Got',aer_asy_opt<a name='755'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_AEROSOL_RRTMG_SW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_975">(wrf_err_message)<a name='756'>
+    end select aer_asy_opt_select<a name='757'>
+end subroutine calc_aerosol_rrtmg_sw<a name='758'>
+<a name='759'>
+<a name='760'>
+<A NAME='CALC_SPECTRAL_AOD_GODDARD_SW'><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_SPECTRAL_AOD_GODDARD_SW' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='761'>
+<font color=#993300>subroutine </font><font color=#cc0000>calc_spectral_aod_goddard_sw</font>(ims,ime,jms,jme,kms,kme,  &amp; <A href='../../call_to/CALC_SPECTRAL_AOD_GODDARD_SW.html' TARGET='index'>1</A><a name='762'>
+                                        its,ite,jts,jte,kts,kte,  &amp;<a name='763'>
+                                        rh,aer_type,aod550,       &amp;<a name='764'>
+                                        tauaer                    )<a name='765'>
+   implicit none<a name='766'>
+   <a name='767'>
+   <font color=#447700>! constants<a name='768'></font>
+   integer, parameter :: N_AER_TYPES=3<a name='769'>
+   integer, parameter :: N_RH=8<a name='770'>
+   integer, parameter :: N_BANDS=11<a name='771'>
+   integer, parameter :: N_INT_POINTS=4<a name='772'>
+<a name='773'>
+   <font color=#447700>! I/O variables<a name='774'></font>
+   integer, intent(in) :: ims,ime,jms,jme,kms,kme, &amp;<a name='775'>
+                          its,ite,jts,jte,kts,kte<a name='776'>
+   integer, intent(in) :: aer_type<a name='777'>
+   real, dimension(ims:ime, kms:kme, jms:jme),   intent(in) :: rh        <font color=#447700>! relative humidity<a name='778'></font>
+   real, dimension(ims:ime, jms:jme),            intent(in) :: aod550    <font color=#447700>! Total AOD at 550 nm at surface<a name='779'></font>
+   real, dimension(ims:ime, jms:jme, 1:N_BANDS), intent(inout) :: tauaer <font color=#447700>! Total spectral aerosol optical depth at surface<a name='780'></font>
+<a name='781'>
+   <font color=#447700>! local variables<a name='782'></font>
+   integer :: i,j,k,ib,imax,imin,ii,jj<a name='783'>
+   real    :: rhs(N_RH),lj<a name='784'>
+   real    :: raod_lut(N_AER_TYPES,N_BANDS,N_RH)<a name='785'>
+<a name='786'>
+   <font color=#447700>! relative humidity steps<a name='787'></font>
+   data (rhs(i),i=1,8) /0.,50.,70.,80.,90.,95.,98.,99./<a name='788'>
+<a name='789'>
+   <font color=#447700>! aer_type = 1 : rural (SF79)<a name='790'></font>
+   data (raod_lut(1,ib,1),ib=1,N_BANDS) /2.5849,2.2217,2.0768,1.8320,1.7528,1.6889,1.4802,1.0127,0.5051,0.2292,0.0924/<a name='791'>
+   data (raod_lut(1,ib,2),ib=1,N_BANDS) /2.5645,2.2070,2.0642,1.8228,1.7446,1.6816,1.4753,1.0121,0.5061,0.2302,0.0930/<a name='792'>
+   data (raod_lut(1,ib,3),ib=1,N_BANDS) /2.5285,2.1809,2.0419,1.8064,1.7301,1.6685,1.4667,1.0111,0.5080,0.2321,0.0943/<a name='793'>
+   data (raod_lut(1,ib,4),ib=1,N_BANDS) /2.4861,2.1501,2.0155,1.7871,1.7129,1.6530,1.4565,1.0100,0.5104,0.2345,0.0959/<a name='794'>
+   data (raod_lut(1,ib,5),ib=1,N_BANDS) /2.3824,2.0745,1.9505,1.7392,1.6703,1.6146,1.4310,1.0072,0.5172,0.2415,0.1005/<a name='795'>
+   data (raod_lut(1,ib,6),ib=1,N_BANDS) /2.2463,1.9744,1.8642,1.6752,1.6132,1.5630,1.3965,1.0039,0.5293,0.2540,0.1091/<a name='796'>
+   data (raod_lut(1,ib,7),ib=1,N_BANDS) /2.0619,1.8373,1.7452,1.5861,1.5336,1.4908,1.3479,1.0007,0.5559,0.2827,0.1298/<a name='797'>
+   data (raod_lut(1,ib,8),ib=1,N_BANDS) /1.9550,1.7568,1.6751,1.5332,1.4861,1.4477,1.3185,1.0004,0.5825,0.3131,0.1532/<a name='798'>
+<a name='799'>
+   <font color=#447700>! aer_type = 2 : urban (SF79)<a name='800'></font>
+   data (raod_lut(2,ib,1),ib=1,N_BANDS) /2.3427,2.0454,1.9254,1.7206,1.6538,1.5997,1.4210,1.0163,0.5774,0.3072,0.1486/<a name='801'>
+   data (raod_lut(2,ib,2),ib=1,N_BANDS) /2.3288,2.0352,1.9166,1.7141,1.6480,1.5944,1.4175,1.0139,0.5671,0.2953,0.1393/<a name='802'>
+   data (raod_lut(2,ib,3),ib=1,N_BANDS) /2.3033,2.0164,1.9004,1.7021,1.6373,1.5848,1.4111,1.0115,0.5588,0.2859,0.1322/<a name='803'>
+   data (raod_lut(2,ib,4),ib=1,N_BANDS) /2.2717,1.9931,1.8803,1.6872,1.6239,1.5727,1.4030,1.0095,0.5546,0.2814,0.1288/<a name='804'>
+   data (raod_lut(2,ib,5),ib=1,N_BANDS) /2.1862,1.9299,1.8256,1.6464,1.5875,1.5398,1.3809,1.0055,0.5523,0.2788,0.1269/<a name='805'>
+   data (raod_lut(2,ib,6),ib=1,N_BANDS) /2.0524,1.8301,1.7390,1.5814,1.5294,1.4870,1.3453,1.0001,0.5550,0.2818,0.1291/<a name='806'>
+   data (raod_lut(2,ib,7),ib=1,N_BANDS) /1.8164,1.6516,1.5830,1.4630,1.4229,1.3901,1.2790,0.9909,0.5657,0.2937,0.1381/<a name='807'>
+   data (raod_lut(2,ib,8),ib=1,N_BANDS) /1.6384,1.5144,1.4622,1.3699,1.3388,1.3132,1.2257,0.9839,0.5778,0.3077,0.1489/<a name='808'>
+<a name='809'>
+   <font color=#447700>! aer_type = 3 : maritime (SF79)<a name='810'></font>
+   data (raod_lut(3,ib,1),ib=1,N_BANDS) /1.6325,1.5098,1.4581,1.3667,1.3359,1.3106,1.2238,1.0070,0.7288,0.5088,0.3361/<a name='811'>
+   data (raod_lut(3,ib,2),ib=1,N_BANDS) /1.5338,1.4327,1.3898,1.3135,1.2876,1.2662,1.1927,1.0058,0.7593,0.5556,0.3875/<a name='812'>
+   data (raod_lut(3,ib,3),ib=1,N_BANDS) /1.4227,1.3449,1.3117,1.2520,1.2316,1.2148,1.1563,1.0049,0.8006,0.6225,0.4656/<a name='813'>
+   data (raod_lut(3,ib,4),ib=1,N_BANDS) /1.3439,1.2821,1.2554,1.2073,1.1908,1.1772,1.1295,1.0046,0.8359,0.6827,0.5405/<a name='814'>
+   data (raod_lut(3,ib,5),ib=1,N_BANDS) /1.2451,1.2023,1.1837,1.1499,1.1383,1.1286,1.0944,1.0050,0.8897,0.7800,0.6701/<a name='815'>
+   data (raod_lut(3,ib,6),ib=1,N_BANDS) /1.1867,1.1548,1.1408,1.1153,1.1064,1.0991,1.0730,1.0056,0.9280,0.8533,0.7745/<a name='816'>
+   data (raod_lut(3,ib,7),ib=1,N_BANDS) /1.1485,1.1234,1.1124,1.0923,1.0852,1.0794,1.0586,1.0062,0.9565,0.9099,0.8589/<a name='817'>
+   data (raod_lut(3,ib,8),ib=1,N_BANDS) /1.1352,1.1124,1.1025,1.0842,1.0778,1.0725,1.0536,1.0065,0.9671,0.9315,0.8920/<a name='818'>
+<a name='819'>
+   <font color=#447700>! this spectral disaggregation is only at surface (k=kts)<a name='820'></font>
+   do j=jts,jte<a name='821'>
+      do i=its,ite<a name='822'>
+         <font color=#447700>! common part of the Lagrange's interpolator<a name='823'></font>
+         <font color=#447700>!   only depends on the relative humidity value<a name='824'></font>
+         ii=1<a name='825'>
+         do while ( (ii.le.N_RH) .and. (rh(i,kts,j).gt.rhs(ii)) )<a name='826'>
+            ii=ii+1<a name='827'>
+         end do<a name='828'>
+         imin=max(1,ii-N_INT_POINTS/2-1)<a name='829'>
+         imax=min(N_RH,ii+N_INT_POINTS/2)<a name='830'>
+<a name='831'>
+         do ib=1,N_BANDS<a name='832'>
+            tauaer(i,j,ib)=0.<a name='833'>
+            do jj=imin,imax<a name='834'>
+               lj=1.<a name='835'>
+               do k=imin,imax<a name='836'>
+                  if (k.ne.jj) lj=lj*(rh(i,kts,j)-rhs(k))/(rhs(jj)-rhs(k))<a name='837'>
+               end do<a name='838'>
+               tauaer(i,j,ib)=tauaer(i,j,ib)+lj*raod_lut(aer_type,ib,jj)*aod550(i,j)<a name='839'>
+            end do<a name='840'>
+         end do<a name='841'>
+      end do<a name='842'>
+   end do<a name='843'>
+end subroutine calc_spectral_aod_goddard_sw<a name='844'>
+<a name='845'>
+<A NAME='CALC_SPECTRAL_SSA_GODDARD_SW'><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_SPECTRAL_SSA_GODDARD_SW' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='846'>
+<font color=#993300>subroutine </font><font color=#cc0000>calc_spectral_ssa_goddard_sw</font>(ims,ime,jms,jme,kms,kme,  &amp; <A href='../../call_to/CALC_SPECTRAL_SSA_GODDARD_SW.html' TARGET='index'>1</A><a name='847'>
+                                        its,ite,jts,jte,kts,kte,  &amp;<a name='848'>
+                                        rh,aer_type,              &amp;<a name='849'>
+                                        ssaaer                    )<a name='850'>
+   implicit none<a name='851'>
+   <a name='852'>
+   <font color=#447700>! constants<a name='853'></font>
+   integer, parameter :: N_AER_TYPES=3<a name='854'>
+   integer, parameter :: N_RH=8<a name='855'>
+   integer, parameter :: N_BANDS=11<a name='856'>
+   integer, parameter :: N_INT_POINTS=4<a name='857'>
+<a name='858'>
+   <font color=#447700>! I/O variables<a name='859'></font>
+   integer, intent(in) :: ims,ime,jms,jme,kms,kme, &amp;<a name='860'>
+                          its,ite,jts,jte,kts,kte<a name='861'>
+   integer, intent(in) :: aer_type<a name='862'>
+   real, dimension(ims:ime, kms:kme, jms:jme),            intent(in)    :: rh     <font color=#447700>! surface relative humidity<a name='863'></font>
+   real, dimension(ims:ime, kms:kme, jms:jme, 1:N_BANDS), intent(inout) :: ssaaer <font color=#447700>! aerosol single-scattering albedo at surface<a name='864'></font>
+<a name='865'>
+   <font color=#447700>! local variables<a name='866'></font>
+   integer :: i,j,k,kk,ib,imax,imin,ii,jj<a name='867'>
+   real    :: rhs(N_RH),lj<a name='868'>
+   real    :: ssa_lut(N_AER_TYPES,N_BANDS,N_RH)<a name='869'>
+<a name='870'>
+   <font color=#447700>! relative humidity steps<a name='871'></font>
+   data (rhs(i),i=1,8) /0.,50.,70.,80.,90.,95.,98.,99./<a name='872'>
+<a name='873'>
+   <font color=#447700>! aer_type = 1 : rural (SF79)<a name='874'></font>
+   data (ssa_lut(1,ib,1),ib=1,N_BANDS) /0.6719,0.8192,0.8657,0.9223,0.9333,0.9400,0.9509,0.9428,0.8932,0.8165,0.7855/<a name='875'>
+   data (ssa_lut(1,ib,2),ib=1,N_BANDS) /0.6813,0.8251,0.8703,0.9251,0.9357,0.9421,0.9524,0.9447,0.8963,0.8217,0.7665/<a name='876'>
+   data (ssa_lut(1,ib,3),ib=1,N_BANDS) /0.6929,0.8322,0.8760,0.9292,0.9395,0.9457,0.9557,0.9482,0.9048,0.8338,0.7431/<a name='877'>
+   data (ssa_lut(1,ib,4),ib=1,N_BANDS) /0.7437,0.8626,0.8997,0.9445,0.9530,0.9581,0.9661,0.9607,0.9263,0.8739,0.7215/<a name='878'>
+   data (ssa_lut(1,ib,5),ib=1,N_BANDS) /0.7987,0.8951,0.9249,0.9602,0.9666,0.9704,0.9760,0.9730,0.9498,0.9118,0.7200/<a name='879'>
+   data (ssa_lut(1,ib,6),ib=1,N_BANDS) /0.8232,0.9089,0.9353,0.9665,0.9721,0.9754,0.9802,0.9780,0.9595,0.9327,0.7229/<a name='880'>
+   data (ssa_lut(1,ib,7),ib=1,N_BANDS) /0.8472,0.9205,0.9435,0.9712,0.9765,0.9797,0.9850,0.9838,0.9710,0.9482,0.7340/<a name='881'>
+   data (ssa_lut(1,ib,8),ib=1,N_BANDS) /0.8645,0.9322,0.9530,0.9771,0.9814,0.9839,0.9874,0.9871,0.9780,0.9589,0.7363/<a name='882'>
+<a name='883'>
+   <font color=#447700>! aer_type = 2: urban (SF79)<a name='884'></font>
+   data (ssa_lut(2,ib,1),ib=1,N_BANDS) /0.5832,0.6144,0.6244,0.6368,0.6393,0.6409,0.6436,0.6375,0.5856,0.4748,0.3908/<a name='885'>
+   data (ssa_lut(2,ib,2),ib=1,N_BANDS) /0.5933,0.6244,0.6343,0.6467,0.6492,0.6508,0.6536,0.6477,0.5961,0.4861,0.3957/<a name='886'>
+   data (ssa_lut(2,ib,3),ib=1,N_BANDS) /0.6444,0.6823,0.6917,0.6999,0.7010,0.7019,0.7145,0.7552,0.6365,0.5559,0.4342/<a name='887'>
+   data (ssa_lut(2,ib,4),ib=1,N_BANDS) /0.7195,0.7490,0.7587,0.7714,0.7743,0.7762,0.7805,0.7796,0.7419,0.6545,0.4987/<a name='888'>
+   data (ssa_lut(2,ib,5),ib=1,N_BANDS) /0.7791,0.8071,0.8163,0.8287,0.8316,0.8336,0.8384,0.8413,0.8156,0.7477,0.5632/<a name='889'>
+   data (ssa_lut(2,ib,6),ib=1,N_BANDS) /0.8230,0.8486,0.8573,0.8690,0.8718,0.8738,0.8789,0.8843,0.8691,0.8202,0.6178/<a name='890'>
+   data (ssa_lut(2,ib,7),ib=1,N_BANDS) /0.8653,0.8877,0.8953,0.9059,0.9084,0.9103,0.9155,0.9232,0.9180,0.8895,0.6733/<a name='891'>
+   data (ssa_lut(2,ib,8),ib=1,N_BANDS) /0.8861,0.9064,0.9134,0.9233,0.9257,0.9276,0.9327,0.9413,0.9410,0.9234,0.6987/<a name='892'>
+<a name='893'>
+   <font color=#447700>! aer_type = 3 : maritime (SF79)<a name='894'></font>
+   data (ssa_lut(3,ib,1),ib=1,N_BANDS) /0.7849,0.8895,0.9221,0.9610,0.9683,0.9727,0.9802,0.9829,0.9793,0.9742,0.9493/<a name='895'>
+   data (ssa_lut(3,ib,2),ib=1,N_BANDS) /0.7965,0.8962,0.9271,0.9639,0.9707,0.9748,0.9816,0.9843,0.9814,0.9765,0.9043/<a name='896'>
+   data (ssa_lut(3,ib,3),ib=1,N_BANDS) /0.8250,0.9116,0.9384,0.9701,0.9760,0.9795,0.9852,0.9876,0.9861,0.9819,0.8586/<a name='897'>
+   data (ssa_lut(3,ib,4),ib=1,N_BANDS) /0.8907,0.9464,0.9635,0.9834,0.9869,0.9890,0.9922,0.9939,0.9935,0.9892,0.8278/<a name='898'>
+   data (ssa_lut(3,ib,5),ib=1,N_BANDS) /0.9147,0.9595,0.9730,0.9884,0.9911,0.9925,0.9944,0.9956,0.9954,0.9905,0.8233/<a name='899'>
+   data (ssa_lut(3,ib,6),ib=1,N_BANDS) /0.9336,0.9689,0.9795,0.9915,0.9935,0.9945,0.9959,0.9969,0.9967,0.9908,0.8178/<a name='900'>
+   data (ssa_lut(3,ib,7),ib=1,N_BANDS) /0.9543,0.9788,0.9861,0.9944,0.9958,0.9965,0.9974,0.9980,0.9978,0.9904,0.8122/<a name='901'>
+   data (ssa_lut(3,ib,8),ib=1,N_BANDS) /0.9669,0.9848,0.9902,0.9962,0.9971,0.9976,0.9982,0.9986,0.9985,0.9892,0.8062/<a name='902'>
+<a name='903'>
+   do j=jts,jte<a name='904'>
+      do i=its,ite<a name='905'>
+         do k=kts,kte<a name='906'>
+            <font color=#447700>! common part of the Lagrange's interpolator<a name='907'></font>
+            <font color=#447700>!   only depends on the relative humidity value<a name='908'></font>
+            ii=1<a name='909'>
+            do while ( (ii.le.N_RH) .and. (rh(i,k,j).gt.rhs(ii)) )<a name='910'>
+               ii=ii+1<a name='911'>
+            end do<a name='912'>
+            imin=max(1,ii-N_INT_POINTS/2-1)<a name='913'>
+            imax=min(N_RH,ii+N_INT_POINTS/2)<a name='914'>
+<a name='915'>
+            do ib=1,N_BANDS<a name='916'>
+               ssaaer(i,k,j,ib)=0.<a name='917'>
+               do jj=imin,imax<a name='918'>
+                  lj=1.<a name='919'>
+                  do kk=imin,imax<a name='920'>
+                     if (kk.ne.jj) lj=lj*(rh(i,k,j)-rhs(kk))/(rhs(jj)-rhs(kk))<a name='921'>
+                  end do<a name='922'>
+                  ssaaer(i,k,j,ib)=ssaaer(i,k,j,ib)+lj*ssa_lut(aer_type,ib,jj)<a name='923'>
+               end do<a name='924'>
+            end do<a name='925'>
+         end do<a name='926'>
+      end do<a name='927'>
+   end do<a name='928'>
+end subroutine calc_spectral_ssa_goddard_sw<a name='929'>
+<a name='930'>
+<A NAME='CALC_SPECTRAL_ASY_GODDARD_SW'><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_SPECTRAL_ASY_GODDARD_SW' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='931'>
+<font color=#993300>subroutine </font><font color=#cc0000>calc_spectral_asy_goddard_sw</font>(ims,ime,jms,jme,kms,kme,  &amp; <A href='../../call_to/CALC_SPECTRAL_ASY_GODDARD_SW.html' TARGET='index'>1</A><a name='932'>
+                                        its,ite,jts,jte,kts,kte,  &amp;<a name='933'>
+                                        rh,aer_type,              &amp;<a name='934'>
+                                        asyaer                    )<a name='935'>
+   implicit none<a name='936'>
+   <a name='937'>
+   <font color=#447700>! constants<a name='938'></font>
+   integer, parameter :: N_AER_TYPES=3<a name='939'>
+   integer, parameter :: N_RH=8<a name='940'>
+   integer, parameter :: N_BANDS=11<a name='941'>
+   integer, parameter :: N_INT_POINTS=4<a name='942'>
+<a name='943'>
+   <font color=#447700>! I/O variables<a name='944'></font>
+   integer, intent(in) :: ims,ime,jms,jme,kms,kme, &amp;<a name='945'>
+                          its,ite,jts,jte,kts,kte<a name='946'>
+   integer, intent(in) :: aer_type<a name='947'>
+   real, dimension(ims:ime, kms:kme, jms:jme),            intent(in)    :: rh <font color=#447700>! surface relative humidity<a name='948'></font>
+   real, dimension(ims:ime, kms:kme, jms:jme, 1:N_BANDS), intent(inout) :: asyaer <font color=#447700>! aerosol asymmetry parameter at surface<a name='949'></font>
+<a name='950'>
+   <font color=#447700>! local variables<a name='951'></font>
+   integer :: i,j,k,kk,ib,imax,imin,ii,jj<a name='952'>
+   real    :: rhs(N_RH),lj<a name='953'>
+   real    :: asy_lut(N_AER_TYPES,N_BANDS,N_RH)<a name='954'>
+<a name='955'>
+   <font color=#447700>! relative humidity steps<a name='956'></font>
+   data (rhs(i),i=1,8) /0.,50.,70.,80.,90.,95.,98.,99./<a name='957'>
+<a name='958'>
+   <font color=#447700>! aer_type = 1 : rural (SF79)<a name='959'></font>
+   data (asy_lut(1,ib,1),ib=1,N_BANDS) /0.7602,0.7152,0.7007,0.6820,0.6778,0.6750,0.6675,0.6485,0.6231,0.6481,0.7524/<a name='960'>
+   data (asy_lut(1,ib,2),ib=1,N_BANDS) /0.7617,0.7191,0.7052,0.6870,0.6829,0.6800,0.6724,0.6538,0.6277,0.6509,0.7543/<a name='961'>
+   data (asy_lut(1,ib,3),ib=1,N_BANDS) /0.7651,0.7250,0.7122,0.6958,0.6922,0.6898,0.6831,0.6645,0.6377,0.6575,0.7592/<a name='962'>
+   data (asy_lut(1,ib,4),ib=1,N_BANDS) /0.7738,0.7460,0.7372,0.7260,0.7236,0.7219,0.7172,0.7003,0.6725,0.6806,0.7635/<a name='963'>
+   data (asy_lut(1,ib,5),ib=1,N_BANDS) /0.7765,0.7627,0.7581,0.7518,0.7502,0.7490,0.7453,0.7312,0.7026,0.6949,0.7539/<a name='964'>
+   data (asy_lut(1,ib,6),ib=1,N_BANDS) /0.7761,0.7683,0.7656,0.7615,0.7604,0.7595,0.7564,0.7438,0.7157,0.7019,0.7491/<a name='965'>
+   data (asy_lut(1,ib,7),ib=1,N_BANDS) /0.7773,0.7754,0.7746,0.7730,0.7725,0.7720,0.7702,0.7610,0.7383,0.7279,0.7747/<a name='966'>
+   data (asy_lut(1,ib,8),ib=1,N_BANDS) /0.7777,0.7792,0.7795,0.7794,0.7793,0.7790,0.7780,0.7714,0.7514,0.7405,0.7815/<a name='967'>
+<a name='968'>
+   <font color=#447700>! aer_type = 2: urban (SF79)<a name='969'></font>
+   data (asy_lut(2,ib,1),ib=1,N_BANDS) /0.7794,0.7504,0.7395,0.7223,0.7173,0.7132,0.6996,0.6640,0.6250,0.6406,0.7319/<a name='970'>
+   data (asy_lut(2,ib,2),ib=1,N_BANDS) /0.7820,0.7543,0.7439,0.7275,0.7227,0.7188,0.7057,0.6708,0.6317,0.6458,0.7351/<a name='971'>
+   data (asy_lut(2,ib,3),ib=1,N_BANDS) /0.7912,0.7711,0.7634,0.7507,0.7469,0.7437,0.7327,0.7016,0.6631,0.6691,0.7477/<a name='972'>
+   data (asy_lut(2,ib,4),ib=1,N_BANDS) /0.7951,0.7851,0.7809,0.7733,0.7708,0.7686,0.7607,0.7354,0.6979,0.6898,0.7486/<a name='973'>
+   data (asy_lut(2,ib,5),ib=1,N_BANDS) /0.7923,0.7905,0.7892,0.7858,0.7844,0.7831,0.7778,0.7581,0.7238,0.7056,0.7460/<a name='974'>
+   data (asy_lut(2,ib,6),ib=1,N_BANDS) /0.7879,0.7924,0.7932,0.7927,0.7920,0.7913,0.7877,0.7733,0.7431,0.7201,0.7458/<a name='975'>
+   data (asy_lut(2,ib,7),ib=1,N_BANDS) /0.7828,0.7925,0.7951,0.7973,0.7974,0.7972,0.7957,0.7872,0.7638,0.7396,0.7523/<a name='976'>
+   data (asy_lut(2,ib,8),ib=1,N_BANDS) /0.7808,0.7921,0.7954,0.7989,0.7994,0.7995,0.7993,0.7944,0.7754,0.7677,0.7622/<a name='977'>
+<a name='978'>
+   <font color=#447700>! aer_type = 3 : maritime (SF79)<a name='979'></font>
+   data (asy_lut(3,ib,1),ib=1,N_BANDS) /0.7532,0.7204,0.7102,0.6980,0.6956,0.6940,0.6896,0.6780,0.6814,0.6953,0.6927/<a name='980'>
+   data (asy_lut(3,ib,2),ib=1,N_BANDS) /0.7604,0.7321,0.7225,0.7092,0.7060,0.7036,0.6978,0.6918,0.6945,0.7119,0.7217/<a name='981'>
+   data (asy_lut(3,ib,3),ib=1,N_BANDS) /0.7717,0.7491,0.7415,0.7309,0.7284,0.7266,0.7226,0.7210,0.7273,0.7466,0.7677/<a name='982'>
+   data (asy_lut(3,ib,4),ib=1,N_BANDS) /0.7956,0.7875,0.7844,0.7794,0.7779,0.7768,0.7738,0.7717,0.7753,0.7773,0.8198/<a name='983'>
+   data (asy_lut(3,ib,5),ib=1,N_BANDS) /0.8009,0.7963,0.7948,0.7927,0.7922,0.7918,0.7907,0.7868,0.7897,0.7975,0.8295/<a name='984'>
+   data (asy_lut(3,ib,6),ib=1,N_BANDS) /0.8081,0.8051,0.8043,0.8036,0.8035,0.8035,0.8031,0.7990,0.7935,0.8014,0.8386/<a name='985'>
+   data (asy_lut(3,ib,7),ib=1,N_BANDS) /0.8143,0.8179,0.8186,0.8185,0.8181,0.8176,0.8156,0.8107,0.8041,0.8071,0.8482/<a name='986'>
+   data (asy_lut(3,ib,8),ib=1,N_BANDS) /0.8205,0.8252,0.8264,0.8271,0.8269,0.8267,0.8251,0.8202,0.8131,0.8119,0.8547/<a name='987'>
+<a name='988'>
+   do j=jts,jte<a name='989'>
+      do i=its,ite<a name='990'>
+         do k=kts,kte<a name='991'>
+            <font color=#447700>! common part of the Lagrange's interpolator<a name='992'></font>
+            <font color=#447700>!   only depends on the relative humidity value<a name='993'></font>
+            ii=1<a name='994'>
+            do while ( (ii.le.N_RH) .and. (rh(i,k,j).gt.rhs(ii)) )<a name='995'>
+               ii=ii+1<a name='996'>
+            end do<a name='997'>
+            imin=max(1,ii-N_INT_POINTS/2-1)<a name='998'>
+            imax=min(N_RH,ii+N_INT_POINTS/2)<a name='999'>
+<a name='1000'>
+            do ib=1,N_BANDS<a name='1001'>
+               asyaer(i,k,j,ib)=0.<a name='1002'>
+               do jj=imin,imax<a name='1003'>
+                  lj=1.<a name='1004'>
+                  do kk=imin,imax<a name='1005'>
+                     if (kk.ne.jj) lj=lj*(rh(i,k,j)-rhs(kk))/(rhs(jj)-rhs(kk))<a name='1006'>
+                  end do<a name='1007'>
+                  asyaer(i,k,j,ib)=asyaer(i,k,j,ib)+lj*asy_lut(aer_type,ib,jj)<a name='1008'>
+               end do<a name='1009'>
+            end do<a name='1010'>
+         end do<a name='1011'>
+      end do<a name='1012'>
+   end do<a name='1013'>
+end subroutine calc_spectral_asy_goddard_sw<a name='1014'>
+<a name='1015'>
+<A NAME='CALC_SPECTRAL_AOD_RRTMG_SW'><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_SPECTRAL_AOD_RRTMG_SW' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1016'>
+<font color=#993300>subroutine </font><font color=#cc0000>calc_spectral_aod_rrtmg_sw</font>(ims,ime,jms,jme,kms,kme,          &amp; <A href='../../call_to/CALC_SPECTRAL_AOD_RRTMG_SW.html' TARGET='index'>1</A><a name='1017'>
+                                      its,ite,jts,jte,kts,kte,          &amp;<a name='1018'>
+                                      rh,aer_type,aod550,               &amp;<a name='1019'>
+                                      tauaer,                           &amp;<a name='1020'>
+                                      aod550_3d, tauaer3d)               <font color=#447700>! trude<a name='1021'></font>
+<a name='1022'>
+   implicit none<a name='1023'>
+   <a name='1024'>
+   <font color=#447700>! constants<a name='1025'></font>
+   integer, parameter :: N_AER_TYPES=3<a name='1026'>
+   integer, parameter :: N_RH=8<a name='1027'>
+   integer, parameter :: N_BANDS=14<a name='1028'>
+   integer, parameter :: N_INT_POINTS=4<a name='1029'>
+<a name='1030'>
+   <font color=#447700>! I/O variables<a name='1031'></font>
+   integer, intent(in) :: ims,ime,jms,jme,kms,kme, &amp;<a name='1032'>
+                          its,ite,jts,jte,kts,kte<a name='1033'>
+   integer, intent(in) :: aer_type<a name='1034'>
+   real, dimension(ims:ime, kms:kme, jms:jme),   intent(in) :: rh        <font color=#447700>! relative humidity<a name='1035'></font>
+   real, dimension(ims:ime, jms:jme),            intent(in) :: aod550    <font color=#447700>! Total AOD at 550 nm at surface<a name='1036'></font>
+   real, dimension(ims:ime, jms:jme, 1:N_BANDS), intent(inout) :: tauaer <font color=#447700>! Total spectral aerosol optical depth at surface<a name='1037'></font>
+<a name='1038'>
+   <font color=#447700>! ++ Trude<a name='1039'></font>
+   real, dimension(ims:ime, kms:kme, jms:jme), optional, intent(in) :: aod550_3d <font color=#447700>! 3D  AOD at 550 nm <a name='1040'></font>
+   real, dimension(ims:ime, kms:kme, jms:jme, 1:N_BANDS), optional, intent(inout) :: tauaer3d <font color=#447700>! <a name='1041'></font>
+   <font color=#447700>! -- Trude<a name='1042'></font>
+<a name='1043'>
+   <font color=#447700>! local variables<a name='1044'></font>
+   integer :: i,j,k,ib,imax,imin,ii,jj,kk<a name='1045'>
+   real    :: rhs(N_RH),lj<a name='1046'>
+   real    :: raod_lut(N_AER_TYPES,N_BANDS,N_RH)<a name='1047'>
+<a name='1048'>
+   <font color=#447700>! relative humidity steps<a name='1049'></font>
+   data (rhs(i),i=1,8) /0.,50.,70.,80.,90.,95.,98.,99./<a name='1050'>
+<a name='1051'>
+   <font color=#447700>! aer_type = 1 : rural (SF79)<a name='1052'></font>
+   data (raod_lut(1,ib,1),ib=1,N_BANDS) /0.0735,0.0997,0.1281,0.1529,0.1882,0.2512,0.3010,0.4550,0.7159,1.0357, &amp;<a name='1053'>
+                                         1.3582,1.6760,2.2523,0.0582/<a name='1054'>
+   data (raod_lut(1,ib,2),ib=1,N_BANDS) /0.0741,0.1004,0.1289,0.1537,0.1891,0.2522,0.3021,0.4560,0.7166,1.0351, &amp;<a name='1055'>
+                                         1.3547,1.6687,2.2371,0.0587/<a name='1056'>
+   data (raod_lut(1,ib,3),ib=1,N_BANDS) /0.0752,0.1017,0.1304,0.1554,0.1909,0.2542,0.3042,0.4580,0.7179,1.0342, &amp;<a name='1057'>
+                                         1.3485,1.6559,2.2102,0.0596/<a name='1058'>
+   data (raod_lut(1,ib,4),ib=1,N_BANDS) /0.0766,0.1034,0.1323,0.1575,0.1932,0.2567,0.3068,0.4605,0.7196,1.0332, &amp;<a name='1059'>
+                                         1.3411,1.6407,2.1785,0.0608/<a name='1060'>
+   data (raod_lut(1,ib,5),ib=1,N_BANDS) /0.0807,0.1083,0.1379,0.1635,0.1998,0.2639,0.3143,0.4677,0.7244,1.0305, &amp;<a name='1061'>
+                                         1.3227,1.6031,2.1006,0.0644/<a name='1062'>
+   data (raod_lut(1,ib,6),ib=1,N_BANDS) /0.0884,0.1174,0.1482,0.1746,0.2118,0.2769,0.3277,0.4805,0.7328,1.0272, &amp;<a name='1063'>
+                                         1.2977,1.5525,1.9976,0.0712/<a name='1064'>
+   data (raod_lut(1,ib,7),ib=1,N_BANDS) /0.1072,0.1391,0.1724,0.2006,0.2396,0.3066,0.3581,0.5087,0.7510,1.0231, &amp;<a name='1065'>
+                                         1.2622,1.4818,1.8565,0.0878/<a name='1066'>
+   data (raod_lut(1,ib,8),ib=1,N_BANDS) /0.1286,0.1635,0.1991,0.2288,0.2693,0.3377,0.3895,0.5372,0.7686,1.0213, &amp;<a name='1067'>
+                                         1.2407,1.4394,1.7739,0.1072/<a name='1068'>
+<a name='1069'>
+   <font color=#447700>! aer_type = 2 : urban (SF79)<a name='1070'></font>
+   data (raod_lut(2,ib,1),ib=1,N_BANDS) /0.1244,0.1587,0.1939,0.2233,0.2635,0.3317,0.3835,0.5318,0.7653,1.0344, &amp;<a name='1071'>
+                                         1.3155,1.5885,2.0706,0.1033/<a name='1072'>
+   data (raod_lut(2,ib,2),ib=1,N_BANDS) /0.1159,0.1491,0.1834,0.2122,0.2518,0.3195,0.3712,0.5207,0.7585,1.0331, &amp;<a name='1073'>
+                                         1.3130,1.5833,2.0601,0.0956/<a name='1074'>
+   data (raod_lut(2,ib,3),ib=1,N_BANDS) /0.1093,0.1416,0.1752,0.2035,0.2427,0.3099,0.3615,0.5118,0.7529,1.0316, &amp;<a name='1075'>
+                                         1.3083,1.5739,2.0408,0.0898/<a name='1076'>
+   data (raod_lut(2,ib,4),ib=1,N_BANDS) /0.1062,0.1381,0.1712,0.1993,0.2382,0.3052,0.3567,0.5074,0.7501,1.0302, &amp;<a name='1077'>
+                                         1.3025,1.5620,2.0168,0.0870/<a name='1078'>
+   data (raod_lut(2,ib,5),ib=1,N_BANDS) /0.1045,0.1361,0.1690,0.1970,0.2357,0.3025,0.3540,0.5049,0.7486,1.0271, &amp;<a name='1079'>
+                                         1.2864,1.5297,1.9518,0.0854/<a name='1080'>
+   data (raod_lut(2,ib,6),ib=1,N_BANDS) /0.1065,0.1384,0.1716,0.1997,0.2386,0.3056,0.3571,0.5078,0.7504,1.0227, &amp;<a name='1081'>
+                                         1.2603,1.4780,1.8492,0.0872/<a name='1082'>
+   data (raod_lut(2,ib,7),ib=1,N_BANDS) /0.1147,0.1478,0.1820,0.2107,0.2503,0.3179,0.3696,0.5192,0.7575,1.0146, &amp;<a name='1083'>
+                                         1.2116,1.3830,1.6658,0.0946/<a name='1084'>
+   data (raod_lut(2,ib,8),ib=1,N_BANDS) /0.1247,0.1590,0.1943,0.2237,0.2639,0.3322,0.3840,0.5322,0.7656,1.0082, &amp;<a name='1085'>
+                                         1.1719,1.3075,1.5252,0.1036/<a name='1086'>
+<a name='1087'>
+   <font color=#447700>! aer_type = 3 : maritime (SF79)<a name='1088'></font>
+   data (raod_lut(3,ib,1),ib=1,N_BANDS) /0.3053,0.3507,0.3932,0.4261,0.4681,0.5334,0.5797,0.6962,0.8583,1.0187, &amp;<a name='1089'>
+                                         1.1705,1.3049,1.5205,0.2748/<a name='1090'>
+   data (raod_lut(3,ib,2),ib=1,N_BANDS) /0.3566,0.4023,0.4443,0.4765,0.5170,0.5792,0.6227,0.7298,0.8756,1.0162, &amp;<a name='1091'>
+                                         1.1472,1.2614,1.4415,0.3256/<a name='1092'>
+   data (raod_lut(3,ib,3),ib=1,N_BANDS) /0.4359,0.4803,0.5203,0.5505,0.5879,0.6441,0.6828,0.7756,0.8985,1.0135, &amp;<a name='1093'>
+                                         1.1198,1.2109,1.3518,0.4051/<a name='1094'>
+   data (raod_lut(3,ib,4),ib=1,N_BANDS) /0.5128,0.5544,0.5913,0.6187,0.6523,0.7020,0.7358,0.8149,0.9174,1.0115, &amp;<a name='1095'>
+                                         1.0995,1.1740,1.2875,0.4835/<a name='1096'>
+   data (raod_lut(3,ib,5),ib=1,N_BANDS) /0.6479,0.6816,0.7108,0.7320,0.7575,0.7946,0.8193,0.8752,0.9455,1.0092, &amp;<a name='1097'>
+                                         1.0728,1.1263,1.2061,0.6236/<a name='1098'>
+   data (raod_lut(3,ib,6),ib=1,N_BANDS) /0.7582,0.7831,0.8043,0.8196,0.8377,0.8636,0.8806,0.9184,0.9649,1.0080, &amp;<a name='1099'>
+                                         1.0564,1.0973,1.1576,0.7399/<a name='1100'>
+   data (raod_lut(3,ib,7),ib=1,N_BANDS) /0.8482,0.8647,0.8785,0.8884,0.9000,0.9164,0.9272,0.9506,0.9789,1.0072, &amp;<a name='1101'>
+                                         1.0454,1.0780,1.1256,0.8360/<a name='1102'>
+   data (raod_lut(3,ib,8),ib=1,N_BANDS) /0.8836,0.8965,0.9073,0.9149,0.9239,0.9365,0.9448,0.9626,0.9841,1.0069, &amp;<a name='1103'>
+                                         1.0415,1.0712,1.1145,0.8741/<a name='1104'>
+<a name='1105'>
+<a name='1106'>
+<font color=#447700>!   ++ Trude    ;  if 3D AOD, disaggreaget at all levels.<a name='1107'></font>
+   if (present(aod550_3d)) then<a name='1108'>
+      do j=jts,jte<a name='1109'>
+         do i=its,ite<a name='1110'>
+            <font color=#447700>!   common part of the Lagrange's interpolator<a name='1111'></font>
+            <font color=#447700>!   only depends on the relative humidity value<a name='1112'></font>
+            do kk = kts,kte<a name='1113'>
+               ii=1<a name='1114'>
+               do while ( (ii.le.N_RH) .and. (rh(i,kk,j).gt.rhs(ii)) )<a name='1115'>
+                  ii=ii+1<a name='1116'>
+               end do<a name='1117'>
+               imin=max(1,ii-N_INT_POINTS/2-1)<a name='1118'>
+               imax=min(N_RH,ii+N_INT_POINTS/2)<a name='1119'>
+<a name='1120'>
+               do ib=1,N_BANDS<a name='1121'>
+                  tauaer3d(i,kk,j,ib)=0.<a name='1122'>
+                  do jj=imin,imax<a name='1123'>
+                     lj=1.<a name='1124'>
+                     do k=imin,imax<a name='1125'>
+                        if (k.ne.jj) lj=lj*(rh(i,kk,j)-rhs(k))/(rhs(jj)-rhs(k))<a name='1126'>
+                     end do<a name='1127'>
+                     tauaer3d(i,kk,j,ib)=tauaer3d(i,kk,j,ib)+lj*raod_lut(aer_type,ib,jj)*aod550_3d(i,kk,j)<a name='1128'>
+                  end do<a name='1129'>
+               end do<a name='1130'>
+            end do<a name='1131'>
+         end do<a name='1132'>
+      end do<a name='1133'>
+    else<a name='1134'>
+<font color=#447700>! -- Trude<a name='1135'></font>
+<a name='1136'>
+   do j=jts,jte<a name='1137'>
+      do i=its,ite<a name='1138'>
+         <font color=#447700>! common part of the Lagrange's interpolator<a name='1139'></font>
+         <font color=#447700>!   only depends on the relative humidity value<a name='1140'></font>
+         ii=1<a name='1141'>
+         do while ( (ii.le.N_RH) .and. (rh(i,kts,j).gt.rhs(ii)) )<a name='1142'>
+            ii=ii+1<a name='1143'>
+         end do<a name='1144'>
+         imin=max(1,ii-N_INT_POINTS/2-1)<a name='1145'>
+         imax=min(N_RH,ii+N_INT_POINTS/2)<a name='1146'>
+<a name='1147'>
+         do ib=1,N_BANDS<a name='1148'>
+            tauaer(i,j,ib)=0.<a name='1149'>
+            do jj=imin,imax<a name='1150'>
+               lj=1.<a name='1151'>
+               do k=imin,imax<a name='1152'>
+                  if (k.ne.jj) lj=lj*(rh(i,kts,j)-rhs(k))/(rhs(jj)-rhs(k))<a name='1153'>
+               end do<a name='1154'>
+               tauaer(i,j,ib)=tauaer(i,j,ib)+lj*raod_lut(aer_type,ib,jj)*aod550(i,j)<a name='1155'>
+            end do<a name='1156'>
+         end do<a name='1157'>
+      end do<a name='1158'>
+   end do<a name='1159'>
+   endif<a name='1160'>
+<a name='1161'>
+end subroutine calc_spectral_aod_rrtmg_sw<a name='1162'>
+<a name='1163'>
+<A NAME='CALC_SPECTRAL_SSA_RRTMG_SW'><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_SPECTRAL_SSA_RRTMG_SW' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1164'>
+<font color=#993300>subroutine </font><font color=#cc0000>calc_spectral_ssa_rrtmg_sw</font>(ims,ime,jms,jme,kms,kme,  &amp; <A href='../../call_to/CALC_SPECTRAL_SSA_RRTMG_SW.html' TARGET='index'>1</A><a name='1165'>
+                                      its,ite,jts,jte,kts,kte,  &amp;<a name='1166'>
+                                      rh,aer_type,              &amp;<a name='1167'>
+                                      ssaaer                    )<a name='1168'>
+   implicit none<a name='1169'>
+   <a name='1170'>
+   <font color=#447700>! constants<a name='1171'></font>
+   integer, parameter :: N_AER_TYPES=3<a name='1172'>
+   integer, parameter :: N_RH=8<a name='1173'>
+   integer, parameter :: N_BANDS=14<a name='1174'>
+   integer, parameter :: N_INT_POINTS=4<a name='1175'>
+<a name='1176'>
+   <font color=#447700>! I/O variables<a name='1177'></font>
+   integer, intent(in) :: ims,ime,jms,jme,kms,kme, &amp;<a name='1178'>
+                          its,ite,jts,jte,kts,kte<a name='1179'>
+   integer, intent(in) :: aer_type<a name='1180'>
+   real, dimension(ims:ime, kms:kme, jms:jme),            intent(in)    :: rh     <font color=#447700>! surface relative humidity<a name='1181'></font>
+   real, dimension(ims:ime, kms:kme, jms:jme, 1:N_BANDS), intent(inout) :: ssaaer <font color=#447700>! aerosol single-scattering albedo at surface<a name='1182'></font>
+<a name='1183'>
+   <font color=#447700>! local variables<a name='1184'></font>
+   integer :: i,j,k,kk,ib,imax,imin,ii,jj<a name='1185'>
+   real    :: rhs(N_RH),lj<a name='1186'>
+   real    :: ssa_lut(N_AER_TYPES,N_BANDS,N_RH)<a name='1187'>
+<a name='1188'>
+   <font color=#447700>! relative humidity steps<a name='1189'></font>
+   data (rhs(i),i=1,8) /0.,50.,70.,80.,90.,95.,98.,99./<a name='1190'>
+<a name='1191'>
+   <font color=#447700>! aer_type = 1 : rural (SF79)<a name='1192'></font>
+   data (ssa_lut(1,ib,1),ib=1,N_BANDS) /0.8730,0.6695,0.8530,0.8601,0.8365,0.7949,0.8113,0.8810,0.9305,0.9436, &amp;<a name='1193'>
+                                        0.9532,0.9395,0.8007,0.8634/<a name='1194'>
+   data (ssa_lut(1,ib,2),ib=1,N_BANDS) /0.8428,0.6395,0.8571,0.8645,0.8408,0.8007,0.8167,0.8845,0.9326,0.9454, &amp;<a name='1195'>
+                                        0.9545,0.9416,0.8070,0.8589/<a name='1196'>
+   data (ssa_lut(1,ib,3),ib=1,N_BANDS) /0.8000,0.6025,0.8668,0.8740,0.8503,0.8140,0.8309,0.8943,0.9370,0.9489, &amp;<a name='1197'>
+                                        0.9577,0.9451,0.8146,0.8548/<a name='1198'>
+   data (ssa_lut(1,ib,4),ib=1,N_BANDS) /0.7298,0.5666,0.9030,0.9049,0.8863,0.8591,0.8701,0.9178,0.9524,0.9612, &amp;<a name='1199'>
+                                        0.9677,0.9576,0.8476,0.8578/<a name='1200'>
+   data (ssa_lut(1,ib,5),ib=1,N_BANDS) /0.7010,0.5606,0.9312,0.9288,0.9183,0.9031,0.9112,0.9439,0.9677,0.9733, &amp;<a name='1201'>
+                                        0.9772,0.9699,0.8829,0.8590/<a name='1202'>
+   data (ssa_lut(1,ib,6),ib=1,N_BANDS) /0.6933,0.5620,0.9465,0.9393,0.9346,0.9290,0.9332,0.9549,0.9738,0.9782, &amp;<a name='1203'>
+                                        0.9813,0.9750,0.8980,0.8594/<a name='1204'>
+   data (ssa_lut(1,ib,7),ib=1,N_BANDS) /0.6842,0.5843,0.9597,0.9488,0.9462,0.9470,0.9518,0.9679,0.9808,0.9839, &amp;<a name='1205'>
+                                        0.9864,0.9794,0.9113,0.8648/<a name='1206'>
+   data (ssa_lut(1,ib,8),ib=1,N_BANDS) /0.6786,0.5897,0.9658,0.9522,0.9530,0.9610,0.9651,0.9757,0.9852,0.9871, &amp;<a name='1207'>
+                                        0.9883,0.9835,0.9236,0.8618/<a name='1208'>
+<a name='1209'>
+   <font color=#447700>! aer_type = 2: urban (SF79)<a name='1210'></font>
+   data (ssa_lut(2,ib,1),ib=1,N_BANDS) /0.4063,0.3663,0.4093,0.4205,0.4487,0.4912,0.5184,0.5743,0.6233,0.6392, &amp;<a name='1211'>
+                                        0.6442,0.6408,0.6105,0.4094/<a name='1212'>
+   data (ssa_lut(2,ib,2),ib=1,N_BANDS) /0.4113,0.3654,0.4215,0.4330,0.4604,0.5022,0.5293,0.5848,0.6336,0.6493, &amp;<a name='1213'>
+                                        0.6542,0.6507,0.6205,0.4196/<a name='1214'>
+   data (ssa_lut(2,ib,3),ib=1,N_BANDS) /0.4500,0.3781,0.4924,0.5050,0.5265,0.5713,0.6048,0.6274,0.6912,0.7714, &amp;<a name='1215'>
+                                        0.7308,0.7027,0.6772,0.4820/<a name='1216'>
+   data (ssa_lut(2,ib,4),ib=1,N_BANDS) /0.5075,0.4139,0.5994,0.6127,0.6350,0.6669,0.6888,0.7333,0.7704,0.7809, &amp;<a name='1217'>
+                                        0.7821,0.7762,0.7454,0.5709/<a name='1218'>
+   data (ssa_lut(2,ib,5),ib=1,N_BANDS) /0.5596,0.4570,0.7009,0.7118,0.7317,0.7583,0.7757,0.8093,0.8361,0.8422, &amp;<a name='1219'>
+                                        0.8406,0.8337,0.8036,0.6525/<a name='1220'>
+   data (ssa_lut(2,ib,6),ib=1,N_BANDS) /0.6008,0.4971,0.7845,0.7906,0.8075,0.8290,0.8418,0.8649,0.8824,0.8849, &amp;<a name='1221'>
+                                        0.8815,0.8739,0.8455,0.7179/<a name='1222'>
+   data (ssa_lut(2,ib,7),ib=1,N_BANDS) /0.6401,0.5407,0.8681,0.8664,0.8796,0.8968,0.9043,0.9159,0.9244,0.9234, &amp;<a name='1223'>
+                                        0.9182,0.9105,0.8849,0.7796/<a name='1224'>
+   data (ssa_lut(2,ib,8),ib=1,N_BANDS) /0.6567,0.5618,0.9073,0.9077,0.9182,0.9279,0.9325,0.9398,0.9440,0.9413, &amp;<a name='1225'>
+                                        0.9355,0.9278,0.9039,0.8040/<a name='1226'>
+<a name='1227'>
+   <font color=#447700>! aer_type = 3 : maritime (SF79)<a name='1228'></font>
+   data (ssa_lut(3,ib,1),ib=1,N_BANDS) /0.9697,0.9183,0.9749,0.9820,0.9780,0.9712,0.9708,0.9778,0.9831,0.9827, &amp;<a name='1229'>
+                                        0.9826,0.9723,0.8763,0.9716/<a name='1230'>
+   data (ssa_lut(3,ib,2),ib=1,N_BANDS) /0.9070,0.8491,0.9730,0.9816,0.9804,0.9742,0.9738,0.9802,0.9847,0.9841, &amp;<a name='1231'>
+                                        0.9838,0.9744,0.8836,0.9546/<a name='1232'>
+   data (ssa_lut(3,ib,3),ib=1,N_BANDS) /0.8378,0.7761,0.9797,0.9827,0.9829,0.9814,0.9812,0.9852,0.9882,0.9875, &amp;<a name='1233'>
+                                        0.9871,0.9791,0.9006,0.9348/<a name='1234'>
+   data (ssa_lut(3,ib,4),ib=1,N_BANDS) /0.7866,0.7249,0.9890,0.9822,0.9856,0.9917,0.9924,0.9932,0.9943,0.9938, &amp;<a name='1235'>
+                                        0.9933,0.9887,0.9393,0.9204/<a name='1236'>
+   data (ssa_lut(3,ib,5),ib=1,N_BANDS) /0.7761,0.7164,0.9959,0.9822,0.9834,0.9941,0.9955,0.9952,0.9960,0.9956, &amp;<a name='1237'>
+                                        0.9951,0.9922,0.9538,0.9152/<a name='1238'>
+   data (ssa_lut(3,ib,6),ib=1,N_BANDS) /0.7671,0.7114,0.9902,0.9786,0.9838,0.9954,0.9970,0.9965,0.9971,0.9968, &amp;<a name='1239'>
+                                        0.9964,0.9943,0.9644,0.9158/<a name='1240'>
+   data (ssa_lut(3,ib,7),ib=1,N_BANDS) /0.7551,0.7060,0.9890,0.9743,0.9807,0.9966,0.9989,0.9978,0.9982,0.9980, &amp;<a name='1241'>
+                                        0.9978,0.9964,0.9757,0.9122/<a name='1242'>
+   data (ssa_lut(3,ib,8),ib=1,N_BANDS) /0.7439,0.7000,0.9870,0.9695,0.9769,0.9970,1.0000,0.9984,0.9988,0.9986, &amp;<a name='1243'>
+                                        0.9984,0.9975,0.9825,0.9076/<a name='1244'>
+<a name='1245'>
+   do j=jts,jte<a name='1246'>
+      do i=its,ite<a name='1247'>
+         do k=kts,kte<a name='1248'>
+            <font color=#447700>! common part of the Lagrange's interpolator<a name='1249'></font>
+            <font color=#447700>!   only depends on the relative humidity value<a name='1250'></font>
+            ii=1<a name='1251'>
+            do while ( (ii.le.N_RH) .and. (rh(i,k,j).gt.rhs(ii)) )<a name='1252'>
+               ii=ii+1<a name='1253'>
+            end do<a name='1254'>
+            imin=max(1,ii-N_INT_POINTS/2-1)<a name='1255'>
+            imax=min(N_RH,ii+N_INT_POINTS/2)<a name='1256'>
+<a name='1257'>
+            do ib=1,N_BANDS<a name='1258'>
+               ssaaer(i,k,j,ib)=0.<a name='1259'>
+               do jj=imin,imax<a name='1260'>
+                  lj=1.<a name='1261'>
+                  do kk=imin,imax<a name='1262'>
+                     if (kk.ne.jj) lj=lj*(rh(i,k,j)-rhs(kk))/(rhs(jj)-rhs(kk))<a name='1263'>
+                  end do<a name='1264'>
+                  ssaaer(i,k,j,ib)=ssaaer(i,k,j,ib)+lj*ssa_lut(aer_type,ib,jj)<a name='1265'>
+               end do<a name='1266'>
+            end do<a name='1267'>
+         end do<a name='1268'>
+      end do<a name='1269'>
+   end do<a name='1270'>
+end subroutine calc_spectral_ssa_rrtmg_sw<a name='1271'>
+<a name='1272'>
+<A NAME='CALC_SPECTRAL_ASY_RRTMG_SW'><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_SPECTRAL_ASY_RRTMG_SW' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1273'>
+<font color=#993300>subroutine </font><font color=#cc0000>calc_spectral_asy_rrtmg_sw</font>(ims,ime,jms,jme,kms,kme,  &amp; <A href='../../call_to/CALC_SPECTRAL_ASY_RRTMG_SW.html' TARGET='index'>1</A><a name='1274'>
+                                      its,ite,jts,jte,kts,kte,  &amp;<a name='1275'>
+                                      rh,aer_type,              &amp;<a name='1276'>
+                                      asyaer                    )<a name='1277'>
+   implicit none<a name='1278'>
+   <a name='1279'>
+   <font color=#447700>! constants<a name='1280'></font>
+   integer, parameter :: N_AER_TYPES=3<a name='1281'>
+   integer, parameter :: N_RH=8<a name='1282'>
+   integer, parameter :: N_BANDS=14<a name='1283'>
+   integer, parameter :: N_INT_POINTS=4<a name='1284'>
+<a name='1285'>
+   <font color=#447700>! I/O variables<a name='1286'></font>
+   integer, intent(in) :: ims,ime,jms,jme,kms,kme, &amp;<a name='1287'>
+                          its,ite,jts,jte,kts,kte<a name='1288'>
+   integer, intent(in) :: aer_type<a name='1289'>
+   real, dimension(ims:ime, kms:kme, jms:jme),            intent(in)    :: rh <font color=#447700>! surface relative humidity<a name='1290'></font>
+   real, dimension(ims:ime, kms:kme, jms:jme, 1:N_BANDS), intent(inout) :: asyaer <font color=#447700>! aerosol asymmetry parameter at surface<a name='1291'></font>
+<a name='1292'>
+   <font color=#447700>! local variables<a name='1293'></font>
+   integer :: i,j,k,kk,ib,imax,imin,ii,jj<a name='1294'>
+   real    :: rhs(N_RH),lj<a name='1295'>
+   real    :: asy_lut(N_AER_TYPES,N_BANDS,N_RH)<a name='1296'>
+<a name='1297'>
+   <font color=#447700>! relative humidity steps<a name='1298'></font>
+   data (rhs(i),i=1,8) /0.,50.,70.,80.,90.,95.,98.,99./<a name='1299'>
+<a name='1300'>
+   <font color=#447700>! aer_type = 1 : rural (SF79)<a name='1301'></font>
+   data (asy_lut(1,ib,1),ib=1,N_BANDS) /0.7444,0.7711,0.7306,0.7103,0.6693,0.6267,0.6169,0.6207,0.6341,0.6497, &amp;<a name='1302'>
+                                        0.6630,0.6748,0.7208,0.7419/<a name='1303'>
+   data (asy_lut(1,ib,2),ib=1,N_BANDS) /0.7444,0.7747,0.7314,0.7110,0.6711,0.6301,0.6210,0.6251,0.6392,0.6551, &amp;<a name='1304'>
+                                        0.6680,0.6799,0.7244,0.7436/<a name='1305'>
+   data (asy_lut(1,ib,3),ib=1,N_BANDS) /0.7438,0.7845,0.7341,0.7137,0.6760,0.6381,0.6298,0.6350,0.6497,0.6657, &amp;<a name='1306'>
+                                        0.6790,0.6896,0.7300,0.7477/<a name='1307'>
+   data (asy_lut(1,ib,4),ib=1,N_BANDS) /0.7336,0.7934,0.7425,0.7217,0.6925,0.6665,0.6616,0.6693,0.6857,0.7016, &amp;<a name='1308'>
+                                        0.7139,0.7218,0.7495,0.7574/<a name='1309'>
+   data (asy_lut(1,ib,5),ib=1,N_BANDS) /0.7111,0.7865,0.7384,0.7198,0.6995,0.6864,0.6864,0.6987,0.7176,0.7326, &amp;<a name='1310'>
+                                        0.7427,0.7489,0.7644,0.7547/<a name='1311'>
+   data (asy_lut(1,ib,6),ib=1,N_BANDS) /0.7009,0.7828,0.7366,0.7196,0.7034,0.6958,0.6979,0.7118,0.7310,0.7452, &amp;<a name='1312'>
+                                        0.7542,0.7593,0.7692,0.7522/<a name='1313'>
+   data (asy_lut(1,ib,7),ib=1,N_BANDS) /0.7226,0.8127,0.7621,0.7434,0.7271,0.7231,0.7248,0.7351,0.7506,0.7622, &amp;<a name='1314'>
+                                        0.7688,0.7719,0.7756,0.7706/<a name='1315'>
+   data (asy_lut(1,ib,8),ib=1,N_BANDS) /0.7296,0.8219,0.7651,0.7513,0.7404,0.7369,0.7386,0.7485,0.7626,0.7724, &amp;<a name='1316'>
+                                        0.7771,0.7789,0.7790,0.7760/<a name='1317'>
+<a name='1318'>
+   <font color=#447700>! aer_type = 2: urban (SF79)<a name='1319'></font>
+   data (asy_lut(2,ib,1),ib=1,N_BANDS) /0.7399,0.7372,0.7110,0.6916,0.6582,0.6230,0.6147,0.6214,0.6412,0.6655, &amp;<a name='1320'>
+                                        0.6910,0.7124,0.7538,0.7395/<a name='1321'>
+   data (asy_lut(2,ib,2),ib=1,N_BANDS) /0.7400,0.7419,0.7146,0.6952,0.6626,0.6287,0.6209,0.6280,0.6481,0.6723, &amp;<a name='1322'>
+                                        0.6974,0.7180,0.7575,0.7432/<a name='1323'>
+   data (asy_lut(2,ib,3),ib=1,N_BANDS) /0.7363,0.7614,0.7303,0.7100,0.6815,0.6550,0.6498,0.6590,0.6802,0.7032, &amp;<a name='1324'>
+                                        0.7255,0.7430,0.7735,0.7580/<a name='1325'>
+   data (asy_lut(2,ib,4),ib=1,N_BANDS) /0.7180,0.7701,0.7358,0.7163,0.6952,0.6807,0.6801,0.6935,0.7160,0.7370, &amp;<a name='1326'>
+                                        0.7553,0.7681,0.7862,0.7623/<a name='1327'>
+   data (asy_lut(2,ib,5),ib=1,N_BANDS) /0.7013,0.7733,0.7374,0.7203,0.7057,0.7006,0.7035,0.7192,0.7415,0.7596, &amp;<a name='1328'>
+                                        0.7739,0.7827,0.7906,0.7596/<a name='1329'>
+   data (asy_lut(2,ib,6),ib=1,N_BANDS) /0.6922,0.7773,0.7404,0.7264,0.7170,0.7179,0.7228,0.7389,0.7595,0.7746, &amp;<a name='1330'>
+                                        0.7851,0.7909,0.7918,0.7562/<a name='1331'>
+   data (asy_lut(2,ib,7),ib=1,N_BANDS) /0.6928,0.7875,0.7491,0.7393,0.7345,0.7397,0.7455,0.7602,0.7773,0.7883, &amp;<a name='1332'>
+                                        0.7944,0.7970,0.7912,0.7555/<a name='1333'>
+   data (asy_lut(2,ib,8),ib=1,N_BANDS) /0.7021,0.7989,0.7590,0.7512,0.7613,0.7746,0.7718,0.7727,0.7867,0.7953, &amp;<a name='1334'>
+                                        0.7988,0.7994,0.7906,0.7600/<a name='1335'>
+<a name='1336'>
+   <font color=#447700>! aer_type = 3 : maritime (SF79)<a name='1337'></font>
+   data (asy_lut(3,ib,1),ib=1,N_BANDS) /0.6620,0.7011,0.7111,0.7068,0.6990,0.6918,0.6883,0.6827,0.6768,0.6773, &amp;<a name='1338'>
+                                        0.6863,0.6940,0.7245,0.6719/<a name='1339'>
+   data (asy_lut(3,ib,2),ib=1,N_BANDS) /0.6880,0.7394,0.7297,0.7240,0.7162,0.7083,0.7038,0.6957,0.6908,0.6917, &amp;<a name='1340'>
+                                        0.6952,0.7035,0.7356,0.6977/<a name='1341'>
+   data (asy_lut(3,ib,3),ib=1,N_BANDS) /0.7266,0.7970,0.7666,0.7593,0.7505,0.7427,0.7391,0.7293,0.7214,0.7210, &amp;<a name='1342'>
+                                        0.7212,0.7265,0.7519,0.7340/<a name='1343'>
+   data (asy_lut(3,ib,4),ib=1,N_BANDS) /0.7683,0.8608,0.8120,0.8030,0.7826,0.7679,0.7713,0.7760,0.7723,0.7716, &amp;<a name='1344'>
+                                        0.7726,0.7767,0.7884,0.7768/<a name='1345'>
+   data (asy_lut(3,ib,5),ib=1,N_BANDS) /0.7776,0.8727,0.8182,0.8083,0.7985,0.7939,0.7953,0.7913,0.7846,0.7870, &amp;<a name='1346'>
+                                        0.7899,0.7918,0.7969,0.7870/<a name='1347'>
+   data (asy_lut(3,ib,6),ib=1,N_BANDS) /0.7878,0.8839,0.8231,0.8130,0.8050,0.7977,0.7945,0.7932,0.7955,0.7992, &amp;<a name='1348'>
+                                        0.8025,0.8035,0.8055,0.7956/<a name='1349'>
+   data (asy_lut(3,ib,7),ib=1,N_BANDS) /0.8005,0.8957,0.8273,0.8179,0.8105,0.8035,0.8010,0.8030,0.8081,0.8108, &amp;<a name='1350'>
+                                        0.8143,0.8174,0.8174,0.8042/<a name='1351'>
+   data (asy_lut(3,ib,8),ib=1,N_BANDS) /0.8104,0.9034,0.8294,0.8212,0.8144,0.8087,0.8077,0.8118,0.8175,0.8202, &amp;<a name='1352'>
+                                        0.8239,0.8265,0.8246,0.8095/<a name='1353'>
+<a name='1354'>
+   do j=jts,jte<a name='1355'>
+      do i=its,ite<a name='1356'>
+         do k=kts,kte<a name='1357'>
+            <font color=#447700>! common part of the Lagrange's interpolator<a name='1358'></font>
+            <font color=#447700>!   only depends on the relative humidity value<a name='1359'></font>
+            ii=1<a name='1360'>
+            do while ( (ii.le.N_RH) .and. (rh(i,k,j).gt.rhs(ii)) )<a name='1361'>
+               ii=ii+1<a name='1362'>
+            end do<a name='1363'>
+            imin=max(1,ii-N_INT_POINTS/2-1)<a name='1364'>
+            imax=min(N_RH,ii+N_INT_POINTS/2)<a name='1365'>
+<a name='1366'>
+            do ib=1,N_BANDS<a name='1367'>
+               asyaer(i,k,j,ib)=0.<a name='1368'>
+               do jj=imin,imax<a name='1369'>
+                  lj=1.<a name='1370'>
+                  do kk=imin,imax<a name='1371'>
+                     if (kk.ne.jj) lj=lj*(rh(i,k,j)-rhs(kk))/(rhs(jj)-rhs(kk))<a name='1372'>
+                  end do<a name='1373'>
+                  asyaer(i,k,j,ib)=asyaer(i,k,j,ib)+lj*asy_lut(aer_type,ib,jj)<a name='1374'>
+               end do<a name='1375'>
+            end do<a name='1376'>
+         end do<a name='1377'>
+      end do<a name='1378'>
+   end do<a name='1379'>
+end subroutine calc_spectral_asy_rrtmg_sw<a name='1380'>
+<a name='1381'>
+<A NAME='AOD_PROFILER'><A href='../../html_code/phys/module_ra_aerosol.F.html#AOD_PROFILER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1382'>
+<font color=#993300>subroutine </font><font color=#cc0000>aod_profiler</font>(ht,dz8w,taod550,n_bands,   &amp; <A href='../../call_to/AOD_PROFILER.html' TARGET='index'>2</A>,<A href='../../call_from/AOD_PROFILER.html' TARGET='index'>1</A><a name='1383'>
+                        ims,ime,jms,jme,kms,kme,   &amp;<a name='1384'>
+                        its,ite,jts,jte,kts,kte,   &amp;<a name='1385'>
+                        aod550                     &amp;<a name='1386'>
+                                                   )<a name='1387'>
+   use <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/phys/module_ra_aerosol.F.html#AOD_PROFILER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_71"> , only : wrf_err_message<a name='1388'>
+   <a name='1389'>
+   implicit none<a name='1390'>
+   <a name='1391'>
+   <font color=#447700>! constants<a name='1392'></font>
+   real, parameter :: scale_height=2500. <font color=#447700>! meters<a name='1393'></font>
+<a name='1394'>
+   <font color=#447700>! I/O variables<a name='1395'></font>
+   integer, intent(in) :: n_bands<a name='1396'>
+   integer, intent(in) :: ims,ime,jms,jme,kms,kme, &amp;<a name='1397'>
+                          its,ite,jts,jte,kts,kte<a name='1398'>
+   real, dimension( ims:ime, jms:jme),            intent(in) :: ht<a name='1399'>
+   real, dimension( ims:ime, kms:kme, jms:jme ),  intent(in) :: dz8w<a name='1400'>
+   real, dimension( ims:ime, jms:jme, 1:n_bands), intent(in) :: taod550<a name='1401'>
+   real, dimension( ims:ime, kms:kme, jms:jme, 1:n_bands ), intent(inout) :: aod550<a name='1402'>
+<a name='1403'>
+   <font color=#447700>! local variables<a name='1404'></font>
+   real, dimension(its:ite,kts:kte) :: z2d,aod5502d<a name='1405'>
+   real, dimension(its:ite)         :: htoa<a name='1406'>
+   real :: aod_scale<a name='1407'>
+   real :: aod_acum<a name='1408'>
+   integer :: i,j,k,nb<a name='1409'>
+<a name='1410'>
+   <font color=#447700>! input variables from driver are defined such as kms is sfc and<a name='1411'></font>
+   <font color=#447700>! kme is toa. Equivalently, kts is sfc and kte is toa<a name='1412'></font>
+   do j=jts,jte<a name='1413'>
+      <font color=#447700>! heigth profile<a name='1414'></font>
+      <font color=#447700>!   kts=surface, kte=toa<a name='1415'></font>
+      do i=its,ite<a name='1416'>
+         z2d(i,kts)=ht(i,j)+0.5*dz8w(i,kts,j)<a name='1417'>
+         do k=kts+1,kte<a name='1418'>
+            z2d(i,k)=z2d(i,k-1)+0.5*(dz8w(i,k-1,j)+dz8w(i,k,j))<a name='1419'>
+         end do<a name='1420'>
+         htoa(i)=z2d(i,kte)+0.5*dz8w(i,kte,j)<a name='1421'>
+      end do<a name='1422'>
+<a name='1423'>
+      do nb=1,n_bands<a name='1424'>
+         <font color=#447700>! AOD exponential profile<a name='1425'></font>
+         do i=its,ite<a name='1426'>
+            aod_scale=taod550(i,j,nb)/(scale_height*(exp(-ht(i,j)/scale_height)-exp(-htoa(i)/scale_height)))<a name='1427'>
+            do k=kts,kte<a name='1428'>
+               aod550(i,k,j,nb)=aod_scale*dz8w(i,k,j)*exp(-z2d(i,k)/scale_height)<a name='1429'>
+            end do<a name='1430'>
+         end do <a name='1431'>
+      end do <font color=#447700>! nb-loop<a name='1432'></font>
+   end do <font color=#447700>! j-loop<a name='1433'></font>
+end subroutine aod_profiler<a name='1434'>
+<a name='1435'>
+<A NAME='CALC_RELATIVE_HUMIDITY'><A href='../../html_code/phys/module_ra_aerosol.F.html#CALC_RELATIVE_HUMIDITY' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1436'>
+<font color=#993300>subroutine </font><font color=#cc0000>calc_relative_humidity</font>(p,t3d,qv3d,                 &amp; <A href='../../call_to/CALC_RELATIVE_HUMIDITY.html' TARGET='index'>2</A><a name='1437'>
+                                  ims,ime,jms,jme,kms,kme,    &amp;<a name='1438'>
+                                  its,ite,jts,jte,kts,kte,    &amp;<a name='1439'>
+                                  rh                          )<a name='1440'>
+   implicit none<a name='1441'>
+   <a name='1442'>
+   <font color=#447700>! I/O variables<a name='1443'></font>
+   integer, intent(in) :: ims,ime,jms,jme,kms,kme,its,ite,jts,jte,kts,kte<a name='1444'>
+   <font color=#447700>! Naming convention: 8~at =&gt; p8w reads as "p-at-w" (w=full levels)<a name='1445'></font>
+   real, dimension(ims:ime, kms:kme, jms:jme), intent(in)    :: p,    &amp; <font color=#447700>! pressure (Pa)<a name='1446'></font>
+                                                                t3d,  &amp; <font color=#447700>! temperature (K)<a name='1447'></font>
+                                                                qv3d    <font color=#447700>! water vapor mixing ratio (kg/kg)<a name='1448'></font>
+   real, dimension(ims:ime, kms:kme, jms:jme), intent(inout) :: rh      <font color=#447700>! relative humidity at surface<a name='1449'></font>
+<a name='1450'>
+   <font color=#447700>! local variables<a name='1451'></font>
+   real    :: tc,rv,es,e<a name='1452'>
+   integer :: i,j,k<a name='1453'>
+<a name='1454'>
+   do j=jts,jte<a name='1455'>
+      do i=its,ite<a name='1456'>
+         do k=kts,kte                               <font color=#447700>! only calculations at surface level<a name='1457'></font>
+            tc=t3d(i,k,j)-273.15                    <font color=#447700>! temperature (C)<a name='1458'></font>
+            rv=max(0.,qv3d(i,k,j))                  <font color=#447700>! water vapor mixing ration (kg kg-1)<a name='1459'></font>
+            es=6.112*exp((17.6*tc)/(tc+243.5))      <font color=#447700>! saturation vapor pressure, hPa, Bolton (1980)<a name='1460'></font>
+            e =0.01*rv*p(i,k,j)/(rv+0.62197)        <font color=#447700>! vapor pressure, hPa, (ECMWF handouts, page 6, Atmosph. Thermdyn.)<a name='1461'></font>
+                                                    <font color=#447700>! rv=eps * e/(p-e) -&gt; e=p * rv/(rv+eps), eps=0.62197<a name='1462'></font>
+            rh(i,k,j)=min(99.,max(0.,100.*e/es))    <font color=#447700>! relative humidity (%)<a name='1463'></font>
+         end do<a name='1464'>
+      end do<a name='1465'>
+   end do<a name='1466'>
+end subroutine calc_relative_humidity<a name='1467'>
+<a name='1468'>
+end module module_ra_aerosol<a name='1469'>
+<a name='1470'>
+</pre></body></html>

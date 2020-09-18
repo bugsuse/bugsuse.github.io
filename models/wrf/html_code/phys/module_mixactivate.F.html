@@ -1,0 +1,2829 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!************************************************************************<a name='2'></font>
+<font color=#447700>! This computer software was prepared by Battelle Memorial Institute, <a name='3'></font>
+<font color=#447700>! hereinafter the Contractor, under Contract No. DE-AC05-76RL0 1830 with<a name='4'></font>
+<font color=#447700>! the Department of Energy (DOE). NEITHER THE GOVERNMENT NOR THE<a name='5'></font>
+<font color=#447700>! CONTRACTOR MAKES ANY WARRANTY, EXPRESS OR IMPLIED, OR ASSUMES ANY<a name='6'></font>
+<font color=#447700>! LIABILITY FOR THE USE OF THIS SOFTWARE.<a name='7'></font>
+<font color=#447700>!<a name='8'></font>
+<font color=#447700>! MOSAIC module: see chem/module_mosaic_driver.F for references and terms<a name='9'></font>
+<font color=#447700>! of use<a name='10'></font>
+<font color=#447700>!************************************************************************<a name='11'></font>
+<a name='12'>
+<A NAME='MODULE_MIXACTIVATE'><A href='../../html_code/phys/module_mixactivate.F.html#MODULE_MIXACTIVATE' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='13'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_mixactivate</font> <A href='../../call_to/MODULE_MIXACTIVATE.html' TARGET='index'>2</A><a name='14'>
+PRIVATE<a name='15'>
+PUBLIC prescribe_aerosol_mixactivate, mixactivate, activate <font color=#447700>!BSINGH - added 'activate' for WRFCuP scheme<a name='16'></font>
+CONTAINS<a name='17'>
+<a name='18'>
+<a name='19'>
+<font color=#447700>!----------------------------------------------------------------------<a name='20'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='21'></font>
+<font color=#447700>! 06-nov-2005 rce - grid_id &amp; ktau added to arg list<a name='22'></font>
+<font color=#447700>! 25-apr-2006 rce - dens_aer is (g/cm3), NOT (kg/m3)<a name='23'></font>
+<A NAME='PRESCRIBE_AEROSOL_MIXACTIVATE'><A href='../../html_code/phys/module_mixactivate.F.html#PRESCRIBE_AEROSOL_MIXACTIVATE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='24'>
+      <font color=#993300>subroutine </font><font color=#cc0000>prescribe_aerosol_mixactivate</font> (                      &amp; <A href='../../call_to/PRESCRIBE_AEROSOL_MIXACTIVATE.html' TARGET='index'>1</A>,<A href='../../call_from/PRESCRIBE_AEROSOL_MIXACTIVATE.html' TARGET='index'>3</A><a name='25'>
+		grid_id, ktau, dtstep, naer,                          &amp;<a name='26'>
+		ccn_conc, chem_opt,                                   &amp; <font color=#447700>! RAS<a name='27'></font>
+		rho_phy, th_phy, pi_phy, w, cldfra, cldfra_old,       &amp;<a name='28'>
+		z, dz8w, p_at_w, t_at_w, exch_h,                      &amp;<a name='29'>
+        qv, qc, qi, qndrop3d,                                &amp;<a name='30'>
+        nsource,                                              &amp;<a name='31'>
+		ids,ide, jds,jde, kds,kde,                            &amp;<a name='32'>
+		ims,ime, jms,jme, kms,kme,                            &amp;<a name='33'>
+		its,ite, jts,jte, kts,kte,                            &amp;<a name='34'>
+		f_qc, f_qi, cn                                        )<a name='35'>
+<a name='36'>
+<font color=#447700>!        USE module_configure<a name='37'></font>
+<a name='38'>
+<font color=#447700>! wrapper to call mixactivate for mosaic description of aerosol<a name='39'></font>
+<a name='40'>
+	implicit none<a name='41'>
+<a name='42'>
+<font color=#447700>!   subr arguments<a name='43'></font>
+	integer, intent(in) ::                  &amp;<a name='44'>
+		grid_id, ktau,                  &amp;<a name='45'>
+		ids, ide, jds, jde, kds, kde,   &amp;<a name='46'>
+		ims, ime, jms, jme, kms, kme,   &amp;<a name='47'>
+		its, ite, jts, jte, kts, kte<a name='48'>
+<a name='49'>
+	real, intent(in) :: dtstep<a name='50'>
+	real, intent(inout) :: naer <font color=#447700>! aerosol number (/kg)<a name='51'></font>
+        real, intent(in) :: ccn_conc <font color=#447700>! CCN conc set within namelist<a name='52'></font>
+        integer, optional, intent(in) :: chem_opt<a name='53'>
+<a name='54'>
+	real, intent(in),   &amp;<a name='55'>
+		dimension( ims:ime, kms:kme, jms:jme ) :: &amp;<a name='56'>
+		rho_phy, th_phy, pi_phy, w,  &amp;<a name='57'>
+		z, dz8w, p_at_w, t_at_w, exch_h<a name='58'>
+<a name='59'>
+	real, intent(inout),   &amp;<a name='60'>
+		dimension( ims:ime, kms:kme, jms:jme ) :: cldfra, cldfra_old<a name='61'>
+<a name='62'>
+	real, intent(in),   &amp;<a name='63'>
+		dimension( ims:ime, kms:kme, jms:jme ) :: &amp;<a name='64'>
+		qv, qc, qi<a name='65'>
+<a name='66'>
+	real, intent(inout), optional,  &amp;<a name='67'>
+		dimension( ims:ime, kms:kme, jms:jme ) :: &amp;<a name='68'>
+		cn <font color=#447700>! single-size CCN concentration<a name='69'></font>
+<a name='70'>
+	real, intent(inout),   &amp;<a name='71'>
+		dimension( ims:ime, kms:kme, jms:jme ) :: &amp;<a name='72'>
+		qndrop3d<a name='73'>
+<a name='74'>
+	real, intent(out),   &amp;<a name='75'>
+		dimension( ims:ime, kms:kme, jms:jme) :: nsource<a name='76'>
+<a name='77'>
+    LOGICAL, OPTIONAL :: f_qc, f_qi<a name='78'>
+<a name='79'>
+<font color=#447700>! local vars<a name='80'></font>
+	integer maxd_aphase, maxd_atype, maxd_asize, maxd_acomp, max_chem<a name='81'>
+	parameter (maxd_aphase=2,maxd_atype=1,maxd_asize=1,maxd_acomp=1, max_chem=10)<a name='82'>
+	real ddvel(its:ite, jts:jte, max_chem) <font color=#447700>! dry deposition velosity<a name='83'></font>
+	real qsrflx(ims:ime, jms:jme, max_chem) <font color=#447700>! dry deposition flux of aerosol<a name='84'></font>
+	real chem(ims:ime, kms:kme, jms:jme, max_chem) <font color=#447700>! chem array<a name='85'></font>
+	integer i,j,k,l,m,n,p<a name='86'>
+	real hygro( its:ite, kts:kte, jts:jte, maxd_asize, maxd_atype ) <font color=#447700>! bulk<a name='87'></font>
+	integer ntype_aer, nsize_aer(maxd_atype),ncomp_aer(maxd_atype), nphase_aer<a name='88'>
+      	integer massptr_aer( maxd_acomp, maxd_asize, maxd_atype, maxd_aphase ),   &amp;<a name='89'>
+      	  waterptr_aer( maxd_asize, maxd_atype ),   &amp;<a name='90'>
+      	  numptr_aer( maxd_asize, maxd_atype, maxd_aphase ), &amp;<a name='91'>
+	  ai_phase, cw_phase<a name='92'>
+        real dlo_sect( maxd_asize, maxd_atype ),   &amp; <font color=#447700>! minimum size of section (cm)<a name='93'></font>
+             dhi_sect( maxd_asize, maxd_atype ),   &amp; <font color=#447700>! maximum size of section (cm)<a name='94'></font>
+	     sigmag_aer(maxd_asize, maxd_atype),   &amp; <font color=#447700>! geometric standard deviation of aerosol size dist<a name='95'></font>
+	     dgnum_aer(maxd_asize, maxd_atype),    &amp; <font color=#447700>! median diameter (cm) of number distrib of mode<a name='96'></font>
+	     dens_aer( maxd_acomp, maxd_atype),    &amp; <font color=#447700>! density (g/cm3) of material<a name='97'></font>
+	     mw_aer( maxd_acomp, maxd_atype),      &amp; <font color=#447700>! molecular weight (g/mole)<a name='98'></font>
+	     dpvolmean_aer(maxd_asize, maxd_atype)   <font color=#447700>! mean-volume diameter (cm) of mode<a name='99'></font>
+<font color=#447700>! terminology:  (pi/6) * (mean-volume diameter)**3 ==<a name='100'></font>
+<font color=#447700>!       (volume mixing ratio of section/mode)/(number mixing ratio)<a name='101'></font>
+	real, dimension(ims:ime,kms:kme,jms:jme) :: &amp;<a name='102'>
+	     ccn1,ccn2,ccn3,ccn4,ccn5,ccn6  <font color=#447700>! number conc of aerosols activated at supersat<a name='103'></font>
+	integer idrydep_onoff<a name='104'>
+	real, dimension(ims:ime,kms:kme,jms:jme) :: t_phy<a name='105'>
+	integer msectional<a name='106'>
+<a name='107'>
+<a name='108'>
+	  integer ptr<a name='109'>
+	  real maer<a name='110'>
+<a name='111'>
+<font color=#447700>!      if(naer.lt.1.)then<a name='112'></font>
+<font color=#447700>!	     naer=1000.e6 ! #/kg default value<a name='113'></font>
+<font color=#447700>!      endif<a name='114'></font>
+      IF ( (naer.lt.1.) .OR. ( PRESENT(chem_opt) .AND. (chem_opt.eq.401))) THEN<a name='115'>
+             naer = ccn_conc <font color=#447700>!CCN value set in namelist<a name='116'></font>
+      ENDIF<a name='117'>
+	  ai_phase=1<a name='118'>
+	  cw_phase=2<a name='119'>
+	  idrydep_onoff = 0<a name='120'>
+	  msectional = 0<a name='121'>
+<a name='122'>
+	  t_phy(its:ite,kts:kte,jts:jte)=th_phy(its:ite,kts:kte,jts:jte)*pi_phy(its:ite,kts:kte,jts:jte)<a name='123'>
+<a name='124'>
+      ntype_aer=maxd_atype<a name='125'>
+      do n=1,ntype_aer<a name='126'>
+         nsize_aer(n)=maxd_asize<a name='127'>
+	 ncomp_aer(n)=maxd_acomp<a name='128'>
+      end do<a name='129'>
+      nphase_aer=maxd_aphase<a name='130'>
+<a name='131'>
+<font color=#447700>! set properties for each type and size<a name='132'></font>
+       do n=1,ntype_aer<a name='133'>
+       do m=1,nsize_aer(n)<a name='134'>
+          dlo_sect( m,n )=0.01e-4    <font color=#447700>! minimum size of section (cm)<a name='135'></font>
+          dhi_sect( m,n )=0.5e-4    <font color=#447700>! maximum size of section (cm)<a name='136'></font>
+	  sigmag_aer(m,n)=2.      <font color=#447700>! geometric standard deviation of aerosol size dist<a name='137'></font>
+	  dgnum_aer(m,n)=0.1e-4       <font color=#447700>! median diameter (cm) of number distrib of mode<a name='138'></font>
+	  dpvolmean_aer(m,n) = dgnum_aer(m,n) * exp( 1.5 * (log(sigmag_aer(m,n)))**2 )<a name='139'>
+	  end do<a name='140'>
+	  do l=1,ncomp_aer(n)<a name='141'>
+	     dens_aer( l, n)=1.0   <font color=#447700>! density (g/cm3) of material<a name='142'></font>
+	     mw_aer( l, n)=132. <font color=#447700>! molecular weight (g/mole)<a name='143'></font>
+	  end do<a name='144'>
+      end do<a name='145'>
+       ptr=0<a name='146'>
+       do p=1,nphase_aer<a name='147'>
+       do n=1,ntype_aer<a name='148'>
+       do m=1,nsize_aer(n)<a name='149'>
+          ptr=ptr+1<a name='150'>
+          numptr_aer( m, n, p )=ptr<a name='151'>
+        <a name='152'>
+        if(p.eq.ai_phase)then<a name='153'>
+         IF ( present( cn ) ) THEN<a name='154'>
+            chem(its:ite,kts:kte,jts:jte,ptr) = cn(its:ite,kts:kte,jts:jte)<a name='155'>
+          ELSE  <font color=#447700>! ERM: use qndrop3d as a proxy for number of activated CCN<a name='156'></font>
+            chem(its:ite,kts:kte,jts:jte,ptr) = Max(0.0, naer-qndrop3d(its:ite,kts:kte,jts:jte) )<a name='157'>
+          ENDIF<a name='158'>
+        else<a name='159'>
+           chem(its:ite,kts:kte,jts:jte,ptr)=0.<a name='160'>
+        endif<a name='161'>
+      end do <font color=#447700>! size<a name='162'></font>
+      end do <font color=#447700>! type<a name='163'></font>
+      end do <font color=#447700>! phase<a name='164'></font>
+       do p=1,maxd_aphase<a name='165'>
+       do n=1,ntype_aer<a name='166'>
+       do m=1,nsize_aer(n)<a name='167'>
+	  do l=1,ncomp_aer(n)<a name='168'>
+          ptr=ptr+1<a name='169'>
+	     if(ptr.gt.max_chem)then<a name='170'>
+	        write(6,*)'ptr,max_chem=',ptr,max_chem,' in prescribe_aerosol_mixactivate'<a name='171'>
+	        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_mixactivate.F.html#PRESCRIBE_AEROSOL_MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_716">("1")<a name='172'>
+	     endif<a name='173'>
+	     massptr_aer(l, m, n, p)=ptr<a name='174'>
+<font color=#447700>! maer is ug/kg-air;  naer is #/kg-air;  dgnum is cm;  dens_aer is g/cm3<a name='175'></font>
+<font color=#447700>! 1.e6 factor converts g to ug<a name='176'></font>
+	     maer= 1.0e6 * naer * dens_aer(l,n) * ( (3.1416/6.) *   &amp;<a name='177'>
+                 (dgnum_aer(m,n)**3) * exp( 4.5*((log(sigmag_aer(m,n)))**2) ) )<a name='178'>
+           if(p.eq.ai_phase)then<a name='179'>
+            IF ( present( cn ) ) THEN<a name='180'>
+              chem(its:ite,kts:kte,jts:jte,ptr) = 1.0e6 * cn(its:ite,kts:kte,jts:jte)* dens_aer(l,n) * ( (3.1416/6.) *   &amp;<a name='181'>
+                 (dgnum_aer(m,n)**3) * exp( 4.5*((log(sigmag_aer(m,n)))**2) ) )<a name='182'>
+            ELSE <font color=#447700>! ERM: use qndrop3d as a proxy for number of activated CCN<a name='183'></font>
+              chem(its:ite,kts:kte,jts:jte,ptr) = 1.0e6 * Max(0.0, naer -qndrop3d(its:ite,kts:kte,jts:jte))* &amp;<a name='184'>
+                  dens_aer(l,n) * ( (3.1416/6.) *(dgnum_aer(m,n)**3) * exp( 4.5*((log(sigmag_aer(m,n)))**2) ) )<a name='185'>
+            ENDIF<a name='186'>
+           else<a name='187'>
+              chem(its:ite,kts:kte,jts:jte,ptr)=0.<a name='188'>
+           endif<a name='189'>
+        end do<a name='190'>
+	end do <font color=#447700>! size<a name='191'></font>
+	end do <font color=#447700>! type<a name='192'></font>
+	end do <font color=#447700>! phase<a name='193'></font>
+       do n=1,ntype_aer<a name='194'>
+       do m=1,nsize_aer(n)<a name='195'>
+          ptr=ptr+1<a name='196'>
+	  if(ptr.gt.max_chem)then<a name='197'>
+	     write(6,*)'ptr,max_chem=',ptr,max_chem,' in prescribe_aerosol_mixactivate'<a name='198'>
+	     call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_mixactivate.F.html#PRESCRIBE_AEROSOL_MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_717">("1")<a name='199'>
+	  endif<a name='200'>
+<font color=#447700>!wig	  waterptr_aer(m, n)=ptr<a name='201'></font>
+	  waterptr_aer(m, n)=-1<a name='202'>
+	end do <font color=#447700>! size<a name='203'></font>
+	end do <font color=#447700>! type<a name='204'></font>
+	ddvel(its:ite,jts:jte,:)=0.<a name='205'>
+    hygro(its:ite,kts:kte,jts:jte,:,:) = 0.5<a name='206'>
+<a name='207'>
+<font color=#447700>! 06-nov-2005 rce - grid_id &amp; ktau added to arg list<a name='208'></font>
+      call <A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE'>mixactivate</A><A href='../../html_code/phys/module_mixactivate.F.html#PRESCRIBE_AEROSOL_MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIXACTIVATE_1">(  msectional,     &amp;<a name='209'>
+            chem,max_chem,qv,qc,qi,qndrop3d,        &amp;<a name='210'>
+            t_phy, w, ddvel, idrydep_onoff,  &amp;<a name='211'>
+            maxd_acomp, maxd_asize, maxd_atype, maxd_aphase,   &amp;<a name='212'>
+            ncomp_aer, nsize_aer, ntype_aer, nphase_aer,  &amp;<a name='213'>
+            numptr_aer, massptr_aer, dlo_sect, dhi_sect, sigmag_aer, dpvolmean_aer,  &amp;<a name='214'>
+            dens_aer, mw_aer,           &amp;<a name='215'>
+            waterptr_aer, hygro,  ai_phase, cw_phase,                &amp;<a name='216'>
+            ids,ide, jds,jde, kds,kde,                            &amp;<a name='217'>
+            ims,ime, jms,jme, kms,kme,                            &amp;<a name='218'>
+            its,ite, jts,jte, kts,kte,                            &amp;<a name='219'>
+            rho_phy, z, dz8w, p_at_w, t_at_w, exch_h,      &amp;<a name='220'>
+            cldfra, cldfra_old, qsrflx,         &amp;<a name='221'>
+            ccn1, ccn2, ccn3, ccn4, ccn5, ccn6, nsource,       &amp;<a name='222'>
+            grid_id, ktau, dtstep, &amp;<a name='223'>
+            F_QC=f_qc, F_QI=f_qi                              )<a name='224'>
+<a name='225'>
+<a name='226'>
+       <font color=#447700>! ERM : If CCN field was passed in, then copy back the new field, which is the first<a name='227'></font>
+       IF ( present( cn ) ) THEN<a name='228'>
+         cn(its:ite,kts:kte,jts:jte) = Max(0.0, chem(its:ite,kts:kte,jts:jte,1))<a name='229'>
+       ENDIF<a name='230'>
+<a name='231'>
+      end subroutine prescribe_aerosol_mixactivate<a name='232'>
+<a name='233'>
+<font color=#447700>!----------------------------------------------------------------------<a name='234'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='235'></font>
+<font color=#447700>!   nov-04 sg ! replaced amode with aer and expanded aerosol dimension to include type and phase<a name='236'></font>
+<a name='237'>
+<font color=#447700>! 06-nov-2005 rce - grid_id &amp; ktau added to arg list<a name='238'></font>
+<font color=#447700>! 25-apr-2006 rce - dens_aer is (g/cm3), NOT (kg/m3)<a name='239'></font>
+<A NAME='MIXACTIVATE'><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='240'>
+<font color=#993300>subroutine </font><font color=#cc0000>mixactivate</font>(  msectional,            &amp; <A href='../../call_to/MIXACTIVATE.html' TARGET='index'>1</A>,<A href='../../call_from/MIXACTIVATE.html' TARGET='index'>19</A><a name='241'>
+           chem, num_chem, qv, qc, qi, qndrop3d,         &amp;<a name='242'>
+           temp, w, ddvel, idrydep_onoff,  &amp;<a name='243'>
+           maxd_acomp, maxd_asize, maxd_atype, maxd_aphase,   &amp;<a name='244'>
+           ncomp_aer, nsize_aer, ntype_aer, nphase_aer,  &amp;<a name='245'>
+           numptr_aer, massptr_aer, dlo_sect, dhi_sect, sigmag_aer, dpvolmean_aer,  &amp;<a name='246'>
+           dens_aer, mw_aer,               &amp;<a name='247'>
+           waterptr_aer, hygro, ai_phase, cw_phase,              &amp;<a name='248'>
+           ids,ide, jds,jde, kds,kde,                            &amp;<a name='249'>
+           ims,ime, jms,jme, kms,kme,                            &amp;<a name='250'>
+           its,ite, jts,jte, kts,kte,                            &amp;<a name='251'>
+           rho, zm, dz8w, p_at_w, t_at_w, kvh,      &amp;<a name='252'>
+           cldfra, cldfra_old, qsrflx,          &amp;<a name='253'>
+           ccn1, ccn2, ccn3, ccn4, ccn5, ccn6, nsource,       &amp;<a name='254'>
+           grid_id, ktau, dtstep, &amp;<a name='255'>
+           f_qc, f_qi                       )<a name='256'>
+<a name='257'>
+<a name='258'>
+<font color=#447700>!     vertical diffusion and nucleation of cloud droplets<a name='259'></font>
+<font color=#447700>!     assume cloud presence controlled by cloud fraction<a name='260'></font>
+<font color=#447700>!     doesn't distinguish between warm, cold clouds<a name='261'></font>
+<a name='262'>
+  USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_76">, only: g, rhowater, xlv, cp, rvovrd, r_d, r_v, mwdry, ep_2<a name='263'>
+  USE <A href='../../html_code/phys/module_radiation_driver.F.html#MODULE_RADIATION_DRIVER'>module_radiation_driver</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_RADIATION_DRIVER_3">, only: cal_cldfra2<a name='264'>
+<a name='265'>
+  implicit none<a name='266'>
+<a name='267'>
+<font color=#447700>!     input<a name='268'></font>
+<a name='269'>
+  INTEGER, intent(in) ::         grid_id, ktau<a name='270'>
+  INTEGER, intent(in) ::         num_chem<a name='271'>
+  integer, intent(in) ::         ids,ide, jds,jde, kds,kde,    &amp;<a name='272'>
+                                 ims,ime, jms,jme, kms,kme,    &amp;<a name='273'>
+                                 its,ite, jts,jte, kts,kte<a name='274'>
+<a name='275'>
+  integer maxd_aphase, nphase_aer, maxd_atype, ntype_aer<a name='276'>
+  integer maxd_asize, maxd_acomp, nsize_aer(maxd_atype)<a name='277'>
+  integer, intent(in) ::   &amp;<a name='278'>
+       ncomp_aer( maxd_atype  ),   &amp;<a name='279'>
+       massptr_aer( maxd_acomp, maxd_asize, maxd_atype, maxd_aphase ),   &amp;<a name='280'>
+       waterptr_aer( maxd_asize, maxd_atype ),   &amp;<a name='281'>
+       numptr_aer( maxd_asize, maxd_atype, maxd_aphase), &amp;<a name='282'>
+       ai_phase, cw_phase<a name='283'>
+  integer, intent(in) :: msectional <font color=#447700>! 1 for sectional, 0 for modal<a name='284'></font>
+  integer, intent(in) :: idrydep_onoff<a name='285'>
+  real, intent(in)  ::                       &amp;<a name='286'>
+       dlo_sect( maxd_asize, maxd_atype ),   &amp; <font color=#447700>! minimum size of section (cm)<a name='287'></font>
+       dhi_sect( maxd_asize, maxd_atype ),   &amp; <font color=#447700>! maximum size of section (cm)<a name='288'></font>
+       sigmag_aer(maxd_asize, maxd_atype),   &amp; <font color=#447700>! geometric standard deviation of aerosol size dist<a name='289'></font>
+       dens_aer( maxd_acomp, maxd_atype),    &amp; <font color=#447700>! density (g/cm3) of material<a name='290'></font>
+       mw_aer( maxd_acomp, maxd_atype),      &amp; <font color=#447700>! molecular weight (g/mole)<a name='291'></font>
+       dpvolmean_aer(maxd_asize, maxd_atype)   <font color=#447700>! mean-volume diameter (cm) of mode<a name='292'></font>
+<font color=#447700>! terminology:  (pi/6) * (mean-volume diameter)**3 ==<a name='293'></font>
+<font color=#447700>!       (volume mixing ratio of section/mode)/(number mixing ratio)<a name='294'></font>
+<a name='295'>
+<a name='296'>
+  REAL, intent(inout), DIMENSION( ims:ime, kms:kme, jms:jme, num_chem ) :: &amp;<a name='297'>
+       chem <font color=#447700>! aerosol molar mixing ratio (ug/kg or #/kg)<a name='298'></font>
+<a name='299'>
+  REAL, intent(in), DIMENSION( ims:ime, kms:kme, jms:jme ) :: &amp;<a name='300'>
+       qv, qc, qi <font color=#447700>! water species (vapor, cloud drops, cloud ice) mixing ratio (g/g)<a name='301'></font>
+<a name='302'>
+  LOGICAL, OPTIONAL :: f_qc, f_qi<a name='303'>
+<a name='304'>
+  REAL, intent(inout), DIMENSION( ims:ime, kms:kme, jms:jme ) :: &amp;<a name='305'>
+       qndrop3d    <font color=#447700>! water species mixing ratio (g/g)<a name='306'></font>
+<a name='307'>
+  real, intent(in) :: dtstep             <font color=#447700>! time step for microphysics (s)<a name='308'></font>
+  real, intent(in) :: temp(ims:ime, kms:kme, jms:jme)    <font color=#447700>! temperature (K)<a name='309'></font>
+  real, intent(in) :: w(ims:ime, kms:kme, jms:jme)   <font color=#447700>! vertical velocity (m/s)<a name='310'></font>
+  real, intent(in) :: rho(ims:ime, kms:kme, jms:jme)    <font color=#447700>! density at mid-level  (kg/m3)<a name='311'></font>
+  REAL, intent(in) :: ddvel( its:ite, jts:jte, num_chem ) <font color=#447700>! deposition velocity  (m/s)<a name='312'></font>
+  real, intent(in) :: zm(ims:ime, kms:kme, jms:jme)     <font color=#447700>! geopotential height of level (m)<a name='313'></font>
+  real, intent(in) :: dz8w(ims:ime, kms:kme, jms:jme) <font color=#447700>! layer thickness (m)<a name='314'></font>
+  real, intent(in) :: p_at_w(ims:ime, kms:kme, jms:jme) <font color=#447700>! pressure at layer interface (Pa)<a name='315'></font>
+  real, intent(in) :: t_at_w(ims:ime, kms:kme, jms:jme) <font color=#447700>! temperature at layer interface (K)<a name='316'></font>
+  real, intent(in) :: kvh(ims:ime, kms:kme, jms:jme)    <font color=#447700>! vertical diffusivity (m2/s)<a name='317'></font>
+  real, intent(inout) :: cldfra_old(ims:ime, kms:kme, jms:jme)<font color=#447700>! cloud fraction on previous time step<a name='318'></font>
+  real, intent(inout) :: cldfra(ims:ime, kms:kme, jms:jme)    <font color=#447700>! cloud fraction<a name='319'></font>
+  real, intent(in) :: hygro( its:ite, kts:kte, jts:jte, maxd_asize, maxd_atype ) <font color=#447700>! bulk hygroscopicity   &amp;<a name='320'></font>
+<a name='321'>
+  REAL, intent(out), DIMENSION( ims:ime, jms:jme, num_chem ) ::   qsrflx <font color=#447700>! dry deposition rate for aerosol<a name='322'></font>
+  real, intent(out), dimension(ims:ime,kms:kme,jms:jme) :: nsource, &amp;  <font color=#447700>! droplet number source (#/kg/s)<a name='323'></font>
+       ccn1,ccn2,ccn3,ccn4,ccn5,ccn6  <font color=#447700>! number conc of aerosols activated at supersat<a name='324'></font>
+<a name='325'>
+<a name='326'>
+<font color=#447700>!--------------------Local storage-------------------------------------<a name='327'></font>
+<font color=#447700>!<a name='328'></font>
+  real :: dgnum_aer(maxd_asize, maxd_atype) <font color=#447700>! median diameter (cm) of number distrib of mode<a name='329'></font>
+  real :: qndrop(kms:kme)      <font color=#447700>! cloud droplet number mixing ratio (#/kg)<a name='330'></font>
+  real :: lcldfra(kms:kme)     <font color=#447700>! liquid cloud fraction<a name='331'></font>
+  real :: lcldfra_old(kms:kme) <font color=#447700>! liquid cloud fraction for previous timestep<a name='332'></font>
+  real :: wtke(kms:kme)        <font color=#447700>! turbulent vertical velocity at base of layer k (m2/s)<a name='333'></font>
+  real zn(kms:kme)             <font color=#447700>! g/pdel (m2/g) for layer<a name='334'></font>
+  real zs(kms:kme)             <font color=#447700>! inverse of distance between levels (m)<a name='335'></font>
+  real, parameter :: zkmin = 0.01<a name='336'>
+  real, parameter :: zkmax = 100.<a name='337'>
+  real cs(kms:kme)             <font color=#447700>! air density (kg/m3) at layer center<a name='338'></font>
+  real csbot(kms:kme)          <font color=#447700>! air density (kg/m3) at layer bottom<a name='339'></font>
+  real csbot_cscen(kms:kme)    <font color=#447700>! csbot(k)/cs(k)<a name='340'></font>
+  real dz(kms:kme)             <font color=#447700>! geometric thickness of layers (m)<a name='341'></font>
+<a name='342'>
+  real wdiab                   <font color=#447700>! diabatic vertical velocity<a name='343'></font>
+<font color=#447700>!      real, parameter :: wmixmin = 0.1 ! minimum turbulence vertical velocity (m/s)<a name='344'></font>
+  real, parameter :: wmixmin = 0.2 <font color=#447700>! minimum turbulence vertical velocity (m/s)<a name='345'></font>
+<font color=#447700>!      real, parameter :: wmixmin = 1.0 ! minimum turbulence vertical velocity (m/s)<a name='346'></font>
+  real :: qndrop_new(kms:kme)  <font color=#447700>! droplet number nucleated on cloud boundaries<a name='347'></font>
+  real :: ekd(kms:kme)         <font color=#447700>! diffusivity for droplets (m2/s)<a name='348'></font>
+  real :: ekk(kms:kme)         <font color=#447700>! density*diffusivity for droplets (kg/m3 m2/s)<a name='349'></font>
+  real :: srcn(kms:kme)        <font color=#447700>! droplet source rate (/s)<a name='350'></font>
+  real, parameter :: sq2pi = 2.5066282746<a name='351'>
+  real dtinv<a name='352'>
+<a name='353'>
+  integer km1,kp1<a name='354'>
+  real wbar,wmix,wmin,wmax<a name='355'>
+  real dum<a name='356'>
+  real tmpa, tmpb, tmpc, tmpc1, tmpc2, tmpd, tmpe, tmpf<a name='357'>
+  real tmpcourno<a name='358'>
+  real dact<a name='359'>
+  real fluxntot         <font color=#447700>! (#/cm2/s)<a name='360'></font>
+  real fac_srflx<a name='361'>
+  real depvel_drop, depvel_tmp<a name='362'>
+  real, parameter :: depvel_uplimit = 1.0 <font color=#447700>! upper limit for dep vels (m/s)<a name='363'></font>
+  real :: surfrate(num_chem) <font color=#447700>! surface exchange rate (/s)<a name='364'></font>
+  real surfratemax      <font color=#447700>! max surfrate for all species treated here<a name='365'></font>
+  real surfrate_drop    <font color=#447700>! surfade exchange rate for droplelts<a name='366'></font>
+  real dtmin,tinv,dtt<a name='367'>
+  integer nsubmix,nsubmix_bnd<a name='368'>
+  integer i,j,k,m,n,nsub<a name='369'>
+  real dtmix<a name='370'>
+  real alogarg<a name='371'>
+  real qcld<a name='372'>
+  real pi<a name='373'>
+  integer nnew,nsav,ntemp<a name='374'>
+  real :: overlapp(kms:kme),overlapm(kms:kme) <font color=#447700>! cloud overlap<a name='375'></font>
+  real ::  ekkp(kms:kme),ekkm(kms:kme) <font color=#447700>! zn*zs*density*diffusivity<a name='376'></font>
+<font color=#447700>!  integer, save :: count_submix(100)=0 ! wig: Note that this is a no-no for tile threads with OMP<a name='377'></font>
+<a name='378'>
+  integer lnum,lnumcw,l,lmass,lmasscw,lsfc,lsfccw,ltype,lsig,lwater<a name='379'>
+  integer :: ntype(maxd_asize)<a name='380'>
+<a name='381'>
+  real ::  naerosol(maxd_asize, maxd_atype)    <font color=#447700>! interstitial aerosol number conc (/m3)<a name='382'></font>
+  real ::  naerosolcw(maxd_asize, maxd_atype)  <font color=#447700>! activated number conc (/m3)<a name='383'></font>
+  real ::   maerosol(maxd_acomp,maxd_asize, maxd_atype)   <font color=#447700>! interstit mass conc (kg/m3)<a name='384'></font>
+  real ::   maerosolcw(maxd_acomp,maxd_asize, maxd_atype) <font color=#447700>! activated mass conc (kg/m3)<a name='385'></font>
+  real ::   maerosol_tot(maxd_asize, maxd_atype)     <font color=#447700>! species-total interstit mass conc (kg/m3)<a name='386'></font>
+  real ::   maerosol_totcw(maxd_asize, maxd_atype)   <font color=#447700>! species-total activated mass conc (kg/m3)<a name='387'></font>
+  real ::   vaerosol(maxd_asize, maxd_atype) <font color=#447700>! interstit+activated aerosol volume conc (m3/m3)<a name='388'></font>
+  real ::   vaerosolcw(maxd_asize, maxd_atype) <font color=#447700>! activated aerosol volume conc (m3/m3)<a name='389'></font>
+  real ::   raercol(kms:kme,num_chem,2) <font color=#447700>! aerosol mass, number mixing ratios<a name='390'></font>
+  real ::   source(kms:kme) <font color=#447700>!<a name='391'></font>
+<a name='392'>
+  real ::   fn(maxd_asize, maxd_atype)         <font color=#447700>! activation fraction for aerosol number<a name='393'></font>
+  real ::   fs(maxd_asize, maxd_atype)         <font color=#447700>! activation fraction for aerosol sfcarea<a name='394'></font>
+  real ::   fm(maxd_asize, maxd_atype)         <font color=#447700>! activation fraction for aerosol mass<a name='395'></font>
+  integer ::   ncomp(maxd_atype)<a name='396'>
+<a name='397'>
+  real ::   fluxn(maxd_asize, maxd_atype)      <font color=#447700>! number  activation fraction flux (m/s)<a name='398'></font>
+  real ::   fluxs(maxd_asize, maxd_atype)      <font color=#447700>! sfcarea activation fraction flux (m/s)<a name='399'></font>
+  real ::   fluxm(maxd_asize, maxd_atype)      <font color=#447700>! mass    activation fraction flux (m/s)<a name='400'></font>
+  real ::   flux_fullact(kms:kme)              <font color=#447700>! 100%    activation fraction flux (m/s)<a name='401'></font>
+<font color=#447700>!     note:  activation fraction fluxes are defined as<a name='402'></font>
+<font color=#447700>!     fluxn = [flux of activated aero. number into cloud (#/m2/s)]<a name='403'></font>
+<font color=#447700>!           / [aero. number conc. in updraft, just below cloudbase (#/m3)]<a name='404'></font>
+<a name='405'>
+  real :: nact(kms:kme,maxd_asize, maxd_atype)  <font color=#447700>! fractional aero. number  activation rate (/s)<a name='406'></font>
+  real :: mact(kms:kme,maxd_asize, maxd_atype)  <font color=#447700>! fractional aero. mass    activation rate (/s)<a name='407'></font>
+  real :: npv(maxd_asize, maxd_atype) <font color=#447700>! number per volume concentration (/m3)<a name='408'></font>
+  real scale<a name='409'>
+<a name='410'>
+  real :: hygro_aer(maxd_asize, maxd_atype)  <font color=#447700>! hygroscopicity of aerosol mode<a name='411'></font>
+  real :: exp45logsig     <font color=#447700>! exp(4.5*alogsig**2)<a name='412'></font>
+  real :: alogsig(maxd_asize, maxd_atype) <font color=#447700>! natl log of geometric standard dev of aerosol<a name='413'></font>
+  integer, parameter :: psat=6  <font color=#447700>! number of supersaturations to calc ccn concentration<a name='414'></font>
+  real ccn(kts:kte,psat)        <font color=#447700>! number conc of aerosols activated at supersat<a name='415'></font>
+  real, parameter :: supersat(psat)= &amp;<font color=#447700>! supersaturation (%) to determine ccn concentration<a name='416'></font>
+       (/0.02,0.05,0.1,0.2,0.5,1.0/)<a name='417'>
+  real super(psat) <font color=#447700>! supersaturation<a name='418'></font>
+  real, parameter :: surften = 0.076 <font color=#447700>! surface tension of water w/respect to air (N/m)<a name='419'></font>
+  real :: ccnfact(psat,maxd_asize, maxd_atype)<a name='420'>
+  real :: amcube(maxd_asize, maxd_atype) <font color=#447700>! cube of dry mode radius (m)<a name='421'></font>
+  real :: argfactor(maxd_asize, maxd_atype)<a name='422'>
+  real aten <font color=#447700>! surface tension parameter<a name='423'></font>
+  real t0 <font color=#447700>! reference temperature<a name='424'></font>
+  real sm <font color=#447700>! critical supersaturation<a name='425'></font>
+  real arg<a name='426'>
+<a name='427'>
+  integer,parameter :: icheck_colmass = 0<a name='428'>
+           <font color=#447700>! icheck_colmass &gt; 0 turns on mass/number conservation checking<a name='429'></font>
+           <font color=#447700>! values of 1, 10, 100 produce less to more diagnostics<a name='430'></font>
+  integer :: colmass_worst_ij( 2, 0:maxd_acomp, maxd_asize, maxd_atype )<a name='431'>
+  integer :: colmass_maxworst_i(3)<a name='432'>
+  real :: colmass_bgn( 0:maxd_acomp, maxd_asize, maxd_atype, maxd_aphase )<a name='433'>
+  real :: colmass_end( 0:maxd_acomp, maxd_asize, maxd_atype, maxd_aphase )<a name='434'>
+  real :: colmass_sfc( 0:maxd_acomp, maxd_asize, maxd_atype, maxd_aphase )<a name='435'>
+  real :: colmass_worst( 0:maxd_acomp, maxd_asize, maxd_atype )<a name='436'>
+  real :: colmass_maxworst_r<a name='437'>
+  real :: rhodz( kts:kte ), rhodzsum<a name='438'>
+<a name='439'>
+<font color=#447700>!!$#if (defined AIX)<a name='440'></font>
+<font color=#447700>!!$#define ERF erf<a name='441'></font>
+<font color=#447700>!!$#define ERFC erfc<a name='442'></font>
+<font color=#447700>!!$#else<a name='443'></font>
+<font color=#447700>!!$#define ERF erf<a name='444'></font>
+<font color=#447700>!!$    real erf<a name='445'></font>
+<font color=#447700>!!$#define ERFC erfc<a name='446'></font>
+<font color=#447700>!!$    real erfc<a name='447'></font>
+<font color=#447700>!!$#endif<a name='448'></font>
+<a name='449'>
+  character*8, parameter :: ccn_name(psat)=(/'CCN1','CCN2','CCN3','CCN4','CCN5','CCN6'/)<a name='450'>
+<a name='451'>
+<a name='452'>
+  colmass_worst(:,:,:) = 0.0<a name='453'>
+  colmass_worst_ij(:,:,:,:) = -1<a name='454'>
+<a name='455'>
+<a name='456'>
+  arg = 1.0<a name='457'>
+  if (abs(0.8427-ERF_ALT(arg))/0.8427&gt;0.001) then<a name='458'>
+     write (6,*) 'erf_alt(1.0) = ',ERF_ALT(arg)<a name='459'>
+     call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_718">('dropmixnuc: Error function error')<a name='460'>
+  endif<a name='461'>
+  arg = 0.0<a name='462'>
+  if (ERF_ALT(arg) /= 0.0) then<a name='463'>
+     write (6,*) 'erf_alt(0.0) = ',ERF_ALT(arg)<a name='464'>
+     call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_719">('dropmixnuc: Error function error')<a name='465'>
+  endif<a name='466'>
+<a name='467'>
+  pi = 4.*atan(1.0)<a name='468'>
+  dtinv=1./dtstep<a name='469'>
+<a name='470'>
+  depvel_drop =  0.1 <font color=#447700>! prescribed here rather than getting it from dry_dep_driver<a name='471'></font>
+  if (idrydep_onoff .le. 0) depvel_drop =  0.0<a name='472'>
+  depvel_drop =  min(depvel_drop,depvel_uplimit)<a name='473'>
+<a name='474'>
+  do n=1,ntype_aer<a name='475'>
+     do m=1,nsize_aer(n)<a name='476'>
+        ncomp(n)=ncomp_aer(n)<a name='477'>
+        alogsig(m,n)=alog(sigmag_aer(m,n))<a name='478'>
+        dgnum_aer(m,n) = dpvolmean_aer(m,n) * exp( -1.5*alogsig(m,n)*alogsig(m,n) )<a name='479'>
+<font color=#447700>!    print *,'sigmag_aer,dgnum_aer=',sigmag_aer(m,n),dgnum_aer(m,n)<a name='480'></font>
+        <font color=#447700>! npv is used only if number is diagnosed from volume<a name='481'></font>
+        npv(m,n)=6./(pi*(0.01*dgnum_aer(m,n))**3*exp(4.5*alogsig(m,n)*alogsig(m,n)))<a name='482'>
+     end do<a name='483'>
+  end do<a name='484'>
+  t0=273.15   <font color=#447700>!wig, 1-Mar-2009: Added .15<a name='485'></font>
+  aten=2.*surften/(r_v*t0*rhowater)<a name='486'>
+  super(:)=0.01*supersat(:)<a name='487'>
+  do n=1,ntype_aer<a name='488'>
+     do m=1,nsize_aer(n)<a name='489'>
+        exp45logsig=exp(4.5*alogsig(m,n)*alogsig(m,n))<a name='490'>
+        argfactor(m,n)=2./(3.*sqrt(2.)*alogsig(m,n))<a name='491'>
+        amcube(m,n)=3./(4.*pi*exp45logsig*npv(m,n))<a name='492'>
+     enddo<a name='493'>
+  enddo<a name='494'>
+<a name='495'>
+  IF( PRESENT(F_QC) .AND. PRESENT ( F_QI ) ) THEN<a name='496'>
+     CALL <A href='../../html_code/phys/module_radiation_driver.F.html#CAL_CLDFRA2'>cal_cldfra2</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CAL_CLDFRA2_1">(CLDFRA,qc,qi,f_qc,f_qi,     &amp;<a name='497'>
+          ids,ide, jds,jde, kds,kde,              &amp;<a name='498'>
+          ims,ime, jms,jme, kms,kme,              &amp;<a name='499'>
+          its,ite, jts,jte, kts,kte               )<a name='500'>
+  END IF<a name='501'>
+<a name='502'>
+  qsrflx(its:ite,jts:jte,:) = 0.<a name='503'>
+<a name='504'>
+<font color=#447700>!     start loop over columns<a name='505'></font>
+<a name='506'>
+OVERALL_MAIN_J_LOOP: do j=jts,jte<a name='507'>
+OVERALL_MAIN_I_LOOP: do i=its,ite<a name='508'>
+<a name='509'>
+<font color=#447700>!        load number nucleated into qndrop on cloud boundaries<a name='510'></font>
+<a name='511'>
+<font color=#447700>! initialization for current i .........................................<a name='512'></font>
+<a name='513'>
+     do k=kts+1,kte<a name='514'>
+	    zs(k)=1./(zm(i,k,j)-zm(i,k-1,j))<a name='515'>
+	 enddo<a name='516'>
+	 zs(kts)=zs(kts+1)<a name='517'>
+     zs(kte+1)=0.<a name='518'>
+<a name='519'>
+     do k=kts,kte<a name='520'>
+<font color=#447700>!!$	    if(qndrop3d(i,k,j).lt.-10.e6.or.qndrop3d(i,k,j).gt.1.E20)then<a name='521'></font>
+<font color=#447700>!!$!	       call wrf_error_fatal("1")<a name='522'></font>
+<font color=#447700>!!$	    endif<a name='523'></font>
+        if(f_qi)then<a name='524'>
+           qcld=qc(i,k,j)+qi(i,k,j)<a name='525'>
+        else<a name='526'>
+           qcld=qc(i,k,j)<a name='527'>
+        endif<a name='528'>
+        if(qcld.lt.-1..or.qcld.gt.1.)then<a name='529'>
+           write(6,'(a,g12.2,a,3i5)')'qcld=',qcld,' for i,k,j=',i,k,j<a name='530'>
+           call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_720">("1")<a name='531'>
+        endif<a name='532'>
+        if(qcld.gt.1.e-20)then<a name='533'>
+           lcldfra(k)=cldfra(i,k,j)*qc(i,k,j)/qcld<a name='534'>
+           lcldfra_old(k)=cldfra_old(i,k,j)*qc(i,k,j)/qcld<a name='535'>
+        else<a name='536'>
+           lcldfra(k)=0.<a name='537'>
+           lcldfra_old(k)=0.<a name='538'>
+        endif<a name='539'>
+        qndrop(k)=qndrop3d(i,k,j)<a name='540'>
+<font color=#447700>!	    qndrop(k)=1.e5<a name='541'></font>
+        cs(k)=rho(i,k,j) <font color=#447700>! air density (kg/m3)<a name='542'></font>
+        dz(k)=dz8w(i,k,j)<a name='543'>
+        do n=1,ntype_aer<a name='544'>
+           do m=1,nsize_aer(n)<a name='545'>
+              nact(k,m,n)=0.<a name='546'>
+              mact(k,m,n)=0.<a name='547'>
+           enddo<a name='548'>
+        enddo<a name='549'>
+        zn(k)=1./(cs(k)*dz(k))<a name='550'>
+        if(k&gt;kts)then<a name='551'>
+           ekd(k)=kvh(i,k,j)<a name='552'>
+           ekd(k)=max(ekd(k),zkmin)<a name='553'>
+           ekd(k)=min(ekd(k),zkmax)<a name='554'>
+        else<a name='555'>
+           ekd(k)=0<a name='556'>
+        endif<a name='557'>
+<font color=#447700>!           diagnose subgrid vertical velocity from diffusivity<a name='558'></font>
+        if(k.eq.kts)then<a name='559'>
+           wtke(k)=sq2pi*depvel_drop<a name='560'>
+<font color=#447700>!               wtke(k)=sq2pi*kvh(i,k,j)<a name='561'></font>
+<font color=#447700>!               wtke(k)=max(wtke(k),wmixmin)<a name='562'></font>
+        else<a name='563'>
+           wtke(k)=sq2pi*ekd(k)/dz(k)<a name='564'>
+        endif<a name='565'>
+        wtke(k)=max(wtke(k),wmixmin)<a name='566'>
+        nsource(i,k,j)=0.<a name='567'>
+     enddo<a name='568'>
+     nsource(i,kte+1,j) = 0.<a name='569'>
+     qndrop(kte+1)      = 0.<a name='570'>
+     zn(kte+1)          = 0.<a name='571'>
+<a name='572'>
+     do k = kts+1, kte<a name='573'>
+        tmpa = dz(k-1) ; tmpb = dz(k)<a name='574'>
+        tmpc = tmpa/(tmpa + tmpb)<a name='575'>
+        csbot(k) = cs(k-1)*(1.0-tmpc) + cs(k)*tmpc<a name='576'>
+        csbot_cscen(k) = csbot(k)/cs(k)<a name='577'>
+     end do<a name='578'>
+     csbot(kts) = cs(kts)<a name='579'>
+     csbot_cscen(kts) = 1.0<a name='580'>
+     csbot(kte+1) = cs(kte)<a name='581'>
+     csbot_cscen(kte+1) = 1.0<a name='582'>
+<a name='583'>
+    <font color=#447700>!  calculate surface rate and mass mixing ratio for aerosol<a name='584'></font>
+<a name='585'>
+     surfratemax = 0.0<a name='586'>
+     nsav=1<a name='587'>
+     nnew=2<a name='588'>
+     surfrate_drop=depvel_drop/dz(kts)<a name='589'>
+     surfratemax = max( surfratemax, surfrate_drop )<a name='590'>
+     do n=1,ntype_aer<a name='591'>
+        do m=1,nsize_aer(n)<a name='592'>
+           lnum=numptr_aer(m,n,ai_phase)<a name='593'>
+           lnumcw=numptr_aer(m,n,cw_phase)<a name='594'>
+           if(lnum&gt;0)then<a name='595'>
+              depvel_tmp = max( 0.0, min( ddvel(i,j,lnum), depvel_uplimit ) )<a name='596'>
+              surfrate(lnum)=depvel_tmp/dz(kts)<a name='597'>
+              surfrate(lnumcw)=surfrate_drop<a name='598'>
+              surfratemax = max( surfratemax, surfrate(lnum) )<a name='599'>
+<font color=#447700>!             scale = 1000./mwdry ! moles/kg<a name='600'></font>
+              scale = 1.<a name='601'>
+              raercol(kts:kte,lnumcw,nsav)=chem(i,kts:kte,j,lnumcw)*scale <font color=#447700>! #/kg<a name='602'></font>
+              raercol(kts:kte,lnum,nsav)=chem(i,kts:kte,j,lnum)*scale<a name='603'>
+           endif<a name='604'>
+           do l=1,ncomp(n)<a name='605'>
+              lmass=massptr_aer(l,m,n,ai_phase)<a name='606'>
+              lmasscw=massptr_aer(l,m,n,cw_phase)<a name='607'>
+<font color=#447700>!             scale = mw_aer(l,n)/mwdry<a name='608'></font>
+              scale = 1.e-9 <font color=#447700>! kg/ug<a name='609'></font>
+              depvel_tmp = max( 0.0, min( ddvel(i,j,lmass), depvel_uplimit ) )<a name='610'>
+              surfrate(lmass)=depvel_tmp/dz(kts)<a name='611'>
+              surfrate(lmasscw)=surfrate_drop<a name='612'>
+              surfratemax = max( surfratemax, surfrate(lmass) )<a name='613'>
+              raercol(kts:kte,lmasscw,nsav)=chem(i,kts:kte,j,lmasscw)*scale <font color=#447700>! kg/kg<a name='614'></font>
+              raercol(kts:kte,lmass,nsav)=chem(i,kts:kte,j,lmass)*scale <font color=#447700>! kg/kg<a name='615'></font>
+           enddo<a name='616'>
+           lwater=waterptr_aer(m,n)<a name='617'>
+           if(lwater&gt;0)then<a name='618'>
+              depvel_tmp = max( 0.0, min( ddvel(i,j,lwater), depvel_uplimit ) )<a name='619'>
+              surfrate(lwater)=depvel_tmp/dz(kts)<a name='620'>
+              surfratemax = max( surfratemax, surfrate(lwater) )<a name='621'>
+              raercol(kts:kte,lwater,nsav)=chem(i,kts:kte,j,lwater) <font color=#447700>! don't bother to convert units,<a name='622'></font>
+             <font color=#447700>! because it doesn't contribute to aerosol mass<a name='623'></font>
+           endif<a name='624'>
+        enddo <font color=#447700>! size<a name='625'></font>
+     enddo <font color=#447700>! type<a name='626'></font>
+<a name='627'>
+<a name='628'>
+<font color=#447700>! mass conservation checking<a name='629'></font>
+     if (icheck_colmass &gt; 0) then<a name='630'>
+<a name='631'>
+<font color=#447700>! calc initial column burdens<a name='632'></font>
+        colmass_bgn(:,:,:,:) = 0.0<a name='633'>
+        colmass_end(:,:,:,:) = 0.0<a name='634'>
+        colmass_sfc(:,:,:,:) = 0.0<a name='635'>
+        rhodz(kts:kte) = 1.0/zn(kts:kte)<a name='636'>
+        rhodzsum = sum( rhodz(kts:kte) )<a name='637'>
+        do n=1,ntype_aer<a name='638'>
+           do m=1,nsize_aer(n)<a name='639'>
+              lnum=numptr_aer(m,n,ai_phase)<a name='640'>
+              lnumcw=numptr_aer(m,n,cw_phase)<a name='641'>
+              if(lnum&gt;0)then<a name='642'>
+                 colmass_bgn(0,m,n,1) = sum( chem(i,kts:kte,j,lnum  )*rhodz(kts:kte) )<a name='643'>
+                 colmass_bgn(0,m,n,2) = sum( chem(i,kts:kte,j,lnumcw)*rhodz(kts:kte) )<a name='644'>
+              endif<a name='645'>
+              do l=1,ncomp(n)<a name='646'>
+                 lmass=massptr_aer(l,m,n,ai_phase)<a name='647'>
+                 lmasscw=massptr_aer(l,m,n,cw_phase)<a name='648'>
+                 colmass_bgn(l,m,n,1) = sum( chem(i,kts:kte,j,lmass  )*rhodz(kts:kte) )<a name='649'>
+                 colmass_bgn(l,m,n,2) = sum( chem(i,kts:kte,j,lmasscw)*rhodz(kts:kte) )<a name='650'>
+              enddo<a name='651'>
+           enddo <font color=#447700>! size<a name='652'></font>
+        enddo <font color=#447700>! type<a name='653'></font>
+     endif <font color=#447700>! (icheck_colmass &gt; 0)<a name='654'></font>
+<a name='655'>
+<a name='656'>
+<font color=#447700>!        droplet nucleation/aerosol activation<a name='657'></font>
+<a name='658'>
+<font color=#447700>! k-loop for growing/shrinking cloud calcs .............................<a name='659'></font>
+GROW_SHRINK_MAIN_K_LOOP: do k=kts,kte<a name='660'>
+        km1=max0(k-1,1)<a name='661'>
+        kp1=min0(k+1,kde-1)<a name='662'>
+<a name='663'>
+<a name='664'>
+<font color=#447700>!       if(lcldfra(k)-lcldfra_old(k).gt.0.01)then   ! this line is the "old" criterion<a name='665'></font>
+<font color=#447700>!       go to 10<a name='666'></font>
+<a name='667'>
+<font color=#447700>!       growing cloud PLUS<a name='668'></font>
+<font color=#447700>!       upwards vertical advection when lcldfra(k-1) &lt; lcldfra(k)<a name='669'></font>
+<font color=#447700>!<a name='670'></font>
+<font color=#447700>! tmpc1 = cloud fraction increase from previous time step<a name='671'></font>
+        tmpc1 = max( (lcldfra(k)-lcldfra_old(k)), 0.0 )<a name='672'>
+        if (k &gt; kts) then<a name='673'>
+<font color=#447700>! tmpc2 = fraction of layer for which vertical advection from below<a name='674'></font>
+<font color=#447700>!             (over dtstep) displaces cloudy air with clear air<a name='675'></font>
+<font color=#447700>!       = (courant number using upwards w at layer bottom)*(difference in cloud fraction)<a name='676'></font>
+           tmpcourno = dtstep*max(w(i,k,j),0.0)/dz(k)<a name='677'>
+           tmpc2 = max( (lcldfra(k)-lcldfra(km1)), 0.0 ) * tmpcourno<a name='678'>
+           tmpc2 = min( tmpc2, 1.0 )<a name='679'>
+<font color=#447700>!          tmpc2 = 0.0   ! this turns off the vertical advect part<a name='680'></font>
+        else<a name='681'>
+           tmpc2 = 0.0<a name='682'>
+        endif<a name='683'>
+<a name='684'>
+        if ((tmpc1 &gt; 0.001) .or. (tmpc2 &gt; 0.001)) then<a name='685'>
+<a name='686'>
+<font color=#447700>!                wmix=wtke(k)<a name='687'></font>
+           wbar=w(i,k,j)+wtke(k)<a name='688'>
+           wmix=0.<a name='689'>
+           wmin=0.<a name='690'>
+<font color=#447700>! 06-nov-2005 rce - increase wmax from 10 to 50 (deep convective clouds)<a name='691'></font>
+           wmax=50.<a name='692'>
+           wdiab=0<a name='693'>
+<a name='694'>
+<font color=#447700>!                load aerosol properties, assuming external mixtures<a name='695'></font>
+           do n=1,ntype_aer<a name='696'>
+              do m=1,nsize_aer(n)<a name='697'>
+                 call <A href='../../html_code/phys/module_mixactivate.F.html#LOADAER'>loadaer</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LOADAER_4">(raercol(1,1,nsav),k,kms,kme,num_chem,    &amp;<a name='698'>
+                      cs(k), npv(m,n), dlo_sect(m,n),dhi_sect(m,n),             &amp;<a name='699'>
+                      maxd_acomp, ncomp(n), &amp;<a name='700'>
+                      grid_id, ktau, i, j, m, n,   &amp;<a name='701'>
+                      numptr_aer(m,n,ai_phase),numptr_aer(m,n,cw_phase),  &amp;<a name='702'>
+                      dens_aer(1,n),    &amp;<a name='703'>
+                      massptr_aer(1,m,n,ai_phase), massptr_aer(1,m,n,cw_phase),  &amp;<a name='704'>
+                      maerosol(1,m,n), maerosolcw(1,m,n),          &amp;<a name='705'>
+                      maerosol_tot(m,n), maerosol_totcw(m,n),      &amp;<a name='706'>
+                      naerosol(m,n), naerosolcw(m,n),                  &amp;<a name='707'>
+                      vaerosol(m,n), vaerosolcw(m,n) )<a name='708'>
+<a name='709'>
+                 hygro_aer(m,n)=hygro(i,k,j,m,n)<a name='710'>
+              enddo<a name='711'>
+           enddo<a name='712'>
+<a name='713'>
+<font color=#447700>! 06-nov-2005 rce - grid_id &amp; ktau added to arg list<a name='714'></font>
+           call <A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE'>activate</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ACTIVATE_3">(wbar,wmix,wdiab,wmin,wmax,temp(i,k,j),cs(k), &amp;<a name='715'>
+                msectional, maxd_atype, ntype_aer, maxd_asize, nsize_aer,    &amp;<a name='716'>
+                naerosol, vaerosol,  &amp;<a name='717'>
+                dlo_sect,dhi_sect,sigmag_aer,hygro_aer,              &amp;<a name='718'>
+                fn,fs,fm,fluxn,fluxs,fluxm,flux_fullact(k), grid_id, ktau, i, j, k )<a name='719'>
+<a name='720'>
+           do n = 1,ntype_aer<a name='721'>
+              do m = 1,nsize_aer(n)<a name='722'>
+                 lnum   = numptr_aer(m,n,ai_phase)<a name='723'>
+                 lnumcw = numptr_aer(m,n,cw_phase)<a name='724'>
+                 if (tmpc1 &gt; 0.0) then<a name='725'>
+                    dact = tmpc1*fn(m,n)*raercol(k,lnum,nsav) <font color=#447700>! interstitial only<a name='726'></font>
+                 else<a name='727'>
+                    dact = 0.0<a name='728'>
+                 endif<a name='729'>
+                 if (tmpc2 &gt; 0.0) then<a name='730'>
+                    dact = dact + tmpc2*fn(m,n)*raercol(km1,lnum,nsav) <font color=#447700>! interstitial only<a name='731'></font>
+                 endif<a name='732'>
+                 dact = min( dact, 0.99*raercol(k,lnum,nsav) )<a name='733'>
+                 raercol(k,lnumcw,nsav) = raercol(k,lnumcw,nsav)+dact<a name='734'>
+                 raercol(k,lnum,  nsav) = raercol(k,lnum,  nsav)-dact<a name='735'>
+                 qndrop(k) = qndrop(k)+dact<a name='736'>
+                 nsource(i,k,j) = nsource(i,k,j)+dact*dtinv<a name='737'>
+                 do l = 1,ncomp(n)<a name='738'>
+                    lmass   = massptr_aer(l,m,n,ai_phase)<a name='739'>
+                    lmasscw = massptr_aer(l,m,n,cw_phase)<a name='740'>
+                    if (tmpc1 &gt; 0.0) then<a name='741'>
+                       dact = tmpc1*fm(m,n)*raercol(k,lmass,nsav) <font color=#447700>! interstitial only<a name='742'></font>
+                    else<a name='743'>
+                       dact = 0.0<a name='744'>
+                    endif<a name='745'>
+                    if (tmpc2 &gt; 0.0) then<a name='746'>
+                       dact = dact + tmpc2*fm(m,n)*raercol(km1,lmass,nsav) <font color=#447700>! interstitial only<a name='747'></font>
+                    endif<a name='748'>
+                    dact = min( dact, 0.99*raercol(k,lmass,nsav) )<a name='749'>
+                    raercol(k,lmasscw,nsav)  =  raercol(k,lmasscw,nsav)+dact<a name='750'>
+                    raercol(k,lmass,  nsav)  =  raercol(k,lmass,  nsav)-dact<a name='751'>
+                 enddo<a name='752'>
+              enddo<a name='753'>
+           enddo<a name='754'>
+<font color=#447700>!   10 continue<a name='755'></font>
+        endif   <font color=#447700>! ((tmpc1 &gt; 0.001) .or. (tmpc2 &gt; 0.001))<a name='756'></font>
+<a name='757'>
+<a name='758'>
+        if(lcldfra(k) &lt; lcldfra_old(k) .and. lcldfra_old(k) &gt; 1.e-20)then   <font color=#447700>! this line is the "old" criterion<a name='759'></font>
+<font color=#447700>!         go to 20<a name='760'></font>
+<a name='761'>
+<font color=#447700>!       shrinking cloud ......................................................<a name='762'></font>
+<a name='763'>
+<font color=#447700>!                droplet loss in decaying cloud<a name='764'></font>
+           nsource(i,k,j)=nsource(i,k,j)+qndrop(k)*(lcldfra(k)-lcldfra_old(k))*dtinv<a name='765'>
+           qndrop(k)=qndrop(k)*(1.+lcldfra(k)-lcldfra_old(k))<a name='766'>
+<font color=#447700>!                 convert activated aerosol to interstitial in decaying cloud<a name='767'></font>
+<a name='768'>
+           tmpc = (lcldfra(k)-lcldfra_old(k))/lcldfra_old(k)<a name='769'>
+           do n=1,ntype_aer<a name='770'>
+              do m=1,nsize_aer(n)<a name='771'>
+                 lnum=numptr_aer(m,n,ai_phase)<a name='772'>
+                 lnumcw=numptr_aer(m,n,cw_phase)<a name='773'>
+                 if(lnum.gt.0)then<a name='774'>
+                    dact=raercol(k,lnumcw,nsav)*tmpc<a name='775'>
+                    raercol(k,lnumcw,nsav)=raercol(k,lnumcw,nsav)+dact<a name='776'>
+                    raercol(k,lnum,nsav)=raercol(k,lnum,nsav)-dact<a name='777'>
+                 endif<a name='778'>
+                 do l=1,ncomp(n)<a name='779'>
+                    lmass=massptr_aer(l,m,n,ai_phase)<a name='780'>
+                    lmasscw=massptr_aer(l,m,n,cw_phase)<a name='781'>
+                    dact=raercol(k,lmasscw,nsav)*tmpc<a name='782'>
+                    raercol(k,lmasscw,nsav)=raercol(k,lmasscw,nsav)+dact<a name='783'>
+                    raercol(k,lmass,nsav)=raercol(k,lmass,nsav)-dact<a name='784'>
+                 enddo<a name='785'>
+              enddo<a name='786'>
+           enddo<a name='787'>
+<font color=#447700>!             20 continue<a name='788'></font>
+        endif<a name='789'>
+<a name='790'>
+     enddo GROW_SHRINK_MAIN_K_LOOP<a name='791'>
+<font color=#447700>! end of k-loop for growing/shrinking cloud calcs ......................<a name='792'></font>
+<a name='793'>
+<a name='794'>
+<a name='795'>
+<font color=#447700>! ......................................................................<a name='796'></font>
+<font color=#447700>! start of main k-loop for calc of old cloud activation tendencies ..........<a name='797'></font>
+<font color=#447700>! this loop does "set up" for the nsubmix loop<a name='798'></font>
+<font color=#447700>!<a name='799'></font>
+<font color=#447700>! rce-comment<a name='800'></font>
+<font color=#447700>!    changed this part of code to use current cloud fraction (lcldfra) exclusively<a name='801'></font>
+<a name='802'>
+OLD_CLOUD_MAIN_K_LOOP: do k=kts,kte<a name='803'>
+        km1=max0(k-1,kts)<a name='804'>
+        kp1=min0(k+1,kde-1)<a name='805'>
+        flux_fullact(k) = 0.0<a name='806'>
+        if(lcldfra(k).gt.0.01)then<a name='807'>
+<font color=#447700>!          go to 30<a name='808'></font>
+<a name='809'>
+<font color=#447700>!               old cloud<a name='810'></font>
+              if(lcldfra(k)-lcldfra(km1).gt.0.01.or.k.eq.kts)then<a name='811'>
+<a name='812'>
+<font color=#447700>!                   interior cloud<a name='813'></font>
+<font color=#447700>!                   cloud base<a name='814'></font>
+<a name='815'>
+                 wdiab=0<a name='816'>
+                 wmix=wtke(k) <font color=#447700>! spectrum of updrafts<a name='817'></font>
+                 wbar=w(i,k,j) <font color=#447700>! spectrum of updrafts<a name='818'></font>
+<font color=#447700>!                    wmix=0. ! single updraft<a name='819'></font>
+<font color=#447700>!               wbar=wtke(k) ! single updraft<a name='820'></font>
+<font color=#447700>! 06-nov-2005 rce - increase wmax from 10 to 50 (deep convective clouds)<a name='821'></font>
+                 wmax=50.<a name='822'>
+                 ekd(k)=wtke(k)*dz(k)/sq2pi<a name='823'>
+                 alogarg=max(1.e-20,1/lcldfra(k)-1.)<a name='824'>
+                 wmin=wbar+wmix*0.25*sq2pi*alog(alogarg)<a name='825'>
+<a name='826'>
+                 do n=1,ntype_aer<a name='827'>
+                    do m=1,nsize_aer(n)<a name='828'>
+                       call <A href='../../html_code/phys/module_mixactivate.F.html#LOADAER'>loadaer</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LOADAER_5">(raercol(1,1,nsav),km1,kms,kme,num_chem,    &amp;<a name='829'>
+                            cs(k), npv(m,n),dlo_sect(m,n),dhi_sect(m,n),               &amp;<a name='830'>
+                            maxd_acomp, ncomp(n), &amp;<a name='831'>
+                            grid_id, ktau, i, j, m, n,   &amp;<a name='832'>
+                            numptr_aer(m,n,ai_phase),numptr_aer(m,n,cw_phase),  &amp;<a name='833'>
+                            dens_aer(1,n),   &amp;<a name='834'>
+                            massptr_aer(1,m,n,ai_phase), massptr_aer(1,m,n,cw_phase),  &amp;<a name='835'>
+                            maerosol(1,m,n), maerosolcw(1,m,n),          &amp;<a name='836'>
+                            maerosol_tot(m,n), maerosol_totcw(m,n),      &amp;<a name='837'>
+                            naerosol(m,n), naerosolcw(m,n),                  &amp;<a name='838'>
+                            vaerosol(m,n), vaerosolcw(m,n) )<a name='839'>
+<a name='840'>
+                       hygro_aer(m,n)=hygro(i,k,j,m,n)<a name='841'>
+<a name='842'>
+                    enddo<a name='843'>
+                 enddo<a name='844'>
+<font color=#447700>!          print *,'old cloud wbar,wmix=',wbar,wmix<a name='845'></font>
+<a name='846'>
+                 call <A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE'>activate</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ACTIVATE_4">(wbar,wmix,wdiab,wmin,wmax,temp(i,k,j),cs(k), &amp;<a name='847'>
+                      msectional, maxd_atype, ntype_aer, maxd_asize, nsize_aer,    &amp;<a name='848'>
+                      naerosol, vaerosol,  &amp;<a name='849'>
+                      dlo_sect,dhi_sect, sigmag_aer,hygro_aer,                    &amp;<a name='850'>
+                      fn,fs,fm,fluxn,fluxs,fluxm,flux_fullact(k), grid_id, ktau, i, j, k )<a name='851'>
+                 <a name='852'>
+<font color=#447700>! rce-comment<a name='853'></font>
+<font color=#447700>!    the activation-fraction fluxes (fluxn, fluxm) from subr activate assume that<a name='854'></font>
+<font color=#447700>!       wbar &lt;&lt; wmix, which is valid for global-model scale but not mesoscale<a name='855'></font>
+<font color=#447700>!    for wrf-chem application, divide these by flux_fullact to get a <a name='856'></font>
+<font color=#447700>!       "flux-weighted-average" activation fraction, then multiply by (ekd(k)*zs(k)) <a name='857'></font>
+<font color=#447700>!       which is the local "turbulent vertical-mixing velocity"<a name='858'></font>
+                 if (k &gt; kts) then<a name='859'>
+                    if (flux_fullact(k) &gt; 1.0e-20) then<a name='860'>
+                       tmpa = ekd(k)*zs(k)<a name='861'>
+                       tmpf = flux_fullact(k)<a name='862'>
+                       do n=1,ntype_aer<a name='863'>
+                       do m=1,nsize_aer(n)<a name='864'>
+                          tmpb = max( fluxn(m,n), 0.0 ) / max( fluxn(m,n), tmpf )<a name='865'>
+                          fluxn(m,n) = tmpa*tmpb<a name='866'>
+                          tmpb = max( fluxm(m,n), 0.0 ) / max( fluxm(m,n), tmpf )<a name='867'>
+                          fluxm(m,n) = tmpa*tmpb<a name='868'>
+                       enddo<a name='869'>
+                       enddo<a name='870'>
+                    else<a name='871'>
+                       fluxn(:,:) = 0.0<a name='872'>
+                       fluxm(:,:) = 0.0<a name='873'>
+                    endif<a name='874'>
+                 endif<a name='875'>
+<a name='876'>
+                 if(k.gt.kts)then<a name='877'>
+                    tmpc = lcldfra(k)-lcldfra(km1)<a name='878'>
+                 else<a name='879'>
+                    tmpc=lcldfra(k)<a name='880'>
+                 endif<a name='881'>
+<font color=#447700>! rce-comment<a name='882'></font>
+<font color=#447700>!    flux of activated mass into layer k (in kg/m2/s)<a name='883'></font>
+<font color=#447700>!       = "actmassflux" = dumc*fluxm*raercol(kp1,lmass)*csbot(k)<a name='884'></font>
+<font color=#447700>!    source of activated mass (in kg/kg/s) = flux divergence<a name='885'></font>
+<font color=#447700>!       = actmassflux/(cs(i,k)*dz(i,k))<a name='886'></font>
+<font color=#447700>!    so need factor of csbot_cscen = csbot(k)/cs(i,k)<a name='887'></font>
+<font color=#447700>!                tmpe=1./(dz(k))<a name='888'></font>
+                 tmpe = csbot_cscen(k)/(dz(k))<a name='889'>
+                 fluxntot=0.<a name='890'>
+                 do n=1,ntype_aer<a name='891'>
+                 do m=1,nsize_aer(n)<a name='892'>
+                    fluxn(m,n)=fluxn(m,n)*tmpc<a name='893'>
+<font color=#447700>!                   fluxs(m,n)=fluxs(m,n)*tmpc<a name='894'></font>
+                    fluxm(m,n)=fluxm(m,n)*tmpc<a name='895'>
+                    lnum=numptr_aer(m,n,ai_phase)<a name='896'>
+                    fluxntot=fluxntot+fluxn(m,n)*raercol(km1,lnum,nsav)<a name='897'>
+<font color=#447700>!             print *,'fn=',fn(m,n),' for m,n=',m,n<a name='898'></font>
+<font color=#447700>!             print *,'old cloud tmpc=',tmpc,' fn=',fn(m,n),' for m,n=',m,n<a name='899'></font>
+                    nact(k,m,n)=nact(k,m,n)+fluxn(m,n)*tmpe<a name='900'>
+                    mact(k,m,n)=mact(k,m,n)+fluxm(m,n)*tmpe<a name='901'>
+                 enddo<a name='902'>
+                 enddo<a name='903'>
+                 flux_fullact(k) = flux_fullact(k)*tmpe<a name='904'>
+                 nsource(i,k,j)=nsource(i,k,j)+fluxntot*zs(k)<a name='905'>
+                 fluxntot=fluxntot*cs(k)<a name='906'>
+              endif<a name='907'>
+<font color=#447700>!       30 continue<a name='908'></font>
+<a name='909'>
+        else<a name='910'>
+<font color=#447700>!       go to 40<a name='911'></font>
+<font color=#447700>!              no cloud<a name='912'></font>
+           if(qndrop(k).gt.10000.e6)then<a name='913'>
+              print *,'i,k,j,lcldfra,qndrop=',i,k,j,lcldfra(k),qndrop(k)<a name='914'>
+              print *,'cldfra,ql,qi',cldfra(i,k,j),qc(i,k,j),qi(i,k,j)<a name='915'>
+           endif<a name='916'>
+           nsource(i,k,j)=nsource(i,k,j)-qndrop(k)*dtinv<a name='917'>
+           qndrop(k)=0.<a name='918'>
+<font color=#447700>!              convert activated aerosol to interstitial in decaying cloud<a name='919'></font>
+           do n=1,ntype_aer<a name='920'>
+              do m=1,nsize_aer(n)<a name='921'>
+                 lnum=numptr_aer(m,n,ai_phase)<a name='922'>
+                 lnumcw=numptr_aer(m,n,cw_phase)<a name='923'>
+                 if(lnum.gt.0)then<a name='924'>
+                    raercol(k,lnum,nsav)=raercol(k,lnum,nsav)+raercol(k,lnumcw,nsav)<a name='925'>
+                    raercol(k,lnumcw,nsav)=0.<a name='926'>
+                 endif<a name='927'>
+                 do l=1,ncomp(n)<a name='928'>
+                    lmass=massptr_aer(l,m,n,ai_phase)<a name='929'>
+                    lmasscw=massptr_aer(l,m,n,cw_phase)<a name='930'>
+                    raercol(k,lmass,nsav)=raercol(k,lmass,nsav)+raercol(k,lmasscw,nsav)<a name='931'>
+                    raercol(k,lmasscw,nsav)=0.<a name='932'>
+                 enddo<a name='933'>
+              enddo<a name='934'>
+           enddo<a name='935'>
+<font color=#447700>!      40 continue<a name='936'></font>
+        endif<a name='937'>
+<a name='938'>
+     enddo OLD_CLOUD_MAIN_K_LOOP<a name='939'>
+<a name='940'>
+<font color=#447700>!    cycle OVERALL_MAIN_I_LOOP<a name='941'></font>
+<a name='942'>
+<a name='943'>
+<font color=#447700>!    switch nsav, nnew so that nnew is the updated aerosol<a name='944'></font>
+<a name='945'>
+     ntemp=nsav<a name='946'>
+     nsav=nnew<a name='947'>
+     nnew=ntemp<a name='948'>
+<a name='949'>
+<font color=#447700>!    load new droplets in layers above, below clouds<a name='950'></font>
+<a name='951'>
+     dtmin=dtstep<a name='952'>
+     ekk(kts)=0.0<a name='953'>
+<font color=#447700>! rce-comment -- ekd(k) is eddy-diffusivity at k/k-1 interface<a name='954'></font>
+<font color=#447700>!   want ekk(k) = ekd(k) * (density at k/k-1 interface)<a name='955'></font>
+     do k=kts+1,kte<a name='956'>
+        ekk(k)=ekd(k)*csbot(k)<a name='957'>
+     enddo<a name='958'>
+     ekk(kte+1)=0.0<a name='959'>
+     do k=kts,kte<a name='960'>
+        ekkp(k)=zn(k)*ekk(k+1)*zs(k+1)<a name='961'>
+        ekkm(k)=zn(k)*ekk(k)*zs(k)<a name='962'>
+        tinv=ekkp(k)+ekkm(k)<a name='963'>
+        if(k.eq.kts)tinv=tinv+surfratemax<a name='964'>
+        if(tinv.gt.1.e-6)then<a name='965'>
+           dtt=1./tinv<a name='966'>
+           dtmin=min(dtmin,dtt)<a name='967'>
+        endif<a name='968'>
+     enddo<a name='969'>
+     dtmix=0.9*dtmin<a name='970'>
+     nsubmix=dtstep/dtmix+1<a name='971'>
+     if(nsubmix&gt;100)then<a name='972'>
+        nsubmix_bnd=100<a name='973'>
+     else<a name='974'>
+        nsubmix_bnd=nsubmix<a name='975'>
+     endif<a name='976'>
+<font color=#447700>!     count_submix(nsubmix_bnd)=count_submix(nsubmix_bnd)+1<a name='977'></font>
+     dtmix=dtstep/nsubmix<a name='978'>
+     fac_srflx = -1.0/(zn(1)*nsubmix)<a name='979'>
+     <a name='980'>
+     do k=kts,kte<a name='981'>
+        kp1=min(k+1,kde-1)<a name='982'>
+        km1=max(k-1,1)<a name='983'>
+        if(lcldfra(kp1).gt.0)then<a name='984'>
+           overlapp(k)=min(lcldfra(k)/lcldfra(kp1),1.)<a name='985'>
+        else<a name='986'>
+           overlapp(k)=1.<a name='987'>
+        endif<a name='988'>
+        if(lcldfra(km1).gt.0)then<a name='989'>
+           overlapm(k)=min(lcldfra(k)/lcldfra(km1),1.)<a name='990'>
+        else<a name='991'>
+           overlapm(k)=1.<a name='992'>
+        endif<a name='993'>
+     enddo<a name='994'>
+<a name='995'>
+<a name='996'>
+<a name='997'>
+<font color=#447700>! ......................................................................<a name='998'></font>
+<font color=#447700>! start of nsubmix-loop for calc of old cloud activation tendencies ....<a name='999'></font>
+OLD_CLOUD_NSUBMIX_LOOP: do nsub=1,nsubmix<a name='1000'>
+        qndrop_new(kts:kte)=qndrop(kts:kte)<a name='1001'>
+<font color=#447700>!           switch nsav, nnew so that nsav is the updated aerosol<a name='1002'></font>
+        ntemp=nsav<a name='1003'>
+        nsav=nnew<a name='1004'>
+        nnew=ntemp<a name='1005'>
+        srcn(:)=0.0<a name='1006'>
+        do n=1,ntype_aer<a name='1007'>
+           do m=1,nsize_aer(n)<a name='1008'>
+              lnum=numptr_aer(m,n,ai_phase)<a name='1009'>
+<font color=#447700>!              update droplet source<a name='1010'></font>
+<font color=#447700>! rce-comment - activation source in layer k involves particles from k-1<a name='1011'></font>
+<font color=#447700>!             srcn(kts  :kte)=srcn(kts  :kte)+nact(kts  :kte,m,n)*(raercol(kts:kte  ,lnum,nsav))<a name='1012'></font>
+              srcn(kts+1:kte)=srcn(kts+1:kte)+nact(kts+1:kte,m,n)*(raercol(kts:kte-1,lnum,nsav))<a name='1013'>
+<font color=#447700>! rce-comment - new formulation for k=kts should be implemented<a name='1014'></font>
+              srcn(kts      )=srcn(kts      )+nact(kts      ,m,n)*(raercol(kts      ,lnum,nsav))<a name='1015'>
+           enddo<a name='1016'>
+        enddo<a name='1017'>
+        call <A href='../../html_code/phys/module_mixactivate.F.html#EXPLMIX'>explmix</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXPLMIX_6">(qndrop,srcn,ekkp,ekkm,overlapp,overlapm,   &amp;<a name='1018'>
+             qndrop_new,surfrate_drop,kms,kme,kts,kte,dtmix,.false.)<a name='1019'>
+        do n=1,ntype_aer<a name='1020'>
+           do m=1,nsize_aer(n)<a name='1021'>
+              lnum=numptr_aer(m,n,ai_phase)<a name='1022'>
+              lnumcw=numptr_aer(m,n,cw_phase)<a name='1023'>
+              if(lnum&gt;0)then<a name='1024'>
+<font color=#447700>! rce-comment - activation source in layer k involves particles from k-1<a name='1025'></font>
+<font color=#447700>!                source(kts  :kte)= nact(kts  :kte,m,n)*(raercol(kts:kte  ,lnum,nsav))<a name='1026'></font>
+                 source(kts+1:kte)= nact(kts+1:kte,m,n)*(raercol(kts:kte-1,lnum,nsav))<a name='1027'>
+<font color=#447700>! rce-comment - new formulation for k=kts should be implemented<a name='1028'></font>
+                 source(kts      )= nact(kts      ,m,n)*(raercol(kts      ,lnum,nsav))<a name='1029'>
+                 call <A href='../../html_code/phys/module_mixactivate.F.html#EXPLMIX'>explmix</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXPLMIX_7">(raercol(1,lnumcw,nnew),source,ekkp,ekkm,overlapp,overlapm, &amp;<a name='1030'>
+                      raercol(1,lnumcw,nsav),surfrate(lnumcw),kms,kme,kts,kte,dtmix,&amp;<a name='1031'>
+                      .false.)<a name='1032'>
+                 call <A href='../../html_code/phys/module_mixactivate.F.html#EXPLMIX'>explmix</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXPLMIX_8">(raercol(1,lnum,nnew),source,ekkp,ekkm,overlapp,overlapm,  &amp;<a name='1033'>
+                      raercol(1,lnum,nsav),surfrate(lnum),kms,kme,kts,kte,dtmix, &amp;<a name='1034'>
+                      .true.,raercol(1,lnumcw,nsav))<a name='1035'>
+                 qsrflx(i,j,lnum) = qsrflx(i,j,lnum) + fac_srflx*            &amp;<a name='1036'>
+                      raercol(kts,lnum,nsav)*surfrate(lnum)<a name='1037'>
+                 qsrflx(i,j,lnumcw) = qsrflx(i,j,lnumcw) + fac_srflx*        &amp;<a name='1038'>
+                      raercol(kts,lnumcw,nsav)*surfrate(lnumcw)<a name='1039'>
+                 if (icheck_colmass &gt; 0) then<a name='1040'>
+                    tmpf = dtmix*rhodz(kts)<a name='1041'>
+                    colmass_sfc(0,m,n,1) = colmass_sfc(0,m,n,1) &amp;<a name='1042'>
+                          + raercol(kts,lnum  ,nsav)*surfrate(lnum  )*tmpf<a name='1043'>
+                    colmass_sfc(0,m,n,2) = colmass_sfc(0,m,n,2) &amp;<a name='1044'>
+                          + raercol(kts,lnumcw,nsav)*surfrate(lnumcw)*tmpf<a name='1045'>
+                 endif<a name='1046'>
+              endif<a name='1047'>
+              do l=1,ncomp(n)<a name='1048'>
+                 lmass=massptr_aer(l,m,n,ai_phase)<a name='1049'>
+                 lmasscw=massptr_aer(l,m,n,cw_phase)<a name='1050'>
+<font color=#447700>! rce-comment - activation source in layer k involves particles from k-1<a name='1051'></font>
+<font color=#447700>!                source(kts  :kte)= mact(kts  :kte,m,n)*(raercol(kts:kte  ,lmass,nsav))<a name='1052'></font>
+                 source(kts+1:kte)= mact(kts+1:kte,m,n)*(raercol(kts:kte-1,lmass,nsav))<a name='1053'>
+<font color=#447700>! rce-comment - new formulation for k=kts should be implemented<a name='1054'></font>
+                 source(kts      )= mact(kts      ,m,n)*(raercol(kts      ,lmass,nsav))<a name='1055'>
+                 call <A href='../../html_code/phys/module_mixactivate.F.html#EXPLMIX'>explmix</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXPLMIX_9">(raercol(1,lmasscw,nnew),source,ekkp,ekkm,overlapp,overlapm, &amp;<a name='1056'>
+                      raercol(1,lmasscw,nsav),surfrate(lmasscw),kms,kme,kts,kte,dtmix,  &amp;<a name='1057'>
+                      .false.)<a name='1058'>
+                 call <A href='../../html_code/phys/module_mixactivate.F.html#EXPLMIX'>explmix</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXPLMIX_10">(raercol(1,lmass,nnew),source,ekkp,ekkm,overlapp,overlapm,  &amp;<a name='1059'>
+                      raercol(1,lmass,nsav),surfrate(lmass),kms,kme,kts,kte,dtmix,  &amp;<a name='1060'>
+                      .true.,raercol(1,lmasscw,nsav))<a name='1061'>
+                 qsrflx(i,j,lmass) = qsrflx(i,j,lmass) + fac_srflx*          &amp;<a name='1062'>
+                      raercol(kts,lmass,nsav)*surfrate(lmass)<a name='1063'>
+                 qsrflx(i,j,lmasscw) = qsrflx(i,j,lmasscw) + fac_srflx*      &amp;<a name='1064'>
+                      raercol(kts,lmasscw,nsav)*surfrate(lmasscw)<a name='1065'>
+                 if (icheck_colmass &gt; 0) then<a name='1066'>
+                    <font color=#447700>! colmass_sfc calculation<a name='1067'></font>
+                    <font color=#447700>!    colmass_bgn/end = bgn/end column burden = sum.over.k.of{ rho(k)*dz(k)*chem(k,l) }<a name='1068'></font>
+                    <font color=#447700>!    colmass_sfc = surface loss over dtstep<a name='1069'></font>
+                    <font color=#447700>!       = sum.over.nsubmix.substeps{ depvel(l)*rho(kts)*chem(kts,l)*dtmix }<a name='1070'></font>
+                    <font color=#447700>!    surfrate(l) = depvel(l)/dz(kts) so need to multiply by dz(kts)<a name='1071'></font>
+                    <font color=#447700>!    for mass, raercol(k,l) = chem(k,l)*1.0e-9, so need to multiply by 1.0e9<a name='1072'></font>
+                    tmpf = dtmix*rhodz(kts)*1.0e9<a name='1073'>
+                    colmass_sfc(l,m,n,1) = colmass_sfc(l,m,n,1) &amp;<a name='1074'>
+                          + raercol(kts,lmass  ,nsav)*surfrate(lmass  )*tmpf<a name='1075'>
+                    colmass_sfc(l,m,n,2) = colmass_sfc(l,m,n,2) &amp;<a name='1076'>
+                          + raercol(kts,lmasscw,nsav)*surfrate(lmasscw)*tmpf<a name='1077'>
+                 endif<a name='1078'>
+              enddo<a name='1079'>
+              lwater=waterptr_aer(m,n)  <font color=#447700>! aerosol water<a name='1080'></font>
+              if(lwater&gt;0)then<a name='1081'>
+                 source(:)=0.<a name='1082'>
+                 call <A href='../../html_code/phys/module_mixactivate.F.html#EXPLMIX'>explmix</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXPLMIX_11">(   raercol(1,lwater,nnew),source,ekkp,ekkm,overlapp,overlapm,   &amp;<a name='1083'>
+                      raercol(1,lwater,nsav),surfrate(lwater),kms,kme,kts,kte,dtmix,  &amp;<a name='1084'>
+                      .true.,source)<a name='1085'>
+              endif<a name='1086'>
+           enddo <font color=#447700>! size<a name='1087'></font>
+        enddo <font color=#447700>! type<a name='1088'></font>
+<a name='1089'>
+     enddo OLD_CLOUD_NSUBMIX_LOOP<a name='1090'>
+<a name='1091'>
+<font color=#447700>!    cycle OVERALL_MAIN_I_LOOP<a name='1092'></font>
+<a name='1093'>
+<font color=#447700>!        evaporate particles again if no cloud<a name='1094'></font>
+<a name='1095'>
+     do k=kts,kte<a name='1096'>
+        if(lcldfra(k).eq.0.)then<a name='1097'>
+<a name='1098'>
+<font color=#447700>!              no cloud<a name='1099'></font>
+<a name='1100'>
+           qndrop(k)=0.<a name='1101'>
+<font color=#447700>!              convert activated aerosol to interstitial in decaying cloud<a name='1102'></font>
+           do n=1,ntype_aer<a name='1103'>
+              do m=1,nsize_aer(n)<a name='1104'>
+                 lnum=numptr_aer(m,n,ai_phase)<a name='1105'>
+                 lnumcw=numptr_aer(m,n,cw_phase)<a name='1106'>
+                 if(lnum.gt.0)then<a name='1107'>
+                    raercol(k,lnum,nnew)=raercol(k,lnum,nnew)+raercol(k,lnumcw,nnew)<a name='1108'>
+                    raercol(k,lnumcw,nnew)=0.<a name='1109'>
+                 endif<a name='1110'>
+                 do l=1,ncomp(n)<a name='1111'>
+                    lmass=massptr_aer(l,m,n,ai_phase)<a name='1112'>
+                    lmasscw=massptr_aer(l,m,n,cw_phase)<a name='1113'>
+                    raercol(k,lmass,nnew)=raercol(k,lmass,nnew)+raercol(k,lmasscw,nnew)<a name='1114'>
+                    raercol(k,lmasscw,nnew)=0.<a name='1115'>
+                 enddo<a name='1116'>
+              enddo<a name='1117'>
+           enddo<a name='1118'>
+        endif<a name='1119'>
+     enddo<a name='1120'>
+<a name='1121'>
+<font color=#447700>!         cycle OVERALL_MAIN_I_LOOP<a name='1122'></font>
+<a name='1123'>
+<font color=#447700>!        droplet number<a name='1124'></font>
+<a name='1125'>
+     do k=kts,kte<a name='1126'>
+<font color=#447700>!       if(lcldfra(k).gt.0.1)then<a name='1127'></font>
+<font color=#447700>!           write(6,'(a,3i5,f12.1)')'i,j,k,qndrop=',i,j,k,qndrop(k)<a name='1128'></font>
+<font color=#447700>!       endif<a name='1129'></font>
+        if(qndrop(k).lt.-10.e6.or.qndrop(k).gt.1.e12)then<a name='1130'>
+           write(6,'(a,g12.2,a,3i5)')'after qndrop=',qndrop(k),' for i,k,j=',i,k,j<a name='1131'>
+        endif<a name='1132'>
+<a name='1133'>
+        qndrop3d(i,k,j) = max(qndrop(k),1.e-6)<a name='1134'>
+<a name='1135'>
+        if(qndrop3d(i,k,j).lt.-10.e6.or.qndrop3d(i,k,j).gt.1.E20)then<a name='1136'>
+           write(6,'(a,g12.2,a,3i5)')'after qndrop3d=',qndrop3d(i,k,j),' for i,k,j=',i,k,j<a name='1137'>
+        endif<a name='1138'>
+        if(qc(i,k,j).lt.-1..or.qc(i,k,j).gt.1.)then<a name='1139'>
+           write(6,'(a,g12.2,a,3i5)')'qc=',qc(i,k,j),' for i,k,j=',i,k,j<a name='1140'>
+           call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_721">("1")<a name='1141'>
+        endif<a name='1142'>
+        if(qi(i,k,j).lt.-1..or.qi(i,k,j).gt.1.)then<a name='1143'>
+           write(6,'(a,g12.2,a,3i5)')'qi=',qi(i,k,j),' for i,k,j=',i,k,j<a name='1144'>
+           call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_722">("1")<a name='1145'>
+        endif<a name='1146'>
+        if(qv(i,k,j).lt.-1..or.qv(i,k,j).gt.1.)then<a name='1147'>
+           write(6,'(a,g12.2,a,3i5)')'qv=',qv(i,k,j),' for i,k,j=',i,k,j<a name='1148'>
+           call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_mixactivate.F.html#MIXACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_723">("1")<a name='1149'>
+        endif<a name='1150'>
+        cldfra_old(i,k,j) = cldfra(i,k,j)<a name='1151'>
+<font color=#447700>!       if(k.gt.6.and.k.lt.11)cldfra_old(i,k,j)=1.<a name='1152'></font>
+     enddo<a name='1153'>
+<a name='1154'>
+<font color=#447700>!    cycle OVERALL_MAIN_I_LOOP<a name='1155'></font>
+<a name='1156'>
+<font color=#447700>!        update chem and convert back to mole/mole<a name='1157'></font>
+<a name='1158'>
+     ccn(:,:) = 0.<a name='1159'>
+     do n=1,ntype_aer<a name='1160'>
+        do m=1,nsize_aer(n)<a name='1161'>
+           lnum=numptr_aer(m,n,ai_phase)<a name='1162'>
+           lnumcw=numptr_aer(m,n,cw_phase)<a name='1163'>
+           if(lnum.gt.0)then<a name='1164'>
+              <font color=#447700>!          scale=mwdry*0.001<a name='1165'></font>
+              scale = 1.<a name='1166'>
+              chem(i,kts:kte,j,lnumcw)= raercol(kts:kte,lnumcw,nnew)*scale<a name='1167'>
+              chem(i,kts:kte,j,lnum)= raercol(kts:kte,lnum,nnew)*scale<a name='1168'>
+           endif<a name='1169'>
+           do l=1,ncomp(n)<a name='1170'>
+              lmass=massptr_aer(l,m,n,ai_phase)<a name='1171'>
+              lmasscw=massptr_aer(l,m,n,cw_phase)<a name='1172'>
+<font color=#447700>!          scale = mwdry/mw_aer(l,n)<a name='1173'></font>
+              scale = 1.e9<a name='1174'>
+              chem(i,kts:kte,j,lmasscw)=raercol(kts:kte,lmasscw,nnew)*scale <font color=#447700>! ug/kg<a name='1175'></font>
+              chem(i,kts:kte,j,lmass)=raercol(kts:kte,lmass,nnew)*scale <font color=#447700>! ug/kg<a name='1176'></font>
+           enddo<a name='1177'>
+           lwater=waterptr_aer(m,n)<a name='1178'>
+           if(lwater&gt;0)chem(i,kts:kte,j,lwater)=raercol(kts:kte,lwater,nnew) <font color=#447700>! don't convert units<a name='1179'></font>
+           do k=kts,kte<a name='1180'>
+              sm=2.*aten*sqrt(aten/(27.*hygro(i,k,j,m,n)*amcube(m,n)))<a name='1181'>
+              do l=1,psat<a name='1182'>
+                 arg=argfactor(m,n)*log(sm/super(l))<a name='1183'>
+                 if(arg&lt;2)then<a name='1184'>
+                    if(arg&lt;-2)then<a name='1185'>
+                       ccnfact(l,m,n)=1.e-6 <font color=#447700>! convert from #/m3 to #/cm3<a name='1186'></font>
+                    else<a name='1187'>
+                       ccnfact(l,m,n)=1.e-6*0.5*ERFC_NUM_RECIPES(arg)<a name='1188'>
+                    endif<a name='1189'>
+                 else<a name='1190'>
+                    ccnfact(l,m,n) = 0.<a name='1191'>
+                 endif<a name='1192'>
+<font color=#447700>!                 ccn concentration as diagnostic<a name='1193'></font>
+<font color=#447700>!                 assume same hygroscopicity and ccnfact for cloud-phase and aerosol phase particles<a name='1194'></font>
+                 ccn(k,l)=ccn(k,l)+(raercol(k,lnum,nnew)+raercol(k,lnumcw,nnew))*cs(k)*ccnfact(l,m,n)<a name='1195'>
+              enddo<a name='1196'>
+           enddo<a name='1197'>
+        enddo<a name='1198'>
+     enddo<a name='1199'>
+     do l=1,psat<a name='1200'>
+        <font color=#447700>!wig, 22-Nov-2006: added vertical bounds to prevent out-of-bounds at top<a name='1201'></font>
+        if(l.eq.1)ccn1(i,kts:kte,j)=ccn(:,l)<a name='1202'>
+        if(l.eq.2)ccn2(i,kts:kte,j)=ccn(:,l)<a name='1203'>
+        if(l.eq.3)ccn3(i,kts:kte,j)=ccn(:,l)<a name='1204'>
+        if(l.eq.4)ccn4(i,kts:kte,j)=ccn(:,l)<a name='1205'>
+        if(l.eq.5)ccn5(i,kts:kte,j)=ccn(:,l)<a name='1206'>
+        if(l.eq.6)ccn6(i,kts:kte,j)=ccn(:,l)<a name='1207'>
+     end do<a name='1208'>
+<a name='1209'>
+<font color=#447700>! mass conservation checking<a name='1210'></font>
+     if (icheck_colmass &gt; 0) then<a name='1211'>
+<font color=#447700>! calc final column burdens<a name='1212'></font>
+        do n=1,ntype_aer<a name='1213'>
+        do m=1,nsize_aer(n)<a name='1214'>
+           lnum=numptr_aer(m,n,ai_phase)<a name='1215'>
+           lnumcw=numptr_aer(m,n,cw_phase)<a name='1216'>
+           if(lnum&gt;0)then<a name='1217'>
+              colmass_end(0,m,n,1) = sum( chem(i,kts:kte,j,lnum  )*rhodz(kts:kte) )<a name='1218'>
+              colmass_end(0,m,n,2) = sum( chem(i,kts:kte,j,lnumcw)*rhodz(kts:kte) )<a name='1219'>
+           endif<a name='1220'>
+           do l=1,ncomp(n)<a name='1221'>
+              lmass=massptr_aer(l,m,n,ai_phase)<a name='1222'>
+              lmasscw=massptr_aer(l,m,n,cw_phase)<a name='1223'>
+              colmass_end(l,m,n,1) = sum( chem(i,kts:kte,j,lmass  )*rhodz(kts:kte) )<a name='1224'>
+              colmass_end(l,m,n,2) = sum( chem(i,kts:kte,j,lmasscw)*rhodz(kts:kte) )<a name='1225'>
+           enddo<a name='1226'>
+        enddo <font color=#447700>! size<a name='1227'></font>
+        enddo <font color=#447700>! type<a name='1228'></font>
+<font color=#447700>! calc burden change errors for each interstitial/activated pair<a name='1229'></font>
+        do n=1,ntype_aer<a name='1230'>
+        do m=1,nsize_aer(n)<a name='1231'>
+           do l=0,ncomp(n)<a name='1232'>
+              <font color=#447700>! tmpa &amp; tmpb = beginning &amp; ending column burden divided by rhodzsum,<a name='1233'></font>
+              <font color=#447700>!             = beginning &amp; ending column-mean mixing ratios<a name='1234'></font>
+              <font color=#447700>! tmpc = loss to surface divided by rhodzsum,<a name='1235'></font>
+              tmpa = ( colmass_bgn(l,m,n,1) + colmass_bgn(l,m,n,2) )/rhodzsum<a name='1236'>
+              tmpb = ( colmass_end(l,m,n,1) + colmass_end(l,m,n,2) )/rhodzsum<a name='1237'>
+              tmpc = ( colmass_sfc(l,m,n,1) + colmass_sfc(l,m,n,2) )/rhodzsum<a name='1238'>
+<a name='1239'>
+              <font color=#447700>! tmpd = ((final burden) + (sfc loss)) - (initial burden)<a name='1240'></font>
+              <font color=#447700>!      = burden change error<a name='1241'></font>
+              tmpd = (tmpb + tmpc) - tmpa<a name='1242'>
+              tmpe = max( tmpa, 1.0e-20 )<a name='1243'>
+<a name='1244'>
+              <font color=#447700>! tmpf = (burden change error) / (initial burden)<a name='1245'></font>
+              if (abs(tmpd) &lt; 1.0e5*tmpe) then<a name='1246'>
+                 tmpf = tmpd/tmpe<a name='1247'>
+              else if (tmpf &lt; 0.0) then<a name='1248'>
+                 tmpf = -1.0e5<a name='1249'>
+              else<a name='1250'>
+                 tmpf = 1.0e5<a name='1251'>
+              end if<a name='1252'>
+              if (abs(tmpf) &gt; abs(colmass_worst(l,m,n))) then<a name='1253'>
+                 colmass_worst(l,m,n) = tmpf<a name='1254'>
+                 colmass_worst_ij(1,l,m,n) = i<a name='1255'>
+                 colmass_worst_ij(2,l,m,n) = j<a name='1256'>
+              endif<a name='1257'>
+           enddo<a name='1258'>
+        enddo <font color=#447700>! size<a name='1259'></font>
+        enddo <font color=#447700>! type<a name='1260'></font>
+     endif <font color=#447700>! (icheck_colmass &gt; 0)<a name='1261'></font>
+<a name='1262'>
+<a name='1263'>
+     enddo OVERALL_MAIN_I_LOOP <font color=#447700>! end of main loop over i<a name='1264'></font>
+     enddo OVERALL_MAIN_J_LOOP <font color=#447700>! end of main loop over j<a name='1265'></font>
+<a name='1266'>
+<a name='1267'>
+<font color=#447700>! mass conservation checking<a name='1268'></font>
+     if (icheck_colmass &gt; 0) then<a name='1269'>
+        if (icheck_colmass &gt;= 100) write(*,'(a)') &amp;<a name='1270'>
+             'mixactivate colmass worst errors bgn - type, size, comp, err, i, j'<a name='1271'>
+        colmass_maxworst_r = 0.0<a name='1272'>
+        colmass_maxworst_i(:) = -1<a name='1273'>
+        do n=1,ntype_aer<a name='1274'>
+        do m=1,nsize_aer(n)<a name='1275'>
+           do l=0,ncomp(n)<a name='1276'>
+              if (icheck_colmass &gt;= 100) &amp;<a name='1277'>
+                 write(*,'(3i3,1p,e10.2,2i4)') n, m, l, &amp;<a name='1278'>
+                 colmass_worst(l,m,n), colmass_worst_ij(1:2,l,m,n) <a name='1279'>
+              if (abs(colmass_worst(l,m,n)) &gt; abs(colmass_maxworst_r)) then<a name='1280'>
+                 colmass_maxworst_r = colmass_worst(l,m,n) <a name='1281'>
+                 colmass_maxworst_i(1) = n<a name='1282'>
+                 colmass_maxworst_i(2) = m<a name='1283'>
+                 colmass_maxworst_i(3) = l<a name='1284'>
+              end if<a name='1285'>
+           enddo<a name='1286'>
+        enddo <font color=#447700>! size<a name='1287'></font>
+        enddo <font color=#447700>! type<a name='1288'></font>
+        if ((icheck_colmass &gt;= 10) .or. (abs(colmass_maxworst_r) &gt;= 1.0e-6)) &amp;<a name='1289'>
+             write(*,'(a,3i3,1p,e10.2)') 'mixactivate colmass maxworst', &amp;<a name='1290'>
+             colmass_maxworst_i(1:3), colmass_maxworst_r<a name='1291'>
+     endif <font color=#447700>! (icheck_colmass &gt; 0)<a name='1292'></font>
+<a name='1293'>
+<a name='1294'>
+     return<a name='1295'>
+   end subroutine mixactivate<a name='1296'>
+<a name='1297'>
+<a name='1298'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1299'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1300'></font>
+<A NAME='EXPLMIX'><A href='../../html_code/phys/module_mixactivate.F.html#EXPLMIX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1301'>
+   <font color=#993300>subroutine </font><font color=#cc0000>explmix</font>( q, src, ekkp, ekkm, overlapp, overlapm, &amp; <A href='../../call_to/EXPLMIX.html' TARGET='index'>11</A><a name='1302'>
+                       qold, surfrate, kms, kme, kts, kte, dt, &amp;<a name='1303'>
+                       is_unact, qactold )<a name='1304'>
+<a name='1305'>
+<font color=#447700>!  explicit integration of droplet/aerosol mixing<a name='1306'></font>
+<font color=#447700>!     with source due to activation/nucleation<a name='1307'></font>
+<a name='1308'>
+<a name='1309'>
+   implicit none<a name='1310'>
+   integer, intent(in) :: kms,kme <font color=#447700>! number of levels for array definition<a name='1311'></font>
+   integer, intent(in) :: kts,kte <font color=#447700>! number of levels for looping<a name='1312'></font>
+   real, intent(inout) :: q(kms:kme) <font color=#447700>! mixing ratio to be updated<a name='1313'></font>
+   real, intent(in) :: qold(kms:kme) <font color=#447700>! mixing ratio from previous time step<a name='1314'></font>
+   real, intent(in) :: src(kms:kme) <font color=#447700>! source due to activation/nucleation (/s)<a name='1315'></font>
+   real, intent(in) :: ekkp(kms:kme) <font color=#447700>! zn*zs*density*diffusivity (kg/m3 m2/s) at interface<a name='1316'></font>
+                      <font color=#447700>! below layer k  (k,k+1 interface)<a name='1317'></font>
+   real, intent(in) :: ekkm(kms:kme) <font color=#447700>! zn*zs*density*diffusivity (kg/m3 m2/s) at interface<a name='1318'></font>
+                      <font color=#447700>! above layer k  (k,k+1 interface)<a name='1319'></font>
+   real, intent(in) :: overlapp(kms:kme) <font color=#447700>! cloud overlap below<a name='1320'></font>
+   real, intent(in) :: overlapm(kms:kme) <font color=#447700>! cloud overlap above<a name='1321'></font>
+   real, intent(in) :: surfrate <font color=#447700>! surface exchange rate (/s)<a name='1322'></font>
+   real, intent(in) :: dt <font color=#447700>! time step (s)<a name='1323'></font>
+   logical, intent(in) :: is_unact <font color=#447700>! true if this is an unactivated species<a name='1324'></font>
+   real, intent(in),optional :: qactold(kms:kme)<a name='1325'>
+          <font color=#447700>! mixing ratio of ACTIVATED species from previous step<a name='1326'></font>
+          <font color=#447700>! *** this should only be present<a name='1327'></font>
+          <font color=#447700>!     if the current species is unactivated number/sfc/mass<a name='1328'></font>
+<a name='1329'>
+   integer k,kp1,km1<a name='1330'>
+<a name='1331'>
+   if ( is_unact ) then<a name='1332'>
+<font color=#447700>!     the qactold*(1-overlap) terms are resuspension of activated material<a name='1333'></font>
+      do k=kts,kte<a name='1334'>
+         kp1=min(k+1,kte)<a name='1335'>
+         km1=max(k-1,kts)<a name='1336'>
+         q(k) = qold(k) + dt*( - src(k) + ekkp(k)*(qold(kp1) - qold(k) +  &amp;<a name='1337'>
+                           qactold(kp1)*(1.0-overlapp(k)))               &amp;<a name='1338'>
+                                  + ekkm(k)*(qold(km1) - qold(k) +     &amp;<a name='1339'>
+                           qactold(km1)*(1.0-overlapm(k))) )<a name='1340'>
+<font color=#447700>!         if(q(k)&lt;-1.e-30)then ! force to non-negative<a name='1341'></font>
+<font color=#447700>!            print *,'q=',q(k),' in explmix'<a name='1342'></font>
+             q(k)=max(q(k),0.)<a name='1343'>
+<font color=#447700>!         endif<a name='1344'></font>
+      end do<a name='1345'>
+<a name='1346'>
+   else<a name='1347'>
+      do k=kts,kte<a name='1348'>
+         kp1=min(k+1,kte)<a name='1349'>
+         km1=max(k-1,kts)<a name='1350'>
+         q(k) = qold(k) + dt*(src(k) + ekkp(k)*(overlapp(k)*qold(kp1)-qold(k)) +  &amp;<a name='1351'>
+                                    ekkm(k)*(overlapm(k)*qold(km1)-qold(k)) )<a name='1352'>
+<font color=#447700>!        if(q(k)&lt;-1.e-30)then ! force to non-negative<a name='1353'></font>
+<font color=#447700>!           print *,'q=',q(k),' in explmix'<a name='1354'></font>
+            q(k)=max(q(k),0.)<a name='1355'>
+<font color=#447700>!        endif<a name='1356'></font>
+      end do<a name='1357'>
+   end if<a name='1358'>
+<a name='1359'>
+<font color=#447700>!  dry deposition loss at base of lowest layer<a name='1360'></font>
+   q(kts)=q(kts)-surfrate*qold(kts)*dt<a name='1361'>
+<font color=#447700>!  if(q(kts)&lt;-1.e-30)then ! force to non-negative<a name='1362'></font>
+<font color=#447700>!     print *,'q=',q(kts),' in explmix'<a name='1363'></font>
+      q(kts)=max(q(kts),0.)<a name='1364'>
+<font color=#447700>!  endif<a name='1365'></font>
+<a name='1366'>
+   return<a name='1367'>
+   end subroutine explmix<a name='1368'>
+<a name='1369'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1370'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1371'></font>
+<font color=#447700>! 06-nov-2005 rce - grid_id &amp; ktau added to arg list<a name='1372'></font>
+<A NAME='ACTIVATE'><A href='../../html_code/phys/module_mixactivate.F.html#ACTIVATE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1373'>
+      <font color=#993300>subroutine </font><font color=#cc0000>activate</font>(wbar, sigw, wdiab, wminf, wmaxf, tair, rhoair,  &amp; <A href='../../call_to/ACTIVATE.html' TARGET='index'>6</A>,<A href='../../call_from/ACTIVATE.html' TARGET='index'>14</A><a name='1374'>
+                      msectional, maxd_atype, ntype_aer, maxd_asize, nsize_aer,    &amp;<a name='1375'>
+                      na, volc, dlo_sect,dhi_sect,sigman, hygro, &amp;<a name='1376'>
+                      fn, fs, fm, fluxn, fluxs, fluxm, flux_fullact, &amp;<a name='1377'>
+                      grid_id, ktau, ii, jj, kk,smax_prescribed )<font color=#447700>!BSINGH - Added smax_prescribed for WRFCuP<a name='1378'></font>
+<a name='1379'>
+<font color=#447700>!      calculates number, surface, and mass fraction of aerosols activated as CCN<a name='1380'></font>
+<font color=#447700>!      calculates flux of cloud droplets, surface area, and aerosol mass into cloud<a name='1381'></font>
+<font color=#447700>!      assumes an internal mixture within each of aerosol mode.<a name='1382'></font>
+<font color=#447700>!      A sectional treatment within each type is assumed if ntype_aer &gt;7.<a name='1383'></font>
+<font color=#447700>!      A gaussiam spectrum of updrafts can be treated.<a name='1384'></font>
+<a name='1385'>
+<font color=#447700>!      mks units<a name='1386'></font>
+<a name='1387'>
+<font color=#447700>!      Abdul-Razzak and Ghan, A parameterization of aerosol activation.<a name='1388'></font>
+<font color=#447700>!      2. Multiple aerosol types. J. Geophys. Res., 105, 6837-6844.<a name='1389'></font>
+<a name='1390'>
+      USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_77">, only: g,rhowater, xlv, cp, rvovrd, r_d, r_v, &amp;<a name='1391'>
+              mwdry,svp1,svp2,svp3,ep_2<a name='1392'>
+<a name='1393'>
+      implicit none<a name='1394'>
+<a name='1395'>
+<a name='1396'>
+<font color=#447700>!      input<a name='1397'></font>
+<a name='1398'>
+      integer,intent(in) :: maxd_atype      <font color=#447700>! dimension of types<a name='1399'></font>
+      integer,intent(in) :: maxd_asize      <font color=#447700>! dimension of sizes<a name='1400'></font>
+      integer,intent(in) :: ntype_aer       <font color=#447700>! number of types<a name='1401'></font>
+      integer,intent(in) :: nsize_aer(maxd_atype) <font color=#447700>! number of sizes for type<a name='1402'></font>
+      integer,intent(in) :: msectional      <font color=#447700>! 1 for sectional, 0 for modal<a name='1403'></font>
+      integer,intent(in) :: grid_id         <font color=#447700>! WRF grid%id<a name='1404'></font>
+      integer,intent(in) :: ktau            <font color=#447700>! WRF time step count<a name='1405'></font>
+      integer,intent(in) :: ii, jj, kk      <font color=#447700>! i,j,k of current grid cell<a name='1406'></font>
+      real,intent(in) :: wbar          <font color=#447700>! grid cell mean vertical velocity (m/s)<a name='1407'></font>
+      real,intent(in) :: sigw          <font color=#447700>! subgrid standard deviation of vertical vel (m/s)<a name='1408'></font>
+      real,intent(in) :: wdiab         <font color=#447700>! diabatic vertical velocity (0 if adiabatic)<a name='1409'></font>
+      real,intent(in) :: wminf         <font color=#447700>! minimum updraft velocity for integration (m/s)<a name='1410'></font>
+      real,intent(in) :: wmaxf         <font color=#447700>! maximum updraft velocity for integration (m/s)<a name='1411'></font>
+      real,intent(in) :: tair          <font color=#447700>! air temperature (K)<a name='1412'></font>
+      real,intent(in) :: rhoair        <font color=#447700>! air density (kg/m3)<a name='1413'></font>
+      real,intent(in) :: na(maxd_asize,maxd_atype)     <font color=#447700>! aerosol number concentration (/m3)<a name='1414'></font>
+      real,intent(in) :: sigman(maxd_asize,maxd_atype) <font color=#447700>! geometric standard deviation of aerosol size distribution<a name='1415'></font>
+      real,intent(in) :: hygro(maxd_asize,maxd_atype)  <font color=#447700>! bulk hygroscopicity of aerosol mode<a name='1416'></font>
+      real,intent(in) :: volc(maxd_asize,maxd_atype)   <font color=#447700>! total aerosol volume  concentration (m3/m3)<a name='1417'></font>
+      real,intent(in) :: dlo_sect( maxd_asize, maxd_atype ), &amp;  <font color=#447700>! minimum size of section (cm)<a name='1418'></font>
+           dhi_sect( maxd_asize, maxd_atype )     <font color=#447700>! maximum size of section (cm)<a name='1419'></font>
+      real,intent(in),optional :: smax_prescribed  <font color=#447700>! prescribed max. supersaturation for secondary activation !BSINGH - Added for WRFCuP<a name='1420'></font>
+<a name='1421'>
+<font color=#447700>!      output<a name='1422'></font>
+<a name='1423'>
+      real,intent(inout) :: fn(maxd_asize,maxd_atype)    <font color=#447700>! number fraction of aerosols activated<a name='1424'></font>
+      real,intent(inout) :: fs(maxd_asize,maxd_atype)    <font color=#447700>! surface fraction of aerosols activated<a name='1425'></font>
+      real,intent(inout) :: fm(maxd_asize,maxd_atype)    <font color=#447700>! mass fraction of aerosols activated<a name='1426'></font>
+      real,intent(inout) :: fluxn(maxd_asize,maxd_atype) <font color=#447700>! flux of activated aerosol number fraction into cloud (m/s)<a name='1427'></font>
+      real,intent(inout) :: fluxs(maxd_asize,maxd_atype) <font color=#447700>! flux of activated aerosol surface fraction (m/s)<a name='1428'></font>
+      real,intent(inout) :: fluxm(maxd_asize,maxd_atype) <font color=#447700>! flux of activated aerosol mass fraction into cloud (m/s)<a name='1429'></font>
+      real,intent(inout) :: flux_fullact                 <font color=#447700>! flux when activation fraction = 100% (m/s)<a name='1430'></font>
+<a name='1431'>
+<font color=#447700>!      local<a name='1432'></font>
+<a name='1433'>
+<font color=#447700>!!$      external erf,erfc<a name='1434'></font>
+<font color=#447700>!!$      real erf,erfc<a name='1435'></font>
+<font color=#447700>!      external qsat_water<a name='1436'></font>
+      integer, parameter:: nx=200<a name='1437'>
+      integer iquasisect_option, isectional<a name='1438'>
+      real integ,integf<a name='1439'>
+      real, parameter :: surften = 0.076 <font color=#447700>! surface tension of water w/respect to air (N/m)<a name='1440'></font>
+      real, parameter :: p0 = 1013.25e2  <font color=#447700>! reference pressure (Pa)<a name='1441'></font>
+      real, parameter :: t0 = 273.15     <font color=#447700>! reference temperature (K)<a name='1442'></font>
+      real ylo(maxd_asize,maxd_atype),yhi(maxd_asize,maxd_atype) <font color=#447700>! 1-particle volume at section interfaces<a name='1443'></font>
+      real ymean(maxd_asize,maxd_atype) <font color=#447700>! 1-particle volume at r=rmean<a name='1444'></font>
+      real ycut, lnycut, betayy, betayy2, gammayy, phiyy<a name='1445'>
+      real surfc(maxd_asize,maxd_atype) <font color=#447700>! surface concentration (m2/m3)<a name='1446'></font>
+      real sign(maxd_asize,maxd_atype)    <font color=#447700>! geometric standard deviation of size distribution<a name='1447'></font>
+      real alnsign(maxd_asize,maxd_atype) <font color=#447700>! natl log of geometric standard dev of aerosol<a name='1448'></font>
+      real am(maxd_asize,maxd_atype) <font color=#447700>! number mode radius of dry aerosol (m)<a name='1449'></font>
+      real lnhygro(maxd_asize,maxd_atype) <font color=#447700>! ln(b)<a name='1450'></font>
+      real f1(maxd_asize,maxd_atype) <font color=#447700>! array to hold parameter for maxsat<a name='1451'></font>
+      real pres <font color=#447700>! pressure (Pa)<a name='1452'></font>
+      real path <font color=#447700>! mean free path (m)<a name='1453'></font>
+      real diff <font color=#447700>! diffusivity (m2/s)<a name='1454'></font>
+      real conduct <font color=#447700>! thermal conductivity (Joule/m/sec/deg)<a name='1455'></font>
+      real diff0,conduct0<a name='1456'>
+      real es <font color=#447700>! saturation vapor pressure<a name='1457'></font>
+      real qs <font color=#447700>! water vapor saturation mixing ratio<a name='1458'></font>
+      real dqsdt <font color=#447700>! change in qs with temperature<a name='1459'></font>
+      real dqsdp <font color=#447700>! change in qs with pressure<a name='1460'></font>
+      real gg <font color=#447700>! thermodynamic function (m2/s)<a name='1461'></font>
+      real sqrtg <font color=#447700>! sqrt(gg)<a name='1462'></font>
+      real sm(maxd_asize,maxd_atype) <font color=#447700>! critical supersaturation for number mode radius<a name='1463'></font>
+      real lnsm(maxd_asize,maxd_atype) <font color=#447700>! ln( sm )<a name='1464'></font>
+      real zeta, eta(maxd_asize,maxd_atype)<a name='1465'>
+      real lnsmax <font color=#447700>! ln(smax)<a name='1466'></font>
+      real alpha<a name='1467'>
+      real gamma<a name='1468'>
+      real beta<a name='1469'>
+      real gaus<a name='1470'>
+      logical :: top        <font color=#447700>! true if cloud top, false if cloud base or new cloud<a name='1471'></font>
+      real asub(maxd_asize,maxd_atype),bsub(maxd_asize,maxd_atype) <font color=#447700>! coefficients of submode size distribution N=a+bx<a name='1472'></font>
+      real totn(maxd_atype) <font color=#447700>! total aerosol number concentration<a name='1473'></font>
+      real aten <font color=#447700>! surface tension parameter<a name='1474'></font>
+      real gmrad(maxd_atype) <font color=#447700>! geometric mean radius<a name='1475'></font>
+      real gmradsq(maxd_atype) <font color=#447700>! geometric mean of radius squared<a name='1476'></font>
+      real gmlnsig(maxd_atype) <font color=#447700>! geometric standard deviation<a name='1477'></font>
+      real gmsm(maxd_atype) <font color=#447700>! critical supersaturation at radius gmrad<a name='1478'></font>
+      real sumflxn(maxd_asize,maxd_atype)<a name='1479'>
+      real sumflxs(maxd_asize,maxd_atype)<a name='1480'>
+      real sumflxm(maxd_asize,maxd_atype)<a name='1481'>
+      real sumflx_fullact<a name='1482'>
+      real sumfn(maxd_asize,maxd_atype)<a name='1483'>
+      real sumfs(maxd_asize,maxd_atype)<a name='1484'>
+      real sumfm(maxd_asize,maxd_atype)<a name='1485'>
+      real sumns(maxd_atype)<a name='1486'>
+      real fnold(maxd_asize,maxd_atype)   <font color=#447700>! number fraction activated<a name='1487'></font>
+      real fsold(maxd_asize,maxd_atype)   <font color=#447700>! surface fraction activated<a name='1488'></font>
+      real fmold(maxd_asize,maxd_atype)   <font color=#447700>! mass fraction activated<a name='1489'></font>
+      real wold,gold<a name='1490'>
+      real alogten,alog2,alog3,alogaten<a name='1491'>
+      real alogam<a name='1492'>
+      real rlo(maxd_asize,maxd_atype), rhi(maxd_asize,maxd_atype)<a name='1493'>
+      real rmean(maxd_asize,maxd_atype)<a name='1494'>
+                  <font color=#447700>! mean radius (m) for the section (not used with modal)<a name='1495'></font>
+                  <font color=#447700>! calculated from current volume &amp; number<a name='1496'></font>
+      real ccc<a name='1497'>
+      real dumaa,dumbb<a name='1498'>
+      real wmin,wmax,w,dw,dwmax,dwmin,wnuc,dwnew,wb<a name='1499'>
+      real dfmin,dfmax,fnew,fold,fnmin,fnbar,fsbar,fmbar<a name='1500'>
+      real alw,sqrtalw<a name='1501'>
+      real smax<a name='1502'>
+      real x,arg<a name='1503'>
+      real xmincoeff,xcut<a name='1504'>
+      real z,z1,z2,wf1,wf2,zf1,zf2,gf1,gf2,gf<a name='1505'>
+      real etafactor1,etafactor2(maxd_asize,maxd_atype),etafactor2max<a name='1506'>
+      integer m,n,nw,nwmax<a name='1507'>
+<a name='1508'>
+<font color=#447700>!      numerical integration parameters<a name='1509'></font>
+      real, parameter :: eps = 0.3<a name='1510'>
+      real, parameter :: fmax = 0.99<a name='1511'>
+      real, parameter :: sds = 3.<a name='1512'>
+<a name='1513'>
+<font color=#447700>!      mathematical constants<a name='1514'></font>
+      real third, twothird, sixth, zero, one, two, three<a name='1515'>
+<a name='1516'>
+      real, parameter :: sq2  = 1.4142135624<a name='1517'>
+      real, parameter :: sqpi = 1.7724538509<a name='1518'>
+      real, parameter :: pi   = 3.1415926536<a name='1519'>
+<a name='1520'>
+<font color=#447700>!      integer, save :: ndist(nx)  ! accumulates frequency distribution of integration bins required<a name='1521'></font>
+<font color=#447700>!      data ndist/nx*0/<a name='1522'></font>
+<a name='1523'>
+<font color=#447700>!     for nsize_aer&gt;7, a sectional approach is used and isectional = iquasisect_option<a name='1524'></font>
+<font color=#447700>!     activation fractions (fn,fs,fm) are computed as follows<a name='1525'></font>
+<font color=#447700>!     iquasisect_option = 1,3 - each section treated as a narrow lognormal<a name='1526'></font>
+<font color=#447700>!     iquasisect_option = 2,4 - within-section dn/dx = a + b*x,  x = ln(r)<a name='1527'></font>
+<font color=#447700>!     smax is computed as follows (when explicit activation is OFF)<a name='1528'></font>
+<font color=#447700>!     iquasisect_option = 1,2 - razzak-ghan modal parameterization with<a name='1529'></font>
+<font color=#447700>!     single mode having same ntot, dgnum, sigmag as the combined sections<a name='1530'></font>
+<font color=#447700>!     iquasisect_option = 3,4 - razzak-ghan sectional parameterization<a name='1531'></font>
+<font color=#447700>!     for nsize_aer=&lt;9, a modal approach is used and isectional = 0<a name='1532'></font>
+<a name='1533'>
+<font color=#447700>! rce 08-jul-2005<a name='1534'></font>
+<font color=#447700>! if either (na(n,m) &lt; nsmall) or (volc(n,m) &lt; vsmall)<a name='1535'></font>
+<font color=#447700>! then treat bin/mode (n,m) as being empty, and set its fn/fs/fm=0.0<a name='1536'></font>
+<font color=#447700>!     (for single precision, gradual underflow starts around 1.0e-38,<a name='1537'></font>
+<font color=#447700>!      and strange things can happen when in that region)<a name='1538'></font>
+      real, parameter :: nsmall = 1.0e-20    <font color=#447700>! aer number conc in #/m3<a name='1539'></font>
+      real, parameter :: vsmall = 1.0e-37    <font color=#447700>! aer volume conc in m3/m3<a name='1540'></font>
+      logical bin_is_empty(maxd_asize,maxd_atype), all_bins_empty<a name='1541'>
+      logical bin_is_narrow(maxd_asize,maxd_atype)<a name='1542'>
+<a name='1543'>
+      integer idiagaa, ipass_nwloop<a name='1544'>
+      integer idiag_dndy_neg, idiag_fnsm_prob<a name='1545'>
+<a name='1546'>
+<font color=#447700>! The flag for cloud top is no longer used so set it to false. This is an<a name='1547'></font>
+<font color=#447700>! antiquated feature related to radiation enhancing mass fluxes at cloud<a name='1548'></font>
+<font color=#447700>! top. It is currently, as of Feb. 2009, set to false in the CAM version<a name='1549'></font>
+<font color=#447700>! as well.<a name='1550'></font>
+      top = .false.<a name='1551'>
+<a name='1552'>
+<font color=#447700>!.......................................................................<a name='1553'></font>
+<font color=#447700>!<a name='1554'></font>
+<font color=#447700>!   start calc. of modal or sectional activation properties (start of section 1)<a name='1555'></font>
+<font color=#447700>!<a name='1556'></font>
+<font color=#447700>!.......................................................................<a name='1557'></font>
+      idiag_dndy_neg = 1      <font color=#447700>! set this to 0 to turn off <a name='1558'></font>
+                              <font color=#447700>!     warnings about dn/dy &lt; 0<a name='1559'></font>
+      idiag_fnsm_prob = 1     <font color=#447700>! set this to 0 to turn off <a name='1560'></font>
+                              <font color=#447700>!     warnings about fn/fs/fm misbehavior<a name='1561'></font>
+<a name='1562'>
+      iquasisect_option = 2<a name='1563'>
+      if(msectional.gt.0)then<a name='1564'>
+         isectional = iquasisect_option<a name='1565'>
+      else<a name='1566'>
+         isectional = 0<a name='1567'>
+      endif<a name='1568'>
+      <font color=#447700>!BSINGH - For WRFCuP<a name='1569'></font>
+      if ( present( smax_prescribed ) ) then<a name='1570'>
+         if (smax_prescribed &lt;= 0.0) then<a name='1571'>
+            do n=1,ntype_aer<a name='1572'>
+               do m=1,nsize_aer(n)<a name='1573'>
+                  fluxn(m,n)=0.<a name='1574'>
+                  fn(m,n)=0.<a name='1575'>
+                  fluxs(m,n)=0.<a name='1576'>
+                  fs(m,n)=0.<a name='1577'>
+                  fluxm(m,n)=0.<a name='1578'>
+                  fm(m,n)=0.<a name='1579'>
+               end do<a name='1580'>
+            end do<a name='1581'>
+            flux_fullact=0.<a name='1582'>
+            return<a name='1583'>
+         end if<a name='1584'>
+      end if<a name='1585'>
+      <a name='1586'>
+      <font color=#447700>!BSINGH - ENDS<a name='1587'></font>
+<a name='1588'>
+<a name='1589'>
+      do n=1,ntype_aer<a name='1590'>
+<font color=#447700>!         print *,'ntype_aer,n,nsize_aer(n)=',ntype_aer,n,nsize_aer(n)<a name='1591'></font>
+<a name='1592'>
+        if(ntype_aer.eq.1.and.nsize_aer(n).eq.1.and.na(1,1).lt.1.e-20)then<a name='1593'>
+         fn(1,1)=0.<a name='1594'>
+         fs(1,1)=0.<a name='1595'>
+         fm(1,1)=0.<a name='1596'>
+         fluxn(1,1)=0.<a name='1597'>
+         fluxs(1,1)=0.<a name='1598'>
+         fluxm(1,1)=0.<a name='1599'>
+         flux_fullact=0.<a name='1600'>
+         return<a name='1601'>
+        endif<a name='1602'>
+      enddo<a name='1603'>
+<a name='1604'>
+      zero = 0.0<a name='1605'>
+      one = 1.0<a name='1606'>
+      two = 2.0<a name='1607'>
+      three = 3.0<a name='1608'>
+      third = 1.0/3.0<a name='1609'>
+      twothird = 2.0/3.0 <font color=#447700>!wig, 1-Mar-2009: Corrected value from 2/6<a name='1610'></font>
+      sixth = 1.0/6.0<a name='1611'>
+<a name='1612'>
+      pres=r_d*rhoair*tair<a name='1613'>
+      diff0=0.211e-4*(p0/pres)*(tair/t0)**1.94<a name='1614'>
+      conduct0=(5.69+0.017*(tair-t0))*4.186e2*1.e-5 <font color=#447700>! convert to J/m/s/deg<a name='1615'></font>
+      es=1000.*svp1*exp( svp2*(tair-t0)/(tair-svp3) )<a name='1616'>
+      qs=ep_2*es/(pres-es)<a name='1617'>
+      dqsdt=xlv/(r_v*tair*tair)*qs<a name='1618'>
+      alpha=g*(xlv/(cp*r_v*tair*tair)-1./(r_d*tair))<a name='1619'>
+      gamma=(1+xlv/cp*dqsdt)/(rhoair*qs)<a name='1620'>
+      gg=1./(rhowater/(diff0*rhoair*qs)+xlv*rhowater/(conduct0*tair)*(xlv/(r_v*tair)-1.))<a name='1621'>
+      sqrtg=sqrt(gg)<a name='1622'>
+      beta=4.*pi*rhowater*gg*gamma<a name='1623'>
+      aten=2.*surften/(r_v*tair*rhowater)<a name='1624'>
+      alogaten=log(aten)<a name='1625'>
+      alog2=log(two)<a name='1626'>
+      alog3=log(three)<a name='1627'>
+      ccc=4.*pi*third<a name='1628'>
+      etafactor2max=1.e10/(alpha*wmaxf)**1.5 <font color=#447700>! this should make eta big if na is very small.<a name='1629'></font>
+<a name='1630'>
+      all_bins_empty = .true.<a name='1631'>
+      do n=1,ntype_aer<a name='1632'>
+      totn(n)=0.<a name='1633'>
+      gmrad(n)=0.<a name='1634'>
+      gmradsq(n)=0.<a name='1635'>
+      sumns(n)=0.<a name='1636'>
+      do m=1,nsize_aer(n)<a name='1637'>
+         alnsign(m,n)=log(sigman(m,n))<a name='1638'>
+<font color=#447700>!         internal mixture of aerosols<a name='1639'></font>
+<a name='1640'>
+         bin_is_empty(m,n) = .true.<a name='1641'>
+         if (volc(m,n).gt.vsmall .and. na(m,n).gt.nsmall) then<a name='1642'>
+            bin_is_empty(m,n) = .false.<a name='1643'>
+            all_bins_empty = .false.<a name='1644'>
+            lnhygro(m,n)=log(hygro(m,n))<a name='1645'>
+<font color=#447700>!            number mode radius (m,n)<a name='1646'></font>
+<font color=#447700>!           write(6,*)'alnsign,volc,na=',alnsign(m,n),volc(m,n),na(m,n)<a name='1647'></font>
+            am(m,n)=exp(-1.5*alnsign(m,n)*alnsign(m,n))*              &amp;<a name='1648'>
+              (3.*volc(m,n)/(4.*pi*na(m,n)))**third<a name='1649'>
+<a name='1650'>
+            if (isectional .gt. 0) then<a name='1651'>
+<font color=#447700>!               sectional model.<a name='1652'></font>
+<font color=#447700>!               need to use bulk properties because parameterization doesn't<a name='1653'></font>
+<font color=#447700>!               work well for narrow bins.<a name='1654'></font>
+               totn(n)=totn(n)+na(m,n)<a name='1655'>
+               alogam=log(am(m,n))<a name='1656'>
+               gmrad(n)=gmrad(n)+na(m,n)*alogam<a name='1657'>
+               gmradsq(n)=gmradsq(n)+na(m,n)*alogam*alogam<a name='1658'>
+            endif<a name='1659'>
+            etafactor2(m,n)=1./(na(m,n)*beta*sqrtg)<a name='1660'>
+<a name='1661'>
+            if(hygro(m,n).gt.1.e-10)then<a name='1662'>
+               sm(m,n)=2.*aten/(3.*am(m,n))*sqrt(aten/(3.*hygro(m,n)*am(m,n)))<a name='1663'>
+            else<a name='1664'>
+               sm(m,n)=100.<a name='1665'>
+            endif<a name='1666'>
+<font color=#447700>!           write(6,*)'sm,hygro,am=',sm(m,n),hygro(m,n),am(m,n)<a name='1667'></font>
+         else<a name='1668'>
+            sm(m,n)=1.<a name='1669'>
+            etafactor2(m,n)=etafactor2max <font color=#447700>! this should make eta big if na is very small.<a name='1670'></font>
+<a name='1671'>
+         endif<a name='1672'>
+         lnsm(m,n)=log(sm(m,n))<a name='1673'>
+         if ((isectional .eq. 3) .or. (isectional .eq. 4)) then<a name='1674'>
+            sumns(n)=sumns(n)+na(m,n)/sm(m,n)**twothird<a name='1675'>
+         endif<a name='1676'>
+<font color=#447700>!        write(6,'(a,i4,6g12.2)')'m,na,am,hygro,lnhygro,sm,lnsm=',m,na(m,n),am(m,n),hygro(m,n),lnhygro(m,n),sm(m,n),lnsm(m,n)<a name='1677'></font>
+      end do <font color=#447700>! size<a name='1678'></font>
+      end do <font color=#447700>! type<a name='1679'></font>
+<a name='1680'>
+<font color=#447700>!  if all bins are empty, set all activation fractions to zero and exit<a name='1681'></font>
+         if ( all_bins_empty ) then<a name='1682'>
+            do n=1,ntype_aer<a name='1683'>
+            do m=1,nsize_aer(n)<a name='1684'>
+               fluxn(m,n)=0.<a name='1685'>
+               fn(m,n)=0.<a name='1686'>
+               fluxs(m,n)=0.<a name='1687'>
+               fs(m,n)=0.<a name='1688'>
+               fluxm(m,n)=0.<a name='1689'>
+               fm(m,n)=0.<a name='1690'>
+            end do<a name='1691'>
+            end do<a name='1692'>
+            flux_fullact=0.<a name='1693'>
+            return<a name='1694'>
+         endif<a name='1695'>
+<a name='1696'>
+<a name='1697'>
+<a name='1698'>
+         if (isectional .le. 0) then<a name='1699'>
+            <font color=#447700>! Initialize maxsat at this cell and timestep for the<a name='1700'></font>
+            <font color=#447700>! modal setup (the sectional case is handled below).<a name='1701'></font>
+            call <A href='../../html_code/phys/module_mixactivate.F.html#MAXSAT_INIT'>maxsat_init</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAXSAT_INIT_1">(maxd_atype, ntype_aer, &amp;<a name='1702'>
+                 maxd_asize, nsize_aer, alnsign, f1)<a name='1703'>
+<a name='1704'>
+            goto 30000<a name='1705'>
+         end if<a name='1706'>
+<a name='1707'>
+         do n=1,ntype_aer<a name='1708'>
+            <font color=#447700>!wig 19-Oct-2006: Add zero trap based May 2006 e-mail from<a name='1709'></font>
+            <font color=#447700>!Ghan. Transport can clear out a cell leading to<a name='1710'></font>
+            <font color=#447700>!inconsistencies with the mass.<a name='1711'></font>
+            gmrad(n)=gmrad(n)/max(totn(n),1e-20)<a name='1712'>
+            gmlnsig=gmradsq(n)/totn(n)-gmrad(n)*gmrad(n)    <font color=#447700>! [ln(sigmag)]**2<a name='1713'></font>
+            gmlnsig(n)=sqrt( max( 1.e-4, gmlnsig(n) ) )<a name='1714'>
+            gmrad(n)=exp(gmrad(n))<a name='1715'>
+            if ((isectional .eq. 3) .or. (isectional .eq. 4)) then<a name='1716'>
+               gmsm(n)=totn(n)/sumns(n)<a name='1717'>
+               gmsm(n)=gmsm(n)*gmsm(n)*gmsm(n)<a name='1718'>
+               gmsm(n)=sqrt(gmsm(n))<a name='1719'>
+            else<a name='1720'>
+<font color=#447700>!              gmsm(n)=2.*aten/(3.*gmrad(n))*sqrt(aten/(3.*hygro(1,n)*gmrad(n)))<a name='1721'></font>
+               gmsm(n)=2.*aten/(3.*gmrad(n))*sqrt(aten/(3.*hygro(nsize_aer(n),n)*gmrad(n)))<a name='1722'>
+            endif<a name='1723'>
+         enddo<a name='1724'>
+         <a name='1725'>
+         <font color=#447700>! Initialize maxsat at this cell and timestep for the<a name='1726'></font>
+         <font color=#447700>! sectional setup (the modal case is handled above)...<a name='1727'></font>
+         call <A href='../../html_code/phys/module_mixactivate.F.html#MAXSAT_INIT'>maxsat_init</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAXSAT_INIT_2">(maxd_atype, ntype_aer, &amp;<a name='1728'>
+              maxd_asize, (/1/), gmlnsig, f1)<a name='1729'>
+<a name='1730'>
+<font color=#447700>!.......................................................................<a name='1731'></font>
+<font color=#447700>!   calculate sectional "sub-bin" size distribution<a name='1732'></font>
+<font color=#447700>!<a name='1733'></font>
+<font color=#447700>!   dn/dy = nt*( a + b*y )   for  ylo &lt; y &lt; yhi<a name='1734'></font>
+<font color=#447700>!<a name='1735'></font>
+<font color=#447700>!   nt = na(m,n) = number mixing ratio of the bin<a name='1736'></font>
+<font color=#447700>!   y = v/vhi<a name='1737'></font>
+<font color=#447700>!       v = (4pi/3)*r**3 = particle volume<a name='1738'></font>
+<font color=#447700>!       vhi = v at r=rhi (upper bin boundary)<a name='1739'></font>
+<font color=#447700>!   ylo = y at lower bin boundary = vlo/vhi = (rlo/rhi)**3<a name='1740'></font>
+<font color=#447700>!   yhi = y at upper bin boundary = 1.0<a name='1741'></font>
+<font color=#447700>!<a name='1742'></font>
+<font color=#447700>!   dv/dy = v * dn/dy = nt*vhi*( a*y + b*y*y )<a name='1743'></font>
+<font color=#447700>!<a name='1744'></font>
+<font color=#447700>!.......................................................................<a name='1745'></font>
+<font color=#447700>! 02-may-2006 - this dn/dy replaces the previous<a name='1746'></font>
+<font color=#447700>!       dn/dx = a + b*x   where l = ln(r)<a name='1747'></font>
+<font color=#447700>!    the old dn/dx was overly complicated for cases of rmean near rlo or rhi<a name='1748'></font>
+<font color=#447700>!    the new dn/dy is consistent with that used in the movesect routine,<a name='1749'></font>
+<font color=#447700>!       which does continuous growth by condensation and aqueous chemistry<a name='1750'></font>
+<font color=#447700>!.......................................................................<a name='1751'></font>
+             do 25002 n = 1,ntype_aer<a name='1752'>
+             do 25000 m = 1,nsize_aer(n)<a name='1753'>
+<a name='1754'>
+<font color=#447700>! convert from diameter in cm to radius in m<a name='1755'></font>
+                rlo(m,n) = 0.5*0.01*dlo_sect(m,n)<a name='1756'>
+                rhi(m,n) = 0.5*0.01*dhi_sect(m,n)<a name='1757'>
+                ylo(m,n) = (rlo(m,n)/rhi(m,n))**3<a name='1758'>
+                yhi(m,n) = 1.0<a name='1759'>
+<a name='1760'>
+<font color=#447700>! 04-nov-2005 - extremely narrow bins will be treated using 0/1 activation<a name='1761'></font>
+<font color=#447700>!    this is to avoid potential numerical problems<a name='1762'></font>
+                bin_is_narrow(m,n) = .false.<a name='1763'>
+                if ((rhi(m,n)/rlo(m,n)) .le. 1.01) bin_is_narrow(m,n) = .true.<a name='1764'>
+<a name='1765'>
+<font color=#447700>! rmean is mass mean radius for the bin; xmean = log(rmean)<a name='1766'></font>
+<font color=#447700>! just use section midpoint if bin is empty<a name='1767'></font>
+                if ( bin_is_empty(m,n) ) then<a name='1768'>
+                   rmean(m,n) = sqrt(rlo(m,n)*rhi(m,n)) <a name='1769'>
+                   ymean(m,n) = (rmean(m,n)/rhi(m,n))**3<a name='1770'>
+                   goto 25000<a name='1771'>
+                end if<a name='1772'>
+<a name='1773'>
+                rmean(m,n) = (volc(m,n)/(ccc*na(m,n)))**third<a name='1774'>
+                rmean(m,n) = max( rlo(m,n), min( rhi(m,n), rmean(m,n) ) )<a name='1775'>
+                ymean(m,n) = (rmean(m,n)/rhi(m,n))**3<a name='1776'>
+                if ( bin_is_narrow(m,n) ) goto 25000<a name='1777'>
+<a name='1778'>
+<font color=#447700>! if rmean is extremely close to either rlo or rhi, <a name='1779'></font>
+<font color=#447700>! treat the bin as extremely narrow<a name='1780'></font>
+                if ((rhi(m,n)/rmean(m,n)) .le. 1.01) then<a name='1781'>
+                   bin_is_narrow(m,n) = .true.<a name='1782'>
+                   rlo(m,n) = min( rmean(m,n), (rhi(m,n)/1.01) )<a name='1783'>
+                   ylo(m,n) = (rlo(m,n)/rhi(m,n))**3<a name='1784'>
+                   goto 25000<a name='1785'>
+                else if ((rmean(m,n)/rlo(m,n)) .le. 1.01) then<a name='1786'>
+                   bin_is_narrow(m,n) = .true.<a name='1787'>
+                   rhi(m,n) = max( rmean(m,n), (rlo(m,n)*1.01) )<a name='1788'>
+                   ylo(m,n) = (rlo(m,n)/rhi(m,n))**3<a name='1789'>
+                   ymean(m,n) = (rmean(m,n)/rhi(m,n))**3<a name='1790'>
+                   goto 25000<a name='1791'>
+                endif<a name='1792'>
+<a name='1793'>
+<font color=#447700>! if rmean is somewhat close to either rlo or rhi, then dn/dy will be <a name='1794'></font>
+<font color=#447700>!    negative near the upper or lower bin boundary<a name='1795'></font>
+<font color=#447700>! in these cases, assume that all the particles are in a subset of the full bin,<a name='1796'></font>
+<font color=#447700>!    and adjust rlo or rhi so that rmean will be near the center of this subset<a name='1797'></font>
+<font color=#447700>! note that the bin is made narrower LOCALLY/TEMPORARILY, <a name='1798'></font>
+<font color=#447700>!    just for the purposes of the activation calculation<a name='1799'></font>
+                gammayy = (ymean(m,n)-ylo(m,n)) / (yhi(m,n)-ylo(m,n))<a name='1800'>
+                if (gammayy .lt. 0.34) then<a name='1801'>
+                   dumaa = ylo(m,n) + (yhi(m,n)-ylo(m,n))*(gammayy/0.34)<a name='1802'>
+                   rhi(m,n) = rhi(m,n)*(dumaa**third)<a name='1803'>
+                   ylo(m,n) = (rlo(m,n)/rhi(m,n))**3<a name='1804'>
+                   ymean(m,n) = (rmean(m,n)/rhi(m,n))**3<a name='1805'>
+                else if (gammayy .ge. 0.66) then<a name='1806'>
+                   dumaa = ylo(m,n) + (yhi(m,n)-ylo(m,n))*((gammayy-0.66)/0.34)<a name='1807'>
+                   ylo(m,n) = dumaa<a name='1808'>
+                   rlo(m,n) = rhi(m,n)*(dumaa**third)<a name='1809'>
+                end if<a name='1810'>
+                if ((rhi(m,n)/rlo(m,n)) .le. 1.01) then<a name='1811'>
+                   bin_is_narrow(m,n) = .true.<a name='1812'>
+                   goto 25000<a name='1813'>
+                end if<a name='1814'>
+<a name='1815'>
+                betayy = ylo(m,n)/yhi(m,n)<a name='1816'>
+                betayy2 = betayy*betayy<a name='1817'>
+                bsub(m,n) = (12.0*ymean(m,n) - 6.0*(1.0+betayy)) /   &amp;<a name='1818'>
+                   (4.0*(1.0-betayy2*betayy) - 3.0*(1.0-betayy2)*(1.0+betayy))<a name='1819'>
+                asub(m,n) = (1.0 - bsub(m,n)*(1.0-betayy2)*0.5) / (1.0-betayy)<a name='1820'>
+<a name='1821'>
+                if ( asub(m,n)+bsub(m,n)*ylo(m,n) .lt. 0. ) then<a name='1822'>
+                  if (idiag_dndy_neg .gt. 0) then<a name='1823'>
+                    print *,'dndy&lt;0 at lower boundary'<a name='1824'>
+                    print *,'n,m=',n,m<a name='1825'>
+                    print *,'na=',na(m,n),' volc=',volc(m,n)<a name='1826'>
+                    print *,'volc/(na*pi*4/3)=', (volc(m,n)/(na(m,n)*ccc))<a name='1827'>
+                    print *,'rlo(m,n),rhi(m,n)=',rlo(m,n),rhi(m,n)<a name='1828'>
+                    print *,'dlo_sect/2,dhi_sect/2=',   &amp;<a name='1829'>
+                             (0.005*dlo_sect(m,n)),(0.005*dhi_sect(m,n))<a name='1830'>
+                    print *,'asub,bsub,ylo,yhi=',asub(m,n),bsub(m,n),ylo(m,n),yhi(m,n)<a name='1831'>
+                    print *,'asub+bsub*ylo=',   &amp;<a name='1832'>
+                             (asub(m,n)+bsub(m,n)*ylo(m,n))<a name='1833'>
+                    print *,'subr activate error 11 - i,j,k =', ii, jj, kk<a name='1834'>
+                  endif<a name='1835'>
+                endif<a name='1836'>
+                if ( asub(m,n)+bsub(m,n)*yhi(m,n) .lt. 0. ) then<a name='1837'>
+                  if (idiag_dndy_neg .gt. 0) then<a name='1838'>
+                    print *,'dndy&lt;0 at upper boundary'<a name='1839'>
+                    print *,'n,m=',n,m<a name='1840'>
+                    print *,'na=',na(m,n),' volc=',volc(m,n)<a name='1841'>
+                    print *,'volc/(na*pi*4/3)=', (volc(m,n)/(na(m,n)*ccc))<a name='1842'>
+                    print *,'rlo(m,n),rhi(m,n)=',rlo(m,n),rhi(m,n)<a name='1843'>
+                    print *,'dlo_sect/2,dhi_sect/2=',   &amp;<a name='1844'>
+                             (0.005*dlo_sect(m,n)),(0.005*dhi_sect(m,n))<a name='1845'>
+                    print *,'asub,bsub,ylo,yhi=',asub(m,n),bsub(m,n),ylo(m,n),yhi(m,n)<a name='1846'>
+                    print *,'asub+bsub*yhi=',   &amp;<a name='1847'>
+                             (asub(m,n)+bsub(m,n)*yhi(m,n))<a name='1848'>
+                    print *,'subr activate error 12 - i,j,k =', ii, jj, kk<a name='1849'>
+                  endif<a name='1850'>
+                endif<a name='1851'>
+<a name='1852'>
+25000        continue      <font color=#447700>! m=1,nsize_aer(n)<a name='1853'></font>
+25002        continue      <font color=#447700>! n=1,ntype_aer<a name='1854'></font>
+<a name='1855'>
+<a name='1856'>
+30000    continue<a name='1857'>
+<font color=#447700>!.......................................................................<a name='1858'></font>
+<font color=#447700>!<a name='1859'></font>
+<font color=#447700>!   end calc. of modal or sectional activation properties (end of section 1)<a name='1860'></font>
+<font color=#447700>!<a name='1861'></font>
+<font color=#447700>!.......................................................................<a name='1862'></font>
+<a name='1863'>
+<a name='1864'>
+<a name='1865'>
+<font color=#447700>!      sjg 7-16-98  upward<a name='1866'></font>
+<font color=#447700>!      print *,'wbar,sigw=',wbar,sigw<a name='1867'></font>
+<a name='1868'>
+      if(sigw.le.1.e-5) goto 50000<a name='1869'>
+<a name='1870'>
+<font color=#447700>!.......................................................................<a name='1871'></font>
+<font color=#447700>!<a name='1872'></font>
+<font color=#447700>!   start calc. of activation fractions/fluxes<a name='1873'></font>
+<font color=#447700>!   for spectrum of updrafts (start of section 2)<a name='1874'></font>
+<font color=#447700>!<a name='1875'></font>
+<font color=#447700>!.......................................................................<a name='1876'></font>
+         ipass_nwloop = 1<a name='1877'>
+         idiagaa = 0<a name='1878'>
+<font color=#447700>! 06-nov-2005 rce - set idiagaa=1 for testing/debugging<a name='1879'></font>
+<font color=#447700>!        if ((grid_id.eq.1) .and. (ktau.eq.167) .and.   &amp;<a name='1880'></font>
+<font color=#447700>!            (ii.eq.24) .and. (jj.eq. 1) .and. (kk.eq.14)) idiagaa = 1<a name='1881'></font>
+<a name='1882'>
+40000    continue<a name='1883'>
+         if(top)then<a name='1884'>
+           wmax=0.<a name='1885'>
+           wmin=min(zero,-wdiab)<a name='1886'>
+         else<a name='1887'>
+           wmax=min(wmaxf,wbar+sds*sigw)<a name='1888'>
+           wmin=max(wminf,-wdiab)<a name='1889'>
+         endif<a name='1890'>
+         wmin=max(wmin,wbar-sds*sigw)<a name='1891'>
+         w=wmin<a name='1892'>
+         dwmax=eps*sigw<a name='1893'>
+         dw=dwmax<a name='1894'>
+         dfmax=0.2<a name='1895'>
+         dfmin=0.1<a name='1896'>
+         if(wmax.le.w)then<a name='1897'>
+            do n=1,ntype_aer<a name='1898'>
+            do m=1,nsize_aer(n)<a name='1899'>
+               fluxn(m,n)=0.<a name='1900'>
+               fn(m,n)=0.<a name='1901'>
+               fluxs(m,n)=0.<a name='1902'>
+               fs(m,n)=0.<a name='1903'>
+               fluxm(m,n)=0.<a name='1904'>
+               fm(m,n)=0.<a name='1905'>
+            end do<a name='1906'>
+            end do<a name='1907'>
+            flux_fullact=0.<a name='1908'>
+            return<a name='1909'>
+         endif<a name='1910'>
+         do n=1,ntype_aer<a name='1911'>
+         do m=1,nsize_aer(n)<a name='1912'>
+            sumflxn(m,n)=0.<a name='1913'>
+            sumfn(m,n)=0.<a name='1914'>
+            fnold(m,n)=0.<a name='1915'>
+            sumflxs(m,n)=0.<a name='1916'>
+            sumfs(m,n)=0.<a name='1917'>
+            fsold(m,n)=0.<a name='1918'>
+            sumflxm(m,n)=0.<a name='1919'>
+            sumfm(m,n)=0.<a name='1920'>
+            fmold(m,n)=0.<a name='1921'>
+         enddo<a name='1922'>
+         enddo<a name='1923'>
+         sumflx_fullact=0.<a name='1924'>
+<a name='1925'>
+         fold=0<a name='1926'>
+         gold=0<a name='1927'>
+<font color=#447700>! 06-nov-2005 rce - set wold=w here<a name='1928'></font>
+<font color=#447700>!        wold=0<a name='1929'></font>
+         wold=w<a name='1930'>
+<a name='1931'>
+<a name='1932'>
+<font color=#447700>! 06-nov-2005 rce - define nwmax; calc dwmin from nwmax<a name='1933'></font>
+         nwmax = 200<a name='1934'>
+<font color=#447700>!        dwmin = min( dwmax, 0.01 )<a name='1935'></font>
+         dwmin = (wmax - wmin)/(nwmax-1)<a name='1936'>
+         dwmin = min( dwmax, dwmin )<a name='1937'>
+         dwmin = max( 0.01,  dwmin )<a name='1938'>
+<a name='1939'>
+<font color=#447700>!<a name='1940'></font>
+<font color=#447700>! loop over updrafts, incrementing sums as you go<a name='1941'></font>
+<font color=#447700>! the "200" is (arbitrary) upper limit for number of updrafts<a name='1942'></font>
+<font color=#447700>! if integration finishes before this, OK; otherwise, ERROR<a name='1943'></font>
+<font color=#447700>!<a name='1944'></font>
+         if (idiagaa.gt.0) then<a name='1945'>
+             write(*,94700) ktau, grid_id, ii, jj, kk, nwmax<a name='1946'>
+             write(*,94710) 'wbar,sigw,wdiab=', wbar, sigw, wdiab<a name='1947'>
+             write(*,94710) 'wmin,wmax,dwmin,dwmax=', wmin, wmax, dwmin, dwmax<a name='1948'>
+             write(*,94720) -1, w, wold, dw<a name='1949'>
+         end if<a name='1950'>
+94700    format( / 'activate 47000 - ktau,id,ii,jj,kk,nwmax=', 6i5 )<a name='1951'>
+94710    format( 'activate 47000 - ', a, 6(1x,f11.5) )<a name='1952'>
+94720    format( 'activate 47000 - nw,w,wold,dw=', i5, 3(1x,f11.5) )<a name='1953'>
+<a name='1954'>
+         do 47000 nw = 1, nwmax<a name='1955'>
+41000       wnuc=w+wdiab<a name='1956'>
+<a name='1957'>
+            if (idiagaa.gt.0) write(*,94720) nw, w, wold, dw<a name='1958'>
+<a name='1959'>
+<font color=#447700>!           write(6,*)'wnuc=',wnuc<a name='1960'></font>
+            alw=alpha*wnuc<a name='1961'>
+            sqrtalw=sqrt(alw)<a name='1962'>
+            zeta=2.*sqrtalw*aten/(3.*sqrtg)<a name='1963'>
+            etafactor1=2.*alw*sqrtalw<a name='1964'>
+            if (isectional .gt. 0) then<a name='1965'>
+<font color=#447700>!              sectional model.<a name='1966'></font>
+<font color=#447700>!              use bulk properties<a name='1967'></font>
+<a name='1968'>
+              do n=1,ntype_aer<a name='1969'>
+                 if(totn(n).gt.1.e-10)then<a name='1970'>
+                    eta(1,n)=etafactor1/(totn(n)*beta*sqrtg)<a name='1971'>
+                 else<a name='1972'>
+                    eta(1,n)=1.e10<a name='1973'>
+                 endif<a name='1974'>
+              enddo<a name='1975'>
+              <font color=#447700>!BSINGH - For WRFCuP scheme<a name='1976'></font>
+              <font color=#447700>! use smax_prescribed if it is present; otherwise get smax from subr maxsat<a name='1977'></font>
+              if ( present( smax_prescribed ) ) then<a name='1978'>
+                 smax = smax_prescribed<a name='1979'>
+              else<a name='1980'>
+                 <font color=#447700>!BSINGH -ENDS<a name='1981'></font>
+                 <a name='1982'>
+                 call <A href='../../html_code/phys/module_mixactivate.F.html#MAXSAT'>maxsat</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAXSAT_4">(zeta,eta,maxd_atype,ntype_aer, &amp;<a name='1983'>
+                      maxd_asize,(/1/),gmsm,gmlnsig,f1,smax)<a name='1984'>
+              endif<a name='1985'>
+              lnsmax=log(smax)<a name='1986'>
+              x=2*(log(gmsm(1))-lnsmax)/(3*sq2*gmlnsig(1))<a name='1987'>
+              fnew=0.5*(1.-ERF_ALT(x))<a name='1988'>
+<a name='1989'>
+            else<a name='1990'>
+<a name='1991'>
+              do n=1,ntype_aer<a name='1992'>
+              do m=1,nsize_aer(n)<a name='1993'>
+                 eta(m,n)=etafactor1*etafactor2(m,n)<a name='1994'>
+              enddo<a name='1995'>
+              enddo<a name='1996'>
+              <font color=#447700>!BSINGH - For WRFCuP scheme<a name='1997'></font>
+              if ( present( smax_prescribed ) ) then<a name='1998'>
+                 smax = smax_prescribed<a name='1999'>
+              else<a name='2000'>
+                 <font color=#447700>!BSINGH -ENDS<a name='2001'></font>
+                 call <A href='../../html_code/phys/module_mixactivate.F.html#MAXSAT'>maxsat</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAXSAT_5">(zeta,eta,maxd_atype,ntype_aer, &amp;<a name='2002'>
+                      maxd_asize,nsize_aer,sm,alnsign,f1,smax)<a name='2003'>
+              endif<a name='2004'>
+<font color=#447700>!             write(6,*)'w,smax=',w,smax<a name='2005'></font>
+<a name='2006'>
+              lnsmax=log(smax)<a name='2007'>
+<a name='2008'>
+              x=2*(lnsm(nsize_aer(1),1)-lnsmax)/(3*sq2*alnsign(nsize_aer(1),1))<a name='2009'>
+              fnew=0.5*(1.-ERF_ALT(x))<a name='2010'>
+<a name='2011'>
+            endif<a name='2012'>
+<a name='2013'>
+            dwnew = dw<a name='2014'>
+<font color=#447700>! 06-nov-2005 rce - "n" here should be "nw" (?) <a name='2015'></font>
+<font color=#447700>!           if(fnew-fold.gt.dfmax.and.n.gt.1)then<a name='2016'></font>
+            if(fnew-fold.gt.dfmax.and.nw.gt.1)then<a name='2017'>
+<font color=#447700>!              reduce updraft increment for greater accuracy in integration<a name='2018'></font>
+               if (dw .gt. 1.01*dwmin) then<a name='2019'>
+                  dw=0.7*dw<a name='2020'>
+                  dw=max(dw,dwmin)<a name='2021'>
+                  w=wold+dw<a name='2022'>
+                  go to 41000<a name='2023'>
+               else<a name='2024'>
+                  dwnew = dwmin<a name='2025'>
+               endif<a name='2026'>
+            endif<a name='2027'>
+<a name='2028'>
+            if(fnew-fold.lt.dfmin)then<a name='2029'>
+<font color=#447700>!              increase updraft increment to accelerate integration<a name='2030'></font>
+               dwnew=min(1.5*dw,dwmax)<a name='2031'>
+            endif<a name='2032'>
+            fold=fnew<a name='2033'>
+<a name='2034'>
+            z=(w-wbar)/(sigw*sq2)<a name='2035'>
+            gaus=exp(-z*z)<a name='2036'>
+            fnmin=1.<a name='2037'>
+            xmincoeff=alogaten-2.*third*(lnsmax-alog2)-alog3<a name='2038'>
+<font color=#447700>!           write(6,*)'xmincoeff=',xmincoeff<a name='2039'></font>
+<a name='2040'>
+<a name='2041'>
+            do 44002 n=1,ntype_aer<a name='2042'>
+            do 44000 m=1,nsize_aer(n)<a name='2043'>
+               if ( bin_is_empty(m,n) ) then<a name='2044'>
+                   fn(m,n)=0.<a name='2045'>
+                   fs(m,n)=0.<a name='2046'>
+                   fm(m,n)=0.<a name='2047'>
+               else if ((isectional .eq. 2) .or. (isectional .eq. 4)) then<a name='2048'>
+<font color=#447700>!                 sectional<a name='2049'></font>
+<font color=#447700>!                  within-section dn/dx = a + b*x<a name='2050'></font>
+                  xcut=xmincoeff-third*lnhygro(m,n)<a name='2051'>
+<font color=#447700>!                 ycut=(exp(xcut)/rhi(m,n))**3<a name='2052'></font>
+<font color=#447700>! 07-jul-2006 rce - the above line gave a (rare) overflow when smax=1.0e-20<a name='2053'></font>
+<font color=#447700>! if (ycut &gt; yhi), then actual value of ycut is unimportant, <a name='2054'></font>
+<font color=#447700>! so do the following to avoid overflow<a name='2055'></font>
+                  lnycut = 3.0 * ( xcut - log(rhi(m,n)) )<a name='2056'>
+                  lnycut = min( lnycut, log(yhi(m,n)*1.0e5) )<a name='2057'>
+                  ycut=exp(lnycut)<a name='2058'>
+<font color=#447700>!                 write(6,*)'m,n,rcut,rlo,rhi=',m,n,exp(xcut),rlo(m,n),rhi(m,n)<a name='2059'></font>
+<font color=#447700>!                   if(lnsmax.lt.lnsmn(m,n))then<a name='2060'></font>
+                  if(ycut.gt.yhi(m,n))then<a name='2061'>
+                     fn(m,n)=0.<a name='2062'>
+                     fs(m,n)=0.<a name='2063'>
+                     fm(m,n)=0.<a name='2064'>
+                  elseif(ycut.lt.ylo(m,n))then<a name='2065'>
+                     fn(m,n)=1.<a name='2066'>
+                     fs(m,n)=1.<a name='2067'>
+                     fm(m,n)=1.<a name='2068'>
+                  elseif ( bin_is_narrow(m,n) ) then<a name='2069'>
+<font color=#447700>! 04-nov-2005 rce - for extremely narrow bins, <a name='2070'></font>
+<font color=#447700>! do zero activation if xcut&gt;xmean, 100% activation otherwise<a name='2071'></font>
+                     if (ycut.gt.ymean(m,n)) then<a name='2072'>
+                        fn(m,n)=0.<a name='2073'>
+                        fs(m,n)=0.<a name='2074'>
+                        fm(m,n)=0.<a name='2075'>
+                     else<a name='2076'>
+                        fn(m,n)=1.<a name='2077'>
+                        fs(m,n)=1.<a name='2078'>
+                        fm(m,n)=1.<a name='2079'>
+                     endif<a name='2080'>
+                  else<a name='2081'>
+                     phiyy=ycut/yhi(m,n)<a name='2082'>
+                     fn(m,n) = asub(m,n)*(1.0-phiyy) + 0.5*bsub(m,n)*(1.0-phiyy*phiyy)<a name='2083'>
+                     if (fn(m,n).lt.zero .or. fn(m,n).gt.one) then<a name='2084'>
+                      if (idiag_fnsm_prob .gt. 0) then<a name='2085'>
+                        print *,'fn(',m,n,')=',fn(m,n),' outside 0,1 - activate err21'<a name='2086'>
+                        print *,'na,volc       =', na(m,n), volc(m,n)<a name='2087'>
+                        print *,'asub,bsub     =', asub(m,n), bsub(m,n)<a name='2088'>
+                        print *,'yhi,ycut      =', yhi(m,n), ycut<a name='2089'>
+                      endif<a name='2090'>
+                     endif<a name='2091'>
+<a name='2092'>
+                     if (fn(m,n) .le. zero) then<a name='2093'>
+<font color=#447700>! 10-nov-2005 rce - if fn=0, then fs &amp; fm must be 0<a name='2094'></font>
+                        fn(m,n)=zero<a name='2095'>
+                        fs(m,n)=zero<a name='2096'>
+                        fm(m,n)=zero<a name='2097'>
+                     else if (fn(m,n) .ge. one) then<a name='2098'>
+<font color=#447700>! 10-nov-2005 rce - if fn=1, then fs &amp; fm must be 1<a name='2099'></font>
+                        fn(m,n)=one<a name='2100'>
+                        fs(m,n)=one<a name='2101'>
+                        fm(m,n)=one<a name='2102'>
+                     else<a name='2103'>
+<font color=#447700>! 10-nov-2005 rce - otherwise, calc fm and check it<a name='2104'></font>
+                        fm(m,n) = (yhi(m,n)/ymean(m,n)) * (0.5*asub(m,n)*(1.0-phiyy*phiyy) +   &amp;<a name='2105'>
+                                  third*bsub(m,n)*(1.0-phiyy*phiyy*phiyy))<a name='2106'>
+                        if (fm(m,n).lt.fn(m,n) .or. fm(m,n).gt.one) then<a name='2107'>
+                         if (idiag_fnsm_prob .gt. 0) then<a name='2108'>
+                           print *,'fm(',m,n,')=',fm(m,n),' outside fn,1 - activate err22'<a name='2109'>
+                           print *,'na,volc,fn    =', na(m,n), volc(m,n), fn(m,n)<a name='2110'>
+                           print *,'asub,bsub     =', asub(m,n), bsub(m,n)<a name='2111'>
+                           print *,'yhi,ycut     =', yhi(m,n), ycut<a name='2112'>
+                         endif<a name='2113'>
+                        endif<a name='2114'>
+                        if (fm(m,n) .le. fn(m,n)) then<a name='2115'>
+<font color=#447700>! 10-nov-2005 rce - if fm=fn, then fs must =fn<a name='2116'></font>
+                           fm(m,n)=fn(m,n)<a name='2117'>
+                           fs(m,n)=fn(m,n)<a name='2118'>
+                        else if (fm(m,n) .ge. one) then<a name='2119'>
+<font color=#447700>! 10-nov-2005 rce - if fm=1, then fs &amp; fn must be 1<a name='2120'></font>
+                           fm(m,n)=one<a name='2121'>
+                           fs(m,n)=one<a name='2122'>
+                           fn(m,n)=one<a name='2123'>
+                        else<a name='2124'>
+<font color=#447700>! 10-nov-2005 rce - these two checks assure that the mean size<a name='2125'></font>
+<font color=#447700>! of the activated &amp; interstitial particles will be between rlo &amp; rhi<a name='2126'></font>
+                           dumaa = fn(m,n)*(yhi(m,n)/ymean(m,n)) <a name='2127'>
+                           fm(m,n) = min( fm(m,n), dumaa )<a name='2128'>
+                           dumaa = 1.0 + (fn(m,n)-1.0)*(ylo(m,n)/ymean(m,n)) <a name='2129'>
+                           fm(m,n) = min( fm(m,n), dumaa )<a name='2130'>
+<font color=#447700>! 10-nov-2005 rce - now calculate fs and bound it by fn, fm<a name='2131'></font>
+                           betayy = ylo(m,n)/yhi(m,n)<a name='2132'>
+                           dumaa = phiyy**twothird<a name='2133'>
+                           dumbb = betayy**twothird<a name='2134'>
+                           fs(m,n) =   &amp;<a name='2135'>
+                              (asub(m,n)*(1.0-phiyy*dumaa) +   &amp;<a name='2136'>
+                                  0.625*bsub(m,n)*(1.0-phiyy*phiyy*dumaa)) /   &amp;<a name='2137'>
+                              (asub(m,n)*(1.0-betayy*dumbb) +   &amp;<a name='2138'>
+                                  0.625*bsub(m,n)*(1.0-betayy*betayy*dumbb))<a name='2139'>
+                           fs(m,n)=max(fs(m,n),fn(m,n))<a name='2140'>
+                           fs(m,n)=min(fs(m,n),fm(m,n))<a name='2141'>
+                        endif<a name='2142'>
+                     endif<a name='2143'>
+                  endif<a name='2144'>
+<a name='2145'>
+               else<a name='2146'>
+<font color=#447700>!                 modal<a name='2147'></font>
+                  x=2*(lnsm(m,n)-lnsmax)/(3*sq2*alnsign(m,n))<a name='2148'>
+                  fn(m,n)=0.5*(1.-ERF_ALT(x))<a name='2149'>
+                  arg=x-sq2*alnsign(m,n)<a name='2150'>
+                  fs(m,n)=0.5*(1.-ERF_ALT(arg))<a name='2151'>
+                  arg=x-1.5*sq2*alnsign(m,n)<a name='2152'>
+                  fm(m,n)=0.5*(1.-ERF_ALT(arg))<a name='2153'>
+<font color=#447700>!                 print *,'w,x,fn,fs,fm=',w,x,fn(m,n),fs(m,n),fm(m,n)<a name='2154'></font>
+               endif<a name='2155'>
+<a name='2156'>
+<font color=#447700>!                     fn(m,n)=1.  !test<a name='2157'></font>
+<font color=#447700>!                     fs(m,n)=1.<a name='2158'></font>
+<font color=#447700>!                     fm(m,n)=1.<a name='2159'></font>
+               fnmin=min(fn(m,n),fnmin)<a name='2160'>
+<font color=#447700>!               integration is second order accurate<a name='2161'></font>
+<font color=#447700>!               assumes linear variation of f*gaus with w<a name='2162'></font>
+               wb=(w+wold)<a name='2163'>
+               fnbar=(fn(m,n)*gaus+fnold(m,n)*gold)<a name='2164'>
+               fsbar=(fs(m,n)*gaus+fsold(m,n)*gold)<a name='2165'>
+               fmbar=(fm(m,n)*gaus+fmold(m,n)*gold)<a name='2166'>
+               if((top.and.w.lt.0.).or.(.not.top.and.w.gt.0.))then<a name='2167'>
+                  sumflxn(m,n)=sumflxn(m,n)+sixth*(wb*fnbar           &amp;<a name='2168'>
+                      +(fn(m,n)*gaus*w+fnold(m,n)*gold*wold))*dw<a name='2169'>
+                  sumflxs(m,n)=sumflxs(m,n)+sixth*(wb*fsbar           &amp;<a name='2170'>
+                      +(fs(m,n)*gaus*w+fsold(m,n)*gold*wold))*dw<a name='2171'>
+                  sumflxm(m,n)=sumflxm(m,n)+sixth*(wb*fmbar           &amp;<a name='2172'>
+                      +(fm(m,n)*gaus*w+fmold(m,n)*gold*wold))*dw<a name='2173'>
+               endif<a name='2174'>
+               sumfn(m,n)=sumfn(m,n)+0.5*fnbar*dw<a name='2175'>
+<font color=#447700>!              write(6,'(a,9g10.2)')'lnsmax,lnsm(m,n),x,fn(m,n),fnold(m,n),g,gold,fnbar,dw=', &amp;<a name='2176'></font>
+<font color=#447700>!                lnsmax,lnsm(m,n),x,fn(m,n),fnold(m,n),g,gold,fnbar,dw<a name='2177'></font>
+               fnold(m,n)=fn(m,n)<a name='2178'>
+               sumfs(m,n)=sumfs(m,n)+0.5*fsbar*dw<a name='2179'>
+               fsold(m,n)=fs(m,n)<a name='2180'>
+               sumfm(m,n)=sumfm(m,n)+0.5*fmbar*dw<a name='2181'>
+               fmold(m,n)=fm(m,n)<a name='2182'>
+<a name='2183'>
+44000       continue      <font color=#447700>! m=1,nsize_aer(n)<a name='2184'></font>
+44002       continue      <font color=#447700>! n=1,ntype_aer<a name='2185'></font>
+<a name='2186'>
+<font color=#447700>!           same form as sumflxm(m,n) but replace the fm/fmold(m,n) with 1.0<a name='2187'></font>
+            sumflx_fullact = sumflx_fullact &amp;<a name='2188'>
+                           + sixth*(wb*(gaus+gold) + (gaus*w + gold*wold))*dw<a name='2189'>
+<font color=#447700>!            sumg=sumg+0.5*(gaus+gold)*dw<a name='2190'></font>
+            gold=gaus<a name='2191'>
+            wold=w<a name='2192'>
+            dw=dwnew<a name='2193'>
+<a name='2194'>
+            if(nw.gt.1.and.(w.gt.wmax.or.fnmin.gt.fmax))go to 48000<a name='2195'>
+            w=w+dw<a name='2196'>
+<a name='2197'>
+47000    continue      <font color=#447700>! nw = 1, nwmax<a name='2198'></font>
+<a name='2199'>
+<a name='2200'>
+         print *,'do loop is too short in activate'<a name='2201'>
+         print *,'wmin=',wmin,' w=',w,' wmax=',wmax,' dw=',dw<a name='2202'>
+         print *,'wbar=',wbar,' sigw=',sigw,' wdiab=',wdiab<a name='2203'>
+         print *,'wnuc=',wnuc<a name='2204'>
+         do n=1,ntype_aer<a name='2205'>
+            print *,'ntype=',n<a name='2206'>
+            print *,'na=',(na(m,n),m=1,nsize_aer(n))<a name='2207'>
+            print *,'fn=',(fn(m,n),m=1,nsize_aer(n))<a name='2208'>
+         end do<a name='2209'>
+<font color=#447700>!   dump all subr parameters to allow testing with standalone code<a name='2210'></font>
+<font color=#447700>!   (build a driver that will read input and call activate)<a name='2211'></font>
+         print *,'top,wbar,sigw,wdiab,tair,rhoair,ntype_aer='<a name='2212'>
+         print *, top,wbar,sigw,wdiab,tair,rhoair,ntype_aer<a name='2213'>
+         print *,'na='<a name='2214'>
+         print *, na<a name='2215'>
+         print *,'volc='<a name='2216'>
+         print *, volc<a name='2217'>
+         print *,'sigman='<a name='2218'>
+         print *, sigman<a name='2219'>
+         print *,'hygro='<a name='2220'>
+         print *, hygro<a name='2221'>
+<a name='2222'>
+         print *,'subr activate error 31 - i,j,k =', ii, jj, kk<a name='2223'>
+<font color=#447700>! 06-nov-2005 rce - if integration fails, repeat it once with additional diagnostics<a name='2224'></font>
+         if (ipass_nwloop .eq. 1) then<a name='2225'>
+             ipass_nwloop = 2<a name='2226'>
+             idiagaa = 2<a name='2227'>
+             goto 40000<a name='2228'>
+         end if<a name='2229'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_724">("STOP: activate before 48000")<a name='2230'>
+<a name='2231'>
+48000    continue<a name='2232'>
+<a name='2233'>
+<a name='2234'>
+<font color=#447700>!         ndist(n)=ndist(n)+1<a name='2235'></font>
+         if(.not.top.and.w.lt.wmaxf)then<a name='2236'>
+<a name='2237'>
+<font color=#447700>!            contribution from all updrafts stronger than wmax<a name='2238'></font>
+<font color=#447700>!            assuming constant f (close to fmax)<a name='2239'></font>
+            wnuc=w+wdiab<a name='2240'>
+<a name='2241'>
+            z1=(w-wbar)/(sigw*sq2)<a name='2242'>
+            z2=(wmaxf-wbar)/(sigw*sq2)<a name='2243'>
+            integ=sigw*0.5*sq2*sqpi*(ERFC_NUM_RECIPES(z1)-ERFC_NUM_RECIPES(z2))<a name='2244'>
+<font color=#447700>!            consider only upward flow into cloud base when estimating flux<a name='2245'></font>
+            wf1=max(w,zero)<a name='2246'>
+            zf1=(wf1-wbar)/(sigw*sq2)<a name='2247'>
+            gf1=exp(-zf1*zf1)<a name='2248'>
+            wf2=max(wmaxf,zero)<a name='2249'>
+            zf2=(wf2-wbar)/(sigw*sq2)<a name='2250'>
+            gf2=exp(-zf2*zf2)<a name='2251'>
+            gf=(gf1-gf2)<a name='2252'>
+            integf=wbar*sigw*0.5*sq2*sqpi*(ERFC_NUM_RECIPES(zf1)-ERFC_NUM_RECIPES(zf2))+sigw*sigw*gf<a name='2253'>
+<a name='2254'>
+            do n=1,ntype_aer<a name='2255'>
+            do m=1,nsize_aer(n)<a name='2256'>
+               sumflxn(m,n)=sumflxn(m,n)+integf*fn(m,n)<a name='2257'>
+               sumfn(m,n)=sumfn(m,n)+fn(m,n)*integ<a name='2258'>
+               sumflxs(m,n)=sumflxs(m,n)+integf*fs(m,n)<a name='2259'>
+               sumfs(m,n)=sumfs(m,n)+fs(m,n)*integ<a name='2260'>
+               sumflxm(m,n)=sumflxm(m,n)+integf*fm(m,n)<a name='2261'>
+               sumfm(m,n)=sumfm(m,n)+fm(m,n)*integ<a name='2262'>
+            end do<a name='2263'>
+            end do<a name='2264'>
+<font color=#447700>!           same form as sumflxm(m,n) but replace the fm(m,n) with 1.0<a name='2265'></font>
+            sumflx_fullact = sumflx_fullact + integf<a name='2266'>
+<font color=#447700>!            sumg=sumg+integ<a name='2267'></font>
+         endif<a name='2268'>
+<a name='2269'>
+<a name='2270'>
+         do n=1,ntype_aer<a name='2271'>
+         do m=1,nsize_aer(n)<a name='2272'>
+<a name='2273'>
+<font color=#447700>!           fn(m,n)=sumfn(m,n)/(sumg)<a name='2274'></font>
+            fn(m,n)=sumfn(m,n)/(sq2*sqpi*sigw)<a name='2275'>
+            fluxn(m,n)=sumflxn(m,n)/(sq2*sqpi*sigw)<a name='2276'>
+            if(fn(m,n).gt.1.01)then<a name='2277'>
+             if (idiag_fnsm_prob .gt. 0) then<a name='2278'>
+               print *,'fn=',fn(m,n),' &gt; 1 - activate err41'<a name='2279'>
+               print *,'w,m,n,na,am=',w,m,n,na(m,n),am(m,n)<a name='2280'>
+               print *,'integ,sumfn,sigw=',integ,sumfn(m,n),sigw<a name='2281'>
+               print *,'subr activate error - i,j,k =', ii, jj, kk<a name='2282'>
+             endif<a name='2283'>
+             fluxn(m,n) = fluxn(m,n)/fn(m,n)<a name='2284'>
+            endif<a name='2285'>
+<a name='2286'>
+            fs(m,n)=sumfs(m,n)/(sq2*sqpi*sigw)<a name='2287'>
+            fluxs(m,n)=sumflxs(m,n)/(sq2*sqpi*sigw)<a name='2288'>
+            if(fs(m,n).gt.1.01)then<a name='2289'>
+             if (idiag_fnsm_prob .gt. 0) then<a name='2290'>
+               print *,'fs=',fs(m,n),' &gt; 1 - activate err42'<a name='2291'>
+               print *,'m,n,isectional=',m,n,isectional<a name='2292'>
+               print *,'alnsign(m,n)=',alnsign(m,n)<a name='2293'>
+               print *,'rcut,rlo(m,n),rhi(m,n)',exp(xcut),rlo(m,n),rhi(m,n)<a name='2294'>
+               print *,'w,m,na,am=',w,m,na(m,n),am(m,n)<a name='2295'>
+               print *,'integ,sumfs,sigw=',integ,sumfs(m,n),sigw<a name='2296'>
+             endif<a name='2297'>
+             fluxs(m,n) = fluxs(m,n)/fs(m,n)<a name='2298'>
+            endif<a name='2299'>
+<a name='2300'>
+<font color=#447700>!           fm(m,n)=sumfm(m,n)/(sumg)<a name='2301'></font>
+            fm(m,n)=sumfm(m,n)/(sq2*sqpi*sigw)<a name='2302'>
+            fluxm(m,n)=sumflxm(m,n)/(sq2*sqpi*sigw)<a name='2303'>
+            if(fm(m,n).gt.1.01)then<a name='2304'>
+             if (idiag_fnsm_prob .gt. 0) then<a name='2305'>
+               print *,'fm(',m,n,')=',fm(m,n),' &gt; 1 - activate err43'<a name='2306'>
+             endif<a name='2307'>
+             fluxm(m,n) = fluxm(m,n)/fm(m,n)<a name='2308'>
+            endif<a name='2309'>
+<a name='2310'>
+         end do<a name='2311'>
+         end do<a name='2312'>
+<font color=#447700>!        same form as fluxm(m,n)<a name='2313'></font>
+         flux_fullact = sumflx_fullact/(sq2*sqpi*sigw)<a name='2314'>
+<a name='2315'>
+      goto 60000<a name='2316'>
+<font color=#447700>!.......................................................................<a name='2317'></font>
+<font color=#447700>!<a name='2318'></font>
+<font color=#447700>!   end calc. of activation fractions/fluxes<a name='2319'></font>
+<font color=#447700>!   for spectrum of updrafts (end of section 2)<a name='2320'></font>
+<font color=#447700>!<a name='2321'></font>
+<font color=#447700>!.......................................................................<a name='2322'></font>
+<a name='2323'>
+<font color=#447700>!.......................................................................<a name='2324'></font>
+<font color=#447700>!<a name='2325'></font>
+<font color=#447700>!   start calc. of activation fractions/fluxes<a name='2326'></font>
+<font color=#447700>!   for (single) uniform updraft (start of section 3)<a name='2327'></font>
+<font color=#447700>!<a name='2328'></font>
+<font color=#447700>!.......................................................................<a name='2329'></font>
+50000 continue<a name='2330'>
+<a name='2331'>
+         wnuc=wbar+wdiab<a name='2332'>
+<font color=#447700>!         write(6,*)'uniform updraft =',wnuc<a name='2333'></font>
+<a name='2334'>
+<font color=#447700>! 04-nov-2005 rce - moved the code for "wnuc.le.0" code to here<a name='2335'></font>
+         if(wnuc.le.0.)then<a name='2336'>
+            do n=1,ntype_aer<a name='2337'>
+            do m=1,nsize_aer(n)<a name='2338'>
+               fn(m,n)=0<a name='2339'>
+               fluxn(m,n)=0<a name='2340'>
+               fs(m,n)=0<a name='2341'>
+               fluxs(m,n)=0<a name='2342'>
+               fm(m,n)=0<a name='2343'>
+               fluxm(m,n)=0<a name='2344'>
+            end do<a name='2345'>
+            end do<a name='2346'>
+            flux_fullact=0.<a name='2347'>
+            return<a name='2348'>
+         endif<a name='2349'>
+<a name='2350'>
+            w=wbar<a name='2351'>
+            alw=alpha*wnuc<a name='2352'>
+            sqrtalw=sqrt(alw)<a name='2353'>
+            zeta=2.*sqrtalw*aten/(3.*sqrtg)<a name='2354'>
+<a name='2355'>
+            if (isectional .gt. 0) then<a name='2356'>
+<font color=#447700>!              sectional model.<a name='2357'></font>
+<font color=#447700>!              use bulk properties<a name='2358'></font>
+              do n=1,ntype_aer<a name='2359'>
+              if(totn(n).gt.1.e-10)then<a name='2360'>
+                 eta(1,n)=2*alw*sqrtalw/(totn(n)*beta*sqrtg)<a name='2361'>
+              else<a name='2362'>
+                 eta(1,n)=1.e10<a name='2363'>
+              endif<a name='2364'>
+              end do<a name='2365'>
+              <font color=#447700>!BSINGH - For WRFCuP<a name='2366'></font>
+              <font color=#447700>! use smax_prescribed if it is present; otherwise get smax from subr maxsat<a name='2367'></font>
+              if ( present( smax_prescribed ) ) then<a name='2368'>
+                 smax = smax_prescribed<a name='2369'>
+              else<a name='2370'>
+                 <font color=#447700>!BSINGH -ENDS<a name='2371'></font>
+                 call <A href='../../html_code/phys/module_mixactivate.F.html#MAXSAT'>maxsat</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAXSAT_6">(zeta,eta,maxd_atype,ntype_aer, &amp;<a name='2372'>
+                      maxd_asize,(/1/),gmsm,gmlnsig,f1,smax)<a name='2373'>
+              endif<a name='2374'>
+<a name='2375'>
+            else<a name='2376'>
+<a name='2377'>
+              do n=1,ntype_aer<a name='2378'>
+              do m=1,nsize_aer(n)<a name='2379'>
+                 if(na(m,n).gt.1.e-10)then<a name='2380'>
+                    eta(m,n)=2*alw*sqrtalw/(na(m,n)*beta*sqrtg)<a name='2381'>
+                 else<a name='2382'>
+                    eta(m,n)=1.e10<a name='2383'>
+                 endif<a name='2384'>
+              end do<a name='2385'>
+              end do<a name='2386'>
+              <font color=#447700>!BSINGH - For WRFCuP<a name='2387'></font>
+              <font color=#447700>! use smax_prescribed if it is present; otherwise get smax from subr maxsat<a name='2388'></font>
+              if ( present( smax_prescribed ) ) then<a name='2389'>
+                 smax = smax_prescribed<a name='2390'>
+              else<a name='2391'>
+                 <font color=#447700>!BSINGH -ENDS<a name='2392'></font>
+                 <a name='2393'>
+                 call <A href='../../html_code/phys/module_mixactivate.F.html#MAXSAT'>maxsat</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAXSAT_7">(zeta,eta,maxd_atype,ntype_aer, &amp;<a name='2394'>
+                      maxd_asize,nsize_aer,sm,alnsign,f1,smax)<a name='2395'>
+              endif<a name='2396'>
+<a name='2397'>
+            endif<a name='2398'>
+<a name='2399'>
+            lnsmax=log(smax)<a name='2400'>
+            xmincoeff=alogaten-2.*third*(lnsmax-alog2)-alog3<a name='2401'>
+<a name='2402'>
+            do 55002 n=1,ntype_aer<a name='2403'>
+            do 55000 m=1,nsize_aer(n)<a name='2404'>
+<a name='2405'>
+<font color=#447700>! 04-nov-2005 rce - check for bin_is_empty here too, just like earlier<a name='2406'></font>
+               if ( bin_is_empty(m,n) ) then<a name='2407'>
+                   fn(m,n)=0.<a name='2408'>
+                   fs(m,n)=0.<a name='2409'>
+                   fm(m,n)=0.<a name='2410'>
+<a name='2411'>
+               else if ((isectional .eq. 2) .or. (isectional .eq. 4)) then<a name='2412'>
+<font color=#447700>!                 sectional<a name='2413'></font>
+<font color=#447700>!                  within-section dn/dx = a + b*x<a name='2414'></font>
+                  xcut=xmincoeff-third*lnhygro(m,n)<a name='2415'>
+<font color=#447700>!                 ycut=(exp(xcut)/rhi(m,n))**3<a name='2416'></font>
+<font color=#447700>! 07-jul-2006 rce - the above line gave a (rare) overflow when smax=1.0e-20<a name='2417'></font>
+<font color=#447700>! if (ycut &gt; yhi), then actual value of ycut is unimportant, <a name='2418'></font>
+<font color=#447700>! so do the following to avoid overflow<a name='2419'></font>
+                  lnycut = 3.0 * ( xcut - log(rhi(m,n)) )<a name='2420'>
+                  lnycut = min( lnycut, log(yhi(m,n)*1.0e5) )<a name='2421'>
+                  ycut=exp(lnycut)<a name='2422'>
+<font color=#447700>!                 write(6,*)'m,n,rcut,rlo,rhi=',m,n,exp(xcut),rlo(m,n),rhi(m,n)<a name='2423'></font>
+<font color=#447700>!                   if(lnsmax.lt.lnsmn(m,n))then<a name='2424'></font>
+                  if(ycut.gt.yhi(m,n))then<a name='2425'>
+                     fn(m,n)=0.<a name='2426'>
+                     fs(m,n)=0.<a name='2427'>
+                     fm(m,n)=0.<a name='2428'>
+<font color=#447700>!                   elseif(lnsmax.gt.lnsmx(m,n))then<a name='2429'></font>
+                  elseif(ycut.lt.ylo(m,n))then<a name='2430'>
+                     fn(m,n)=1.<a name='2431'>
+                     fs(m,n)=1.<a name='2432'>
+                     fm(m,n)=1.<a name='2433'>
+                  elseif ( bin_is_narrow(m,n) ) then<a name='2434'>
+<font color=#447700>! 04-nov-2005 rce - for extremely narrow bins, <a name='2435'></font>
+<font color=#447700>! do zero activation if xcut&gt;xmean, 100% activation otherwise<a name='2436'></font>
+                     if (ycut.gt.ymean(m,n)) then<a name='2437'>
+                        fn(m,n)=0.<a name='2438'>
+                        fs(m,n)=0.<a name='2439'>
+                        fm(m,n)=0.<a name='2440'>
+                     else<a name='2441'>
+                        fn(m,n)=1.<a name='2442'>
+                        fs(m,n)=1.<a name='2443'>
+                        fm(m,n)=1.<a name='2444'>
+                     endif<a name='2445'>
+                  else<a name='2446'>
+                     phiyy=ycut/yhi(m,n)<a name='2447'>
+                     fn(m,n) = asub(m,n)*(1.0-phiyy) + 0.5*bsub(m,n)*(1.0-phiyy*phiyy)<a name='2448'>
+                     if (fn(m,n).lt.zero .or. fn(m,n).gt.one) then<a name='2449'>
+                      if (idiag_fnsm_prob .gt. 0) then<a name='2450'>
+                        print *,'fn(',m,n,')=',fn(m,n),' outside 0,1 - activate err21'<a name='2451'>
+                        print *,'na,volc       =', na(m,n), volc(m,n)<a name='2452'>
+                        print *,'asub,bsub     =', asub(m,n), bsub(m,n)<a name='2453'>
+                        print *,'yhi,ycut      =', yhi(m,n), ycut<a name='2454'>
+                      endif<a name='2455'>
+                     endif<a name='2456'>
+<a name='2457'>
+                     if (fn(m,n) .le. zero) then<a name='2458'>
+<font color=#447700>! 10-nov-2005 rce - if fn=0, then fs &amp; fm must be 0<a name='2459'></font>
+                        fn(m,n)=zero<a name='2460'>
+                        fs(m,n)=zero<a name='2461'>
+                        fm(m,n)=zero<a name='2462'>
+                     else if (fn(m,n) .ge. one) then<a name='2463'>
+<font color=#447700>! 10-nov-2005 rce - if fn=1, then fs &amp; fm must be 1<a name='2464'></font>
+                        fn(m,n)=one<a name='2465'>
+                        fs(m,n)=one<a name='2466'>
+                        fm(m,n)=one<a name='2467'>
+                     else<a name='2468'>
+<font color=#447700>! 10-nov-2005 rce - otherwise, calc fm and check it<a name='2469'></font>
+                        fm(m,n) = (yhi(m,n)/ymean(m,n)) * (0.5*asub(m,n)*(1.0-phiyy*phiyy) +   &amp;<a name='2470'>
+                                  third*bsub(m,n)*(1.0-phiyy*phiyy*phiyy))<a name='2471'>
+                        if (fm(m,n).lt.fn(m,n) .or. fm(m,n).gt.one) then<a name='2472'>
+                         if (idiag_fnsm_prob .gt. 0) then<a name='2473'>
+                           print *,'fm(',m,n,')=',fm(m,n),' outside fn,1 - activate err22'<a name='2474'>
+                           print *,'na,volc,fn    =', na(m,n), volc(m,n), fn(m,n)<a name='2475'>
+                           print *,'asub,bsub     =', asub(m,n), bsub(m,n)<a name='2476'>
+                           print *,'yhi,ycut      =', yhi(m,n), ycut<a name='2477'>
+                         endif<a name='2478'>
+                        endif<a name='2479'>
+                        if (fm(m,n) .le. fn(m,n)) then<a name='2480'>
+<font color=#447700>! 10-nov-2005 rce - if fm=fn, then fs must =fn<a name='2481'></font>
+                           fm(m,n)=fn(m,n)<a name='2482'>
+                           fs(m,n)=fn(m,n)<a name='2483'>
+                        else if (fm(m,n) .ge. one) then<a name='2484'>
+<font color=#447700>! 10-nov-2005 rce - if fm=1, then fs &amp; fn must be 1<a name='2485'></font>
+                           fm(m,n)=one<a name='2486'>
+                           fs(m,n)=one<a name='2487'>
+                           fn(m,n)=one<a name='2488'>
+                        else<a name='2489'>
+<font color=#447700>! 10-nov-2005 rce - these two checks assure that the mean size<a name='2490'></font>
+<font color=#447700>! of the activated &amp; interstitial particles will be between rlo &amp; rhi<a name='2491'></font>
+                           dumaa = fn(m,n)*(yhi(m,n)/ymean(m,n)) <a name='2492'>
+                           fm(m,n) = min( fm(m,n), dumaa )<a name='2493'>
+                           dumaa = 1.0 + (fn(m,n)-1.0)*(ylo(m,n)/ymean(m,n))<a name='2494'>
+                           fm(m,n) = min( fm(m,n), dumaa )<a name='2495'>
+<font color=#447700>! 10-nov-2005 rce - now calculate fs and bound it by fn, fm<a name='2496'></font>
+                           betayy = ylo(m,n)/yhi(m,n)<a name='2497'>
+                           dumaa = phiyy**twothird<a name='2498'>
+                           dumbb = betayy**twothird<a name='2499'>
+                           fs(m,n) =   &amp;<a name='2500'>
+                              (asub(m,n)*(1.0-phiyy*dumaa) +   &amp;<a name='2501'>
+                                  0.625*bsub(m,n)*(1.0-phiyy*phiyy*dumaa)) /   &amp;<a name='2502'>
+                              (asub(m,n)*(1.0-betayy*dumbb) +   &amp;<a name='2503'>
+                                  0.625*bsub(m,n)*(1.0-betayy*betayy*dumbb))<a name='2504'>
+                           fs(m,n)=max(fs(m,n),fn(m,n))<a name='2505'>
+                           fs(m,n)=min(fs(m,n),fm(m,n))<a name='2506'>
+                        endif<a name='2507'>
+                     endif<a name='2508'>
+<a name='2509'>
+                  endif<a name='2510'>
+<a name='2511'>
+               else<a name='2512'>
+<font color=#447700>!                 modal<a name='2513'></font>
+                  x=2*(lnsm(m,n)-lnsmax)/(3*sq2*alnsign(m,n))<a name='2514'>
+                  fn(m,n)=0.5*(1.-ERF_ALT(x))<a name='2515'>
+                  arg=x-sq2*alnsign(m,n)<a name='2516'>
+                  fs(m,n)=0.5*(1.-ERF_ALT(arg))<a name='2517'>
+                  arg=x-1.5*sq2*alnsign(m,n)<a name='2518'>
+                  fm(m,n)=0.5*(1.-ERF_ALT(arg))<a name='2519'>
+               endif<a name='2520'>
+<a name='2521'>
+<font color=#447700>!                     fn(m,n)=1. ! test<a name='2522'></font>
+<font color=#447700>!                     fs(m,n)=1.<a name='2523'></font>
+<font color=#447700>!                     fm(m,n)=1.<a name='2524'></font>
+                if((top.and.wbar.lt.0.).or.(.not.top.and.wbar.gt.0.))then<a name='2525'>
+                   fluxn(m,n)=fn(m,n)*w<a name='2526'>
+                   fluxs(m,n)=fs(m,n)*w<a name='2527'>
+                   fluxm(m,n)=fm(m,n)*w<a name='2528'>
+                else<a name='2529'>
+                   fluxn(m,n)=0<a name='2530'>
+                   fluxs(m,n)=0<a name='2531'>
+                   fluxm(m,n)=0<a name='2532'>
+               endif<a name='2533'>
+<a name='2534'>
+55000       continue      <font color=#447700>! m=1,nsize_aer(n)<a name='2535'></font>
+55002       continue      <font color=#447700>! n=1,ntype_aer<a name='2536'></font>
+<a name='2537'>
+            if((top.and.wbar.lt.0.).or.(.not.top.and.wbar.gt.0.))then<a name='2538'>
+               flux_fullact = w<a name='2539'>
+            else<a name='2540'>
+               flux_fullact = 0.0<a name='2541'>
+            endif<a name='2542'>
+<a name='2543'>
+<font color=#447700>! 04-nov-2005 rce - moved the code for "wnuc.le.0" from here <a name='2544'></font>
+<font color=#447700>! to near the start the uniform undraft section<a name='2545'></font>
+<a name='2546'>
+<font color=#447700>!.......................................................................<a name='2547'></font>
+<font color=#447700>!<a name='2548'></font>
+<font color=#447700>!   end calc. of activation fractions/fluxes <a name='2549'></font>
+<font color=#447700>!   for (single) uniform updraft (end of section 3)<a name='2550'></font>
+<font color=#447700>!<a name='2551'></font>
+<font color=#447700>!.......................................................................<a name='2552'></font>
+<a name='2553'>
+<a name='2554'>
+<a name='2555'>
+60000 continue<a name='2556'>
+<a name='2557'>
+<a name='2558'>
+<font color=#447700>!            do n=1,ntype_aer<a name='2559'></font>
+<font color=#447700>!            do m=1,nsize_aer(n)<a name='2560'></font>
+<font color=#447700>!                write(6,'(a,2i3,5e10.1)')'n,m,na,wbar,sigw,fn,fm=',n,m,na(m,n),wbar,sigw,fn(m,n),fm(m,n)<a name='2561'></font>
+<font color=#447700>!            end do<a name='2562'></font>
+<font color=#447700>!            end do<a name='2563'></font>
+<a name='2564'>
+<a name='2565'>
+      return<a name='2566'>
+      end subroutine activate<a name='2567'>
+<a name='2568'>
+<a name='2569'>
+<a name='2570'>
+<font color=#447700>!----------------------------------------------------------------------<a name='2571'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='2572'></font>
+<A NAME='MAXSAT'><A href='../../html_code/phys/module_mixactivate.F.html#MAXSAT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2573'>
+      <font color=#993300>subroutine </font><font color=#cc0000>maxsat</font>(zeta,eta, &amp; <A href='../../call_to/MAXSAT.html' TARGET='index'>7</A><a name='2574'>
+                        maxd_atype,ntype_aer,maxd_asize,nsize_aer, &amp;<a name='2575'>
+                        sm,alnsign,f1,smax)<a name='2576'>
+<a name='2577'>
+<font color=#447700>!      Calculates maximum supersaturation for multiple competing aerosol<a name='2578'></font>
+<font color=#447700>!      modes. Note that maxsat_init must be called before calling this<a name='2579'></font>
+<font color=#447700>!      subroutine.<a name='2580'></font>
+<a name='2581'>
+<font color=#447700>!      Abdul-Razzak and Ghan, A parameterization of aerosol activation.<a name='2582'></font>
+<font color=#447700>!      2. Multiple aerosol types. J. Geophys. Res., 105, 6837-6844.<a name='2583'></font>
+<a name='2584'>
+      implicit none<a name='2585'>
+<a name='2586'>
+      integer, intent(in) :: maxd_atype<a name='2587'>
+      integer, intent(in) :: ntype_aer<a name='2588'>
+      integer, intent(in) :: maxd_asize<a name='2589'>
+      integer, intent(in) :: nsize_aer(maxd_atype) <font color=#447700>! number of size bins<a name='2590'></font>
+      real, intent(in) :: sm(maxd_asize,maxd_atype) <font color=#447700>! critical supersaturation for number mode radius<a name='2591'></font>
+      real, intent(in) :: zeta, eta(maxd_asize,maxd_atype)<a name='2592'>
+      real, intent(in) :: alnsign(maxd_asize,maxd_atype) <font color=#447700>! ln(sigma)<a name='2593'></font>
+      real, intent(in) :: f1(maxd_asize,maxd_atype)<a name='2594'>
+      real, intent(out) :: smax <font color=#447700>! maximum supersaturation<a name='2595'></font>
+<a name='2596'>
+      real :: g1, g2<a name='2597'>
+      real thesum<a name='2598'>
+      integer m <font color=#447700>! size index<a name='2599'></font>
+      integer n <font color=#447700>! type index<a name='2600'></font>
+<a name='2601'>
+      do n=1,ntype_aer<a name='2602'>
+      do m=1,nsize_aer(n)<a name='2603'>
+         if(zeta.gt.1.e5*eta(m,n) .or. &amp;<a name='2604'>
+              sm(m,n)*sm(m,n).gt.1.e5*eta(m,n))then<a name='2605'>
+<font color=#447700>!           weak forcing. essentially none activated<a name='2606'></font>
+            smax=1.e-20<a name='2607'>
+         else<a name='2608'>
+<font color=#447700>!           significant activation of this mode. calc activation all modes.<a name='2609'></font>
+            go to 1<a name='2610'>
+         endif<a name='2611'>
+      end do<a name='2612'>
+      end do<a name='2613'>
+<a name='2614'>
+      return<a name='2615'>
+<a name='2616'>
+  1   continue<a name='2617'>
+<a name='2618'>
+      thesum=0<a name='2619'>
+      do n=1,ntype_aer<a name='2620'>
+      do m=1,nsize_aer(n)<a name='2621'>
+         if(eta(m,n).gt.1.e-20)then<a name='2622'>
+            g1=sqrt(zeta/eta(m,n))<a name='2623'>
+            g1=g1*g1*g1<a name='2624'>
+            g2=sm(m,n)/sqrt(eta(m,n)+3*zeta)<a name='2625'>
+            g2=sqrt(g2)<a name='2626'>
+            g2=g2*g2*g2<a name='2627'>
+            thesum=thesum + &amp;<a name='2628'>
+                 (f1(m,n)*g1+(1.+0.25*alnsign(m,n))*g2)/(sm(m,n)*sm(m,n))<a name='2629'>
+         else<a name='2630'>
+            thesum=1.e20<a name='2631'>
+         endif<a name='2632'>
+      end do<a name='2633'>
+      end do<a name='2634'>
+<a name='2635'>
+      smax=1./sqrt(thesum)<a name='2636'>
+<a name='2637'>
+      return<a name='2638'>
+      end subroutine maxsat<a name='2639'>
+<a name='2640'>
+<a name='2641'>
+<a name='2642'>
+<font color=#447700>!----------------------------------------------------------------------<a name='2643'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='2644'></font>
+<A NAME='MAXSAT_INIT'><A href='../../html_code/phys/module_mixactivate.F.html#MAXSAT_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2645'>
+      <font color=#993300>subroutine </font><font color=#cc0000>maxsat_init</font>(maxd_atype, ntype_aer, &amp; <A href='../../call_to/MAXSAT_INIT.html' TARGET='index'>2</A><a name='2646'>
+           maxd_asize, nsize_aer, alnsign, f1)<a name='2647'>
+<a name='2648'>
+<font color=#447700>!     Calculates the f1 paramter needed by maxsat.<a name='2649'></font>
+<a name='2650'>
+<font color=#447700>!     Abdul-Razzak and Ghan, A parameterization of aerosol activation.<a name='2651'></font>
+<font color=#447700>!     2. Multiple aerosol types. J. Geophys. Res., 105, 6837-6844.<a name='2652'></font>
+<a name='2653'>
+      implicit none<a name='2654'>
+<a name='2655'>
+      integer, intent(in)  :: maxd_atype<a name='2656'>
+      integer, intent(in)  :: ntype_aer <font color=#447700>! number of aerosol types<a name='2657'></font>
+      integer, intent(in)  :: maxd_asize<a name='2658'>
+      integer, intent(in)  :: nsize_aer(maxd_atype) <font color=#447700>! number of size bins<a name='2659'></font>
+      real,    intent(in)  :: alnsign(maxd_asize,maxd_atype) <font color=#447700>! ln(sigma)<a name='2660'></font>
+      real,    intent(out) :: f1(maxd_asize,maxd_atype)<a name='2661'>
+<a name='2662'>
+      integer m <font color=#447700>! size index<a name='2663'></font>
+      integer n <font color=#447700>! type index<a name='2664'></font>
+<a name='2665'>
+<font color=#447700>!  calculate and save f1(sigma), assumes sigma is invariant<a name='2666'></font>
+<font color=#447700>!  between calls to this init routine<a name='2667'></font>
+<a name='2668'>
+      do n=1,ntype_aer<a name='2669'>
+         do m=1,nsize_aer(n)<a name='2670'>
+            f1(m,n)=0.5*exp(2.5*alnsign(m,n)*alnsign(m,n))<a name='2671'>
+         end do<a name='2672'>
+      end do<a name='2673'>
+<a name='2674'>
+      end subroutine maxsat_init<a name='2675'>
+<a name='2676'>
+<a name='2677'>
+<a name='2678'>
+<font color=#447700>!----------------------------------------------------------------------<a name='2679'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='2680'></font>
+<font color=#447700>! 25-apr-2006 rce - dens_aer is (g/cm3), NOT (kg/m3);<a name='2681'></font>
+<font color=#447700>!     grid_id, ktau, i, j, isize, itype added to arg list to assist debugging<a name='2682'></font>
+<A NAME='LOADAER'><A href='../../html_code/phys/module_mixactivate.F.html#LOADAER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2683'>
+       <font color=#993300>subroutine </font><font color=#cc0000>loadaer</font>(chem,k,kmn,kmx,num_chem,cs,npv, &amp; <A href='../../call_to/LOADAER.html' TARGET='index'>5</A>,<A href='../../call_from/LOADAER.html' TARGET='index'>6</A><a name='2684'>
+                          dlo_sect,dhi_sect,maxd_acomp, ncomp,                &amp;<a name='2685'>
+                          grid_id, ktau, i, j, isize, itype,   &amp;<a name='2686'>
+                          numptr_aer, numptrcw_aer, dens_aer,   &amp;<a name='2687'>
+                          massptr_aer, massptrcw_aer,   &amp;<a name='2688'>
+                          maerosol, maerosolcw,                 &amp;<a name='2689'>
+                          maerosol_tot, maerosol_totcw,         &amp;<a name='2690'>
+                          naerosol, naerosolcw,                 &amp;<a name='2691'>
+                          vaerosol, vaerosolcw)<a name='2692'>
+<a name='2693'>
+      implicit none<a name='2694'>
+<a name='2695'>
+<font color=#447700>!      load aerosol number, surface, mass concentrations<a name='2696'></font>
+<a name='2697'>
+<font color=#447700>!      input<a name='2698'></font>
+<a name='2699'>
+       integer, intent(in) ::  num_chem <font color=#447700>! maximum number of consituents<a name='2700'></font>
+       integer, intent(in) ::  k,kmn,kmx<a name='2701'>
+       real,    intent(in) ::  chem(kmn:kmx,num_chem) <font color=#447700>! aerosol mass, number mixing ratios<a name='2702'></font>
+       real,    intent(in) ::  cs  <font color=#447700>! air density (kg/m3)<a name='2703'></font>
+       real,    intent(in) ::  npv <font color=#447700>! number per volume concentration (/m3)<a name='2704'></font>
+       integer, intent(in) ::  maxd_acomp,ncomp<a name='2705'>
+       integer, intent(in) ::  numptr_aer,numptrcw_aer<a name='2706'>
+       integer, intent(in) ::  massptr_aer(maxd_acomp), massptrcw_aer(maxd_acomp)<a name='2707'>
+       real,    intent(in) ::  dens_aer(maxd_acomp) <font color=#447700>! aerosol material density (g/cm3)<a name='2708'></font>
+       real,    intent(in) ::  dlo_sect,dhi_sect <font color=#447700>! minimum, maximum diameter of section (cm)<a name='2709'></font>
+       integer, intent(in) ::  grid_id, ktau, i, j, isize, itype<a name='2710'>
+<a name='2711'>
+<font color=#447700>!      output<a name='2712'></font>
+<a name='2713'>
+       real, intent(out) ::  naerosol                <font color=#447700>! interstitial number conc (/m3)<a name='2714'></font>
+       real, intent(out) ::  naerosolcw              <font color=#447700>! activated    number conc (/m3)<a name='2715'></font>
+       real, intent(out) ::  maerosol(maxd_acomp)   <font color=#447700>! interstitial mass conc (kg/m3)<a name='2716'></font>
+       real, intent(out) ::  maerosolcw(maxd_acomp) <font color=#447700>! activated    mass conc (kg/m3)<a name='2717'></font>
+       real, intent(out) ::  maerosol_tot   <font color=#447700>! total-over-species interstitial mass conc (kg/m3)<a name='2718'></font>
+       real, intent(out) ::  maerosol_totcw <font color=#447700>! total-over-species activated    mass conc (kg/m3)<a name='2719'></font>
+       real, intent(out) ::  vaerosol       <font color=#447700>! interstitial volume conc (m3/m3)<a name='2720'></font>
+       real, intent(out) ::  vaerosolcw     <font color=#447700>! activated volume conc (m3/m3)<a name='2721'></font>
+<a name='2722'>
+<font color=#447700>!      internal<a name='2723'></font>
+<a name='2724'>
+       integer lnum,lnumcw,l,ltype,lmass,lmasscw,lsfc,lsfccw<a name='2725'>
+       real num_at_dhi, num_at_dlo<a name='2726'>
+       real npv_at_dhi, npv_at_dlo<a name='2727'>
+       real, parameter :: pi = 3.1415926526<a name='2728'>
+       real specvol <font color=#447700>! inverse aerosol material density (m3/kg)<a name='2729'></font>
+<a name='2730'>
+          lnum=numptr_aer<a name='2731'>
+          lnumcw=numptrcw_aer<a name='2732'>
+          maerosol_tot=0.<a name='2733'>
+          maerosol_totcw=0.<a name='2734'>
+          vaerosol=0.<a name='2735'>
+          vaerosolcw=0.<a name='2736'>
+          do l=1,ncomp<a name='2737'>
+             lmass=massptr_aer(l)<a name='2738'>
+             lmasscw=massptrcw_aer(l)<a name='2739'>
+             maerosol(l)=chem(k,lmass)*cs<a name='2740'>
+             maerosol(l)=max(maerosol(l),0.)<a name='2741'>
+             maerosolcw(l)=chem(k,lmasscw)*cs<a name='2742'>
+             maerosolcw(l)=max(maerosolcw(l),0.)<a name='2743'>
+             maerosol_tot=maerosol_tot+maerosol(l)<a name='2744'>
+             maerosol_totcw=maerosol_totcw+maerosolcw(l)<a name='2745'>
+<font color=#447700>! [ 1.e-3 factor because dens_aer is (g/cm3), specvol is (m3/kg) ]<a name='2746'></font>
+             specvol=1.0e-3/dens_aer(l)<a name='2747'>
+             vaerosol=vaerosol+maerosol(l)*specvol<a name='2748'>
+             vaerosolcw=vaerosolcw+maerosolcw(l)*specvol<a name='2749'>
+<font color=#447700>!            write(6,'(a,3e12.2)')'maerosol,dens_aer,vaerosol=',maerosol(l),dens_aer(l),vaerosol<a name='2750'></font>
+          enddo<a name='2751'>
+<a name='2752'>
+          if(lnum.gt.0)then<a name='2753'>
+<font color=#447700>!            aerosol number predicted<a name='2754'></font>
+<font color=#447700>! [ 1.0e6 factor because because dhi_ &amp; dlo_sect are (cm), vaerosol is (m3) ]<a name='2755'></font>
+             npv_at_dhi = 6.0e6/(pi*dhi_sect*dhi_sect*dhi_sect)<a name='2756'>
+             npv_at_dlo = 6.0e6/(pi*dlo_sect*dlo_sect*dlo_sect)<a name='2757'>
+<a name='2758'>
+             naerosol=chem(k,lnum)*cs<a name='2759'>
+             naerosolcw=chem(k,lnumcw)*cs<a name='2760'>
+             num_at_dhi = vaerosol*npv_at_dhi<a name='2761'>
+             num_at_dlo = vaerosol*npv_at_dlo<a name='2762'>
+             naerosol = max( num_at_dhi, min( num_at_dlo, naerosol ) )<a name='2763'>
+<a name='2764'>
+<font color=#447700>!            write(6,'(a,5e10.1)')'naerosol,num_at_dhi,num_at_dlo,dhi_sect,dlo_sect', &amp;<a name='2765'></font>
+<font color=#447700>!                          naerosol,num_at_dhi,num_at_dlo,dhi_sect,dlo_sect<a name='2766'></font>
+             num_at_dhi = vaerosolcw*npv_at_dhi<a name='2767'>
+             num_at_dlo = vaerosolcw*npv_at_dlo<a name='2768'>
+             naerosolcw = max( num_at_dhi, min( num_at_dlo, naerosolcw ) )<a name='2769'>
+          else<a name='2770'>
+<font color=#447700>!            aerosol number diagnosed from mass and prescribed size<a name='2771'></font>
+             naerosol=vaerosol*npv<a name='2772'>
+             naerosol=max(naerosol,0.)<a name='2773'>
+             naerosolcw=vaerosolcw*npv<a name='2774'>
+             naerosolcw=max(naerosolcw,0.)<a name='2775'>
+          endif<a name='2776'>
+<a name='2777'>
+<a name='2778'>
+       return<a name='2779'>
+       end subroutine loadaer<a name='2780'>
+<a name='2781'>
+<a name='2782'>
+<a name='2783'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='2784'></font>
+<A NAME='ERFC_NUM_RECIPES'><A href='../../html_code/phys/module_mixactivate.F.html#ERFC_NUM_RECIPES' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='2785'>
+        real <font color=#993300>function </font><font color=#cc0000>erfc_num_recipes</font>( x )<a name='2786'>
+<font color=#447700>!<a name='2787'></font>
+<font color=#447700>!   from press et al, numerical recipes, 1990, page 164<a name='2788'></font>
+<font color=#447700>!<a name='2789'></font>
+        implicit none<a name='2790'>
+        real x<a name='2791'>
+        double precision erfc_dbl, dum, t, zz<a name='2792'>
+<a name='2793'>
+        zz = abs(x)<a name='2794'>
+        t = 1.0/(1.0 + 0.5*zz)<a name='2795'>
+<a name='2796'>
+<font color=#447700>!       erfc_num_recipes =<a name='2797'></font>
+<font color=#447700>!     &amp;   t*exp( -zz*zz - 1.26551223 + t*(1.00002368 + t*(0.37409196 +<a name='2798'></font>
+<font color=#447700>!     &amp;   t*(0.09678418 + t*(-0.18628806 + t*(0.27886807 +<a name='2799'></font>
+<font color=#447700>!     &amp;                                    t*(-1.13520398 +<a name='2800'></font>
+<font color=#447700>!     &amp;   t*(1.48851587 + t*(-0.82215223 + t*0.17087277 )))))))))<a name='2801'></font>
+<a name='2802'>
+        dum =  ( -zz*zz - 1.26551223 + t*(1.00002368 + t*(0.37409196 +   &amp;<a name='2803'>
+          t*(0.09678418 + t*(-0.18628806 + t*(0.27886807 +   &amp;<a name='2804'>
+                                           t*(-1.13520398 +   &amp;<a name='2805'>
+          t*(1.48851587 + t*(-0.82215223 + t*0.17087277 )))))))))<a name='2806'>
+<a name='2807'>
+        erfc_dbl = t * exp(dum)<a name='2808'>
+        if (x .lt. 0.0) erfc_dbl = 2.0d0 - erfc_dbl<a name='2809'>
+<a name='2810'>
+        erfc_num_recipes = erfc_dbl<a name='2811'>
+<a name='2812'>
+        return<a name='2813'>
+        end function erfc_num_recipes     <a name='2814'>
+<a name='2815'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='2816'></font>
+<A NAME='ERF_ALT'><A href='../../html_code/phys/module_mixactivate.F.html#ERF_ALT' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='2817'>
+    real <font color=#993300>function </font><font color=#cc0000>erf_alt</font>( x )<a name='2818'>
+<a name='2819'>
+    implicit none<a name='2820'>
+<a name='2821'>
+    real,intent(in) :: x<a name='2822'>
+<a name='2823'>
+    erf_alt = 1. - erfc_num_recipes(x)<a name='2824'>
+<a name='2825'>
+    end function erf_alt<a name='2826'>
+<a name='2827'>
+END MODULE module_mixactivate<a name='2828'>
+</pre></body></html>

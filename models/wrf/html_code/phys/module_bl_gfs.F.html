@@ -1,0 +1,1476 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!LWRF:MODEL_LAYER:PHYSICS<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<A NAME='MODULE_BL_GFS'><A href='../../html_code/phys/module_bl_gfs.F.html#MODULE_BL_GFS' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='4'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_bl_gfs</font> <A href='../../call_to/MODULE_BL_GFS.html' TARGET='index'>2</A><a name='5'>
+<a name='6'>
+CONTAINS<a name='7'>
+<a name='8'>
+<font color=#447700>!-------------------------------------------------------------------          <a name='9'></font>
+<A NAME='BL_GFS'><A href='../../html_code/phys/module_bl_gfs.F.html#BL_GFS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='10'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>BL_GFS</font>(U3D,V3D,TH3D,T3D,QV3D,QC3D,QI3D,P3D,PI3D,     &amp; <A href='../../call_to/BL_GFS.html' TARGET='index'>1</A>,<A href='../../call_from/BL_GFS.html' TARGET='index'>2</A><a name='11'>
+                  RUBLTEN,RVBLTEN,RTHBLTEN,                        &amp;<a name='12'>
+                  RQVBLTEN,RQCBLTEN,RQIBLTEN,          	           &amp; <a name='13'>
+                  CP,G,ROVCP,R,ROVG,P_QI,P_FIRST_SCALAR,           &amp;<a name='14'>
+                  dz8w,z,PSFC,                                     &amp;<a name='15'>
+                  UST,PBL,PSIM,PSIH,                               &amp;<a name='16'>
+                  HFX,QFX,TSK,GZ1OZ0,WSPD,BR,                      &amp;<a name='17'>
+                  DT,KPBL2D,EP1,KARMAN,                            &amp;<a name='18'>
+#if (NMM_CORE==1)<a name='19'>
+                  DISHEAT,                                         &amp;<a name='20'>
+#endif<a name='21'>
+#if (HWRF==1)<a name='22'>
+                  ALPHA,                                           &amp;<a name='23'>
+                  HPBL2D, EVAP2D, HEAT2D,                          &amp;    <font color=#447700>!Kwon add FOR SHAL. CON.<a name='24'></font>
+                  VAR_RIC,                                         &amp;    <font color=#447700>!Kwon for variable Ric<a name='25'></font>
+                  U10,V10,ZNT,MZNT,rc2d,                           &amp;    <font color=#447700>!Kwon for variable Ric<a name='26'></font>
+                  DKU3D,DKT3D,coef_ric_l,coef_ric_s,xland,         &amp;    <font color=#447700>!Kwon for variable Ric<a name='27'></font>
+                  msang,scurx,scury,iwavecpl,lcurr_sf,                      &amp;<a name='28'>
+                  pert_pbl, ens_random_seed, ens_pblamp,           &amp;<a name='29'>
+#endif<a name='30'>
+                  ids,ide, jds,jde, kds,kde,                       &amp;<a name='31'>
+                  ims,ime, jms,jme, kms,kme,                       &amp;<a name='32'>
+                  its,ite, jts,jte, kts,kte                        )<a name='33'>
+<font color=#447700>!--------------------------------------------------------------------<a name='34'></font>
+      USE <A href='../../html_code/phys/module_gfs_machine.F.html#MODULE_GFS_MACHINE'>MODULE_GFS_MACHINE</A><A href='../../html_code/phys/module_bl_gfs.F.html#BL_GFS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_GFS_MACHINE_1"> , ONLY : kind_phys<a name='35'>
+<font color=#447700>!-------------------------------------------------------------------<a name='36'></font>
+      IMPLICIT NONE<a name='37'>
+<font color=#447700>!-------------------------------------------------------------------<a name='38'></font>
+<font color=#447700>!-- U3D         3D u-velocity interpolated to theta points (m/s)<a name='39'></font>
+<font color=#447700>!-- V3D         3D v-velocity interpolated to theta points (m/s)<a name='40'></font>
+<font color=#447700>!-- TH3D	3D potential temperature (K)<a name='41'></font>
+<font color=#447700>!-- T3D         temperature (K)<a name='42'></font>
+<font color=#447700>!-- QV3D        3D water vapor mixing ratio (Kg/Kg)<a name='43'></font>
+<font color=#447700>!-- QC3D        3D cloud mixing ratio (Kg/Kg)<a name='44'></font>
+<font color=#447700>!-- QI3D        3D ice mixing ratio (Kg/Kg)<a name='45'></font>
+<font color=#447700>!-- P3D         3D pressure (Pa)<a name='46'></font>
+<font color=#447700>!-- PI3D	3D exner function (dimensionless)<a name='47'></font>
+<font color=#447700>!-- rr3D	3D dry air density (kg/m^3)<a name='48'></font>
+<font color=#447700>!-- RUBLTEN     U tendency due to<a name='49'></font>
+<font color=#447700>!               PBL parameterization (m/s^2)<a name='50'></font>
+<font color=#447700>!-- RVBLTEN     V tendency due to<a name='51'></font>
+<font color=#447700>!               PBL parameterization (m/s^2)<a name='52'></font>
+<font color=#447700>!-- RTHBLTEN    Theta tendency due to<a name='53'></font>
+<font color=#447700>!               PBL parameterization (K/s)<a name='54'></font>
+<font color=#447700>!-- RQVBLTEN    Qv tendency due to<a name='55'></font>
+<font color=#447700>!               PBL parameterization (kg/kg/s)<a name='56'></font>
+<font color=#447700>!-- RQCBLTEN    Qc tendency due to<a name='57'></font>
+<font color=#447700>!               PBL parameterization (kg/kg/s)<a name='58'></font>
+<font color=#447700>!-- RQIBLTEN    Qi tendency due to<a name='59'></font>
+<font color=#447700>!               PBL parameterization (kg/kg/s)<a name='60'></font>
+<font color=#447700>!-- CP          heat capacity at constant pressure for dry air (J/kg/K)<a name='61'></font>
+<font color=#447700>!-- G           acceleration due to gravity (m/s^2)<a name='62'></font>
+<font color=#447700>!-- ROVCP       R/CP<a name='63'></font>
+<font color=#447700>!-- R           gas constant for dry air (J/kg/K)<a name='64'></font>
+<font color=#447700>!-- ROVG 	R/G<a name='65'></font>
+<font color=#447700>!-- P_QI	species index for cloud ice<a name='66'></font>
+<font color=#447700>!-- dz8w	dz between full levels (m)<a name='67'></font>
+<font color=#447700>!-- z		height above sea level (m)<a name='68'></font>
+<font color=#447700>!-- PSFC        pressure at the surface (Pa)<a name='69'></font>
+<font color=#447700>!-- UST		u* in similarity theory (m/s)<a name='70'></font>
+<font color=#447700>!-- PBL		PBL height (m)<a name='71'></font>
+<font color=#447700>!-- PSIM        similarity stability function for momentum<a name='72'></font>
+<font color=#447700>!-- PSIH        similarity stability function for heat<a name='73'></font>
+<font color=#447700>!-- HFX		upward heat flux at the surface (W/m^2)<a name='74'></font>
+<font color=#447700>!-- QFX		upward moisture flux at the surface (kg/m^2/s)<a name='75'></font>
+<font color=#447700>!-- TSK		surface temperature (K)<a name='76'></font>
+<font color=#447700>!-- GZ1OZ0      log(z/z0) where z0 is roughness length<a name='77'></font>
+<font color=#447700>!-- WSPD        wind speed at lowest model level (m/s)<a name='78'></font>
+<font color=#447700>!-- BR          bulk Richardson number in surface layer<a name='79'></font>
+<font color=#447700>!-- DT		time step (s)<a name='80'></font>
+<font color=#447700>!-- rvovrd      R_v divided by R_d (dimensionless)<a name='81'></font>
+<font color=#447700>!-- EP1         constant for virtual temperature (R_v/R_d - 1) (dimensionless)<a name='82'></font>
+<font color=#447700>!-- KARMAN      Von Karman constant<a name='83'></font>
+<font color=#447700>!-- ALPHA       boundary depth scaling factor<a name='84'></font>
+<font color=#447700>!-- VAR_RIC     Flag for using variable Ric or not (=1: variable Ric, =0: constant Ric)<a name='85'></font>
+<font color=#447700>!-- RO          Surface Rossby number<a name='86'></font>
+<font color=#447700>!-- ids         start index for i in domain<a name='87'></font>
+<font color=#447700>!-- ide         end index for i in domain<a name='88'></font>
+<font color=#447700>!-- jds         start index for j in domain<a name='89'></font>
+<font color=#447700>!-- jde         end index for j in domain<a name='90'></font>
+<font color=#447700>!-- kds         start index for k in domain<a name='91'></font>
+<font color=#447700>!-- kde         end index for k in domain<a name='92'></font>
+<font color=#447700>!-- ims         start index for i in memory<a name='93'></font>
+<font color=#447700>!-- ime         end index for i in memory<a name='94'></font>
+<font color=#447700>!-- jms         start index for j in memory<a name='95'></font>
+<font color=#447700>!-- jme         end index for j in memory<a name='96'></font>
+<font color=#447700>!-- kms         start index for k in memory<a name='97'></font>
+<font color=#447700>!-- kme         end index for k in memory<a name='98'></font>
+<font color=#447700>!-- its         start index for i in tile<a name='99'></font>
+<font color=#447700>!-- ite         end index for i in tile<a name='100'></font>
+<font color=#447700>!-- jts         start index for j in tile<a name='101'></font>
+<font color=#447700>!-- jte         end index for j in tile<a name='102'></font>
+<font color=#447700>!-- kts         start index for k in tile<a name='103'></font>
+<font color=#447700>!-- kte         end index for k in tile<a name='104'></font>
+<font color=#447700>!-------------------------------------------------------------------<a name='105'></font>
+<a name='106'>
+#if (NMM_CORE==1)<a name='107'>
+      LOGICAL , INTENT(IN)::            DISHEAT                         <font color=#447700>!  gopal's doing<a name='108'></font>
+#endif<a name='109'>
+<a name='110'>
+#if (HWRF==1)<a name='111'>
+      INTEGER , INTENT(IN)          ::  iwavecpl<a name='112'>
+      LOGICAL , INTENT(IN)          ::  lcurr_sf<a name='113'>
+      REAL,  DIMENSION(ims:ime, jms:jme), INTENT(OUT) ::              &amp;<a name='114'>
+                                        HPBL2D,                         &amp;    <font color=#447700>!ADDED BY KWON FOR SHALLOW CONV.<a name='115'></font>
+                                        EVAP2D,                         &amp;    <font color=#447700>!ADDED BY KWON FOR SHALLOW CONV.<a name='116'></font>
+                                        HEAT2D,RC2D,MZNT                     <font color=#447700>!ADDED BY KWON FOR SHALLOW CONV.<a name='117'></font>
+      REAL,  DIMENSION(ims:ime, jms:jme), INTENT(IN) ::              &amp;<a name='118'>
+                                        U10,                         &amp;    <font color=#447700>!ADDED BY KWON FOR VARIABLE Ric<a name='119'></font>
+                                        V10,XLAND,                   &amp;    <font color=#447700>!ADDED BY KWON FOR VARIABLE Ric<a name='120'></font>
+                                        ZNT                               <font color=#447700>!ADDED BY KWON FOR VARIABLE Ric<a name='121'></font>
+      REAL,  DIMENSION(ims:ime, jms:jme, kms:kme), INTENT(OUT) :: DKU3D,DKT3D  <a name='122'>
+      REAL,    INTENT(IN) :: VAR_RIC,coef_ric_l,coef_ric_s                   <font color=#447700>!ADDED BY KWON<a name='123'></font>
+      REAL,  DIMENSION(ims:ime, jms:jme), INTENT(IN) ::                 &amp;<a name='124'>
+                                        SCURX,                          &amp;<a name='125'>
+                                        SCURY,                          &amp;<a name='126'>
+                                        MSANG<a name='127'>
+      integer,intent(in) :: ens_random_seed<a name='128'>
+      real,intent(in) :: ens_pblamp<a name='129'>
+      logical,intent(in) :: pert_pbl<a name='130'>
+#endif<a name='131'>
+<a name='132'>
+<a name='133'>
+<a name='134'>
+      INTEGER, INTENT(IN) ::            ids,ide, jds,jde, kds,kde,      &amp;<a name='135'>
+                                        ims,ime, jms,jme, kms,kme,      &amp;<a name='136'>
+                                        its,ite, jts,jte, kts,kte,      &amp;<a name='137'>
+                                        P_QI,P_FIRST_SCALAR<a name='138'>
+<a name='139'>
+      REAL,    INTENT(IN) ::                                            &amp;<a name='140'>
+                                        CP,                             &amp;<a name='141'>
+                                        DT,                             &amp;<a name='142'>
+                                        EP1,                            &amp;<a name='143'>
+                                        G,                              &amp;<a name='144'>
+                                        KARMAN,                         &amp;<a name='145'>
+                                        R,                              &amp; <a name='146'>
+                                        ROVCP,                          &amp;<a name='147'>
+                                        ROVG <a name='148'>
+<a name='149'>
+      REAL,    DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) ::      &amp; <a name='150'>
+                                        DZ8W,                           &amp;<a name='151'>
+                                        P3D,                            &amp;<a name='152'>
+                                        PI3D,                           &amp;<a name='153'>
+                                        QC3D,                           &amp;<a name='154'>
+                                        QI3D,                           &amp;<a name='155'>
+                                        QV3D,                           &amp;<a name='156'>
+                                        T3D,                            &amp;<a name='157'>
+                                        TH3D,                           &amp;<a name='158'>
+                                        U3D,                            &amp;<a name='159'>
+                                        V3D,                            &amp;<a name='160'>
+                                        Z   <a name='161'>
+<a name='162'>
+<a name='163'>
+      REAL,    DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(INOUT) ::   &amp;<a name='164'>
+                                        RTHBLTEN,                       &amp;<a name='165'>
+                                        RQCBLTEN,                       &amp;<a name='166'>
+                                        RQIBLTEN,                       &amp;<a name='167'>
+                                        RQVBLTEN,                       &amp;<a name='168'>
+                                        RUBLTEN,                        &amp;<a name='169'>
+                                        RVBLTEN                        <a name='170'>
+<a name='171'>
+      REAL,    DIMENSION(ims:ime, jms:jme), INTENT(IN) ::               &amp;<a name='172'>
+                                        BR,                             &amp;<a name='173'>
+                                        GZ1OZ0,                         &amp;<a name='174'>
+                                        HFX,                            &amp;<a name='175'>
+                                        PSFC,                           &amp;<a name='176'>
+                                        PSIM,                           &amp;<a name='177'>
+                                        PSIH,                           &amp;<a name='178'>
+                                        QFX,                            &amp;<a name='179'>
+                                        TSK<a name='180'>
+ <a name='181'>
+      REAL,    DIMENSION(ims:ime, jms:jme), INTENT(INOUT) ::            &amp; <a name='182'>
+                                        PBL,                            &amp;<a name='183'>
+                                        UST,                            &amp;<a name='184'>
+                                        WSPD<a name='185'>
+<a name='186'>
+      INTEGER, DIMENSION(ims:ime, jms:jme), INTENT(OUT) ::              &amp;<a name='187'>
+                                        KPBL2D <a name='188'>
+<a name='189'>
+<a name='190'>
+<font color=#447700>!--------------------------- LOCAL VARS ------------------------------<a name='191'></font>
+<a name='192'>
+<a name='193'>
+      REAL     (kind=kind_phys), DIMENSION(its:ite, kts:kte) ::         &amp;<a name='194'>
+                                        DEL,                            &amp;<a name='195'>
+                                        DU,                             &amp;<a name='196'>
+                                        DV,                             &amp;<a name='197'>
+                                        PHIL,                           &amp;<a name='198'>
+                                        PRSL,                           &amp;<a name='199'>
+                                        PRSLK,                          &amp;<a name='200'>
+                                        T1,                             &amp;<a name='201'>
+                                        TAU,                            &amp;<a name='202'>
+                                        dishx,                          &amp;<a name='203'>
+#if (HWRF==1)<a name='204'>
+                                        dku,dkt,   &amp;       <font color=#447700>!Kwon for diffusivity<a name='205'></font>
+#endif<a name='206'>
+                                        U1,                             &amp;<a name='207'>
+                                        V1<a name='208'>
+<a name='209'>
+      REAL     (kind=kind_phys), DIMENSION(its:ite, kts:kte+1) ::       &amp;<a name='210'>
+                                        PHII,                           &amp; <a name='211'>
+                                        PRSI<a name='212'>
+<a name='213'>
+      REAL     (kind=kind_phys), DIMENSION(its:ite, kts:kte, 3) ::      &amp;<a name='214'>
+                                        Q1,                             &amp;<a name='215'>
+                                        RTG<a name='216'>
+<a name='217'>
+      REAL     (kind=kind_phys), DIMENSION(its:ite) ::                  &amp;<a name='218'>
+                                        DQSFC,                          &amp;<a name='219'>
+                                        DTSFC,                          &amp;<a name='220'>
+                                        DUSFC,                          &amp;<a name='221'>
+                                        DVSFC,                          &amp;<a name='222'>
+                                        EVAP,                           &amp;<a name='223'>
+                                        FH,                             &amp;<a name='224'>
+                                        FM,                             &amp;<a name='225'>
+                                        HEAT,                           &amp;<a name='226'>
+                                        HGAMQ,                          &amp;<a name='227'>
+                                        HGAMT,                          &amp;<a name='228'>
+                                        HPBL,                           &amp;<a name='229'>
+                                        PSK,                            &amp;<a name='230'>
+                                        QSS,                            &amp;<a name='231'>
+                                        RBSOIL,                         &amp;<a name='232'>
+                                        RCL,                            &amp;<a name='233'>
+                                        XLAND1,                         &amp;<a name='234'>
+                                        SPD1,                           &amp;<a name='235'>
+                                        STRESS,                         &amp;<a name='236'>
+                                        RO,rbcr,                        &amp;  <font color=#447700>!Kwon for variablr Ric(surface Rossby number)<a name='237'></font>
+                                        TSEA<a name='238'>
+<a name='239'>
+      REAL     (kind=kind_phys) ::                                      &amp;<a name='240'>
+                                        CPM,                            &amp;<a name='241'>
+                                        cpmikj,                         &amp;<a name='242'>
+                                        DELTIM,                         &amp;<a name='243'>
+                                        FMTMP,                          &amp;<a name='244'>
+                                        RRHOX<a name='245'>
+<a name='246'>
+#if (HWRF == 1)<a name='247'>
+      REAL      ::      ALPHA<a name='248'>
+#else<a name='249'>
+      REAL, PARAMETER:: ALPHA=1.0<a name='250'>
+#endif<a name='251'>
+<a name='252'>
+#if (HWRF == 1)<a name='253'>
+      REAL :: UBOT, VBOT, UBOT1, VBOT1<a name='254'>
+#endif<a name='255'>
+      INTEGER, DIMENSION( its:ite ) ::                                  &amp;<a name='256'>
+                                        KPBL <a name='257'>
+<a name='258'>
+      INTEGER ::                                                        &amp;<a name='259'>
+                                        I,                              &amp;<a name='260'>
+                                        IM,                             &amp;<a name='261'>
+                                        J,                              &amp;<a name='262'>
+                                        K,                              &amp;<a name='263'>
+                                        KM,                             &amp;<a name='264'>
+                                        KTEM,                           &amp;<a name='265'>
+                                        KTEP,                           &amp;<a name='266'>
+                                        KX,                             &amp;<a name='267'>
+                                        L,                              &amp; <a name='268'>
+                                        NTRAC<a name='269'>
+<a name='270'>
+   IM=ITE-ITS+1<a name='271'>
+   KX=KTE-KTS+1<a name='272'>
+   KTEM=KTE-1<a name='273'>
+   KTEP=KTE+1<a name='274'>
+   NTRAC=2<a name='275'>
+   DELTIM=DT<a name='276'>
+   IF (P_QI.ge.P_FIRST_SCALAR) NTRAC=3<a name='277'>
+<a name='278'>
+<a name='279'>
+   DO J=jts,jte<a name='280'>
+<a name='281'>
+      DO i=its,ite<a name='282'>
+        RRHOX=(R*T3D(I,KTS,J)*(1.+EP1*QV3D(I,KTS,J)))/PSFC(I,J)<a name='283'>
+        CPM=CP*(1.+0.8*QV3D(i,kts,j))<a name='284'>
+        FMTMP=GZ1OZ0(i,j)-PSIM(i,j)<a name='285'>
+        PSK(i)=(PSFC(i,j)*.00001)**ROVCP<a name='286'>
+        FM(i)=FMTMP<a name='287'>
+        FH(i)=GZ1OZ0(i,j)-PSIH(i,j)<a name='288'>
+        TSEA(i)=TSK(i,j)<a name='289'>
+        QSS(i)=QV3D(i,kts,j)               <font color=#447700>! not used in moninp so set to qv3d for now<a name='290'></font>
+        HEAT(i)=HFX(i,j)/CPM*RRHOX<a name='291'>
+        EVAP(i)=QFX(i,j)*RRHOX<a name='292'>
+        XLAND1(i) = 0.0        <a name='293'>
+#if (HWRF==1)<a name='294'>
+<font color=#447700>! Kwon FOR NEW SHALLOW CONVECTION <a name='295'></font>
+        HEAT2D(i,j)=HFX(i,j)/CPM*RRHOX<a name='296'>
+        EVAP2D(i,j)=QFX(i,j)*RRHOX<a name='297'>
+        XLAND1(i) = XLAND(I,J)<a name='298'>
+#endif<a name='299'>
+<font color=#447700>!<a name='300'></font>
+#if (HWRF==1)<a name='301'>
+        IF ( XLAND(I,J)  &gt; 1.99 ) THEN<a name='302'>
+          IF ( LCURR_SF ) THEN<a name='303'>
+            UBOT = U3D(I,KTS,J)-SCURX(I,J)<a name='304'>
+            VBOT = V3D(I,KTS,J)-SCURY(I,J)<a name='305'>
+          ELSE<a name='306'>
+            UBOT = U3D(I,KTS,J)<a name='307'>
+            VBOT = V3D(I,KTS,J)<a name='308'>
+          ENDIF<a name='309'>
+          IF ( IWAVECPL .eq. 1 ) THEN<a name='310'>
+            UBOT1 = ( UBOT * COS(MSANG(I,J))  -               &amp;<a name='311'>
+                     VBOT * SIN(MSANG(I,J)) )                 &amp;<a name='312'>
+                                  * COS(MSANG(I,J))<a name='313'>
+            VBOT1 = ( VBOT * COS(MSANG(I,J))  -               &amp;<a name='314'>
+                     UBOT * SIN(MSANG(I,J)) )                &amp;<a name='315'>
+                                  * COS(MSANG(I,J))<a name='316'>
+<a name='317'>
+            WSPD(i,j) = SQRT(UBOT1*UBOT1+VBOT1*VBOT1) + 1.E-9<a name='318'>
+          ELSE<a name='319'>
+            WSPD(i,j) = SQRT(UBOT*UBOT+VBOT*VBOT) + 1.E-9<a name='320'>
+          ENDIF<a name='321'>
+        ENDIF<a name='322'>
+#endif<a name='323'>
+        STRESS(i)=KARMAN*KARMAN*WSPD(i,j)*WSPD(i,j)/(FMTMP*FMTMP)<a name='324'>
+        SPD1(i)=WSPD(i,j)<a name='325'>
+        PRSI(i,kts)=PSFC(i,j)*.001<a name='326'>
+        PHII(I,kts)=0.<a name='327'>
+        RCL(i)=1.<a name='328'>
+        RBSOIL(I)=BR(i,j)<a name='329'>
+#if (HWRF==1)<a name='330'>
+<font color=#447700>! Kwon for variable Ric   : Ro=W10/(f*zo): surface Rossby number<a name='331'></font>
+       Ro(I)=SQRT(U10(I,J)**2 + V10(I,J)**2) / (1.E-4 * MZNT(I,J))<a name='332'>
+#endif<a name='333'>
+      ENDDO<a name='334'>
+<a name='335'>
+      DO k=kts,kte<a name='336'>
+        DO i=its,ite <a name='337'>
+          DV(I,K) = 0.<a name='338'>
+          DU(I,K) = 0.<a name='339'>
+          TAU(I,K) = 0.<a name='340'>
+#if (HWRF==1)<a name='341'>
+          IF ( XLAND(I,J) &gt; 1.99  .AND. k == KTS ) THEN<a name='342'>
+            IF ( LCURR_SF ) THEN<a name='343'>
+              UBOT = U3D(i,k,j) - SCURX(I,J)<a name='344'>
+              VBOT = V3D(i,k,j) - SCURY(I,J)<a name='345'>
+            ELSE<a name='346'>
+              UBOT = U3D(i,k,j)<a name='347'>
+              VBOT = V3D(i,k,j)<a name='348'>
+            ENDIF<a name='349'>
+            IF ( IWAVECPL .eq. 1 ) THEN<a name='350'>
+              U1(I,K) = ( UBOT * COS(MSANG(I,J))  -            &amp;<a name='351'>
+                          VBOT * SIN(MSANG(I,J)) )             &amp;<a name='352'>
+                                  * COS(MSANG(I,J))<a name='353'>
+              V1(I,K) = ( VBOT * COS(MSANG(I,J))  -            &amp;<a name='354'>
+                          UBOT * SIN(MSANG(I,J)) )             &amp;<a name='355'>
+                                  * COS(MSANG(I,J))<a name='356'>
+            ELSE<a name='357'>
+              U1(I,K) =  UBOT<a name='358'>
+              V1(I,K) =  VBOT<a name='359'>
+            ENDIF<a name='360'>
+          ELSE<a name='361'>
+            U1(I,K) = U3D(i,k,j)<a name='362'>
+            V1(I,K) = V3D(i,k,j)<a name='363'>
+          ENDIF<a name='364'>
+#else<a name='365'>
+          U1(I,K) = U3D(i,k,j)<a name='366'>
+          V1(I,K) = V3D(i,k,j)<a name='367'>
+#endif<a name='368'>
+          T1(I,K) = T3D(i,k,j)<a name='369'>
+          Q1(I,K,1) = QV3D(i,k,j)/(1.+QV3D(i,k,j))<a name='370'>
+          Q1(I,K,2) = QC3D(i,k,j)/(1.+QC3D(i,k,j))<a name='371'>
+          PRSL(I,K)=P3D(i,k,j)*.001<a name='372'>
+        ENDDO<a name='373'>
+      ENDDO<a name='374'>
+<a name='375'>
+      DO k=kts,kte<a name='376'>
+        DO i=its,ite <a name='377'>
+          PRSLK(I,K)=(PRSL(i,k)*.01)**ROVCP<a name='378'>
+        ENDDO<a name='379'>
+      ENDDO<a name='380'>
+<a name='381'>
+<a name='382'>
+      DO k=kts+1,kte<a name='383'>
+        km=k-1<a name='384'>
+        DO i=its,ite <a name='385'>
+          DEL(i,km)=PRSL(i,km)/ROVG*dz8w(i,km,j)/T3D(i,km,j)<a name='386'>
+          PRSI(i,k)=PRSI(i,km)-DEL(i,km)<a name='387'>
+          PHII(I,K)=(Z(i,k,j)-Z(i,kts,j))*G<a name='388'>
+          PHIL(I,KM)=0.5*(Z(i,k,j)+Z(i,km,j)-2.*Z(i,kts,j))*G<a name='389'>
+        ENDDO<a name='390'>
+      ENDDO<a name='391'>
+<a name='392'>
+      DO i=its,ite <a name='393'>
+        DEL(i,kte)=DEL(i,ktem)<a name='394'>
+        PRSI(i,ktep)=PRSI(i,kte)-DEL(i,ktem)<a name='395'>
+        PHII(I,KTEP)=PHII(I,KTE)+dz8w(i,kte,j)*G<a name='396'>
+        PHIL(I,KTE)=PHII(I,KTE)-PHIL(I,KTEM)+PHII(I,KTE)<a name='397'>
+      ENDDO<a name='398'>
+<a name='399'>
+      IF (P_QI.ge.P_FIRST_SCALAR) THEN<a name='400'>
+        DO k=kts,kte<a name='401'>
+          DO i=its,ite <a name='402'>
+            Q1(I,K,3) = QI3D(i,k,j)/(1.+QI3D(i,k,j))<a name='403'>
+          ENDDO<a name='404'>
+        ENDDO<a name='405'>
+      ENDIF<a name='406'>
+<a name='407'>
+      DO l=1,ntrac<a name='408'>
+        DO k=kts,kte<a name='409'>
+          DO i=its,ite<a name='410'>
+            RTG(I,K,L) = 0.<a name='411'>
+          ENDDO<a name='412'>
+        ENDDO<a name='413'>
+      ENDDO<a name='414'>
+<font color=#447700>!<a name='415'></font>
+      CALL <A href='../../html_code/phys/module_bl_gfs.F.html#MONINP'>MONINP</A><A href='../../html_code/phys/module_bl_gfs.F.html#BL_GFS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MONINP_1">(IM,IM,KX,NTRAC,DV,DU,TAU,RTG,U1,V1,T1,Q1,             &amp;<a name='416'>
+                  PSK,RBSOIL,FM,FH,TSEA,QSS,HEAT,EVAP,STRESS,           &amp;<a name='417'>
+                  SPD1,KPBL,PRSI,DEL,PRSL,PRSLK,PHII,PHIL,RCL,          &amp;<a name='418'>
+                  DELTIM,DUSFC,DVSFC,DTSFC,DQSFC,HPBL,HGAMT,            &amp;<a name='419'>
+#if (HWRF==1)<a name='420'>
+               VAR_RIC,Ro,DKU,DKT,coef_ric_l,coef_ric_s,xland1,  &amp;<a name='421'>
+              pert_pbl, ens_random_seed, ens_pblamp,             &amp;<a name='422'>
+#endif<a name='423'>
+                RBCR,HGAMQ,ALPHA)<a name='424'>
+<a name='425'>
+<font color=#447700>!============================================================================<a name='426'></font>
+<font color=#447700>!    ADD  IN  DISSIPATIVE HEATING .... v*dv. This is Bob's doing<a name='427'></font>
+<font color=#447700>!============================================================================<a name='428'></font>
+<a name='429'>
+#if (NMM_CORE==1)<a name='430'>
+<a name='431'>
+      IF(DISHEAT)THEN<a name='432'>
+       DO k=kts,kte<a name='433'>
+         DO i=its,ite<a name='434'>
+          dishx(i,k)=u1(i,k)*du(i,k) + v1(i,k)*dv(i,k)<a name='435'>
+          cpmikj=CP*(1.+0.8*QV3D(i,k,j))<a name='436'>
+          dishx(i,k)=-dishx(i,k)/cpmikj<a name='437'>
+<font color=#447700>!         IF(k==1)WRITE(0,*)'ADDITIONAL DISSIPATIVE HEATING',tau(i,k),dishx(i,k)<a name='438'></font>
+          tau(i,k)=tau(i,k)+dishx(i,k)<a name='439'>
+         ENDDO <a name='440'>
+       ENDDO <a name='441'>
+      ENDIF<a name='442'>
+#endif<a name='443'>
+<a name='444'>
+<font color=#447700>!=============================================================================<a name='445'></font>
+<a name='446'>
+<a name='447'>
+      DO k=kts,kte<a name='448'>
+        DO i=its,ite<a name='449'>
+          RVBLTEN(I,K,J)=DV(I,K)<a name='450'>
+          RUBLTEN(I,K,J)=DU(I,K)<a name='451'>
+          RTHBLTEN(I,K,J)=TAU(I,K)/PI3D(I,K,J)<a name='452'>
+          RQVBLTEN(I,K,J)=RTG(I,K,1)/(1.-Q1(I,K,1))**2<a name='453'>
+          RQCBLTEN(I,K,J)=RTG(I,K,2)/(1.-Q1(I,K,2))**2<a name='454'>
+        ENDDO<a name='455'>
+      ENDDO<a name='456'>
+<a name='457'>
+      IF (P_QI.ge.P_FIRST_SCALAR) THEN<a name='458'>
+        DO k=kts,kte<a name='459'>
+          DO i=its,ite<a name='460'>
+            RQIBLTEN(I,K,J)=RTG(I,K,3)/(1.-Q1(I,K,3))**2<a name='461'>
+          ENDDO<a name='462'>
+        ENDDO<a name='463'>
+      ENDIF<a name='464'>
+<a name='465'>
+      DO i=its,ite<a name='466'>
+        UST(i,j)=SQRT(STRESS(i))<a name='467'>
+        WSPD(i,j)=SQRT(U3D(I,KTS,J)*U3D(I,KTS,J)+                       &amp;<a name='468'>
+                       V3D(I,KTS,J)*V3D(I,KTS,J))+1.E-9<a name='469'>
+        PBL(i,j)=HPBL(i)<a name='470'>
+#if (HWRF==1)<a name='471'>
+<font color=#447700>!Kwon For new shallow convection<a name='472'></font>
+        HPBL2D(i,j)=HPBL(i)<a name='473'>
+        rc2D(i,j)=rbcr(i)<a name='474'>
+#endif<a name='475'>
+<font color=#447700>!<a name='476'></font>
+        KPBL2D(i,j)=kpbl(i)<a name='477'>
+      ENDDO<a name='478'>
+<font color=#447700>! INITIALIZE DKU3D and DKT3D  (3D momentum and thermal diffusivity for<a name='479'></font>
+<font color=#447700>! diagnostics)<a name='480'></font>
+<font color=#447700>!<a name='481'></font>
+#if (HWRF==1)<a name='482'>
+     DO i=its,ite<a name='483'>
+     DO k=kts,kte<a name='484'>
+      DKU3D(I,J,K) = 0.<a name='485'>
+      DKT3D(I,J,K) = 0.<a name='486'>
+     ENDDO<a name='487'>
+     ENDDO<a name='488'>
+<a name='489'>
+     DO i=its,ite<a name='490'>
+     DO k=kts,kte-1<a name='491'>
+      DKU3D(I,J,K) = DKU(I,K)<a name='492'>
+      DKT3D(I,J,K) = DKT(I,K)<a name='493'>
+     ENDDO<a name='494'>
+     ENDDO<a name='495'>
+#endif<a name='496'>
+<a name='497'>
+    ENDDO<a name='498'>
+<a name='499'>
+<a name='500'>
+   END SUBROUTINE BL_GFS<a name='501'>
+<a name='502'>
+<font color=#447700>!===================================================================<a name='503'></font>
+<A NAME='GFSINIT'><A href='../../html_code/phys/module_bl_gfs.F.html#GFSINIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='504'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>gfsinit</font>(RUBLTEN,RVBLTEN,RTHBLTEN,RQVBLTEN,           &amp; <A href='../../call_to/GFSINIT.html' TARGET='index'>1</A><a name='505'>
+                      RQCBLTEN,RQIBLTEN,P_QI,P_FIRST_SCALAR,       &amp;<a name='506'>
+                      restart,                                     &amp;<a name='507'>
+                      allowed_to_read,                             &amp;<a name='508'>
+                      ids, ide, jds, jde, kds, kde,                &amp;<a name='509'>
+                      ims, ime, jms, jme, kms, kme,                &amp;<a name='510'>
+                      its, ite, jts, jte, kts, kte                 )<a name='511'>
+<font color=#447700>!-------------------------------------------------------------------          <a name='512'></font>
+   IMPLICIT NONE<a name='513'>
+<font color=#447700>!-------------------------------------------------------------------          <a name='514'></font>
+   LOGICAL , INTENT(IN)          ::  allowed_to_read,restart<a name='515'>
+   INTEGER , INTENT(IN)          ::  ids, ide, jds, jde, kds, kde, &amp;<a name='516'>
+                                     ims, ime, jms, jme, kms, kme, &amp;<a name='517'>
+                                     its, ite, jts, jte, kts, kte<a name='518'>
+   INTEGER , INTENT(IN)          ::  P_QI,P_FIRST_SCALAR<a name='519'>
+<a name='520'>
+   REAL , DIMENSION( ims:ime , kms:kme , jms:jme ) , INTENT(OUT) ::         &amp;<a name='521'>
+                                                         RUBLTEN, &amp;<a name='522'>
+                                                         RVBLTEN, &amp;<a name='523'>
+                                                         RTHBLTEN, &amp;<a name='524'>
+                                                         RQVBLTEN, &amp;<a name='525'>
+                                                         RQCBLTEN, &amp; <a name='526'>
+                                                         RQIBLTEN<a name='527'>
+   INTEGER :: i, j, k, itf, jtf, ktf<a name='528'>
+<a name='529'>
+   jtf=min0(jte,jde-1)<a name='530'>
+   ktf=min0(kte,kde-1)<a name='531'>
+   itf=min0(ite,ide-1)<a name='532'>
+<a name='533'>
+   IF(.not.restart)THEN<a name='534'>
+     DO j=jts,jtf<a name='535'>
+     DO k=kts,ktf<a name='536'>
+     DO i=its,itf<a name='537'>
+        RUBLTEN(i,k,j)=0.<a name='538'>
+        RVBLTEN(i,k,j)=0.<a name='539'>
+        RTHBLTEN(i,k,j)=0.<a name='540'>
+        RQVBLTEN(i,k,j)=0.<a name='541'>
+        RQCBLTEN(i,k,j)=0.<a name='542'>
+     ENDDO<a name='543'>
+     ENDDO<a name='544'>
+     ENDDO<a name='545'>
+   ENDIF<a name='546'>
+<a name='547'>
+   IF (P_QI .ge. P_FIRST_SCALAR .and. .not.restart) THEN<a name='548'>
+      DO j=jts,jtf<a name='549'>
+      DO k=kts,ktf<a name='550'>
+      DO i=its,itf<a name='551'>
+         RQIBLTEN(i,k,j)=0.<a name='552'>
+      ENDDO<a name='553'>
+      ENDDO<a name='554'>
+      ENDDO<a name='555'>
+   ENDIF<a name='556'>
+<a name='557'>
+   IF (P_QI .ge. P_FIRST_SCALAR) THEN<a name='558'>
+      DO j=jts,jtf<a name='559'>
+      DO k=kts,ktf<a name='560'>
+      DO i=its,itf<a name='561'>
+         RQIBLTEN(i,k,j)=0.<a name='562'>
+      ENDDO<a name='563'>
+      ENDDO<a name='564'>
+      ENDDO<a name='565'>
+   ENDIF<a name='566'>
+<a name='567'>
+<a name='568'>
+   END SUBROUTINE gfsinit<a name='569'>
+<a name='570'>
+<font color=#447700>! --------------------------------------------------------------<a name='571'></font>
+<font color=#447700>!FPP$ NOCONCUR R<a name='572'></font>
+<A NAME='MONINP'><A href='../../html_code/phys/module_bl_gfs.F.html#MONINP' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='573'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>MONINP</font>(IX,IM,KM,ntrac,DV,DU,TAU,RTG,                   &amp; <A href='../../call_to/MONINP.html' TARGET='index'>1</A>,<A href='../../call_from/MONINP.html' TARGET='index'>8</A><a name='574'>
+     &amp;     U1,V1,T1,Q1,                                                 &amp;<a name='575'>
+     &amp;     PSK,RBSOIL,FM,FH,TSEA,QSS,HEAT,EVAP,STRESS,SPD1,KPBL,        &amp;<a name='576'>
+     &amp;     PRSI,DEL,PRSL,PRSLK,PHII,PHIL,RCL,DELTIM,                    &amp;<a name='577'>
+     &amp;     DUSFC,DVSFC,DTSFC,DQSFC,HPBL,HGAMT,                     &amp;<a name='578'>
+#if (HWRF==1)<a name='579'>
+           VAR_RIC,Ro,DKU,DKT,coef_ric_l,coef_ric_s,xland1,   &amp;<a name='580'>
+           pert_pbl, ens_random_seed, ens_pblamp,             &amp;<a name='581'>
+#endif<a name='582'>
+           RBCR,HGAMQ,ALPHA)<a name='583'>
+<font color=#447700>!<a name='584'></font>
+      USE <A href='../../html_code/phys/module_gfs_machine.F.html#MODULE_GFS_MACHINE'>MODULE_GFS_MACHINE</A><A href='../../html_code/phys/module_bl_gfs.F.html#MONINP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_GFS_MACHINE_2">, ONLY : kind_phys<a name='585'>
+      USE <A href='../../html_code/phys/module_gfs_physcons.F.html#MODULE_GFS_PHYSCONS'>MODULE_GFS_PHYSCONS</A><A href='../../html_code/phys/module_bl_gfs.F.html#MONINP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_GFS_PHYSCONS_1">, grav =&gt; con_g, RD =&gt; con_RD, CP =&gt; con_CP &amp;<a name='586'>
+     &amp;,             HVAP =&gt; con_HVAP, ROG =&gt; con_ROG, FV =&gt; con_FVirt<a name='587'>
+<a name='588'>
+      implicit none<a name='589'>
+<font color=#447700>!<a name='590'></font>
+<font color=#447700>!     include 'constant.h'<a name='591'></font>
+<font color=#447700>!<a name='592'></font>
+<font color=#447700>!<a name='593'></font>
+<font color=#447700>!     Arguments<a name='594'></font>
+<font color=#447700>!<a name='595'></font>
+      integer IX, IM, KM, ntrac, KPBL(IM)<a name='596'>
+<font color=#447700>!<a name='597'></font>
+      real(kind=kind_phys) DELTIM<a name='598'>
+      real :: ALPHA<a name='599'>
+<a name='600'>
+#if (HWRF==1)<a name='601'>
+      real :: VAR_RIC,coef_ric_l,coef_ric_s<a name='602'>
+      integer,intent(in) :: ens_random_seed<a name='603'>
+      real,intent(in) :: ens_pblamp<a name='604'>
+      logical,intent(in) :: pert_pbl<a name='605'>
+#endif<a name='606'>
+      real(kind=kind_phys) DV(IM,KM),     DU(IM,KM),                    &amp;<a name='607'>
+     &amp;                     TAU(IM,KM),    RTG(IM,KM,ntrac),             &amp;<a name='608'>
+     &amp;                     U1(IX,KM),     V1(IX,KM),                    &amp;<a name='609'>
+     &amp;                     T1(IX,KM),     Q1(IX,KM,ntrac),              &amp;<a name='610'>
+     &amp;                     PSK(IM),       RBSOIL(IM),                   &amp;<a name='611'>
+<font color=#447700>!    &amp;                     CD(IM),        CH(IM),                       &amp;<a name='612'></font>
+     &amp;                     FM(IM),        FH(IM),                       &amp;<a name='613'>
+     &amp;                     TSEA(IM),      QSS(IM),                      &amp;<a name='614'>
+     &amp;                                    SPD1(IM),                     &amp;<a name='615'>
+<font color=#447700>!    &amp;                     DPHI(IM),      SPD1(IM),                     &amp;<a name='616'></font>
+     &amp;                     PRSI(IX,KM+1), DEL(IX,KM),                   &amp;<a name='617'>
+     &amp;                     PRSL(IX,KM),   PRSLK(IX,KM),                 &amp;<a name='618'>
+     &amp;                     PHII(IX,KM+1), PHIL(IX,KM),                  &amp; <a name='619'>
+     &amp;                     RCL(IM),       DUSFC(IM),                    &amp;<a name='620'>
+     &amp;                     dvsfc(IM),     dtsfc(IM),                    &amp; <a name='621'>
+     &amp;                     DQSFC(IM),     HPBL(IM),                     &amp;<a name='622'>
+     &amp;                     HGAMT(IM),     hgamq(IM), RBCR(IM)<a name='623'>
+#if (HWRF==1)<a name='624'>
+real(kind=kind_phys) RO(IM),xland1(IM)<a name='625'>
+#endif<a name='626'>
+<font color=#447700>!<a name='627'></font>
+<font color=#447700>!    Locals<a name='628'></font>
+<font color=#447700>!<a name='629'></font>
+      integer i,iprt,is,iun,k,kk,kmpbl,lond<a name='630'>
+<font color=#447700>!     real(kind=kind_phys) betaq(IM), betat(IM),   betaw(IM),           &amp;<a name='631'></font>
+      real(kind=kind_phys) evap(IM),  heat(IM),    phih(IM),            &amp;<a name='632'>
+     &amp;                     phim(IM),  rbdn(IM),    rbup(IM),            &amp;<a name='633'>
+     &amp;                     the1(IM),  stress(im),  beta(im),            &amp;<a name='634'>
+     &amp;                     the1v(IM), thekv(IM),   thermal(IM),         &amp;<a name='635'>
+     &amp;                     thesv(IM), ustar(IM),   wscale(IM)            <a name='636'>
+<font color=#447700>!    &amp;                     thesv(IM), ustar(IM),   wscale(IM),  zl1(IM)<a name='637'></font>
+<font color=#447700>!<a name='638'></font>
+      real(kind=kind_phys) RDZT(IM,KM-1),                               &amp;<a name='639'>
+     &amp;                     ZI(IM,KM+1),     ZL(IM,KM),                  &amp;<a name='640'>
+     &amp;                     DKO(IM,KM-1),                                &amp;<a name='641'>
+     &amp;                     AL(IM,KM-1),     AD(IM,KM),                  &amp;<a name='642'>
+     &amp;                     AU(IM,KM-1),     A1(IM,KM),                  &amp;<a name='643'>
+     &amp;                     A2(IM,KM),       THETA(IM,KM),               &amp;<a name='644'>
+     &amp;                     AT(IM,KM*(ntrac-1)),DKU(IM,KM-1),DKT(IM,KM-1),WSPM(IM,KM-1) <font color=#447700>! RGF added WSPM<a name='645'></font>
+      logical              pblflg(IM),   sfcflg(IM), stable(IM)<a name='646'>
+<font color=#447700>!<a name='647'></font>
+      real(kind=kind_phys) aphi16,  aphi5,  bet1,   bvf2,               &amp;<a name='648'>
+     &amp;                     cfac,    conq,   cont,   conw,               &amp;<a name='649'>
+     &amp;                     conwrc,  dk,     dkmax,  dkmin,              &amp;<a name='650'>
+     &amp;                     dq1,     dsdz2,  dsdzq,  dsdzt,              &amp;<a name='651'>
+     &amp;                     dsig,    dt,     dthe1,  dtodsd,             &amp;<a name='652'>
+     &amp;                     dtodsu,  dw2,    dw2min, g,                  &amp;<a name='653'>
+     &amp;                     gamcrq,  gamcrt, gocp,   gor, gravi,         &amp;<a name='654'>
+     &amp;                     hol,     pfac,   prmax,  prmin, prinv,       &amp;<a name='655'>
+     &amp;                     prnum,   qmin,   qtend,                      &amp; <a name='656'>
+     &amp;                     rbint,   rdt,    rdz,    rdzt1,              &amp;<a name='657'>
+     &amp;                     ri,      rimin,  rl2,    rlam,               &amp;<a name='658'>
+     &amp;                     rone,   rzero,  sfcfrac,                     &amp;<a name='659'>
+     &amp;                     sflux,   shr2,   spdk2,  sri,                &amp;<a name='660'>
+     &amp;                     tem,     ti,     ttend,  tvd,                &amp;<a name='661'>
+     &amp;                     tvu,     utend,  vk,     vk2,                &amp;<a name='662'>
+     &amp;                     vpert,   vtend,  xkzo,   zfac,               &amp;<a name='663'>
+     &amp;                     zfmin,   zk,     tem1<a name='664'>
+      integer kLOC <font color=#447700>! RGF<a name='665'></font>
+      real xDKU    <font color=#447700>! RGF<a name='666'></font>
+<font color=#447700>!<a name='667'></font>
+      PARAMETER(g=grav)<a name='668'>
+      PARAMETER(GOR=G/RD,GOCP=G/CP)<a name='669'>
+      PARAMETER(CONT=1000.*CP/G,CONQ=1000.*HVAP/G,CONW=1000./G)<a name='670'>
+      PARAMETER(RLAM=150.,VK=0.4,VK2=VK*VK,PRMIN=1.0,PRMAX=4.)<a name='671'>
+      PARAMETER(DW2MIN=0.0001,DKMIN=1.0,DKMAX=1000.,RIMIN=-100.)<a name='672'>
+      PARAMETER(CFAC=7.8,PFAC=2.0,SFCFRAC=0.1)<a name='673'>
+      PARAMETER(QMIN=1.E-8,XKZO=1.0,ZFMIN=1.E-8,APHI5=5.,APHI16=16.)<a name='674'>
+<font color=#447700>!     PARAMETER(GAMCRT=3.,GAMCRQ=2.E-3)<a name='675'></font>
+      PARAMETER(GAMCRT=3.,GAMCRQ=0.)<a name='676'>
+      PARAMETER(RZERO=0.,RONE=1.)<a name='677'>
+      PARAMETER(IUN=84)<a name='678'>
+#if HWRF==1<a name='679'>
+      real*8 :: ran1           <font color=#447700>!zhang<a name='680'></font>
+      real :: rr <a name='681'>
+      logical,save :: pert_pbl_local <font color=#447700>!zhang<a name='682'></font>
+      integer,save :: ens_random_seed_local <font color=#447700>!zhang<a name='683'></font>
+      real,save :: ens_pblamp_local   <font color=#447700>!zhang<a name='684'></font>
+      data ens_random_seed_local/0/<a name='685'>
+<font color=#447700>!zz      print*, 'zhang in pbl==========='<a name='686'></font>
+      if ( ens_random_seed_local .eq. 0 ) then<a name='687'>
+         pert_pbl_local=pert_pbl<a name='688'>
+         ens_random_seed_local=ens_random_seed<a name='689'>
+         ens_pblamp_local=ens_pblamp<a name='690'>
+<font color=#447700>!zz      print*, "zhang in pbl= one time ", pert_pbl_local, ens_random_seed_local, ens_pblamp_local<a name='691'></font>
+      endif<a name='692'>
+<font color=#447700>!zz      print*, "zhang in pbl=",pert_pbl_local, ens_random_seed_local, ens_pblamp_local<a name='693'></font>
+#endif<a name='694'>
+<font color=#447700>!<a name='695'></font>
+<font color=#447700>!<a name='696'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='697'></font>
+<font color=#447700>!<a name='698'></font>
+ 601  FORMAT(1X,' MONINP LAT LON STEP HOUR ',3I6,F6.1)<a name='699'>
+ 602      FORMAT(1X,'    K','        Z','        T','       TH',        &amp;<a name='700'>
+     &amp;     '      TVH','        Q','        U','        V',             &amp;<a name='701'>
+     &amp;     '       SP')<a name='702'>
+ 603      FORMAT(1X,I5,8F9.1)<a name='703'>
+ 604      FORMAT(1X,'  SFC',9X,F9.1,18X,F9.1)<a name='704'>
+ 605      FORMAT(1X,'    K      ZL    SPD2   THEKV   THE1V'             &amp;<a name='705'>
+     &amp;         ,' THERMAL    RBUP')<a name='706'>
+ 606      FORMAT(1X,I5,6F8.2)<a name='707'>
+ 607      FORMAT(1X,' KPBL    HPBL      FM      FH   HGAMT',            &amp;<a name='708'>
+     &amp;         '   HGAMQ      WS   USTAR      CD      CH')<a name='709'>
+ 608      FORMAT(1X,I5,9F8.2)<a name='710'>
+ 609      FORMAT(1X,' K PR DKT DKU ',I5,3F8.2)<a name='711'>
+ 610      FORMAT(1X,' K PR DKT DKU ',I5,3F8.2,' L2 RI T2',              &amp; <a name='712'>
+     &amp;         ' SR2  ',2F8.2,2E10.2)<a name='713'>
+<font color=#447700>! - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -<a name='714'></font>
+<font color=#447700>!     COMPUTE PRELIMINARY VARIABLES<a name='715'></font>
+<font color=#447700>!<a name='716'></font>
+<a name='717'>
+      if (IX .lt. im) stop<a name='718'>
+<font color=#447700>!<a name='719'></font>
+      IPRT = 0<a name='720'>
+      IF(IPRT.EQ.1) THEN<a name='721'>
+<font color=#447700>!!!   LATD = 0<a name='722'></font>
+      LOND = 0<a name='723'>
+      ELSE<a name='724'>
+<font color=#447700>!!!   LATD = 0<a name='725'></font>
+      LOND = 0<a name='726'>
+      ENDIF<a name='727'>
+<font color=#447700>!<a name='728'></font>
+<font color=#447700>! define critical Richardson number    by KWON: Vickers and Mahart(2004) J. Appl. Meteo.<a name='729'></font>
+<font color=#447700>!  coef_ric=0.16 originally but it may too small: controled by namelist=0.25<a name='730'></font>
+<font color=#447700>!  Land and Ocean points are treated differently<a name='731'></font>
+<font color=#447700>!  by Kwon<a name='732'></font>
+<font color=#447700>!<a name='733'></font>
+     do i=1,im<a name='734'>
+     RBCR(I) = 0.25<a name='735'>
+#if (HWRF==1)<a name='736'>
+     IF(var_ric.eq.1.) THEN             <a name='737'>
+      IF(xland1(i).eq.1)  RBCR(I) = coef_ric_l*(1.E-7*Ro(I))**(-0.18)<a name='738'>
+      IF(xland1(i).eq.2)  RBCR(I) = coef_ric_s*(1.E-7*Ro(I))**(-0.18)<a name='739'>
+<font color=#447700>!      write(0,*) 'xland1 coef_ric_l coef_ric_s ',xland1(i),coef_ric_l,coef_ric_s<a name='740'></font>
+     ENDIF<a name='741'>
+     IF(RBCR(I).GT.0.5) RBCR(I)=0.5    <font color=#447700>!set upper limit Suggsted by Han<a name='742'></font>
+#endif<a name='743'>
+     enddo<a name='744'>
+<font color=#447700>!<a name='745'></font>
+      gravi = 1.0 / grav<a name='746'>
+      DT    = 2. * DELTIM<a name='747'>
+      RDT   = 1. / DT<a name='748'>
+      KMPBL = KM / 2<a name='749'>
+<font color=#447700>!<a name='750'></font>
+      do k=1,km<a name='751'>
+        do i=1,im<a name='752'>
+          zi(i,k) = phii(i,k) * gravi<a name='753'>
+          zl(i,k) = phil(i,k) * gravi<a name='754'>
+        enddo<a name='755'>
+      enddo<a name='756'>
+<font color=#447700>!<a name='757'></font>
+      do k=1,kmpbl<a name='758'>
+        do i=1,im<a name='759'>
+          theta(i,k) = t1(i,k) * psk(i) / prslk(i,k)<a name='760'>
+        enddo<a name='761'>
+      enddo<a name='762'>
+<font color=#447700>!<a name='763'></font>
+      DO K = 1,KM-1<a name='764'>
+        DO I=1,IM<a name='765'>
+          RDZT(I,K) = GOR * PRSI(I,K+1) / (PRSL(I,K) - PRSL(I,K+1))<a name='766'>
+        ENDDO<a name='767'>
+      ENDDO<a name='768'>
+<font color=#447700>!<a name='769'></font>
+      DO I = 1,IM<a name='770'>
+         DUSFC(I) = 0.<a name='771'>
+         DVSFC(I) = 0.<a name='772'>
+         DTSFC(I) = 0.<a name='773'>
+         DQSFC(I) = 0.<a name='774'>
+         HGAMT(I) = 0.<a name='775'>
+         HGAMQ(I) = 0.<a name='776'>
+         WSCALE(I) = 0.<a name='777'>
+         KPBL(I) = 1<a name='778'>
+         HPBL(I) = ZI(I,2)<a name='779'>
+         PBLFLG(I) = .TRUE.<a name='780'>
+         SFCFLG(I) = .TRUE.<a name='781'>
+         IF(RBSOIL(I).GT.0.0) SFCFLG(I) = .FALSE.<a name='782'>
+      ENDDO<a name='783'>
+<font color=#447700>!!<a name='784'></font>
+      DO I=1,IM<a name='785'>
+         RDZT1    = GOR * prSL(i,1) / DEL(i,1)<a name='786'>
+<font color=#447700>!        BET1     = DT*RDZT1*SPD1(I)/T1(I,1)<a name='787'></font>
+         BETA(I)  = DT*RDZT1/T1(I,1)<a name='788'>
+<font color=#447700>!        BETAW(I) = BET1*CD(I)<a name='789'></font>
+<font color=#447700>!        BETAT(I) = BET1*CH(I)<a name='790'></font>
+<font color=#447700>!        BETAQ(I) = DPHI(I)*BETAT(I)<a name='791'></font>
+      ENDDO<a name='792'>
+<font color=#447700>!<a name='793'></font>
+      DO I=1,IM<a name='794'>
+<font color=#447700>!        ZL1(i) = 0.-(T1(I,1)+TSEA(I))/2.*LOG(PRSL(I,1)/PRSI(I,1))*ROG<a name='795'></font>
+<font color=#447700>!        USTAR(I) = SQRT(CD(I)*SPD1(I)**2)<a name='796'></font>
+         USTAR(I) = SQRT(STRESS(I))<a name='797'>
+      ENDDO<a name='798'>
+<font color=#447700>!<a name='799'></font>
+      DO I=1,IM<a name='800'>
+         THESV(I)   = TSEA(I)*(1.+FV*MAX(QSS(I),QMIN))<a name='801'>
+         THE1(I)    = <A href='../../html_code/phys/module_diag_afwa.F.html#THETA'>THETA</A><A href='../../html_code/phys/module_bl_gfs.F.html#MONINP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="THETA_7">(I,1)<a name='802'>
+         THE1V(I)   = THE1(I)*(1.+FV*MAX(Q1(I,1,1),QMIN))<a name='803'>
+         THERMAL(I) = THE1V(I)<a name='804'>
+<font color=#447700>!        DTHE1      = (THE1(I)-TSEA(I))<a name='805'></font>
+<font color=#447700>!        DQ1        = (MAX(Q1(I,1,1),QMIN) - MAX(QSS(I),QMIN))<a name='806'></font>
+<font color=#447700>!        HEAT(I)    = -CH(I)*SPD1(I)*DTHE1<a name='807'></font>
+<font color=#447700>!        EVAP(I)    = -CH(I)*SPD1(I)*DQ1<a name='808'></font>
+      ENDDO<a name='809'>
+<font color=#447700>!<a name='810'></font>
+<font color=#447700>!<a name='811'></font>
+<font color=#447700>!     COMPUTE THE FIRST GUESS OF PBL HEIGHT<a name='812'></font>
+<font color=#447700>!<a name='813'></font>
+      DO I=1,IM<a name='814'>
+         STABLE(I) = .FALSE.<a name='815'>
+<font color=#447700>!        ZL(i,1) = ZL1(i)<a name='816'></font>
+         RBUP(I) = RBSOIL(I)<a name='817'>
+      ENDDO<a name='818'>
+      DO K = 2, KMPBL<a name='819'>
+        DO I = 1, IM<a name='820'>
+          IF(.NOT.STABLE(I)) THEN<a name='821'>
+             RBDN(I)   = RBUP(I)<a name='822'>
+<font color=#447700>!            ZL(I,k)   = ZL(I,K-1) - (T1(i,k)+T1(i,K-1))/2 *<a name='823'></font>
+<font color=#447700>!    &amp;                   LOG(PRSL(I,K)/PRSL(I,K-1)) * ROG<a name='824'></font>
+             THEKV(I)  = <A href='../../html_code/phys/module_diag_afwa.F.html#THETA'>THETA</A><A href='../../html_code/phys/module_bl_gfs.F.html#MONINP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="THETA_8">(i,k)*(1.+FV*MAX(Q1(i,k,1),QMIN))<a name='825'>
+             SPDK2 = MAX(RCL(i)*(U1(i,k)*U1(i,k)+V1(i,k)*V1(i,k)),RONE)<a name='826'>
+             RBUP(I)   = (THEKV(I)-THE1V(I))*(G*ZL(I,k)/THE1V(I))/SPDK2<a name='827'>
+             KPBL(I)   = K<a name='828'>
+             STABLE(I) = RBUP(I).GT.RBCR(I)<a name='829'>
+          ENDIF<a name='830'>
+        ENDDO<a name='831'>
+      ENDDO<a name='832'>
+<font color=#447700>!<a name='833'></font>
+      DO I = 1,IM<a name='834'>
+         K = KPBL(I)<a name='835'>
+         IF(RBDN(I).GE.RBCR(I)) THEN<a name='836'>
+            RBINT = 0.<a name='837'>
+         ELSEIF(RBUP(I).LE.RBCR(I)) THEN<a name='838'>
+            RBINT = 1.<a name='839'>
+         ELSE<a name='840'>
+            RBINT = (RBCR(I)-RBDN(I))/(RBUP(I)-RBDN(I))<a name='841'>
+         ENDIF<a name='842'>
+         HPBL(I) = ZL(I,K-1) + RBINT*(ZL(I,K)-ZL(I,K-1))<a name='843'>
+         IF(HPBL(I).LT.ZI(I,KPBL(I))) KPBL(I) = KPBL(I) - 1<a name='844'>
+      ENDDO<a name='845'>
+<font color=#447700>!!<a name='846'></font>
+      DO I=1,IM<a name='847'>
+           HOL = MAX(RBSOIL(I)*FM(I)*FM(I)/FH(I),RIMIN)<a name='848'>
+           IF(SFCFLG(I)) THEN<a name='849'>
+              HOL = MIN(HOL,-ZFMIN)<a name='850'>
+           ELSE<a name='851'>
+              HOL = MAX(HOL,ZFMIN)<a name='852'>
+           ENDIF<a name='853'>
+<font color=#447700>!<a name='854'></font>
+<font color=#447700>!          HOL = HOL*HPBL(I)/ZL1(I)*SFCFRAC<a name='855'></font>
+           HOL = HOL*HPBL(I)/ZL(I,1)*SFCFRAC<a name='856'>
+           IF(SFCFLG(I)) THEN<a name='857'>
+<font color=#447700>!             PHIM = (1.-APHI16*HOL)**(-1./4.)<a name='858'></font>
+<font color=#447700>!             PHIH = (1.-APHI16*HOL)**(-1./2.)<a name='859'></font>
+              TEM  = 1.0 / (1. - APHI16*HOL)<a name='860'>
+              PHIH(I) = SQRT(TEM)<a name='861'>
+              PHIM(I) = SQRT(PHIH(I))<a name='862'>
+           ELSE<a name='863'>
+              PHIM(I) = (1.+APHI5*HOL)<a name='864'>
+              PHIH(I) = PHIM(I)<a name='865'>
+           ENDIF<a name='866'>
+           WSCALE(I) = USTAR(I)/PHIM(I)<a name='867'>
+           WSCALE(I) = MIN(WSCALE(I),USTAR(I)*APHI16)<a name='868'>
+           WSCALE(I) = MAX(WSCALE(I),USTAR(I)/APHI5)<a name='869'>
+      ENDDO<a name='870'>
+<font color=#447700>!<a name='871'></font>
+<font color=#447700>!     COMPUTE THE SURFACE VARIABLES FOR PBL HEIGHT ESTIMATION<a name='872'></font>
+<font color=#447700>!     UNDER UNSTABLE CONDITIONS<a name='873'></font>
+<font color=#447700>!<a name='874'></font>
+      DO I = 1,IM<a name='875'>
+         SFLUX  = HEAT(I) + EVAP(I)*FV*THE1(I)<a name='876'>
+         IF(SFCFLG(I).AND.SFLUX.GT.0.0) THEN<a name='877'>
+           HGAMT(I)   = MIN(CFAC*HEAT(I)/WSCALE(I),GAMCRT)<a name='878'>
+           HGAMQ(I)   = MIN(CFAC*EVAP(I)/WSCALE(I),GAMCRQ)<a name='879'>
+           VPERT      = HGAMT(I) + FV*THE1(I)*HGAMQ(I)<a name='880'>
+           VPERT      = MIN(VPERT,GAMCRT)<a name='881'>
+           THERMAL(I) = THERMAL(I) + MAX(VPERT,RZERO)<a name='882'>
+           HGAMT(I)   = MAX(HGAMT(I),RZERO)<a name='883'>
+           HGAMQ(I)   = MAX(HGAMQ(I),RZERO)<a name='884'>
+         ELSE<a name='885'>
+           PBLFLG(I) = .FALSE.<a name='886'>
+         ENDIF<a name='887'>
+      ENDDO<a name='888'>
+<font color=#447700>!<a name='889'></font>
+      DO I = 1,IM<a name='890'>
+         IF(PBLFLG(I)) THEN<a name='891'>
+            KPBL(I) = 1<a name='892'>
+            HPBL(I) = ZI(I,2)<a name='893'>
+         ENDIF<a name='894'>
+      ENDDO<a name='895'>
+<font color=#447700>!<a name='896'></font>
+<font color=#447700>!     ENHANCE THE PBL HEIGHT BY CONSIDERING THE THERMAL<a name='897'></font>
+<font color=#447700>!<a name='898'></font>
+      DO I = 1, IM<a name='899'>
+         IF(PBLFLG(I)) THEN<a name='900'>
+            STABLE(I) = .FALSE.<a name='901'>
+            RBUP(I) = RBSOIL(I)<a name='902'>
+         ENDIF<a name='903'>
+      ENDDO<a name='904'>
+      DO K = 2, KMPBL<a name='905'>
+        DO I = 1, IM<a name='906'>
+          IF(.NOT.STABLE(I).AND.PBLFLG(I)) THEN<a name='907'>
+            RBDN(I)   = RBUP(I)<a name='908'>
+<font color=#447700>!           ZL(I,k)   = ZL(I,K-1) - (T1(i,k)+T1(i,K-1))/2 *<a name='909'></font>
+<font color=#447700>!    &amp;                  LOG(PRSL(I,K)/PRSL(I,K-1)) * ROG<a name='910'></font>
+            THEKV(I)  = <A href='../../html_code/phys/module_diag_afwa.F.html#THETA'>THETA</A><A href='../../html_code/phys/module_bl_gfs.F.html#MONINP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="THETA_9">(i,k)*(1.+FV*MAX(Q1(i,k,1),QMIN))<a name='911'>
+            SPDK2   = MAX(RCL(i)*(U1(i,k)*U1(i,k)+V1(i,k)*V1(i,k)),RONE)<a name='912'>
+            RBUP(I)   = (THEKV(I)-THERMAL(I))*(G*ZL(I,k)/THE1V(I))/SPDK2<a name='913'>
+            KPBL(I)   = K<a name='914'>
+            STABLE(I) = RBUP(I).GT.RBCR(I)<a name='915'>
+          ENDIF<a name='916'>
+        ENDDO<a name='917'>
+      ENDDO<a name='918'>
+<font color=#447700>!<a name='919'></font>
+      DO I = 1,IM<a name='920'>
+         IF(PBLFLG(I)) THEN<a name='921'>
+            K = KPBL(I)<a name='922'>
+            IF(RBDN(I).GE.RBCR(I)) THEN<a name='923'>
+               RBINT = 0.<a name='924'>
+            ELSEIF(RBUP(I).LE.RBCR(I)) THEN<a name='925'>
+               RBINT = 1.<a name='926'>
+            ELSE<a name='927'>
+               RBINT = (RBCR(I)-RBDN(I))/(RBUP(I)-RBDN(I))<a name='928'>
+            ENDIF<a name='929'>
+            HPBL(I) = ZL(I,K-1) + RBINT*(ZL(I,k)-ZL(I,K-1))<a name='930'>
+#if (HWRF==1)<a name='931'>
+<font color=#447700>!zhang adding PBL perturtion<a name='932'></font>
+            if ( pert_pbl_local ) then<a name='933'>
+            rr=(2.0*ens_pblamp_local*ran1(ens_random_seed_local)-ens_pblamp_local)<a name='934'>
+            print*, "zhang inside the loop", rr, ens_pblamp_local,ens_random_seed_local <a name='935'>
+            HPBL(I) = HPBL(I)*(1.0+rr)<a name='936'>
+            endif<a name='937'>
+#endif<a name='938'>
+            IF(HPBL(I).LT.ZI(I,KPBL(I))) KPBL(I) = KPBL(I) - 1<a name='939'>
+            IF(KPBL(I).LE.1) PBLFLG(I) = .FALSE.<a name='940'>
+         ENDIF<a name='941'>
+      ENDDO<a name='942'>
+<font color=#447700>!!<a name='943'></font>
+<font color=#447700>!<a name='944'></font>
+<font color=#447700>!     COMPUTE DIFFUSION COEFFICIENTS BELOW PBL<a name='945'></font>
+<font color=#447700>!<a name='946'></font>
+<a name='947'>
+#if (HWRF==1)<a name='948'>
+<font color=#447700>! -------------------------------------------------------------------------------------<a name='949'></font>
+<font color=#447700>! begin RGF modifications<a name='950'></font>
+<font color=#447700>! this is version MOD05<a name='951'></font>
+<a name='952'>
+<a name='953'>
+<font color=#447700>! RGF determine wspd at roughly 500 m above surface, or as close as possible, reuse SPDK2<a name='954'></font>
+<font color=#447700>!  zi(i,k) is AGL, right?  May not matter if applied only to water grid points<a name='955'></font>
+      if(ALPHA.lt.0)then<a name='956'>
+<a name='957'>
+       DO I=1,IM<a name='958'>
+         SPDK2 = 0.<a name='959'>
+         WSPM(i,1) = 0.<a name='960'>
+         DO K = 1, KMPBL <font color=#447700>! kmpbl is like a max possible pbl height<a name='961'></font>
+          if(zi(i,k).le.500.and.zi(i,k+1).gt.500.)then <font color=#447700>! find level bracketing 500 m<a name='962'></font>
+           SPDK2 = SQRT(U1(i,k)*U1(i,k)+V1(i,k)*V1(i,k)) <font color=#447700>! wspd near 500 m<a name='963'></font>
+           WSPM(i,1) = SPDK2/0.6  <font color=#447700>! now the Km limit for 500 m.  just store in K=1<a name='964'></font>
+           WSPM(i,2) = float(k)  <font color=#447700>! height of level at gridpoint i. store in K=2<a name='965'></font>
+<font color=#447700>!           if(i.eq.25) print *,' IK ',i,k,' ZI ',zi(i,k), ' WSPM1 ',wspm(i,1),' KMPBL ',kmpbl,' KPBL ',kpbl(i)<a name='966'></font>
+          endif<a name='967'>
+         ENDDO<a name='968'>
+       ENDDO <font color=#447700>! i<a name='969'></font>
+<a name='970'>
+      endif <font color=#447700>! ALPHA &lt; 0<a name='971'></font>
+#endif<a name='972'>
+<a name='973'>
+<a name='974'>
+      DO I=1,IM			<font color=#447700>! RGF SWAPPED ORDER.  TESTED - NO IMPACT<a name='975'></font>
+         DO K = 1, KMPBL<a name='976'>
+<a name='977'>
+<a name='978'>
+<a name='979'>
+<font color=#447700>! First guess at DKU.  If alpha &gt;= 0, this is the only loop executed<a name='980'></font>
+<a name='981'>
+            IF(KPBL(I).GT.K) THEN <font color=#447700>! first guess DKU, this is original loop<a name='982'></font>
+               PRINV = 1.0 / (PHIH(I)/PHIM(I)+CFAC*VK*.1)<a name='983'>
+               PRINV = MIN(PRINV,PRMAX)<a name='984'>
+               PRINV = MAX(PRINV,PRMIN)<a name='985'>
+<font color=#447700>!              ZFAC = MAX((1.-(ZI(I,K+1)-ZL1(I))/                       &amp;<a name='986'></font>
+<font color=#447700>!    &amp;                (HPBL(I)-ZL1(I))), ZFMIN)<a name='987'></font>
+               ZFAC = MAX((1.-(ZI(I,K+1)-ZL(I,1))/                      &amp;<a name='988'>
+     &amp;                (HPBL(I)-ZL(I,1))), ZFMIN)<a name='989'>
+<font color=#447700>!<a name='990'></font>
+<font color=#447700>!              alpha factor (0-1.0) is multiplied to profile function to reduce the effect<a name='991'></font>
+<font color=#447700>!              height of the Hurricane Boundary Layer. This is gopal's doing<a name='992'></font>
+<font color=#447700>!<a name='993'></font>
+<a name='994'>
+<a name='995'>
+               DKU(i,k) = XKZO + WSCALE(I)*VK*ZI(I,K+1)                 &amp;<a name='996'>
+     &amp;                         *ABS(ALPHA)* ZFAC**PFAC <a name='997'>
+<font color=#447700>! if alpha = -1, the above provides the first guess for DKU, based on assumption alpha = +1<a name='998'></font>
+<font color=#447700>! 		(other values of alpha &lt; 0 can also be applied)<a name='999'></font>
+<font color=#447700>! if alpha &gt; 0, the above applies the alpha suppression factor and we are finished<a name='1000'></font>
+<font color=#447700>!               if(i.eq.25) print *,' I25 K ',k,' ORIG DKU ',dku(i,k)<a name='1001'></font>
+               DKT(i,k) = DKU(i,k)*PRINV<a name='1002'>
+               DKO(i,k) = (DKU(i,k)-XKZO)*PRINV<a name='1003'>
+               DKU(i,k) = MIN(DKU(i,k),DKMAX)<a name='1004'>
+               DKU(i,k) = MAX(DKU(i,k),DKMIN)<a name='1005'>
+               DKT(i,k) = MIN(DKT(i,k),DKMAX)<a name='1006'>
+               DKT(i,k) = MAX(DKT(i,k),DKMIN)<a name='1007'>
+               DKO(i,k) = MAX(RZERO, MIN(DKMAX, DKO(i,k)))<a name='1008'>
+              endif <font color=#447700>! KPBL<a name='1009'></font>
+        ENDDO <font color=#447700>! K<a name='1010'></font>
+<a name='1011'>
+<a name='1012'>
+#if (HWRF==1)<a name='1013'>
+<font color=#447700>! possible modification of first guess DKU, under certain conditions<a name='1014'></font>
+<font color=#447700>! (1) this applies only to columns over water<a name='1015'></font>
+<a name='1016'>
+        IF(xland1(i).eq.2)then <font color=#447700>! sea only<a name='1017'></font>
+<a name='1018'>
+<font color=#447700>! (2) alpha test<a name='1019'></font>
+<font color=#447700>! if alpha &lt; 0, find alpha for each column and do the loop again<a name='1020'></font>
+<font color=#447700>! if alpha &gt; 0, we are finished<a name='1021'></font>
+<a name='1022'>
+<a name='1023'>
+        if(alpha.lt.0)then      <font color=#447700>! variable alpha test<a name='1024'></font>
+<a name='1025'>
+<font color=#447700>! k-level of layer around 500 m<a name='1026'></font>
+            kLOC = INT(WSPM(i,2)) <a name='1027'>
+<font color=#447700>!            print *,' kLOC ',kLOC,' KPBL ',KPBL(I)<a name='1028'></font>
+<a name='1029'>
+<font color=#447700>! (3) only do  this IF KPBL(I) &gt;= kLOC.  Otherwise, we are finished, with DKU as if alpha = +1<a name='1030'></font>
+<a name='1031'>
+          if(KPBL(I).gt.kLOC)then<a name='1032'>
+<a name='1033'>
+            xDKU = DKU(i,kLOC)     <font color=#447700>! Km at k-level<a name='1034'></font>
+<a name='1035'>
+<font color=#447700>! (4) DKU check.<a name='1036'></font>
+<font color=#447700>! WSPM(i,1) is the KM cap for the 500-m level. <a name='1037'></font>
+<font color=#447700>!  if DKU at 500-m level &lt; WSPM(i,1), do not limit Km ANYWHERE.  Alpha = abs(alpha).  No need to recalc.<a name='1038'></font>
+<font color=#447700>!  if DKU at 500-m level &gt; WSPM(i,1), then alpha = WSPM(i,1)/xDKU for entire column<a name='1039'></font>
+            if(xDKU.ge.WSPM(i,1)) then <font color=#447700>! ONLY if DKU at 500-m exceeds cap, otherwise already done<a name='1040'></font>
+<a name='1041'>
+<a name='1042'>
+            WSPM(i,3) = WSPM(i,1)/xDKU  <font color=#447700>! ratio of cap to Km at k-level, store in WSPM(i,3)<a name='1043'></font>
+            WSPM(i,4) = amin1(WSPM(I,3),1.0) <font color=#447700>! this is new column alpha. cap at 1. ! should never be needed<a name='1044'></font>
+<a name='1045'>
+<font color=#447700>!    if(i.eq.25) print *,' I25 kLOC ',kLOC,' xDKU ',xDKU,' WSPM1 ',WSPM(i,1),' WSPM3 ',WSPM(i,3),' WSPM4 ',WSPM(i,4)<a name='1046'></font>
+<a name='1047'>
+            DO K = 1, KMPBL <font color=#447700>! now go through K loop again<a name='1048'></font>
+             IF(KPBL(I).GT.K) THEN<a name='1049'>
+               PRINV = 1.0 / (PHIH(I)/PHIM(I)+CFAC*VK*.1)<a name='1050'>
+               PRINV = MIN(PRINV,PRMAX)<a name='1051'>
+               PRINV = MAX(PRINV,PRMIN)<a name='1052'>
+<font color=#447700>!              ZFAC = MAX((1.-(ZI(I,K+1)-ZL1(I))/                       &amp;<a name='1053'></font>
+<font color=#447700>!    &amp;                (HPBL(I)-ZL1(I))), ZFMIN)<a name='1054'></font>
+               ZFAC = MAX((1.-(ZI(I,K+1)-ZL(I,1))/                      &amp;<a name='1055'>
+     &amp;                (HPBL(I)-ZL(I,1))), ZFMIN)<a name='1056'>
+<a name='1057'>
+               DKU(i,k) = XKZO + WSCALE(I)*VK*ZI(I,K+1)                 &amp;<a name='1058'>
+     &amp;                         *WSPM(i,4)* ZFAC**PFAC <font color=#447700>! recalculated DKU using column alpha<a name='1059'></font>
+<font color=#447700>!               if(i.eq.25) print *,' I25 K ',k,' DKU AFTER ',dku(i,k)<a name='1060'></font>
+<a name='1061'>
+            <a name='1062'>
+               DKT(i,k) = DKU(i,k)*PRINV<a name='1063'>
+               DKO(i,k) = (DKU(i,k)-XKZO)*PRINV<a name='1064'>
+               DKU(i,k) = MIN(DKU(i,k),DKMAX)<a name='1065'>
+               DKU(i,k) = MAX(DKU(i,k),DKMIN)<a name='1066'>
+               DKT(i,k) = MIN(DKT(i,k),DKMAX)<a name='1067'>
+               DKT(i,k) = MAX(DKT(i,k),DKMIN)<a name='1068'>
+               DKO(i,k) = MAX(RZERO, MIN(DKMAX, DKO(i,k)))<a name='1069'>
+            ENDIF <font color=#447700>! KPBL<a name='1070'></font>
+          ENDDO <font color=#447700>! DO K (RGF ALTERED)<a name='1071'></font>
+         endif <font color=#447700>! xDKU.ge.WSPM(i,1)<a name='1072'></font>
+         endif <font color=#447700>! KPBL(I).ge.kLOC<a name='1073'></font>
+        endif <font color=#447700>! alpha &lt; 0<a name='1074'></font>
+        endif <font color=#447700>! xland1 = 2<a name='1075'></font>
+#endif<a name='1076'>
+      ENDDO <font color=#447700>! DO I<a name='1077'></font>
+<a name='1078'>
+<font color=#447700>! end RGF modifications<a name='1079'></font>
+<font color=#447700>! -------------------------------------------------------------------------------------<a name='1080'></font>
+<a name='1081'>
+<font color=#447700>!<a name='1082'></font>
+<font color=#447700>!     COMPUTE DIFFUSION COEFFICIENTS OVER PBL (FREE ATMOSPHERE)<a name='1083'></font>
+<font color=#447700>!<a name='1084'></font>
+      DO K = 1, KM-1<a name='1085'>
+         DO I=1,IM<a name='1086'>
+            IF(K.GE.KPBL(I)) THEN<a name='1087'>
+<font color=#447700>!              TI   = 0.5*(T1(i,k)+T1(i,K+1))<a name='1088'></font>
+               TI   = 2.0 / (T1(i,k)+T1(i,K+1))<a name='1089'>
+<font color=#447700>!              RDZ  = RDZT(I,K)/TI<a name='1090'></font>
+               RDZ  = RDZT(I,K) * TI<a name='1091'>
+<font color=#447700>!              RDZ  = RDZT(I,K)<a name='1092'></font>
+               DW2  = RCL(i)*((U1(i,k)-U1(i,K+1))**2                    &amp;<a name='1093'>
+     &amp;                      + (V1(i,k)-V1(i,K+1))**2)<a name='1094'>
+               SHR2 = MAX(DW2,DW2MIN)*RDZ**2<a name='1095'>
+               TVD  = T1(i,k)*(1.+FV*MAX(Q1(i,k,1),QMIN))<a name='1096'>
+               TVU  = T1(i,K+1)*(1.+FV*MAX(Q1(i,K+1,1),QMIN))<a name='1097'>
+<font color=#447700>!              BVF2 = G*(GOCP+RDZ*(TVU-TVD))/TI<a name='1098'></font>
+               BVF2 = G*(GOCP+RDZ*(TVU-TVD)) * TI<a name='1099'>
+               RI   = MAX(BVF2/SHR2,RIMIN)<a name='1100'>
+               ZK   = VK*ZI(I,K+1)<a name='1101'>
+<font color=#447700>!              RL2  = (ZK*RLAM/(RLAM+ZK))**2<a name='1102'></font>
+<font color=#447700>!              DK   = RL2*SQRT(SHR2)<a name='1103'></font>
+               RL2  = ZK*RLAM/(RLAM+ZK)<a name='1104'>
+               DK   = RL2*RL2*SQRT(SHR2)<a name='1105'>
+               IF(RI.LT.0.) THEN <font color=#447700>! UNSTABLE REGIME<a name='1106'></font>
+                  SRI = SQRT(-RI)<a name='1107'>
+                  DKU(i,k) = XKZO + DK*(1+8.*(-RI)/(1+1.746*SRI))<a name='1108'>
+<font color=#447700>!                 DKT(i,k) = XKZO + DK*(1+8.*(-RI)/(1+1.286*SRI))<a name='1109'></font>
+                  tem      =        DK*(1+8.*(-RI)/(1+1.286*SRI))<a name='1110'>
+                  DKT(i,k) = XKZO + tem<a name='1111'>
+                  DKO(i,k) =        tem<a name='1112'>
+               ELSE             <font color=#447700>! STABLE REGIME<a name='1113'></font>
+<font color=#447700>!                 DKT(i,k)  = XKZO + DK/(1+5.*RI)**2<a name='1114'></font>
+                  tem       =        DK/(1+5.*RI)**2<a name='1115'>
+                  DKT(i,k)  = XKZO + tem<a name='1116'>
+                  DKO(i,k)  =        tem<a name='1117'>
+                  PRNUM     = 1.0 + 2.1*RI<a name='1118'>
+                  PRNUM     = MIN(PRNUM,PRMAX)<a name='1119'>
+                  DKU(i,k)  = (DKT(i,k)-XKZO)*PRNUM + XKZO<a name='1120'>
+               ENDIF<a name='1121'>
+<font color=#447700>!<a name='1122'></font>
+               DKU(i,k) = MIN(DKU(i,k),DKMAX)<a name='1123'>
+               DKU(i,k) = MAX(DKU(i,k),DKMIN)<a name='1124'>
+               DKT(i,k) = MIN(DKT(i,k),DKMAX)<a name='1125'>
+               DKT(i,k) = MAX(DKT(i,k),DKMIN)<a name='1126'>
+               DKO(i,k) = MAX(RZERO, MIN(DKMAX, DKO(i,k)))<a name='1127'>
+<font color=#447700>!<a name='1128'></font>
+<font color=#447700>!!!   IF(I.EQ.LOND.AND.LAT.EQ.LATD) THEN<a name='1129'></font>
+<font color=#447700>!!!   PRNUM = DKU(k)/DKT(k)<a name='1130'></font>
+<font color=#447700>!!!   WRITE(IUN,610) K,PRNUM,DKT(k),DKU(k),RL2,RI,<a name='1131'></font>
+<font color=#447700>!!!   1              BVF2,SHR2<a name='1132'></font>
+<font color=#447700>!!!   ENDIF<a name='1133'></font>
+<font color=#447700>!<a name='1134'></font>
+            ENDIF<a name='1135'>
+         ENDDO<a name='1136'>
+      ENDDO<a name='1137'>
+<a name='1138'>
+<font color=#447700>!<a name='1139'></font>
+<font color=#447700>!     COMPUTE TRIDIAGONAL MATRIX ELEMENTS FOR HEAT AND MOISTURE<a name='1140'></font>
+<font color=#447700>!<a name='1141'></font>
+      DO I=1,IM<a name='1142'>
+         AD(I,1) = 1.<a name='1143'>
+         A1(I,1) = T1(i,1)   + BETA(i) * HEAT(I)<a name='1144'>
+         A2(I,1) = Q1(i,1,1) + BETA(i) * EVAP(I)<a name='1145'>
+<font color=#447700>!        A1(I,1) = T1(i,1)-BETAT(I)*(THETA(i,1)-TSEA(I))<a name='1146'></font>
+<font color=#447700>!        A2(I,1) = Q1(i,1,1)-BETAQ(I)*<a name='1147'></font>
+<font color=#447700>!    &amp;           (MAX(Q1(i,1,1),QMIN)-MAX(QSS(I),QMIN))<a name='1148'></font>
+      ENDDO<a name='1149'>
+<font color=#447700>!<a name='1150'></font>
+      DO K = 1,KM-1<a name='1151'>
+        DO I = 1,IM<a name='1152'>
+          DTODSD = DT/DEL(I,K)<a name='1153'>
+          DTODSU = DT/DEL(I,K+1)<a name='1154'>
+          DSIG   = PRSL(I,K)-PRSL(I,K+1)<a name='1155'>
+          RDZ    = RDZT(I,K)*2./(T1(i,k)+T1(i,K+1))<a name='1156'>
+<font color=#447700>!         RDZ    = RDZT(I,K)<a name='1157'></font>
+          tem1   = DSIG * DKT(i,k) * RDZ<a name='1158'>
+          IF(PBLFLG(I).AND.K.LT.KPBL(I)) THEN<a name='1159'>
+<font color=#447700>!            DSDZT = DSIG*DKT(i,k)*RDZ*(GOCP-HGAMT(I)/HPBL(I))<a name='1160'></font>
+<font color=#447700>!            DSDZQ = DSIG*DKT(i,k)*RDZ*(-HGAMQ(I)/HPBL(I))<a name='1161'></font>
+             tem   = 1.0 / HPBL(I)<a name='1162'>
+             DSDZT = tem1 * (GOCP-HGAMT(I)*tem)<a name='1163'>
+             DSDZQ = tem1 * (-HGAMQ(I)*tem)<a name='1164'>
+             A2(I,k)   = A2(I,k)+DTODSD*DSDZQ<a name='1165'>
+             A2(I,k+1) = Q1(i,k+1,1)-DTODSU*DSDZQ<a name='1166'>
+          ELSE<a name='1167'>
+<font color=#447700>!            DSDZT = DSIG*DKT(i,k)*RDZ*(GOCP)<a name='1168'></font>
+             DSDZT = tem1 * GOCP<a name='1169'>
+             A2(I,k+1) = Q1(i,k+1,1)<a name='1170'>
+          ENDIF<a name='1171'>
+<font color=#447700>!         DSDZ2 = DSIG*DKT(i,k)*RDZ*RDZ<a name='1172'></font>
+          DSDZ2     = tem1 * RDZ<a name='1173'>
+          AU(I,k)   = -DTODSD*DSDZ2<a name='1174'>
+          AL(I,k)   = -DTODSU*DSDZ2<a name='1175'>
+          AD(I,k)   = AD(I,k)-AU(I,k)<a name='1176'>
+          AD(I,k+1) = 1.-AL(I,k)<a name='1177'>
+          A1(I,k)   = A1(I,k)+DTODSD*DSDZT<a name='1178'>
+          A1(I,k+1) = T1(i,k+1)-DTODSU*DSDZT<a name='1179'>
+        ENDDO<a name='1180'>
+      ENDDO<a name='1181'>
+<font color=#447700>!<a name='1182'></font>
+<font color=#447700>!     SOLVE TRIDIAGONAL PROBLEM FOR HEAT AND MOISTURE<a name='1183'></font>
+<font color=#447700>!<a name='1184'></font>
+      CALL <A href='../../html_code/phys/module_bl_gfsedmf.F.html#TRIDIN'>TRIDIN</A><A href='../../html_code/phys/module_bl_gfs.F.html#MONINP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRIDIN_1">(IM,KM,1,AL,AD,AU,A1,A2,AU,A1,A2)<a name='1185'>
+<font color=#447700>!<a name='1186'></font>
+<font color=#447700>!     RECOVER TENDENCIES OF HEAT AND MOISTURE<a name='1187'></font>
+<font color=#447700>!<a name='1188'></font>
+      DO  K = 1,KM<a name='1189'>
+         DO I = 1,IM<a name='1190'>
+            TTEND      = (A1(I,k)-T1(i,k))*RDT<a name='1191'>
+            QTEND      = (A2(I,k)-Q1(i,k,1))*RDT<a name='1192'>
+            TAU(i,k)   = TAU(i,k)+TTEND<a name='1193'>
+            RTG(I,k,1) = RTG(i,k,1)+QTEND<a name='1194'>
+            DTSFC(I)   = DTSFC(I)+CONT*DEL(I,K)*TTEND<a name='1195'>
+            DQSFC(I)   = DQSFC(I)+CONQ*DEL(I,K)*QTEND<a name='1196'>
+         ENDDO<a name='1197'>
+      ENDDO<a name='1198'>
+<font color=#447700>!<a name='1199'></font>
+<font color=#447700>!     COMPUTE TRIDIAGONAL MATRIX ELEMENTS FOR MOMENTUM<a name='1200'></font>
+<font color=#447700>!<a name='1201'></font>
+      DO I=1,IM<a name='1202'>
+<font color=#447700>!        AD(I,1) = 1.+BETAW(I)<a name='1203'></font>
+         AD(I,1) = 1.0 + BETA(i) * STRESS(I) / SPD1(I)<a name='1204'>
+         A1(I,1) = U1(i,1)<a name='1205'>
+         A2(I,1) = V1(i,1)<a name='1206'>
+<font color=#447700>!        AD(I,1) = 1.0<a name='1207'></font>
+<font color=#447700>!        tem     = 1.0 + BETA(I) * STRESS(I) / SPD1(I)<a name='1208'></font>
+<font color=#447700>!        A1(I,1) = U1(i,1) * tem<a name='1209'></font>
+<font color=#447700>!        A2(I,1) = V1(i,1) * tem<a name='1210'></font>
+      ENDDO<a name='1211'>
+<font color=#447700>!<a name='1212'></font>
+      DO K = 1,KM-1<a name='1213'>
+        DO I=1,IM<a name='1214'>
+          DTODSD    = DT/DEL(I,K)<a name='1215'>
+          DTODSU    = DT/DEL(I,K+1)<a name='1216'>
+          DSIG      = PRSL(I,K)-PRSL(I,K+1)<a name='1217'>
+          RDZ       = RDZT(I,K)*2./(T1(i,k)+T1(i,k+1))<a name='1218'>
+<font color=#447700>!         RDZ       = RDZT(I,K)<a name='1219'></font>
+          DSDZ2     = DSIG*DKU(i,k)*RDZ*RDZ<a name='1220'>
+          AU(I,k)   = -DTODSD*DSDZ2<a name='1221'>
+          AL(I,k)   = -DTODSU*DSDZ2<a name='1222'>
+          AD(I,k)   = AD(I,k)-AU(I,k)<a name='1223'>
+          AD(I,k+1) = 1.-AL(I,k)<a name='1224'>
+          A1(I,k+1) = U1(i,k+1)<a name='1225'>
+          A2(I,k+1) = V1(i,k+1)<a name='1226'>
+        ENDDO<a name='1227'>
+      ENDDO<a name='1228'>
+<font color=#447700>!<a name='1229'></font>
+<font color=#447700>!     SOLVE TRIDIAGONAL PROBLEM FOR MOMENTUM<a name='1230'></font>
+<font color=#447700>!<a name='1231'></font>
+      CALL <A href='../../html_code/phys/module_bl_mrf.F.html#TRIDI2'>TRIDI2</A><A href='../../html_code/phys/module_bl_gfs.F.html#MONINP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRIDI2_1">(IM,KM,AL,AD,AU,A1,A2,AU,A1,A2)<a name='1232'>
+<font color=#447700>!<a name='1233'></font>
+<font color=#447700>!     RECOVER TENDENCIES OF MOMENTUM<a name='1234'></font>
+<font color=#447700>!<a name='1235'></font>
+      DO K = 1,KM<a name='1236'>
+         DO I = 1,IM<a name='1237'>
+            CONWRC = CONW*SQRT(RCL(i))<a name='1238'>
+            UTEND = (A1(I,k)-U1(i,k))*RDT<a name='1239'>
+            VTEND = (A2(I,k)-V1(i,k))*RDT<a name='1240'>
+            DU(i,k)  = DU(i,k)+UTEND<a name='1241'>
+            DV(i,k)  = DV(i,k)+VTEND<a name='1242'>
+            DUSFC(I) = DUSFC(I)+CONWRC*DEL(I,K)*UTEND<a name='1243'>
+            DVSFC(I) = DVSFC(I)+CONWRC*DEL(I,K)*VTEND<a name='1244'>
+         ENDDO<a name='1245'>
+      ENDDO<a name='1246'>
+<font color=#447700>!!<a name='1247'></font>
+<font color=#447700>!<a name='1248'></font>
+<font color=#447700>!     COMPUTE TRIDIAGONAL MATRIX ELEMENTS FOR TRACERS<a name='1249'></font>
+<font color=#447700>!<a name='1250'></font>
+      if (ntrac .ge. 2) then<a name='1251'>
+        DO I=1,IM<a name='1252'>
+         AD(I,1) = 1.<a name='1253'>
+        ENDDO<a name='1254'>
+        do k = 2, ntrac<a name='1255'>
+          is = (k-2) * km<a name='1256'>
+          do i = 1, im<a name='1257'>
+            AT(I,1+is) = Q1(i,1,k)<a name='1258'>
+          enddo<a name='1259'>
+        enddo<a name='1260'>
+<font color=#447700>!<a name='1261'></font>
+        DO K = 1,KM-1<a name='1262'>
+          DO I = 1,IM<a name='1263'>
+            DTODSD = DT/DEL(I,K)<a name='1264'>
+            DTODSU = DT/DEL(I,K+1)<a name='1265'>
+            DSIG   = PRSL(I,K)-PRSL(I,K+1)<a name='1266'>
+            RDZ    = RDZT(I,K)*2./(T1(i,k)+T1(i,K+1))<a name='1267'>
+            tem1   = DSIG * DKT(i,k) * RDZ<a name='1268'>
+            DSDZ2     = tem1 * RDZ<a name='1269'>
+            AU(I,k)   = -DTODSD*DSDZ2<a name='1270'>
+            AL(I,k)   = -DTODSU*DSDZ2<a name='1271'>
+            AD(I,k)   = AD(I,k)-AU(I,k)<a name='1272'>
+            AD(I,k+1) = 1.-AL(I,k)<a name='1273'>
+          ENDDO<a name='1274'>
+        ENDDO<a name='1275'>
+        do kk = 2, ntrac<a name='1276'>
+          is = (kk-2) * km<a name='1277'>
+          do k = 1, km - 1<a name='1278'>
+            do i = 1, im<a name='1279'>
+              AT(I,k+1+is) = Q1(i,k+1,kk)<a name='1280'>
+            enddo<a name='1281'>
+          enddo<a name='1282'>
+        enddo<a name='1283'>
+<font color=#447700>!<a name='1284'></font>
+<font color=#447700>!     SOLVE TRIDIAGONAL PROBLEM FOR TRACERS<a name='1285'></font>
+<font color=#447700>!<a name='1286'></font>
+        CALL <A href='../../html_code/phys/module_bl_gfs.F.html#TRIDIT'>TRIDIT</A><A href='../../html_code/phys/module_bl_gfs.F.html#MONINP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRIDIT_1">(IM,KM,ntrac-1,AL,AD,AU,AT,AU,AT)<a name='1287'>
+<font color=#447700>!<a name='1288'></font>
+<font color=#447700>!     RECOVER TENDENCIES OF TRACERS<a name='1289'></font>
+<font color=#447700>!<a name='1290'></font>
+        do kk = 2, ntrac<a name='1291'>
+          is = (kk-2) * km<a name='1292'>
+          do k = 1, km <a name='1293'>
+            do i = 1, im<a name='1294'>
+              QTEND = (AT(I,K+is)-Q1(i,K,kk))*RDT<a name='1295'>
+              RTG(i,K,kk) = RTG(i,K,kk) + QTEND<a name='1296'>
+            enddo<a name='1297'>
+          enddo<a name='1298'>
+        enddo<a name='1299'>
+      endif<a name='1300'>
+<font color=#447700>!!<a name='1301'></font>
+      RETURN<a name='1302'>
+      END SUBROUTINE MONINP<a name='1303'>
+<font color=#447700>!FPP$ NOCONCUR R<a name='1304'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1305'></font>
+<A NAME='TRIDI2'><A href='../../html_code/phys/module_bl_gfs.F.html#TRIDI2' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1306'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>TRIDI2</font>(L,N,CL,CM,CU,R1,R2,AU,A1,A2) <A href='../../call_to/TRIDI2.html' TARGET='index'>5</A>,<A href='../../call_from/TRIDI2.html' TARGET='index'>2</A><a name='1307'>
+<font color=#447700>!sela %INCLUDE DBTRIDI2;<a name='1308'></font>
+<font color=#447700>!<a name='1309'></font>
+      USE <A href='../../html_code/phys/module_gfs_machine.F.html#MODULE_GFS_MACHINE'>MODULE_GFS_MACHINE</A><A href='../../html_code/phys/module_bl_mrf.F.html#TRIDI2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_GFS_MACHINE_3">, ONLY : kind_phys<a name='1310'>
+      implicit none<a name='1311'>
+      integer             k,n,l,i<a name='1312'>
+      real(kind=kind_phys) fk<a name='1313'>
+<font color=#447700>!<a name='1314'></font>
+      real(kind=kind_phys) CL(L,2:N),CM(L,N),CU(L,N-1),R1(L,N),R2(L,N), &amp;<a name='1315'>
+     &amp;          AU(L,N-1),A1(L,N),A2(L,N)<a name='1316'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1317'></font>
+      DO I=1,L<a name='1318'>
+        FK      = 1./CM(I,1)<a name='1319'>
+        AU(I,1) = FK*CU(I,1)<a name='1320'>
+        A1(I,1) = FK*R1(I,1)<a name='1321'>
+        A2(I,1) = FK*R2(I,1)<a name='1322'>
+      ENDDO<a name='1323'>
+      DO K=2,N-1<a name='1324'>
+        DO I=1,L<a name='1325'>
+          FK      = 1./(CM(I,K)-CL(I,K)*AU(I,K-1))<a name='1326'>
+          AU(I,K) = FK*CU(I,K)<a name='1327'>
+          A1(I,K) = FK*(R1(I,K)-CL(I,K)*A1(I,K-1))<a name='1328'>
+          A2(I,K) = FK*(R2(I,K)-CL(I,K)*A2(I,K-1))<a name='1329'>
+        ENDDO<a name='1330'>
+      ENDDO<a name='1331'>
+      DO I=1,L<a name='1332'>
+        FK      = 1./(CM(I,N)-CL(I,N)*AU(I,N-1))<a name='1333'>
+        A1(I,N) = FK*(R1(I,N)-CL(I,N)*A1(I,N-1))<a name='1334'>
+        A2(I,N) = FK*(R2(I,N)-CL(I,N)*A2(I,N-1))<a name='1335'>
+      ENDDO<a name='1336'>
+      DO K=N-1,1,-1<a name='1337'>
+        DO I=1,L<a name='1338'>
+          A1(I,K) = A1(I,K)-AU(I,K)*A1(I,K+1)<a name='1339'>
+          A2(I,K) = A2(I,K)-AU(I,K)*A2(I,K+1)<a name='1340'>
+        ENDDO<a name='1341'>
+      ENDDO<a name='1342'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1343'></font>
+      RETURN<a name='1344'>
+      END SUBROUTINE TRIDI2<a name='1345'>
+<font color=#447700>!FPP$ NOCONCUR R<a name='1346'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1347'></font>
+<A NAME='TRIDIN'><A href='../../html_code/phys/module_bl_gfs.F.html#TRIDIN' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1348'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>TRIDIN</font>(L,N,nt,CL,CM,CU,R1,R2,AU,A1,A2) <A href='../../call_to/TRIDIN.html' TARGET='index'>2</A>,<A href='../../call_from/TRIDIN.html' TARGET='index'>2</A><a name='1349'>
+<font color=#447700>!sela %INCLUDE DBTRIDI2;<a name='1350'></font>
+<font color=#447700>!<a name='1351'></font>
+      USE <A href='../../html_code/phys/module_gfs_machine.F.html#MODULE_GFS_MACHINE'>MODULE_GFS_MACHINE</A><A href='../../html_code/phys/module_bl_gfsedmf.F.html#TRIDIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_GFS_MACHINE_4">, ONLY : kind_phys<a name='1352'>
+      implicit none<a name='1353'>
+      integer             is,k,kk,n,nt,l,i<a name='1354'>
+      real(kind=kind_phys) fk(L)<a name='1355'>
+<font color=#447700>!<a name='1356'></font>
+      real(kind=kind_phys) CL(L,2:N), CM(L,N), CU(L,N-1),               &amp;<a name='1357'>
+     &amp;                     R1(L,N),   R2(L,N*nt),                       &amp;<a name='1358'>
+     &amp;                     AU(L,N-1), A1(L,N), A2(L,N*nt),              &amp;<a name='1359'>
+     &amp;                     FKK(L,2:N-1)<a name='1360'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1361'></font>
+      DO I=1,L<a name='1362'>
+        FK(I)   = 1./CM(I,1)<a name='1363'>
+        AU(I,1) = FK(I)*CU(I,1)<a name='1364'>
+        A1(I,1) = FK(I)*R1(I,1)<a name='1365'>
+      ENDDO<a name='1366'>
+      do k = 1, nt<a name='1367'>
+        is = (k-1) * n<a name='1368'>
+        do i = 1, l<a name='1369'>
+          a2(i,1+is) = fk(I) * r2(i,1+is)<a name='1370'>
+        enddo<a name='1371'>
+      enddo<a name='1372'>
+      DO K=2,N-1<a name='1373'>
+        DO I=1,L<a name='1374'>
+          FKK(I,K) = 1./(CM(I,K)-CL(I,K)*AU(I,K-1))<a name='1375'>
+          AU(I,K)  = FKK(I,K)*CU(I,K)<a name='1376'>
+          A1(I,K)  = FKK(I,K)*(R1(I,K)-CL(I,K)*A1(I,K-1))<a name='1377'>
+        ENDDO<a name='1378'>
+      ENDDO<a name='1379'>
+      do kk = 1, nt<a name='1380'>
+        is = (kk-1) * n<a name='1381'>
+        DO K=2,N-1<a name='1382'>
+          DO I=1,L<a name='1383'>
+            A2(I,K+is) = FKK(I,K)*(R2(I,K+is)-CL(I,K)*A2(I,K+is-1))<a name='1384'>
+          ENDDO<a name='1385'>
+        ENDDO<a name='1386'>
+      ENDDO<a name='1387'>
+      DO I=1,L<a name='1388'>
+        FK(I)   = 1./(CM(I,N)-CL(I,N)*AU(I,N-1))<a name='1389'>
+        A1(I,N) = FK(I)*(R1(I,N)-CL(I,N)*A1(I,N-1))<a name='1390'>
+      ENDDO<a name='1391'>
+      do k = 1, nt<a name='1392'>
+        is = (k-1) * n<a name='1393'>
+        do i = 1, l<a name='1394'>
+          A2(I,N+is) = FK(I)*(R2(I,N+is)-CL(I,N)*A2(I,N+is-1))<a name='1395'>
+        enddo<a name='1396'>
+      enddo<a name='1397'>
+      DO K=N-1,1,-1<a name='1398'>
+        DO I=1,L<a name='1399'>
+          A1(I,K) = A1(I,K) - AU(I,K)*A1(I,K+1)<a name='1400'>
+        ENDDO<a name='1401'>
+      ENDDO<a name='1402'>
+      do kk = 1, nt<a name='1403'>
+        is = (kk-1) * n<a name='1404'>
+        DO K=n-1,1,-1<a name='1405'>
+          DO I=1,L<a name='1406'>
+            A2(I,K+is) = A2(I,K+is) - AU(I,K)*A2(I,K+is+1)<a name='1407'>
+          ENDDO<a name='1408'>
+        ENDDO<a name='1409'>
+      ENDDO<a name='1410'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1411'></font>
+      RETURN<a name='1412'>
+      END SUBROUTINE TRIDIN<a name='1413'>
+<A NAME='TRIDIT'><A href='../../html_code/phys/module_bl_gfs.F.html#TRIDIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1414'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>TRIDIT</font>(L,N,nt,CL,CM,CU,RT,AU,AT) <A href='../../call_to/TRIDIT.html' TARGET='index'>1</A>,<A href='../../call_from/TRIDIT.html' TARGET='index'>1</A><a name='1415'>
+<font color=#447700>!sela %INCLUDE DBTRIDI2;<a name='1416'></font>
+<font color=#447700>!<a name='1417'></font>
+      USE <A href='../../html_code/phys/module_gfs_machine.F.html#MODULE_GFS_MACHINE'>MODULE_GFS_MACHINE</A><A href='../../html_code/phys/module_bl_gfs.F.html#TRIDIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_GFS_MACHINE_5">, ONLY : kind_phys<a name='1418'>
+      implicit none<a name='1419'>
+      integer             is,k,kk,n,nt,l,i<a name='1420'>
+      real(kind=kind_phys) fk(L)<a name='1421'>
+<font color=#447700>!<a name='1422'></font>
+      real(kind=kind_phys) CL(L,2:N), CM(L,N), CU(L,N-1),               &amp;<a name='1423'>
+     &amp;                     RT(L,N*nt),                                  &amp;<a name='1424'>
+     &amp;                     AU(L,N-1), AT(L,N*nt),                       &amp;<a name='1425'>
+     &amp;                     FKK(L,2:N-1)                  <a name='1426'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1427'></font>
+      DO I=1,L<a name='1428'>
+        FK(I)   = 1./CM(I,1)<a name='1429'>
+        AU(I,1) = FK(I)*CU(I,1)<a name='1430'>
+      ENDDO<a name='1431'>
+      do k = 1, nt<a name='1432'>
+        is = (k-1) * n<a name='1433'>
+        do i = 1, l<a name='1434'>
+          at(i,1+is) = fk(I) * rt(i,1+is)<a name='1435'>
+        enddo<a name='1436'>
+      enddo<a name='1437'>
+      DO K=2,N-1<a name='1438'>
+        DO I=1,L<a name='1439'>
+          FKK(I,K) = 1./(CM(I,K)-CL(I,K)*AU(I,K-1))<a name='1440'>
+          AU(I,K)  = FKK(I,K)*CU(I,K)<a name='1441'>
+        ENDDO<a name='1442'>
+      ENDDO<a name='1443'>
+      do kk = 1, nt<a name='1444'>
+        is = (kk-1) * n<a name='1445'>
+        DO K=2,N-1<a name='1446'>
+          DO I=1,L<a name='1447'>
+            AT(I,K+is) = FKK(I,K)*(RT(I,K+is)-CL(I,K)*AT(I,K+is-1))<a name='1448'>
+          ENDDO<a name='1449'>
+        ENDDO<a name='1450'>
+      ENDDO<a name='1451'>
+      DO I=1,L<a name='1452'>
+        FK(I)   = 1./(CM(I,N)-CL(I,N)*AU(I,N-1))<a name='1453'>
+      ENDDO<a name='1454'>
+      do k = 1, nt<a name='1455'>
+        is = (k-1) * n<a name='1456'>
+        do i = 1, l<a name='1457'>
+          AT(I,N+is) = FK(I)*(RT(I,N+is)-CL(I,N)*AT(I,N+is-1))<a name='1458'>
+        enddo<a name='1459'>
+      enddo<a name='1460'>
+      do kk = 1, nt<a name='1461'>
+        is = (kk-1) * n<a name='1462'>
+        DO K=n-1,1,-1<a name='1463'>
+          DO I=1,L<a name='1464'>
+            AT(I,K+is) = AT(I,K+is) - AU(I,K)*AT(I,K+is+1)<a name='1465'>
+          ENDDO<a name='1466'>
+        ENDDO<a name='1467'>
+      ENDDO<a name='1468'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1469'></font>
+      RETURN<a name='1470'>
+      END SUBROUTINE TRIDIT<a name='1471'>
+                                                                                 <a name='1472'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1473'></font>
+<a name='1474'>
+      END MODULE module_bl_gfs<a name='1475'>
+</pre></body></html>

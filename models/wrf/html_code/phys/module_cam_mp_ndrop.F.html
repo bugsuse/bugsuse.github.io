@@ -1,0 +1,1837 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#define WRF_PORT<a name='2'>
+#define MODAL_AERO<a name='3'>
+<font color=#447700>! Updated to CESM1.0.3 (CAM5.1.01) by Balwinder.Singh@pnnl.gov<a name='4'></font>
+<A NAME='NDROP'><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#NDROP' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='5'>
+      <font color=#993300>module </font><font color=#cc0000>ndrop</font> <A href='../../call_to/NDROP.html' TARGET='index'>3</A>,<A href='../../call_from/NDROP.html' TARGET='index'>4</A><a name='6'>
+#ifdef MODAL_AERO<a name='7'>
+      use <A href='../../html_code/phys/module_cam_shr_kind_mod.F.html#SHR_KIND_MOD'>shr_kind_mod</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#NDROP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_KIND_MOD_10">,  only: r8 =&gt; shr_kind_r8<a name='8'>
+#ifndef WRF_PORT<a name='9'>
+      use abortutils,    only: endrun<a name='10'>
+      use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#NDROP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_10">, only: ntot_amode, qqcw_get_field<a name='11'>
+      use cam_logfile,     only: iulog<a name='12'>
+#else<a name='13'>
+      use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#NDROP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_24">, only: endrun, iulog<a name='14'>
+      use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#NDROP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_11">, only: ntot_amode<a name='15'>
+<a name='16'>
+#endif<a name='17'>
+<a name='18'>
+      implicit none<a name='19'>
+<a name='20'>
+      private<a name='21'>
+      save<a name='22'>
+<a name='23'>
+      public activate_init, dropmixnuc<a name='24'>
+<a name='25'>
+      real(r8) :: npv(ntot_amode) <font color=#447700>! number per volume concentration<a name='26'></font>
+      real(r8) :: alogsig(ntot_amode) <font color=#447700>! natl log of geometric standard dev of aerosol<a name='27'></font>
+      real(r8) :: exp45logsig(ntot_amode)<a name='28'>
+      real(r8) :: argfactor(ntot_amode)<a name='29'>
+      real(r8) :: f1(ntot_amode),f2(ntot_amode)  <font color=#447700>! abdul-razzak functions of width<a name='30'></font>
+      real(r8) :: t0 <font color=#447700>! reference temperature<a name='31'></font>
+      real(r8) :: aten<a name='32'>
+      real(r8) :: surften       <font color=#447700>! surface tension of water w/respect to air (N/m)<a name='33'></font>
+      real(r8) :: alogten,alog2,alog3,alogaten<a name='34'>
+      real(r8) :: third, twothird, sixth, zero<a name='35'>
+      real(r8) :: sq2, sqpi, pi<a name='36'>
+<a name='37'>
+      type qqcw_type<a name='38'>
+         real(r8), pointer :: fldcw(:,:)<a name='39'>
+      end type qqcw_type<a name='40'>
+<a name='41'>
+contains<a name='42'>
+<a name='43'>
+<A NAME='DROPMIXNUC'><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='44'>
+      <font color=#993300>subroutine </font><font color=#cc0000>dropmixnuc</font>(lchnk, ncol, ncldwtr,tendnd, temp,omega,  &amp; <A href='../../call_to/DROPMIXNUC.html' TARGET='index'>1</A>,<A href='../../call_from/DROPMIXNUC.html' TARGET='index'>32</A><a name='45'>
+                    pmid,pint,pdel,rpdel,zm,kvh,wsub,cldn,cldo,     &amp;<a name='46'>
+                    raer, cflx, raertend, dtmicro                   &amp;<a name='47'>
+#ifdef WRF_PORT<a name='48'>
+                    , qqcw_inout                                    &amp;<a name='49'>
+#endif<a name='50'>
+                                                                    ) <a name='51'>
+<a name='52'>
+<font color=#447700>!     vertical diffusion and nucleation of cloud droplets<a name='53'></font>
+<font color=#447700>!     assume cloud presence controlled by cloud fraction<a name='54'></font>
+<font color=#447700>!     doesn't distinguish between warm, cold clouds<a name='55'></font>
+#ifndef WRF_PORT<a name='56'>
+      use ppgrid,        only: pcols, pver, pverp<a name='57'>
+#else<a name='58'>
+      use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_25">, only: pcols, pver, pverp<a name='59'>
+#endif<a name='60'>
+      use <A href='../../html_code/phys/module_cam_physconst.F.html#PHYSCONST'>physconst</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHYSCONST_12">,     only: gravit, rhoh2o, latvap, cpair, epsilo, rair, mwh2o, r_universal<a name='61'>
+#ifndef WRF_PORT<a name='62'>
+      use time_manager,  only: get_nstep<a name='63'>
+      use <A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS'>constituents</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTITUENTS_10">,  only: pcnst, qmin, cnst_get_ind, cnst_name<a name='64'>
+#else<a name='65'>
+      use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_26">, only: pcnst =&gt; pcnst_mp<a name='66'>
+      use <A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS'>constituents</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTITUENTS_11">,  only: cnst_get_ind, cnst_name <a name='67'>
+#endif<a name='68'>
+      use <A href='../../html_code/phys/module_cam_error_function.F.html#ERROR_FUNCTION'>error_function</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ERROR_FUNCTION_2">, only: erf<a name='69'>
+<a name='70'>
+<font color=#447700>!      use aerosol_radiation_interface, only: collect_sw_aer_masses, aer_mass<a name='71'></font>
+<a name='72'>
+#ifndef WRF_PORT<a name='73'>
+      use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_12"><a name='74'>
+      use cam_history, only: fieldname_len<a name='75'>
+      use phys_grid,   only: get_lat_all_p, get_lon_all_p<a name='76'>
+      use physics_types, only: physics_state<a name='77'>
+      use cam_history,   only: outfld<a name='78'>
+#else<a name='79'>
+      use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_13">,    only: numptrcw_amode =&gt; numptrcw_amode_mp, &amp;<a name='80'>
+           nspec_amode  =&gt; nspec_amode_mp, lmassptrcw_amode =&gt; lmassptrcw_amode_mp, &amp;<a name='81'>
+           numptr_amode =&gt; numptr_amode_mp  , lmassptr_amode   =&gt; lmassptr_amode_mp, &amp;<a name='82'>
+           cnst_name_cw =&gt; cnst_name_cw_mp<a name='83'>
+      use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_27">, only: fieldname_len, outfld<a name='84'>
+#endif<a name='85'>
+<a name='86'>
+      implicit none<a name='87'>
+<a name='88'>
+<font color=#447700>!     input<a name='89'></font>
+<a name='90'>
+      integer, intent(in) :: lchnk                <font color=#447700>! chunk identifier<a name='91'></font>
+      integer, intent(in) :: ncol                 <font color=#447700>! number of columns<a name='92'></font>
+<font color=#447700>!      type(physics_state), intent(in) :: state      ! Physics state variables<a name='93'></font>
+      real(r8), intent(in) :: dtmicro             <font color=#447700>! time step for microphysics (s)<a name='94'></font>
+      real(r8), intent(in) :: temp(pcols,pver)    <font color=#447700>! temperature (K)<a name='95'></font>
+      real(r8), intent(inout) :: ncldwtr(pcols,pver) <font color=#447700>! droplet number concentration (#/kg)<a name='96'></font>
+      real(r8), intent(inout) :: tendnd(pcols,pver) <font color=#447700>! change in droplet number concentration (#/kg/s)<a name='97'></font>
+      real(r8), intent(in) :: omega(pcols,pver)   <font color=#447700>! vertical velocity (Pa/s)<a name='98'></font>
+      real(r8), intent(in) :: pmid(pcols,pver)    <font color=#447700>! mid-level pressure (Pa)<a name='99'></font>
+      real(r8), intent(in) :: pint(pcols,pverp)   <font color=#447700>! pressure at layer interfaces (Pa)<a name='100'></font>
+      real(r8), intent(in) :: pdel(pcols,pver)    <font color=#447700>! pressure thickess of layer (Pa)<a name='101'></font>
+      real(r8), intent(in) :: rpdel(pcols,pver)   <font color=#447700>! inverse of pressure thickess of layer (/Pa)<a name='102'></font>
+      real(r8), intent(in) :: zm(pcols,pver)      <font color=#447700>! geopotential height of level (m)<a name='103'></font>
+      real(r8), intent(in) :: kvh(pcols,pverp)    <font color=#447700>! vertical diffusivity (m2/s)<a name='104'></font>
+      real(r8), intent(in) :: wsub(pcols,pver)    <font color=#447700>! subgrid vertical velocity<a name='105'></font>
+      real(r8), intent(in) :: cldo(pcols,pver)    <font color=#447700>! cloud fraction on previous time step<a name='106'></font>
+      real(r8), intent(in) :: cldn(pcols,pver)    <font color=#447700>! cloud fraction<a name='107'></font>
+<a name='108'>
+<a name='109'>
+<font color=#447700>!     output<a name='110'></font>
+<a name='111'>
+      real(r8), intent(in) :: raer(pcols,pver,pcnst) <font color=#447700>! aerosol mass, number mixing ratios<a name='112'></font>
+      real(r8), intent(in) :: cflx(pcols,pcnst) <font color=#447700>! constituent flux from surface<a name='113'></font>
+      real(r8), intent(out) :: raertend(pcols,pver,pcnst) <font color=#447700>! tendency of aerosol mass, number mixing ratios<a name='114'></font>
+#ifdef WRF_PORT<a name='115'>
+      real(r8), target, intent(inout) :: qqcw_inout(pcols,pver,pcnst) <font color=#447700>! cloud-borne aerosol<a name='116'></font>
+#endif<a name='117'>
+<a name='118'>
+<font color=#447700>!--------------------Local storage-------------------------------------<a name='119'></font>
+<font color=#447700>!<a name='120'></font>
+      type(qqcw_type) :: QQCW(pcnst)<a name='121'>
+<a name='122'>
+      real(r8) depvel(pcols,pcnst)<font color=#447700>! deposition velocity for droplets (m/s)<a name='123'></font>
+      real(r8) qcld(pver) <font color=#447700>! cloud droplet number mixing ratio (#/kg)<a name='124'></font>
+      real(r8) wtke(pcols,pver)     <font color=#447700>! turbulent vertical velocity at base of layer k (m/s)<a name='125'></font>
+      real(r8) wtke_cen(pcols,pver) <font color=#447700>! turbulent vertical velocity at center of layer k (m/s)<a name='126'></font>
+      real(r8) zn(pver) <font color=#447700>! g/pdel (m2/g) for layer<a name='127'></font>
+      real(r8) zs(pver) <font color=#447700>! inverse of distance between levels (m)<a name='128'></font>
+      real(r8), parameter :: zkmin=0.01_r8,zkmax=100._r8<a name='129'>
+      real(r8) w(pcols,pver)       <font color=#447700>! vertical velocity (m/s)<a name='130'></font>
+      real(r8) cs(pcols,pver)      <font color=#447700>! air density (kg/m3)<a name='131'></font>
+      real(r8) dz(pcols,pver)      <font color=#447700>! geometric thickness of layers (m)<a name='132'></font>
+      real(r8) zero,flxconv <font color=#447700>! convergence of flux into lowest layer<a name='133'></font>
+<a name='134'>
+      real(r8) wdiab           <font color=#447700>! diabatic vertical velocity<a name='135'></font>
+      real(r8), parameter :: wmixmin = 0.1 <font color=#447700>! minimum turbulence vertical velocity (m/s)<a name='136'></font>
+<font color=#447700>!       real(r8), parameter :: wmixmin = 0.2 ! minimum turbulence vertical velocity (m/s)<a name='137'></font>
+<font color=#447700>!      real(r8), parameter :: wmixmin = 1.0 ! minimum turbulence vertical velocity (m/s)<a name='138'></font>
+      real(r8) qncld(pver)     <font color=#447700>! droplet number nucleated on cloud boundaries<a name='139'></font>
+      real(r8) ekd(pver)       <font color=#447700>! diffusivity for droplets (m2/s)<a name='140'></font>
+      real(r8) ekk(0:pver)       <font color=#447700>! density*diffusivity for droplets (kg/m3 m2/s)<a name='141'></font>
+      real(r8) srcn(pver) <font color=#447700>! droplet source rate (/s)<a name='142'></font>
+      real(r8), parameter :: sq2pi=2.5066283_r8<a name='143'>
+      real(r8) dtinv<a name='144'>
+<a name='145'>
+      logical top        <font color=#447700>! true if cloud top, false if cloud base or new cloud<a name='146'></font>
+      integer km1,kp1<a name='147'>
+      real(r8) wbar,wmix,wmin,wmax<a name='148'>
+      real(r8) dum,dumc<a name='149'>
+      real(r8) dact<a name='150'>
+      real(r8) fluxntot         <font color=#447700>! (#/cm2/s)<a name='151'></font>
+      real(r8) fac_srflx<a name='152'>
+      real(r8) surfrate(pcnst) <font color=#447700>! surface exchange rate (/s)<a name='153'></font>
+      real(r8) surfratemax      <font color=#447700>! max surfrate for all species treated here<a name='154'></font>
+      real(r8) dtmin,tinv,dtt<a name='155'>
+      integer nsubmix,nsubmix_bnd<a name='156'>
+      integer i,k,m,n<a name='157'>
+      real(r8) tempr4 <font color=#447700>! temperature<a name='158'></font>
+      real(r8) dtmix<a name='159'>
+      real(r8) alogarg<a name='160'>
+      integer nstep<a name='161'>
+      real(r8) pi<a name='162'>
+      integer nnew,nsav,ntemp<a name='163'>
+      real(r8) overlapp(pver),overlapm(pver) <font color=#447700>! cloud overlap<a name='164'></font>
+      real(r8) ekkp(pver),ekkm(pver) <font color=#447700>! zn*zs*density*diffusivity<a name='165'></font>
+      integer count_submix(100)<a name='166'>
+      save count_submix<a name='167'>
+      real(r8) kvhmax<a name='168'>
+      save kvhmax<a name='169'>
+      real(r8) nsource(pcols,pver)            <font color=#447700>! droplet number source (#/kg/s)<a name='170'></font>
+      real(r8) ndropmix(pcols,pver)           <font color=#447700>! droplet number mixing (#/kg/s)<a name='171'></font>
+      real(r8) ndropcol(pcols)               <font color=#447700>! column droplet number (#/m2)<a name='172'></font>
+<a name='173'>
+      integer lnum, lnumcw, lmass, lmasscw, lphase, &amp;<a name='174'>
+              lsfc, lsfccw, lsig, lspec, ltype, lwater<a name='175'>
+      integer ntype(ntot_amode)<a name='176'>
+<a name='177'>
+      real(r8) na(pcols),va(pcols),hy(pcols)<a name='178'>
+      real(r8) naermod(ntot_amode) <font color=#447700>! (/m3)<a name='179'></font>
+      real(r8) sigmag(ntot_amode)  <font color=#447700>! geometric standard deviation of aerosol size dist<a name='180'></font>
+      real(r8) hygro(ntot_amode)  <font color=#447700>! hygroscopicity of aerosol mode<a name='181'></font>
+      real(r8) vaerosol(ntot_amode) <font color=#447700>! interstit+activated aerosol volume conc (cm3/cm3)<a name='182'></font>
+      real(r8) raercol(pver,pcnst,2) <font color=#447700>! aerosol mass, number mixing ratios<a name='183'></font>
+      real(r8) raercol_cw(pver,pcnst,2) <font color=#447700>! cloud-borne aerosol mass, number mixing ratios<a name='184'></font>
+      real(r8) surfrate_cw(pcnst) <font color=#447700>! surface exchange rate for cloud-borne aerosol (/s)<a name='185'></font>
+      real(r8) source(pver) <font color=#447700>!<a name='186'></font>
+<a name='187'>
+      real(r8) fn(ntot_amode)         <font color=#447700>! activation fraction for aerosol number<a name='188'></font>
+      real(r8) fm(ntot_amode)         <font color=#447700>! activation fraction for aerosol mass<a name='189'></font>
+<a name='190'>
+      real(r8) fluxn(ntot_amode)      <font color=#447700>! number  activation fraction flux (cm/s)<a name='191'></font>
+      real(r8) fluxm(ntot_amode)      <font color=#447700>! mass    activation fraction flux (cm/s)<a name='192'></font>
+      real(r8) sum,sumcw,flux,fluxcw<a name='193'>
+<font color=#447700>!     note:  activation fraction fluxes are defined as <a name='194'></font>
+<font color=#447700>!     fluxn = [flux of activated aero. number into cloud (#/cm2/s)]<a name='195'></font>
+<font color=#447700>!           / [aero. number conc. in updraft, just below cloudbase (#/cm3)]<a name='196'></font>
+<a name='197'>
+      real(r8) nact(pver,ntot_amode)  <font color=#447700>! fractional aero. number  activation rate (/s)<a name='198'></font>
+      real(r8) mact(pver,ntot_amode)  <font color=#447700>! fractional aero. mass    activation rate (/s)<a name='199'></font>
+      real(r8) sigmag_amode_cur(ntot_amode) <font color=#447700>! sigmag for current grid cell<a name='200'></font>
+      save sigmag_amode_cur<a name='201'>
+      real(r8) :: qqcwtend(pcols,pver,pcnst) <font color=#447700>! tendency of cloudborne aerosol mass, number mixing ratios<a name='202'></font>
+      real(r8) :: coltend(pcols)    <font color=#447700>! column tendency<a name='203'></font>
+      real(r8) :: tmpa<a name='204'>
+      integer :: lc<a name='205'>
+      character(len=fieldname_len)   :: tmpname<a name='206'>
+      character(len=fieldname_len+3) :: fieldname<a name='207'>
+      real(r8) :: csbot(pver)       <font color=#447700>! air density at bottom (interface) of layer (kg/m3)<a name='208'></font>
+      real(r8) :: csbot_cscen(pver) <font color=#447700>! csbot(i)/cs(i,k)<a name='209'></font>
+      real(r8) :: flux_fullact(pver)     <font color=#447700>! 100%    activation fraction flux (cm/s)<a name='210'></font>
+      real(r8) :: taumix_internal_pver_inv <font color=#447700>! 1/(internal mixing time scale for k=pver) (1/s)<a name='211'></font>
+      real(r8) dactn,taunuc,damp<a name='212'>
+      real(r8) :: cldo_tmp, cldn_tmp<a name='213'>
+      real(r8) :: tau_cld_regenerate<a name='214'>
+<a name='215'>
+      logical cldinterior<a name='216'>
+<a name='217'>
+      integer ixndrop, l<a name='218'>
+      real(r8) naer_tot,naer(pcols)<a name='219'>
+      integer, parameter :: psat=6 <font color=#447700>! number of supersaturations to calc ccn concentration<a name='220'></font>
+      real(r8)  :: supersat(psat)= &amp; <font color=#447700>! supersaturation (%) to determine ccn concentration<a name='221'></font>
+               (/0.02,0.05,0.1,0.2,0.5,1.0/)<a name='222'>
+      real(r8) ccn(pcols,pver,psat)        <font color=#447700>! number conc of aerosols activated at supersat<a name='223'></font>
+      character(len=8), dimension(psat) :: ccn_name(psat)= &amp;<a name='224'>
+               (/'CCN1','CCN2','CCN3','CCN4','CCN5','CCN6'/)<a name='225'>
+      real(r8) arg<a name='226'>
+      integer phase <font color=#447700>! phase of aerosol<a name='227'></font>
+<a name='228'>
+<a name='229'>
+<a name='230'>
+    arg = 1.0_r8<a name='231'>
+    if (abs(0.8427_r8-erf(arg))/0.8427_r8&gt;0.001_r8) then<a name='232'>
+       write (iulog,*) 'erf(1.0) = ',ERF(arg)<a name='233'>
+#ifdef WRF_PORT<a name='234'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_596">(iulog)<a name='235'>
+#endif <a name='236'>
+       call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_15">('dropmixnuc: Error function error')<a name='237'>
+    endif<a name='238'>
+    arg = 0.0<a name='239'>
+    if (erf(arg) /= 0.0) then<a name='240'>
+       write (iulog,*) 'erf(0.0) = ',erf(arg)<a name='241'>
+#ifdef WRF_PORT<a name='242'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_597">(iulog)<a name='243'>
+#endif <a name='244'>
+       write (iulog,*) 'dropmixnuc: Error function error'<a name='245'>
+#ifdef WRF_PORT<a name='246'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_598">(iulog)<a name='247'>
+#endif <a name='248'>
+       call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_16">('dropmixnuc: Error function error')<a name='249'>
+    endif<a name='250'>
+     zero=0._r8<a name='251'>
+<a name='252'>
+<a name='253'>
+       pi = 4._r8*atan(1.0_r8)<a name='254'>
+       dtinv=1./dtmicro<a name='255'>
+#ifndef WRF_PORT<a name='256'>
+       nstep = get_nstep()<a name='257'>
+#endif<a name='258'>
+<a name='259'>
+<font color=#447700>!       call t_startf('load_aerosol')<a name='260'></font>
+<a name='261'>
+<a name='262'>
+       call <A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_IND'>cnst_get_ind</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CNST_GET_IND_6">('NUMLIQ', ixndrop)<a name='263'>
+       depvel(:,:) = 0.0_r8        <font color=#447700>! droplet number is done in pkg_cld_sediment, aerosols in mz_aerosols_intr<a name='264'></font>
+<font color=#447700>!      depvel(:,ixndrop) =  0.1_r8 ! prescribed here rather than getting it from MIRAGE depvel_part<a name='265'></font>
+<a name='266'>
+<font color=#447700>!    call t_stopf('load_aerosol')<a name='267'></font>
+<a name='268'>
+       do m=1,ntot_amode<a name='269'>
+#ifndef WRF_PORT<a name='270'>
+          QQCW(numptrcw_amode(m))%fldcw =&gt; qqcw_get_field(numptrcw_amode(m),lchnk)<a name='271'>
+#else<a name='272'>
+          QQCW(numptrcw_amode(m))%fldcw =&gt; qqcw_inout(:,:,numptrcw_amode(m))<a name='273'>
+#endif<a name='274'>
+          do l=1,nspec_amode(m)<a name='275'>
+#ifndef WRF_PORT             <a name='276'>
+             QQCW(lmassptrcw_amode(l,m))%fldcw =&gt; qqcw_get_field(lmassptrcw_amode(l,m),lchnk)<a name='277'>
+#else<a name='278'>
+             QQCW(lmassptrcw_amode(l,m))%fldcw =&gt; qqcw_inout(:,:,lmassptrcw_amode(l,m))<a name='279'>
+#endif<a name='280'>
+          end do<a name='281'>
+       end do<a name='282'>
+<a name='283'>
+<a name='284'>
+<font color=#447700>!     start loop over columns<a name='285'></font>
+overall_main_i_loop: &amp;<a name='286'>
+      do i=1,ncol<a name='287'>
+<a name='288'>
+<font color=#447700>!        load number nucleated into qcld on cloud boundaries<a name='289'></font>
+<a name='290'>
+<font color=#447700>! initialization for current i .........................................<a name='291'></font>
+<a name='292'>
+<font color=#447700>!    call t_startf('calc_wtke')<a name='293'></font>
+         do k=1,pver-1<a name='294'>
+	    zs(k)=1._r8/(zm(i,k)-zm(i,k+1))<a name='295'>
+	 enddo<a name='296'>
+	 zs(pver)=zs(pver-1)<a name='297'>
+<a name='298'>
+	 do k=1,pver<a name='299'>
+            qcld(k)=ncldwtr(i,k)<a name='300'>
+            qncld(k)=0._r8<a name='301'>
+            srcn(k)=0._r8<a name='302'>
+	    cs(i,k)=pmid(i,k)/(rair*temp(i,k)) <font color=#447700>! air density (kg/m3)<a name='303'></font>
+	    dz(i,k)=1._r8/(cs(i,k)*gravit*rpdel(i,k)) <font color=#447700>! layer thickness in m<a name='304'></font>
+	    w(i,k)=-1._r8*omega(i,k)/(cs(i,k)*gravit) <font color=#447700>! large-scale vertical velocity m/s<a name='305'></font>
+            do m=1,ntot_amode<a name='306'>
+	       nact(k,m)=0._r8<a name='307'>
+	       mact(k,m)=0._r8<a name='308'>
+            enddo<a name='309'>
+            zn(k)=gravit*rpdel(i,k)<a name='310'>
+	    kvhmax=max(kvh(i,k),kvhmax)<a name='311'>
+	    if(k&lt;pver)then<a name='312'>
+               ekd(k)=kvh(i,k+1)<a name='313'>
+               ekd(k)=max(ekd(k),zkmin)<a name='314'>
+               ekd(k)=min(ekd(k),zkmax)<a name='315'>
+               csbot(k)=2.0_r8*pint(i,k+1)/(rair*(temp(i,k)+temp(i,k+1)))<a name='316'>
+               csbot_cscen(k) = csbot(k)/cs(i,k)<a name='317'>
+	    else<a name='318'>
+               ekd(k)=0._r8<a name='319'>
+               csbot(k)=cs(i,k)<a name='320'>
+               csbot_cscen(k) = 1.0_r8<a name='321'>
+	    endif<a name='322'>
+<font color=#447700>!           diagnose subgrid vertical velocity from diffusivity<a name='323'></font>
+            if(k.eq.pver)then<a name='324'>
+               wtke(i,k)=sq2pi*depvel(i,ixndrop)<a name='325'>
+<font color=#447700>!               wtke(i,k)=sq2pi*kvh(i,k+1)<a name='326'></font>
+               wtke(i,k)=max(wtke(i,k),wmixmin)<a name='327'>
+            else<a name='328'>
+               wtke(i,k)=sq2pi*ekd(k)/dz(i,k)<a name='329'>
+            endif<a name='330'>
+<font color=#447700>! get sub-grid vertical velocity from diff coef.<a name='331'></font>
+<font color=#447700>! following morrison et al. 2005, JAS<a name='332'></font>
+<font color=#447700>! assume mixing length of 30 m<a name='333'></font>
+<font color=#447700>! rce-comment - define wtke at layer centers for new-cloud activation<a name='334'></font>
+<font color=#447700>!    and at layer boundaries for old-cloud activation<a name='335'></font>
+<a name='336'>
+<font color=#447700>!++ag<a name='337'></font>
+<font color=#447700>!            wtke_cen(i,k)=0.5_r8*(kvh(i,k)+kvh(i,k+1))/30._r8<a name='338'></font>
+<font color=#447700>!            wtke(i,k)=kvh(i,k+1)/30._r8<a name='339'></font>
+            wtke_cen(i,k)=wsub(i,k)<a name='340'>
+            wtke(i,k)=wsub(i,k)<a name='341'>
+<font color=#447700>!--ag<a name='342'></font>
+            wtke_cen(i,k)=max(wtke_cen(i,k),wmixmin)<a name='343'>
+            wtke(i,k)=max(wtke(i,k),wmixmin)<a name='344'>
+            nsource(i,k)=0._r8<a name='345'>
+         enddo<a name='346'>
+<a name='347'>
+            surfratemax = 0.0_r8<a name='348'>
+	    nsav=1<a name='349'>
+	    nnew=2<a name='350'>
+            surfrate(ixndrop)=depvel(i,ixndrop)/dz(i,pver)<a name='351'>
+            surfratemax = max( surfratemax, surfrate(ixndrop) )<a name='352'>
+            do m=1,ntot_amode<a name='353'>
+               lnum=numptr_amode(m)<a name='354'>
+               lnumcw=numptrcw_amode(m)<a name='355'>
+	       if(lnum&gt;0)then<a name='356'>
+                  surfrate(lnum)=depvel(i,lnum)/dz(i,pver)<a name='357'>
+<font color=#447700>!                 surfrate(lnumcw)=surfrate(ixndrop)<a name='358'></font>
+                  surfrate_cw(lnumcw)=surfrate(ixndrop)<a name='359'>
+                  surfratemax = max( surfratemax, surfrate(lnum) )<a name='360'>
+<font color=#447700>!                 raercol(:,lnumcw,nsav)=raer(i,:,lnumcw)<a name='361'></font>
+                  raercol_cw(:,lnumcw,nsav)=qqcw(lnumcw)%fldcw(i,:)   <font color=#447700>! use cloud-borne aerosol array<a name='362'></font>
+		  raercol(:,lnum,nsav)=raer(i,:,lnum)<a name='363'>
+	       endif<a name='364'>
+               do l=1,nspec_amode(m)<a name='365'>
+                  lmass=lmassptr_amode(l,m)<a name='366'>
+                  lmasscw=lmassptrcw_amode(l,m)<a name='367'>
+                  surfrate(lmass)=depvel(i,lmass)/dz(i,pver)<a name='368'>
+<font color=#447700>!                 surfrate(lmasscw)=surfrate(ixndrop)<a name='369'></font>
+                  surfrate_cw(lmasscw)=surfrate(ixndrop)<a name='370'>
+                  surfratemax = max( surfratemax, surfrate(lmass) )<a name='371'>
+<font color=#447700>!                 raercol(:,lmasscw,nsav)=raer(i,:,lmasscw)<a name='372'></font>
+                  raercol_cw(:,lmasscw,nsav)=qqcw(lmasscw)%fldcw(i,:)  <font color=#447700>! use cloud-borne aerosol array<a name='373'></font>
+		  raercol(:,lmass,nsav)=raer(i,:,lmass)<a name='374'>
+               enddo<a name='375'>
+<font color=#447700>!              lwater=lwaterptr_amode(m)<a name='376'></font>
+<font color=#447700>!              surfrate(lwater)=depvel(i,lwater)/dz(i,pver)<a name='377'></font>
+<font color=#447700>!              surfratemax = max( surfratemax, surfrate(lwater) )<a name='378'></font>
+<font color=#447700>!              raercol(:,lwater,nsav)=raer(i,:,lwater)<a name='379'></font>
+            enddo<a name='380'>
+<font color=#447700>!    call t_stopf('calc_wtke')<a name='381'></font>
+<a name='382'>
+<font color=#447700>!        droplet nucleation/aerosol activation<a name='383'></font>
+<a name='384'>
+<font color=#447700>! tau_cld_regenerate = time scale for regeneration of cloudy air <a name='385'></font>
+<font color=#447700>!    by (horizontal) exchange with clear air<a name='386'></font>
+            tau_cld_regenerate = 3600.0_r8 * 3.0_r8 <a name='387'>
+<a name='388'>
+<font color=#447700>! k-loop for growing/shrinking cloud calcs .............................<a name='389'></font>
+grow_shrink_main_k_loop: &amp;<a name='390'>
+         do k=1,pver<a name='391'>
+            km1=max0(k-1,1)<a name='392'>
+            kp1=min0(k+1,pver)<a name='393'>
+<a name='394'>
+<font color=#447700>! shrinking cloud ......................................................<a name='395'></font>
+<font color=#447700>!    treat the reduction of cloud fraction from when cldn(i,k) &lt; cldo(i,k)<a name='396'></font>
+<font color=#447700>!    and also dissipate the portion of the cloud that will be regenerated<a name='397'></font>
+              cldo_tmp = cldo(i,k)<a name='398'>
+              cldn_tmp = cldn(i,k) * exp( -dtmicro/tau_cld_regenerate )<a name='399'>
+<font color=#447700>!    alternate formulation<a name='400'></font>
+<font color=#447700>!             cldn_tmp = cldn(i,k) * max( 0.0_r8, (1.0_r8-dtmicro/tau_cld_regenerate) )<a name='401'></font>
+<a name='402'>
+              if(cldn_tmp.lt.cldo_tmp)then<a name='403'>
+<font color=#447700>!                droplet loss in decaying cloud<a name='404'></font>
+<font color=#447700>!++ sungsup<a name='405'></font>
+		 nsource(i,k)=nsource(i,k)+qcld(k)*(cldn_tmp-cldo_tmp)/cldo_tmp*dtinv<a name='406'>
+                 qcld(k)=qcld(k)*(1.+(cldn_tmp-cldo_tmp)/cldo_tmp)<a name='407'>
+<font color=#447700>!-- sungsup<a name='408'></font>
+<a name='409'>
+<font color=#447700>!                 convert activated aerosol to interstitial in decaying cloud<a name='410'></font>
+<a name='411'>
+                  dumc=(cldn_tmp-cldo_tmp)/cldo_tmp<a name='412'>
+                  do m=1,ntot_amode<a name='413'>
+		     lnum=numptr_amode(m)<a name='414'>
+		     lnumcw=numptrcw_amode(m)<a name='415'>
+		     if(lnum.gt.0)then<a name='416'>
+		        dact=raercol_cw(k,lnumcw,nsav)*dumc<a name='417'>
+<font color=#447700>!                       raercol(k,lnumcw,nsav)=raercol(k,lnumcw,nsav)+dact<a name='418'></font>
+                        raercol_cw(k,lnumcw,nsav)=raercol_cw(k,lnumcw,nsav)+dact   <font color=#447700>! cloud-borne aerosol<a name='419'></font>
+		        raercol(k,lnum,nsav)=raercol(k,lnum,nsav)-dact<a name='420'>
+		     endif<a name='421'>
+		     do l=1,nspec_amode(m)<a name='422'>
+		        lmass=lmassptr_amode(l,m)<a name='423'>
+			lmasscw=lmassptrcw_amode(l,m)<a name='424'>
+			dact=raercol_cw(k,lmasscw,nsav)*dumc<a name='425'>
+<font color=#447700>!                       raercol(k,lmasscw,nsav)=raercol(k,lmasscw,nsav)+dact<a name='426'></font>
+                        raercol_cw(k,lmasscw,nsav)=raercol_cw(k,lmasscw,nsav)+dact  <font color=#447700>! cloud-borne aerosol<a name='427'></font>
+			raercol(k,lmass,nsav)=raercol(k,lmass,nsav)-dact<a name='428'>
+                     enddo<a name='429'>
+                  enddo<a name='430'>
+               endif<a name='431'>
+<a name='432'>
+<font color=#447700>! growing cloud ......................................................<a name='433'></font>
+<font color=#447700>!    treat the increase of cloud fraction from when cldn(i,k) &gt; cldo(i,k)<a name='434'></font>
+<font color=#447700>!    and also regenerate part of the cloud <a name='435'></font>
+              cldo_tmp = cldn_tmp<a name='436'>
+              cldn_tmp = cldn(i,k)<a name='437'>
+<a name='438'>
+              if(cldn_tmp-cldo_tmp.gt.0.01)then<a name='439'>
+<font color=#447700>!                wmix=wtke(i,k)<a name='440'></font>
+<font color=#447700>!                wbar=wtke(i,k)<a name='441'></font>
+<font color=#447700>! rce-comment - use wtke at layer centers for new-cloud activation<a name='442'></font>
+                 wbar=wtke_cen(i,k)<a name='443'>
+                 wmix=0._r8<a name='444'>
+                 wmin=0._r8<a name='445'>
+                 wmax=10._r8<a name='446'>
+                 wdiab=0<a name='447'>
+<font color=#447700>!                load aerosol properties, assuming external mixtures<a name='448'></font>
+<a name='449'>
+                phase=1 <font color=#447700>! interstitial<a name='450'></font>
+                 do m=1,ntot_amode<a name='451'>
+                    call <A href='../../html_code/phys/module_mixactivate.F.html#LOADAER'>loadaer</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LOADAER_1">(raer,qqcw,i,i,k,m,cs,npv(m),phase, &amp;<a name='452'>
+                         na, va,  hy )<a name='453'>
+			 naermod(m)=na(i)<a name='454'>
+			 vaerosol(m)=va(i)<a name='455'>
+			 hygro(m)=hy(i)<a name='456'>
+                 end do<a name='457'>
+<font color=#447700>!		 m=1<a name='458'></font>
+<font color=#447700>!		 naermod(m)=1000.e6<a name='459'></font>
+<font color=#447700>!		 vaerosol(m)=naermod(m)/(density*num_to_mass_aer(m))<a name='460'></font>
+<a name='461'>
+<font color=#447700>!                call t_startf ('activate')<a name='462'></font>
+<a name='463'>
+                 call <A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL'>activate_modal</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ACTIVATE_MODAL_1">(wbar,wmix,wdiab,wmin,wmax,temp(i,k),cs(i,k), &amp;<a name='464'>
+                      naermod, ntot_amode,ntot_amode, vaerosol, sigmag,hygro,       &amp;<a name='465'>
+                      fn,fm,fluxn,fluxm,flux_fullact(k))<a name='466'>
+<a name='467'>
+<font color=#447700>!                call t_stopf ('activate')<a name='468'></font>
+<font color=#447700>!		 write(iulog,'(a,15f8.2)')'wtke,naer,fn=',wtke(i,k),naer_tot*1.e-6,(fn(m),m=1,ntot_amode)<a name='469'></font>
+<a name='470'>
+<a name='471'>
+                 dumc=(cldn_tmp-cldo_tmp)<a name='472'>
+                 do m=1,ntot_amode<a name='473'>
+                    lnum=numptr_amode(m)<a name='474'>
+                    lnumcw=numptrcw_amode(m)<a name='475'>
+		    dact=dumc*fn(m)*raer(i,k,lnum) <font color=#447700>! interstitial only<a name='476'></font>
+                    qcld(k)=qcld(k)+dact<a name='477'>
+		    nsource(i,k)=nsource(i,k)+dact*dtinv<a name='478'>
+		    if(lnum.gt.0)then<a name='479'>
+                       raercol_cw(k,lnumcw,nsav)=raercol_cw(k,lnumcw,nsav)+dact  <font color=#447700>! cloud-borne aerosol<a name='480'></font>
+		       raercol(k,lnum,nsav)=raercol(k,lnum,nsav)-dact<a name='481'>
+		    endif<a name='482'>
+                    dum=dumc*fm(m)<a name='483'>
+                    do l=1,nspec_amode(m)<a name='484'>
+		        lmass=lmassptr_amode(l,m)<a name='485'>
+			lmasscw=lmassptrcw_amode(l,m)<a name='486'>
+			dact=dum*(raer(i,k,lmass)) <font color=#447700>! interstitial only<a name='487'></font>
+                        raercol_cw(k,lmasscw,nsav)=raercol_cw(k,lmasscw,nsav)+dact  <font color=#447700>! cloud-borne aerosol<a name='488'></font>
+			raercol(k,lmass,nsav)=raercol(k,lmass,nsav)-dact<a name='489'>
+                    enddo<a name='490'>
+                 enddo<a name='491'>
+               endif<a name='492'>
+<a name='493'>
+         enddo grow_shrink_main_k_loop<a name='494'>
+<font color=#447700>! end of k-loop for growing/shrinking cloud calcs ......................<a name='495'></font>
+<a name='496'>
+<a name='497'>
+<font color=#447700>! ......................................................................<a name='498'></font>
+<font color=#447700>! start of k-loop for calc of old cloud activation tendencies ..........<a name='499'></font>
+<font color=#447700>!<a name='500'></font>
+<font color=#447700>! rce-comment<a name='501'></font>
+<font color=#447700>!    changed this part of code to use current cloud fraction (cldn) exclusively<a name='502'></font>
+<font color=#447700>!    consider case of cldo(:)=0, cldn(k)=1, cldn(k+1)=0<a name='503'></font>
+<font color=#447700>!    previous code (which used cldo below here) would have no cloud-base activation<a name='504'></font>
+<font color=#447700>!       into layer k.  however, activated particles in k mix out to k+1,<a name='505'></font>
+<font color=#447700>!       so they are incorrectly depleted with no replacement<a name='506'></font>
+<font color=#447700>!<a name='507'></font>
+old_cloud_main_k_loop: &amp;<a name='508'>
+         do k=1,pver<a name='509'>
+            km1=max0(k-1,1)<a name='510'>
+            kp1=min0(k+1,pver)<a name='511'>
+            taumix_internal_pver_inv = 0.0<a name='512'>
+<a name='513'>
+            if(cldn(i,k).gt.0.01)then<a name='514'>
+<font color=#447700>! rce-comment<a name='515'></font>
+<font color=#447700>!             if(cldo(i,k).gt.0.01)then   ! with cldo changed to cldn this is redundant<a name='516'></font>
+               wdiab=0<a name='517'>
+<font color=#447700>!               wmix=wtke(i,k) ! spectrum of updrafts<a name='518'></font>
+<font color=#447700>!	       wbar=w(i,k) ! spectrum of updrafts<a name='519'></font>
+               wmix=0._r8 <font color=#447700>! single updraft<a name='520'></font>
+	       wbar=wtke(i,k) <font color=#447700>! single updraft<a name='521'></font>
+<font color=#447700>! rce-comment - different treatment for k=pver<a name='522'></font>
+	       if (k == pver) wbar=wtke_cen(i,k) <font color=#447700>! single updraft<a name='523'></font>
+               wmax=10._r8<a name='524'>
+	       wmin=0._r8<a name='525'>
+<font color=#447700>!              old cloud<a name='526'></font>
+                  if(cldn(i,k)-cldn(i,kp1).gt.0.01.or.k.eq.pver)then<a name='527'>
+<a name='528'>
+<font color=#447700>!                   cloud base<a name='529'></font>
+                    <a name='530'>
+                    ekd(k)=wtke(i,k)*dz(i,k)/sq2pi<a name='531'>
+<font color=#447700>! rce-comments<a name='532'></font>
+<font color=#447700>!   first, should probably have 1/zs(k) here rather than dz(i,k) because<a name='533'></font>
+<font color=#447700>!      the turbulent flux is proportional to ekd(k)*zs(k),<a name='534'></font>
+<font color=#447700>!      while the dz(i,k) is used to get flux divergences<a name='535'></font>
+<font color=#447700>!      and mixing ratio tendency/change<a name='536'></font>
+<font color=#447700>!   second and more importantly, using a single updraft velocity here<a name='537'></font>
+<font color=#447700>!      means having monodisperse turbulent updraft and downdrafts.<a name='538'></font>
+<font color=#447700>!      The sq2pi factor assumes a normal draft spectrum.<a name='539'></font>
+<font color=#447700>!      The fluxn/fluxm from activate must be consistent with the<a name='540'></font>
+<font color=#447700>!      fluxes calculated in explmix.<a name='541'></font>
+                    ekd(k)=wbar/zs(k)<a name='542'>
+<a name='543'>
+                    alogarg=max(1.e-20_r8,1/cldn(i,k)-1._r8)<a name='544'>
+                    wmin=wbar+wmix*0.25*sq2pi*log(alogarg)<a name='545'>
+                    phase=1 <font color=#447700>! interstitial<a name='546'></font>
+                    do m=1,ntot_amode<a name='547'>
+<font color=#447700>! rce-comment - use kp1 here as old-cloud activation involves <a name='548'></font>
+<font color=#447700>!   aerosol from layer below<a name='549'></font>
+<font color=#447700>!                      call loadaer(raer,qqcw,i,i,k,m,cs, npv(m),phase, &amp;<a name='550'></font>
+                       call <A href='../../html_code/phys/module_mixactivate.F.html#LOADAER'>loadaer</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LOADAER_2">(raer,qqcw,i,i,kp1,m,cs, npv(m),phase, &amp;<a name='551'>
+                         na, va,  hy )<a name='552'>
+			 naermod(m)=na(i)<a name='553'>
+			 vaerosol(m)=va(i)<a name='554'>
+			 hygro(m)=hy(i)<a name='555'>
+                    end do<a name='556'>
+<font color=#447700>!		    m=1<a name='557'></font>
+<font color=#447700>!		    naermod(m)=1000.e6<a name='558'></font>
+<font color=#447700>!		    vaerosol(1,m)=naermod(m)/(density*num_to_mass_aer(m))<a name='559'></font>
+<font color=#447700>!                   call t_startf ('activate')<a name='560'></font>
+<a name='561'>
+                    call <A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL'>activate_modal</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ACTIVATE_MODAL_2">(wbar,wmix,wdiab,wmin,wmax,temp(i,k),cs(i,k), &amp;<a name='562'>
+                      naermod, ntot_amode,ntot_amode, vaerosol, sigmag, hygro,    &amp;<a name='563'>
+                      fn,fm,fluxn,fluxm,flux_fullact(k))<a name='564'>
+<a name='565'>
+<font color=#447700>!                   call t_stopf ('activate')<a name='566'></font>
+<font color=#447700>!		    write(iulog,'(a,15f8.2)')'wtke,naer,fn=',wtke(i,k),naer_tot*1.e-6,(fn(m),m=1,ntot_amode)<a name='567'></font>
+<a name='568'>
+                      if(k.lt.pver)then<a name='569'>
+                          dumc = cldn(i,k)-cldn(i,kp1)<a name='570'>
+                      else<a name='571'>
+                          dumc=cldn(i,k)<a name='572'>
+                      endif<a name='573'>
+                    fluxntot=0<a name='574'>
+<font color=#447700>! rce-comment 1<a name='575'></font>
+<font color=#447700>!    flux of activated mass into layer k (in kg/m2/s)<a name='576'></font>
+<font color=#447700>!       = "actmassflux" = dumc*fluxm*raercol(kp1,lmass)*csbot(k)<a name='577'></font>
+<font color=#447700>!    source of activated mass (in kg/kg/s) = flux divergence<a name='578'></font>
+<font color=#447700>!       = actmassflux/(cs(i,k)*dz(i,k))<a name='579'></font>
+<font color=#447700>!    so need factor of csbot_cscen = csbot(k)/cs(i,k)<a name='580'></font>
+<font color=#447700>!                   dum=1./(dz(i,k))<a name='581'></font>
+                    dum=csbot_cscen(k)/(dz(i,k))<a name='582'>
+<font color=#447700>! rce-comment 2<a name='583'></font>
+<font color=#447700>!    code for k=pver was changed to use the following conceptual model<a name='584'></font>
+<font color=#447700>!    in k=pver, there can be no cloud-base activation unless one considers<a name='585'></font>
+<font color=#447700>!       a scenario such as the layer being partially cloudy, <a name='586'></font>
+<font color=#447700>!       with clear air at bottom and cloudy air at top<a name='587'></font>
+<font color=#447700>!    assume this scenario, and that the clear/cloudy portions mix with <a name='588'></font>
+<font color=#447700>!       a timescale taumix_internal = dz(i,pver)/wtke_cen(i,pver)<a name='589'></font>
+<font color=#447700>!    in the absence of other sources/sinks, qact (the activated particle <a name='590'></font>
+<font color=#447700>!       mixratio) attains a steady state value given by<a name='591'></font>
+<font color=#447700>!          qact_ss = fcloud*fact*qtot<a name='592'></font>
+<font color=#447700>!       where fcloud is cloud fraction, fact is activation fraction, <a name='593'></font>
+<font color=#447700>!       qtot=qact+qint, qint is interstitial particle mixratio<a name='594'></font>
+<font color=#447700>!    the activation rate (from mixing within the layer) can now be<a name='595'></font>
+<font color=#447700>!       written as<a name='596'></font>
+<font color=#447700>!          d(qact)/dt = (qact_ss - qact)/taumix_internal<a name='597'></font>
+<font color=#447700>!                     = qtot*(fcloud*fact*wtke/dz) - qact*(wtke/dz)<a name='598'></font>
+<font color=#447700>!    note that (fcloud*fact*wtke/dz) is equal to the nact/mact<a name='599'></font>
+<font color=#447700>!    also, d(qact)/dt can be negative.  in the code below<a name='600'></font>
+<font color=#447700>!       it is forced to be &gt;= 0<a name='601'></font>
+<font color=#447700>!<a name='602'></font>
+<font color=#447700>! steve -- <a name='603'></font>
+<font color=#447700>!    you will likely want to change this.  i did not really understand <a name='604'></font>
+<font color=#447700>!       what was previously being done in k=pver<a name='605'></font>
+<font color=#447700>!    in the cam3_5_3 code, wtke(i,pver) appears to be equal to the<a name='606'></font>
+<font color=#447700>!       droplet deposition velocity which is quite small<a name='607'></font>
+<font color=#447700>!    in the cam3_5_37 version, wtke is done differently and is much<a name='608'></font>
+<font color=#447700>!       larger in k=pver, so the activation is stronger there<a name='609'></font>
+<font color=#447700>!<a name='610'></font>
+                    if (k == pver) then<a name='611'>
+                       taumix_internal_pver_inv = flux_fullact(k)/dz(i,k)<a name='612'>
+                    end if<a name='613'>
+                    do m=1,ntot_amode<a name='614'>
+                       fluxn(m)=fluxn(m)*dumc<a name='615'>
+                       fluxm(m)=fluxm(m)*dumc<a name='616'>
+                       lnum=numptr_amode(m)<a name='617'>
+                       nact(k,m)=nact(k,m)+fluxn(m)*dum<a name='618'>
+                       mact(k,m)=mact(k,m)+fluxm(m)*dum<a name='619'>
+                       if (k &gt; pver) then<a name='620'>
+<font color=#447700>! note that kp1 is used here<a name='621'></font>
+                          fluxntot = fluxntot &amp;<a name='622'>
+                                   +fluxn(m)*raercol(kp1,lnum,nsav)*cs(i,k)<a name='623'>
+                       else<a name='624'>
+                          lnumcw=numptrcw_amode(m)<a name='625'>
+                          tmpa = raercol(kp1,lnum,nsav)*fluxn(m) &amp;<a name='626'>
+                               + raercol(kp1,lnumcw,nsav)*(fluxn(m) &amp;<a name='627'>
+                                    -taumix_internal_pver_inv)<a name='628'>
+                          fluxntot = fluxntot + max(0.0_r8,tmpa)*cs(i,k)<a name='629'>
+                       end if<a name='630'>
+                    enddo<a name='631'>
+                      srcn(k)=srcn(k)+fluxntot/(cs(i,k)*dz(i,k))<a name='632'>
+		      nsource(i,k)=nsource(i,k)+fluxntot/(cs(i,k)*dz(i,k))<a name='633'>
+<a name='634'>
+                 endif  <font color=#447700>! (cldn(i,k)-cldn(i,kp1).gt.0.01 .or. k.eq.pver)<a name='635'></font>
+<a name='636'>
+<font color=#447700>! rce-comment<a name='637'></font>
+<font color=#447700>!             endif ! (cldo(i,k).gt.0.01)   ! with cldo changed to cldn this is redundant<a name='638'></font>
+<a name='639'>
+            else<a name='640'>
+<font color=#447700>!              no cloud<a name='641'></font>
+               nsource(i,k)=nsource(i,k)-qcld(k)*dtinv<a name='642'>
+               qcld(k)=0<a name='643'>
+<font color=#447700>!              convert activated aerosol to interstitial in decaying cloud<a name='644'></font>
+               do m=1,ntot_amode<a name='645'>
+	          lnum=numptr_amode(m)<a name='646'>
+		  lnumcw=numptrcw_amode(m)<a name='647'>
+		  if(lnum.gt.0)then<a name='648'>
+                     raercol(k,lnum,nsav)=raercol(k,lnum,nsav)+raercol_cw(k,lnumcw,nsav)  <font color=#447700>! cloud-borne aerosol<a name='649'></font>
+                     raercol_cw(k,lnumcw,nsav)=0.<a name='650'>
+		  endif<a name='651'>
+		  do l=1,nspec_amode(m)<a name='652'>
+		     lmass=lmassptr_amode(l,m)<a name='653'>
+		     lmasscw=lmassptrcw_amode(l,m)<a name='654'>
+                     raercol(k,lmass,nsav)=raercol(k,lmass,nsav)+raercol_cw(k,lmasscw,nsav) <font color=#447700>! cloud-borne aerosol<a name='655'></font>
+                     raercol_cw(k,lmasscw,nsav)=0.<a name='656'>
+                  enddo<a name='657'>
+                enddo<a name='658'>
+            endif<a name='659'>
+         enddo old_cloud_main_k_loop<a name='660'>
+<font color=#447700>!           switch nsav, nnew so that nnew is the updated aerosol<a name='661'></font>
+ 	    ntemp=nsav<a name='662'>
+ 	    nsav=nnew<a name='663'>
+ 	    nnew=ntemp<a name='664'>
+<font color=#447700>!          call t_startf ('nsubmix')<a name='665'></font>
+<a name='666'>
+<font color=#447700>!        load new droplets in layers above, below clouds<a name='667'></font>
+<a name='668'>
+         dtmin=dtmicro<a name='669'>
+         ekk(0)=0.0<a name='670'>
+         ekk(pver)=0.0<a name='671'>
+         do k=1,pver-1<a name='672'>
+<font color=#447700>! rce-comment -- ekd(k) is eddy-diffusivity at k/k+1 interface<a name='673'></font>
+<font color=#447700>!   want ekk(k) = ekd(k) * (density at k/k+1 interface)<a name='674'></font>
+<font color=#447700>!   so use pint(i,k+1) as pint is 1:pverp <a name='675'></font>
+<font color=#447700>!           ekk(k)=ekd(k)*2.*pint(i,k)/(rair*(temp(i,k)+temp(i,k+1)))<a name='676'></font>
+<font color=#447700>!           ekk(k)=ekd(k)*2.*pint(i,k+1)/(rair*(temp(i,k)+temp(i,k+1)))<a name='677'></font>
+            ekk(k)=ekd(k)*csbot(k)<a name='678'>
+         enddo<a name='679'>
+         do k=1,pver<a name='680'>
+            km1=max0(k-1,1)<a name='681'>
+            ekkp(k)=zn(k)*ekk(k)*zs(k)<a name='682'>
+            ekkm(k)=zn(k)*ekk(k-1)*zs(km1)<a name='683'>
+            tinv=ekkp(k)+ekkm(k)<a name='684'>
+<a name='685'>
+            if(k.eq.pver)tinv=tinv+surfratemax<a name='686'>
+<font color=#447700>! rce-comment -- tinv is the sum of all first-order-loss-rates<a name='687'></font>
+<font color=#447700>!    for the layer.  for most layers, the activation loss rate<a name='688'></font>
+<font color=#447700>!    (for interstitial particles) is accounted for by the loss by<a name='689'></font>
+<font color=#447700>!    turb-transfer to the layer above.<a name='690'></font>
+<font color=#447700>!    k=pver is special, and the loss rate for activation within <a name='691'></font>
+<font color=#447700>!    the layer must be added to tinv.  if not, the time step<a name='692'></font>
+<font color=#447700>!    can be too big, and explmix can produce negative values.<a name='693'></font>
+<font color=#447700>!    the negative values are reset to zero, resulting in an <a name='694'></font>
+<font color=#447700>!    artificial source.<a name='695'></font>
+            if(k.eq.pver)tinv=tinv+taumix_internal_pver_inv<a name='696'>
+<a name='697'>
+            if(tinv.gt.1.e-6)then<a name='698'>
+               dtt=1./tinv<a name='699'>
+               dtmin=min(dtmin,dtt)<a name='700'>
+            endif<a name='701'>
+         enddo<a name='702'>
+         dtmix=0.9*dtmin<a name='703'>
+         nsubmix=dtmicro/dtmix+1<a name='704'>
+	 if(nsubmix&gt;100)then<a name='705'>
+	    nsubmix_bnd=100<a name='706'>
+	 else<a name='707'>
+	    nsubmix_bnd=nsubmix<a name='708'>
+	 endif<a name='709'>
+	 count_submix(nsubmix_bnd)=count_submix(nsubmix_bnd)+1<a name='710'>
+         dtmix=dtmicro/nsubmix<a name='711'>
+         fac_srflx = -1.0/(zn(pver)*nsubmix)<a name='712'>
+<a name='713'>
+	 do k=1,pver<a name='714'>
+            kp1=min(k+1,pver)<a name='715'>
+            km1=max(k-1,1)<a name='716'>
+	    <font color=#447700>! maximum overlap assumption<a name='717'></font>
+            if(cldn(i,kp1).gt.1.e-10_r8)then<a name='718'>
+               overlapp(k)=min(cldn(i,k)/cldn(i,kp1),1._r8)<a name='719'>
+            else<a name='720'>
+               overlapp(k)=1.<a name='721'>
+            endif<a name='722'>
+            if(cldn(i,km1).gt.1.e-10_r8)then<a name='723'>
+               overlapm(k)=min(cldn(i,k)/cldn(i,km1),1._r8)<a name='724'>
+            else<a name='725'>
+               overlapm(k)=1.<a name='726'>
+            endif<a name='727'>
+	 enddo<a name='728'>
+<a name='729'>
+<a name='730'>
+<font color=#447700>! rce-comment<a name='731'></font>
+<font color=#447700>!    the activation source(k) = mact(k,m)*raercol(kp1,lmass)<a name='732'></font>
+<font color=#447700>!       should not exceed the rate of transfer of unactivated particles<a name='733'></font>
+<font color=#447700>!       from kp1 to k which = ekkp(k)*raercol(kp1,lmass)<a name='734'></font>
+<font color=#447700>!    however it might if things are not "just right" in subr activate<a name='735'></font>
+<font color=#447700>!    the following is a safety measure to avoid negatives in explmix<a name='736'></font>
+         do k = 1, pver-1<a name='737'>
+         do m = 1, ntot_amode<a name='738'>
+            nact(k,m) = min( nact(k,m), ekkp(k) )<a name='739'>
+            mact(k,m) = min( mact(k,m), ekkp(k) )<a name='740'>
+         end do<a name='741'>
+         end do<a name='742'>
+<a name='743'>
+<a name='744'>
+old_cloud_nsubmix_loop: &amp;<a name='745'>
+         do n=1,nsubmix<a name='746'>
+            qncld(:)=qcld(:)<a name='747'>
+<font color=#447700>!           switch nsav, nnew so that nsav is the updated aerosol<a name='748'></font>
+	    ntemp=nsav<a name='749'>
+	    nsav=nnew<a name='750'>
+	    nnew=ntemp<a name='751'>
+            srcn(:)=0.0<a name='752'>
+            do m=1,ntot_amode<a name='753'>
+               lnum=numptr_amode(m)<a name='754'>
+               lnumcw=numptrcw_amode(m)<a name='755'>
+<font color=#447700>!              update droplet source<a name='756'></font>
+<font color=#447700>! rce-comment- activation source in layer k involves particles from k+1<a name='757'></font>
+<font color=#447700>!	       srcn(:)=srcn(:)+nact(:,m)*(raercol(:,lnum,nsav))<a name='758'></font>
+               srcn(1:pver-1)=srcn(1:pver-1)+nact(1:pver-1,m)*(raercol(2:pver,lnum,nsav))<a name='759'>
+<font color=#447700>! rce-comment- new formulation for k=pver<a name='760'></font>
+<font color=#447700>!              srcn(  pver  )=srcn(  pver  )+nact(  pver  ,m)*(raercol(  pver,lnum,nsav))<a name='761'></font>
+               tmpa = raercol(pver,lnum,nsav)*nact(pver,m) &amp;<a name='762'>
+                    + raercol(pver,lnumcw,nsav)*(nact(pver,m) - taumix_internal_pver_inv)<a name='763'>
+               srcn(pver)=srcn(pver) + max(0.0_r8,tmpa)<a name='764'>
+            enddo<a name='765'>
+            call <A href='../../html_code/phys/module_mixactivate.F.html#EXPLMIX'>explmix</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXPLMIX_1">(qcld,srcn,ekkp,ekkm,overlapp,overlapm,   &amp;<a name='766'>
+                         qncld,surfrate(ixndrop),zero,pver,dtmix,.false.)<a name='767'>
+<a name='768'>
+<font color=#447700>! rce-comment<a name='769'></font>
+<font color=#447700>!    the interstitial particle mixratio is different in clear/cloudy portions<a name='770'></font>
+<font color=#447700>!    of a layer, and generally higher in the clear portion.  (we have/had<a name='771'></font>
+<font color=#447700>!    a method for diagnosing the the clear/cloudy mixratios.)  the activation<a name='772'></font>
+<font color=#447700>!    source terms involve clear air (from below) moving into cloudy air (above).<a name='773'></font>
+<font color=#447700>!    in theory, the clear-portion mixratio should be used when calculating <a name='774'></font>
+<font color=#447700>!    source terms<a name='775'></font>
+            do m=1,ntot_amode<a name='776'>
+               lnum=numptr_amode(m)<a name='777'>
+               lnumcw=numptrcw_amode(m)<a name='778'>
+               if(lnum&gt;0)then<a name='779'>
+<font color=#447700>! rce-comment -   activation source in layer k involves particles from k+1<a name='780'></font>
+<font color=#447700>!	          source(:)= nact(:,m)*(raercol(:,lnum,nsav))<a name='781'></font>
+                  source(1:pver-1)= nact(1:pver-1,m)*(raercol(2:pver,lnum,nsav))<a name='782'>
+<font color=#447700>! rce-comment- new formulation for k=pver<a name='783'></font>
+<font color=#447700>!                 source(  pver  )= nact(  pver,  m)*(raercol(  pver,lnum,nsav))<a name='784'></font>
+                  tmpa = raercol(pver,lnum,nsav)*nact(pver,m) &amp;<a name='785'>
+                       + raercol(pver,lnumcw,nsav)*(nact(pver,m) - taumix_internal_pver_inv)<a name='786'>
+                  source(pver) = max(0.0_r8,tmpa)<a name='787'>
+<font color=#447700>!                  flxconv=cflx(i,lnum)*zn(pver)<a name='788'></font>
+                  flxconv=0.<a name='789'>
+                  call <A href='../../html_code/phys/module_mixactivate.F.html#EXPLMIX'>explmix</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXPLMIX_2">(raercol_cw(1,lnumcw,nnew),source,ekkp,ekkm,overlapp,overlapm, &amp;<a name='790'>
+                               raercol_cw(1,lnumcw,nsav),surfrate_cw(lnumcw),zero,pver,dtmix,&amp;<a name='791'>
+                               .false.)<a name='792'>
+                  call <A href='../../html_code/phys/module_mixactivate.F.html#EXPLMIX'>explmix</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXPLMIX_3">(raercol(1,lnum,nnew),source,ekkp,ekkm,overlapp,overlapm,  &amp;<a name='793'>
+                               raercol(1,lnum,nsav),surfrate(lnum),flxconv,pver,dtmix, &amp;<a name='794'>
+                               .true.,raercol_cw(1,lnumcw,nsav))<a name='795'>
+               endif<a name='796'>
+<a name='797'>
+               do l=1,nspec_amode(m)<a name='798'>
+                  lmass=lmassptr_amode(l,m)<a name='799'>
+                  lmasscw=lmassptrcw_amode(l,m)<a name='800'>
+<font color=#447700>! rce-comment -   activation source in layer k involves particles from k+1<a name='801'></font>
+<font color=#447700>!	          source(:)= mact(:,m)*(raercol(:,lmass,nsav))<a name='802'></font>
+                  source(1:pver-1)= mact(1:pver-1,m)*(raercol(2:pver,lmass,nsav))<a name='803'>
+<font color=#447700>! rce-comment- new formulation for k=pver<a name='804'></font>
+<font color=#447700>!                 source(  pver  )= mact(  pver  ,m)*(raercol(  pver,lmass,nsav))<a name='805'></font>
+                  tmpa = raercol(pver,lmass,nsav)*mact(pver,m) &amp;<a name='806'>
+                       + raercol(pver,lmasscw,nsav)*(mact(pver,m) - taumix_internal_pver_inv)<a name='807'>
+                  source(pver) = max(0.0_r8,tmpa)<a name='808'>
+<font color=#447700>!                  flxconv=cflx(i,lmass)*zn(pver)<a name='809'></font>
+		  flxconv=0.<a name='810'>
+<a name='811'>
+                  call <A href='../../html_code/phys/module_mixactivate.F.html#EXPLMIX'>explmix</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXPLMIX_4">(raercol_cw(1,lmasscw,nnew),source,ekkp,ekkm,overlapp,overlapm, &amp;<a name='812'>
+                               raercol_cw(1,lmasscw,nsav),surfrate_cw(lmasscw),zero,pver,dtmix,&amp;<a name='813'>
+                               .false.)<a name='814'>
+                  call <A href='../../html_code/phys/module_mixactivate.F.html#EXPLMIX'>explmix</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXPLMIX_5">(raercol(1,lmass,nnew),source,ekkp,ekkm,overlapp,overlapm,  &amp;<a name='815'>
+                               raercol(1,lmass,nsav),surfrate(lmass),flxconv, pver,dtmix,&amp;<a name='816'>
+                               .true.,raercol_cw(1,lmasscw,nsav))<a name='817'>
+	       enddo   <font color=#447700>! l<a name='818'></font>
+<font color=#447700>!              lwater=lwaterptr_amode(m)  ! aerosol water<a name='819'></font>
+<font color=#447700>!              source(:)=0.<a name='820'></font>
+<font color=#447700>!              call explmix(   raercol(1,lwater,nnew),source,ekkp,ekkm,overlapp,overlapm,   &amp;<a name='821'></font>
+<font color=#447700>!                              raercol(1,lwater,nsav),surfrate(lwater),zero,pver,dtmix,&amp;<a name='822'></font>
+<font color=#447700>!                              .true.,source)<a name='823'></font>
+            enddo   <font color=#447700>! m<a name='824'></font>
+<a name='825'>
+         enddo old_cloud_nsubmix_loop<a name='826'>
+<font color=#447700>!          call t_stopf ('nsubmix')<a name='827'></font>
+<a name='828'>
+<font color=#447700>!        evaporate particles again if no cloud<a name='829'></font>
+<a name='830'>
+         do k=1,pver<a name='831'>
+	    if(cldn(i,k).eq.0.)then<a name='832'>
+<font color=#447700>!              no cloud<a name='833'></font>
+               qcld(k)=0.<a name='834'>
+<font color=#447700>!              convert activated aerosol to interstitial in decaying cloud<a name='835'></font>
+               do m=1,ntot_amode<a name='836'>
+	          lnum=numptr_amode(m)<a name='837'>
+		  lnumcw=numptrcw_amode(m)<a name='838'>
+		  if(lnum.gt.0)then<a name='839'>
+                        raercol(k,lnum,nnew)=raercol(k,lnum,nnew)+raercol_cw(k,lnumcw,nnew)<a name='840'>
+                        raercol_cw(k,lnumcw,nnew)=0.<a name='841'>
+		  endif<a name='842'>
+<font color=#447700>!<a name='843'></font>
+		  do l=1,nspec_amode(m)<a name='844'>
+		        lmass=lmassptr_amode(l,m)<a name='845'>
+			lmasscw=lmassptrcw_amode(l,m)<a name='846'>
+<font color=#447700>!                       raercol(k,lmass,nnew)=raercol(k,lmass,nnew)+raercol(k,lmasscw,nnew)<a name='847'></font>
+<font color=#447700>!                       raercol(k,lmasscw,nnew)=0.<a name='848'></font>
+                        raercol(k,lmass,nnew)=raercol(k,lmass,nnew)+raercol_cw(k,lmasscw,nnew)<a name='849'>
+                        raercol_cw(k,lmasscw,nnew)=0.<a name='850'>
+                  enddo<a name='851'>
+                enddo<a name='852'>
+            endif<a name='853'>
+         enddo<a name='854'>
+<a name='855'>
+<font color=#447700>!        droplet number<a name='856'></font>
+<a name='857'>
+         ndropcol(i)=0.<a name='858'>
+         do k=1,pver<a name='859'>
+	    ndropmix(i,k)=(qcld(k)-ncldwtr(i,k))*dtinv - nsource(i,k)<a name='860'>
+	    tendnd(i,k) = (max(qcld(k),1.e-6_r8)-ncldwtr(i,k))*dtinv<a name='861'>
+	    ndropcol(i) = ndropcol(i) + ncldwtr(i,k)*pdel(i,k)<a name='862'>
+	 enddo<a name='863'>
+	 ndropcol(i) = ndropcol(i)/gravit<a name='864'>
+<a name='865'>
+<a name='866'>
+<font color=#447700>!        aerosol tendency<a name='867'></font>
+         do m=1,ntot_amode<a name='868'>
+            lnum=numptr_amode(m)<a name='869'>
+            lnumcw=numptrcw_amode(m)<a name='870'>
+	    if(lnum.gt.0)then<a name='871'>
+               qqcwtend(i,:,lnumcw)=(raercol_cw(:,lnumcw,nnew)-qqcw(lnumcw)%fldcw(i,:))*dtinv<a name='872'>
+               qqcw(lnumcw)%fldcw(i,:)=raercol_cw(:,lnumcw,nnew)    <font color=#447700>! update cloud-borne aerosol<a name='873'></font>
+	       raertend(i,:,lnum)= (raercol(:,lnum,nnew)-raer(i,:,lnum))*dtinv<a name='874'>
+	    endif<a name='875'>
+	    do l=1,nspec_amode(m)<a name='876'>
+	       lmass=lmassptr_amode(l,m)<a name='877'>
+	       lmasscw=lmassptrcw_amode(l,m)<a name='878'>
+               qqcwtend(i,:,lmasscw)=(raercol_cw(:,lmasscw,nnew)-qqcw(lmasscw)%fldcw(i,:))*dtinv<a name='879'>
+               qqcw(lmasscw)%fldcw(i,:)=raercol_cw(:,lmasscw,nnew)   <font color=#447700>! update cloud-borne aerosol<a name='880'></font>
+	       raertend(i,:,lmass)=(raercol(:,lmass,nnew)-raer(i,:,lmass))*dtinv<a name='881'>
+            enddo<a name='882'>
+<font color=#447700>!           lwater=lwaterptr_amode(m)<a name='883'></font>
+<font color=#447700>!           raertend(i,:,lwater)=(raercol(:,lwater,nnew)-raer(i,:,lwater))*dtinv<a name='884'></font>
+         enddo<a name='885'>
+<a name='886'>
+      enddo overall_main_i_loop<a name='887'>
+<font color=#447700>! end of main loop over i/longitude ....................................<a name='888'></font>
+<a name='889'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_103">('NDROPCOL', ndropcol  , pcols, lchnk   )<a name='890'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_104">('NDROPSRC', nsource    , pcols, lchnk   )<a name='891'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_105">('NDROPMIX', ndropmix    , pcols, lchnk   )<a name='892'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_106">('LCLOUD  ', cldn    , pcols, lchnk   )<a name='893'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_107">('WTKE    ', wtke    , pcols, lchnk   )<a name='894'>
+<a name='895'>
+      call <A href='../../html_code/phys/module_cam_mp_ndrop.F.html#CCNCALC'>ccncalc</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CCNCALC_1">(lchnk,ncol,temp,cs,raer,qqcw,ccn,psat,supersat,alogsig,npv)<a name='896'>
+      do l=1,psat<a name='897'>
+         call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_108">(ccn_name(l), ccn(1,1,l)    , pcols, lchnk   )<a name='898'>
+      enddo<a name='899'>
+<a name='900'>
+<font color=#447700>! do column tendencies<a name='901'></font>
+      do m = 1, ntot_amode<a name='902'>
+      do lphase = 1, 2<a name='903'>
+      do lspec = 0, nspec_amode(m)+1   <font color=#447700>! loop over number + chem constituents + water<a name='904'></font>
+         if (lspec == 0) then   <font color=#447700>! number<a name='905'></font>
+            if (lphase == 1) then<a name='906'>
+               l = numptr_amode(m)<a name='907'>
+            else<a name='908'>
+               l = numptrcw_amode(m)<a name='909'>
+            endif<a name='910'>
+         else if (lspec &lt;= nspec_amode(m)) then   <font color=#447700>! non-water mass<a name='911'></font>
+            if (lphase == 1) then<a name='912'>
+               l = lmassptr_amode(lspec,m)<a name='913'>
+            else<a name='914'>
+               l = lmassptrcw_amode(lspec,m)<a name='915'>
+            endif<a name='916'>
+         else   <font color=#447700>! water mass<a name='917'></font>
+<font color=#447700>!           if (lphase == 1) then<a name='918'></font>
+<font color=#447700>!              l = lwaterptr_amode(m)<a name='919'></font>
+<font color=#447700>!           else<a name='920'></font>
+               cycle<a name='921'>
+<font color=#447700>!           end if<a name='922'></font>
+         end if<a name='923'>
+         if (l &lt;= 0) cycle<a name='924'>
+<a name='925'>
+<font color=#447700>! mixnuc1 tendency for interstitial = (total tendency) - cflx<a name='926'></font>
+<font color=#447700>! mixnuc1 tendency for activated    = (total tendency)<a name='927'></font>
+         coltend(:) = 0.0<a name='928'>
+         if (lphase == 1) then<a name='929'>
+            tmpname = cnst_name(l)<a name='930'>
+            do i = 1, ncol<a name='931'>
+               coltend(i) = sum( pdel(i,:)*raertend(i,:,l) )/gravit<a name='932'>
+<font color=#447700>!               coltend(i) = coltend(i) - cflx(i,l)<a name='933'></font>
+            end do<a name='934'>
+         else<a name='935'>
+            tmpname = cnst_name_cw(l)<a name='936'>
+            do i = 1, ncol<a name='937'>
+               coltend(i) = sum( pdel(i,:)*qqcwtend(i,:,l) )/gravit<a name='938'>
+            end do<a name='939'>
+         end if<a name='940'>
+         fieldname = trim(tmpname) // '_mixnuc1'<a name='941'>
+         call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_109">( fieldname, coltend, pcols, lchnk)<a name='942'>
+<a name='943'>
+      end do   <font color=#447700>! lspec<a name='944'></font>
+      end do   <font color=#447700>! lphase<a name='945'></font>
+      end do   <font color=#447700>! m<a name='946'></font>
+<a name='947'>
+      return<a name='948'>
+      end subroutine dropmixnuc<a name='949'>
+<a name='950'>
+<A NAME='EXPLMIX'><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#EXPLMIX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='951'>
+   <font color=#993300>subroutine </font><font color=#cc0000>explmix</font>( q, src, ekkp, ekkm, overlapp, overlapm, &amp; <A href='../../call_to/EXPLMIX.html' TARGET='index'>11</A><a name='952'>
+                       qold, surfrate, flxconv, pver, dt, is_unact, qactold )<a name='953'>
+<a name='954'>
+<font color=#447700>!  explicit integration of droplet/aerosol mixing<a name='955'></font>
+<font color=#447700>!     with source due to activation/nucleation<a name='956'></font>
+      <a name='957'>
+<a name='958'>
+   implicit none<a name='959'>
+   integer, intent(in) :: pver <font color=#447700>! number of levels<a name='960'></font>
+   real(r8), intent(out) :: q(pver) <font color=#447700>! mixing ratio to be updated<a name='961'></font>
+   real(r8), intent(in) :: qold(pver) <font color=#447700>! mixing ratio from previous time step<a name='962'></font>
+   real(r8), intent(in) :: src(pver) <font color=#447700>! source due to activation/nucleation (/s)<a name='963'></font>
+   real(r8), intent(in) :: ekkp(pver) <font color=#447700>! zn*zs*density*diffusivity (kg/m3 m2/s) at interface<a name='964'></font>
+                      <font color=#447700>! below layer k  (k,k+1 interface)<a name='965'></font>
+   real(r8), intent(in) :: ekkm(pver) <font color=#447700>! zn*zs*density*diffusivity (kg/m3 m2/s) at interface<a name='966'></font>
+                      <font color=#447700>! above layer k  (k,k+1 interface)<a name='967'></font>
+   real(r8), intent(in) :: overlapp(pver) <font color=#447700>! cloud overlap below<a name='968'></font>
+   real(r8), intent(in) :: overlapm(pver) <font color=#447700>! cloud overlap above<a name='969'></font>
+   real(r8), intent(in) :: surfrate <font color=#447700>! surface exchange rate (/s)<a name='970'></font>
+   real(r8), intent(in) :: flxconv <font color=#447700>! convergence of flux from surface<a name='971'></font>
+   real(r8), intent(in) :: dt <font color=#447700>! time step (s)<a name='972'></font>
+   logical, intent(in) :: is_unact <font color=#447700>! true if this is an unactivated species<a name='973'></font>
+   real(r8), intent(in),optional :: qactold(pver)<a name='974'>
+          <font color=#447700>! mixing ratio of ACTIVATED species from previous step<a name='975'></font>
+          <font color=#447700>! *** this should only be present<a name='976'></font>
+          <font color=#447700>!     if the current species is unactivated number/sfc/mass<a name='977'></font>
+<a name='978'>
+   integer k,kp1,km1<a name='979'>
+<a name='980'>
+   if ( is_unact ) then<a name='981'>
+<font color=#447700>!     the qactold*(1-overlap) terms are resuspension of activated material<a name='982'></font>
+      do k=1,pver<a name='983'>
+         kp1=min(k+1,pver)<a name='984'>
+         km1=max(k-1,1)<a name='985'>
+         q(k) = qold(k) + dt*( - src(k) + ekkp(k)*(qold(kp1) - qold(k) +       &amp;<a name='986'>
+                           qactold(kp1)*(1.0-overlapp(k)))               &amp;<a name='987'>
+                                  + ekkm(k)*(qold(km1) - qold(k) +     &amp;<a name='988'>
+                           qactold(km1)*(1.0-overlapm(k))) )<a name='989'>
+<font color=#447700>!        force to non-negative<a name='990'></font>
+<font color=#447700>!        if(q(k)&lt;-1.e-30)then<a name='991'></font>
+<font color=#447700>!           write(iulog,*)'q=',q(k),' in explmix'<a name='992'></font>
+            q(k)=max(q(k),0._r8)<a name='993'>
+<font color=#447700>!        endif<a name='994'></font>
+      end do<a name='995'>
+<font color=#447700>!     diffusion loss at base of lowest layer<a name='996'></font>
+      q(pver)=q(pver)-surfrate*qold(pver)*dt+flxconv*dt<a name='997'>
+<font color=#447700>!        force to non-negative<a name='998'></font>
+<font color=#447700>!        if(q(pver)&lt;-1.e-30)then<a name='999'></font>
+<font color=#447700>!           write(iulog,*)'q=',q(pver),' in explmix'<a name='1000'></font>
+            q(pver)=max(q(pver),0._r8)<a name='1001'>
+<font color=#447700>!        endif<a name='1002'></font>
+   else<a name='1003'>
+      do k=1,pver<a name='1004'>
+         kp1=min(k+1,pver)<a name='1005'>
+         km1=max(k-1,1)<a name='1006'>
+         q(k) = qold(k) + dt*(src(k) + ekkp(k)*(overlapp(k)*qold(kp1)-qold(k)) +      &amp;<a name='1007'>
+                                    ekkm(k)*(overlapm(k)*qold(km1)-qold(k)) )<a name='1008'>
+<font color=#447700>!        force to non-negative<a name='1009'></font>
+<font color=#447700>!        if(q(k)&lt;-1.e-30)then<a name='1010'></font>
+<font color=#447700>!           write(iulog,*)'q=',q(k),' in explmix'<a name='1011'></font>
+            q(k)=max(q(k),0._r8)<a name='1012'>
+<font color=#447700>!        endif<a name='1013'></font>
+      end do<a name='1014'>
+<font color=#447700>!     diffusion loss at base of lowest layer<a name='1015'></font>
+      q(pver)=q(pver)-surfrate*qold(pver)*dt+flxconv*dt<a name='1016'>
+<font color=#447700>!        force to non-negative<a name='1017'></font>
+<font color=#447700>!        if(q(pver)&lt;-1.e-30)then<a name='1018'></font>
+<font color=#447700>!           write(iulog,*)'q=',q(pver),' in explmix'<a name='1019'></font>
+            q(pver)=max(q(pver),0._r8)<a name='1020'>
+<font color=#447700>!        endif<a name='1021'></font>
+   end if<a name='1022'>
+<a name='1023'>
+   return<a name='1024'>
+   end subroutine explmix<a name='1025'>
+<a name='1026'>
+<A NAME='ACTIVATE_INIT'><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1027'>
+   <font color=#993300>subroutine </font><font color=#cc0000>activate_init</font> <A href='../../call_to/ACTIVATE_INIT.html' TARGET='index'>3</A>,<A href='../../call_from/ACTIVATE_INIT.html' TARGET='index'>16</A><a name='1028'>
+#ifndef WRF_PORT<a name='1029'>
+      use ppgrid,  only: pver<a name='1030'>
+#else<a name='1031'>
+      use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_28">, only: pver<a name='1032'>
+#endif<a name='1033'>
+#ifndef WRF_PORT<a name='1034'>
+      use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_14"><a name='1035'>
+      use cam_history,   only: addfld, add_default, phys_decomp<a name='1036'>
+#else<a name='1037'>
+      use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_15">, only:sigmag_amode =&gt; sigmag_amode_mp, &amp;<a name='1038'>
+           numptr_amode   =&gt; numptr_amode_mp, nspec_amode =&gt; nspec_amode_mp, &amp;<a name='1039'>
+           lmassptr_amode =&gt; lmassptr_amode_mp, dgnum_amode =&gt; dgnum_amode_mp<a name='1040'>
+      use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_29">, only: addfld, add_default, phys_decomp<a name='1041'>
+#endif<a name='1042'>
+      use <A href='../../html_code/phys/module_cam_physconst.F.html#PHYSCONST'>physconst</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHYSCONST_13">, only: rhoh2o, mwh2o, r_universal<a name='1043'>
+      use <A href='../../html_code/phys/module_cam_error_function.F.html#ERROR_FUNCTION'>error_function</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ERROR_FUNCTION_3">, only: erf<a name='1044'>
+<a name='1045'>
+      implicit none<a name='1046'>
+<a name='1047'>
+      integer l,m<a name='1048'>
+      real(r8) arg<a name='1049'>
+      integer lnum, lmass<a name='1050'>
+<a name='1051'>
+      character*16 ccn_longname<a name='1052'>
+<a name='1053'>
+<font color=#447700>!      mathematical constants<a name='1054'></font>
+<a name='1055'>
+      zero=0._r8<a name='1056'>
+      third=1./3._r8<a name='1057'>
+      twothird=2.*third<a name='1058'>
+      sixth=1./6._r8<a name='1059'>
+      sq2=sqrt(2._r8)<a name='1060'>
+      pi=4._r8*atan(1.0_r8)<a name='1061'>
+      sqpi=sqrt(pi)<a name='1062'>
+<a name='1063'>
+      t0=273.<a name='1064'>
+      surften=0.076_r8<a name='1065'>
+      aten=2.*mwh2o*surften/(r_universal*t0*rhoh2o)<a name='1066'>
+      alogaten=log(aten)<a name='1067'>
+      alog2=log(2._r8)<a name='1068'>
+      alog3=log(3._r8)<a name='1069'>
+<a name='1070'>
+      do m=1,ntot_amode<a name='1071'>
+<font color=#447700>!         use only if width of size distribution is prescribed<a name='1072'></font>
+          alogsig(m)=log(sigmag_amode(m))<a name='1073'>
+          exp45logsig(m)=exp(4.5*alogsig(m)*alogsig(m))<a name='1074'>
+	  argfactor(m)=2./(3.*sqrt(2.)*alogsig(m))<a name='1075'>
+          f1(m)=0.5*exp(2.5*alogsig(m)*alogsig(m))<a name='1076'>
+	  f2(m)=1.+0.25*alogsig(m)<a name='1077'>
+          lnum=numptr_amode(m)<a name='1078'>
+          do l=1,nspec_amode(m)<a name='1079'>
+               lmass=lmassptr_amode(l,m)<a name='1080'>
+               if(lmass.le.0)then<a name='1081'>
+                  write(iulog,*)'lmassptr_amode(',l,m,')=',lmass<a name='1082'>
+#ifdef WRF_PORT<a name='1083'>
+                  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_599">(iulog)<a name='1084'>
+#endif <a name='1085'>
+                  call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_17"><a name='1086'>
+               endif<a name='1087'>
+          enddo<a name='1088'>
+          npv(m)=6./(pi*dgnum_amode(m)**3*exp45logsig(m))<a name='1089'>
+      enddo<a name='1090'>
+      <a name='1091'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_100"> ('WTKE     ', 'm/s     ', pver, 'A', 'Standard deviation of updraft velocity'                  ,phys_decomp)<a name='1092'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_101"> ('LCLOUD   ', '        ', pver, 'A', 'Liquid cloud fraction'                                   ,phys_decomp)<a name='1093'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_102"> ('NDROPMIX ', '#/kg/s  ', pver, 'A', 'Droplet number mixing'                     ,phys_decomp)<a name='1094'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_103"> ('NDROPSRC ', '#/kg/s  ', pver, 'A', 'Droplet number source'                     ,phys_decomp)<a name='1095'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_104"> ('NDROPSNK ', '#/kg/s  ', pver, 'A', 'Droplet number loss by microphysics'       ,phys_decomp)<a name='1096'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_105"> ('NDROPCOL ', '#/m2    ', 1,    'A', 'Column droplet number'                     ,phys_decomp)<a name='1097'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#ADD_DEFAULT'>add_default</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADD_DEFAULT_10"> ('WTKE    ', 1, ' ')<a name='1098'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#ADD_DEFAULT'>add_default</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADD_DEFAULT_11"> ('LCLOUD  ', 1, ' ')<a name='1099'>
+<a name='1100'>
+      return<a name='1101'>
+      end subroutine activate_init<a name='1102'>
+<a name='1103'>
+<A NAME='ACTIVATE_MODAL'><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1104'>
+      <font color=#993300>subroutine </font><font color=#cc0000>activate_modal</font>(wbar, sigw, wdiab, wminf, wmaxf, tair, rhoair,  &amp; <A href='../../call_to/ACTIVATE_MODAL.html' TARGET='index'>2</A>,<A href='../../call_from/ACTIVATE_MODAL.html' TARGET='index'>27</A><a name='1105'>
+                          na, pmode, nmode, volume, sigman, hygro, &amp;<a name='1106'>
+                          fn, fm, fluxn, fluxm, flux_fullact )<a name='1107'>
+<a name='1108'>
+<font color=#447700>!      calculates number, surface, and mass fraction of aerosols activated as CCN<a name='1109'></font>
+<font color=#447700>!      calculates flux of cloud droplets, surface area, and aerosol mass into cloud<a name='1110'></font>
+<font color=#447700>!      assumes an internal mixture within each of up to pmode multiple aerosol modes<a name='1111'></font>
+<font color=#447700>!      a gaussiam spectrum of updrafts can be treated.<a name='1112'></font>
+<a name='1113'>
+<font color=#447700>!      mks units<a name='1114'></font>
+<a name='1115'>
+<font color=#447700>!      Abdul-Razzak and Ghan, A parameterization of aerosol activation.<a name='1116'></font>
+<font color=#447700>!      2. Multiple aerosol types. J. Geophys. Res., 105, 6837-6844.<a name='1117'></font>
+<a name='1118'>
+      use <A href='../../html_code/phys/module_cam_physconst.F.html#PHYSCONST'>physconst</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHYSCONST_14">, only: rair, epsilo, cpair, rh2o, latvap, gravit,   &amp;<a name='1119'>
+                                 rhoh2o, mwh2o, r_universal<a name='1120'>
+      use <A href='../../html_code/phys/module_cam_wv_saturation.F.html#WV_SATURATION'>wv_saturation</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WV_SATURATION_10">, only: estblf, epsqs<a name='1121'>
+      use <A href='../../html_code/phys/module_cam_error_function.F.html#ERROR_FUNCTION'>error_function</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ERROR_FUNCTION_4">, only: erf<a name='1122'>
+<a name='1123'>
+      implicit none<a name='1124'>
+<a name='1125'>
+<a name='1126'>
+<font color=#447700>!      input<a name='1127'></font>
+<a name='1128'>
+      integer pmode <font color=#447700>! dimension of modes<a name='1129'></font>
+      real(r8) wbar          <font color=#447700>! grid cell mean vertical velocity (m/s)<a name='1130'></font>
+      real(r8) sigw          <font color=#447700>! subgrid standard deviation of vertical vel (m/s)<a name='1131'></font>
+      real(r8) wdiab         <font color=#447700>! diabatic vertical velocity (0 if adiabatic)<a name='1132'></font>
+      real(r8) wminf         <font color=#447700>! minimum updraft velocity for integration (m/s)<a name='1133'></font>
+      real(r8) wmaxf         <font color=#447700>! maximum updraft velocity for integration (m/s)<a name='1134'></font>
+      real(r8) tair          <font color=#447700>! air temperature (K)<a name='1135'></font>
+      real(r8) rhoair        <font color=#447700>! air density (kg/m3)<a name='1136'></font>
+      real(r8) na(pmode)           <font color=#447700>! aerosol number concentration (/m3)<a name='1137'></font>
+      integer nmode      <font color=#447700>! number of aerosol modes<a name='1138'></font>
+      real(r8) volume(pmode)     <font color=#447700>! aerosol volume concentration (m3/m3)<a name='1139'></font>
+      real(r8) sigman(pmode)  <font color=#447700>! geometric standard deviation of aerosol size distribution<a name='1140'></font>
+      real(r8) hygro(pmode)  <font color=#447700>! hygroscopicity of aerosol mode<a name='1141'></font>
+<a name='1142'>
+<font color=#447700>!      output<a name='1143'></font>
+<a name='1144'>
+      real(r8) fn(pmode)      <font color=#447700>! number fraction of aerosols activated<a name='1145'></font>
+      real(r8) fm(pmode)      <font color=#447700>! mass fraction of aerosols activated<a name='1146'></font>
+      real(r8) fluxn(pmode)   <font color=#447700>! flux of activated aerosol number fraction into cloud (cm/s)<a name='1147'></font>
+      real(r8) fluxm(pmode)   <font color=#447700>! flux of activated aerosol mass fraction into cloud (cm/s)<a name='1148'></font>
+      real(r8) flux_fullact   <font color=#447700>! flux of activated aerosol fraction assuming 100% activation (cm/s)<a name='1149'></font>
+                              <font color=#447700>!    rce-comment<a name='1150'></font>
+                              <font color=#447700>!    used for consistency check -- this should match (ekd(k)*zs(k))<a name='1151'></font>
+                              <font color=#447700>!    also, fluxm/flux_fullact gives fraction of aerosol mass flux<a name='1152'></font>
+                              <font color=#447700>!       that is activated<a name='1153'></font>
+<a name='1154'>
+<font color=#447700>!      local<a name='1155'></font>
+<a name='1156'>
+      integer, parameter:: nx=200<a name='1157'>
+      integer iquasisect_option, isectional<a name='1158'>
+      real(r8) integ,integf<a name='1159'>
+      real(r8), parameter :: p0 = 1013.25e2_r8    <font color=#447700>! reference pressure (Pa)<a name='1160'></font>
+      real(r8) xmin(ntot_amode),xmax(ntot_amode) <font color=#447700>! ln(r) at section interfaces<a name='1161'></font>
+      real(r8) volmin(ntot_amode),volmax(ntot_amode) <font color=#447700>! volume at interfaces<a name='1162'></font>
+      real(r8) tmass <font color=#447700>! total aerosol mass concentration (g/cm3)<a name='1163'></font>
+      real(r8) sign(ntot_amode)    <font color=#447700>! geometric standard deviation of size distribution<a name='1164'></font>
+      real(r8) rm <font color=#447700>! number mode radius of aerosol at max supersat (cm)<a name='1165'></font>
+      real(r8) pres <font color=#447700>! pressure (Pa)<a name='1166'></font>
+      real(r8) path <font color=#447700>! mean free path (m)<a name='1167'></font>
+      real(r8) diff <font color=#447700>! diffusivity (m2/s)<a name='1168'></font>
+      real(r8) conduct <font color=#447700>! thermal conductivity (Joule/m/sec/deg)<a name='1169'></font>
+      real(r8) diff0,conduct0<a name='1170'>
+      real(r8) es <font color=#447700>! saturation vapor pressure<a name='1171'></font>
+      real(r8) qs <font color=#447700>! water vapor saturation mixing ratio<a name='1172'></font>
+      real(r8) dqsdt <font color=#447700>! change in qs with temperature<a name='1173'></font>
+      real(r8) dqsdp <font color=#447700>! change in qs with pressure<a name='1174'></font>
+      real(r8) g <font color=#447700>! thermodynamic function (m2/s)<a name='1175'></font>
+      real(r8) zeta(ntot_amode), eta(ntot_amode)<a name='1176'>
+      real(r8) lnsmax <font color=#447700>! ln(smax)<a name='1177'></font>
+      real(r8) alpha<a name='1178'>
+      real(r8) gamma<a name='1179'>
+      real(r8) beta<a name='1180'>
+      real(r8) sqrtg(ntot_amode)<a name='1181'>
+      real(r8) :: amcube(ntot_amode) <font color=#447700>! cube of dry mode radius (m)<a name='1182'></font>
+      real(r8) :: smcrit(ntot_amode) <font color=#447700>! critical supersatuation for activation<a name='1183'></font>
+      real(r8) :: lnsm(ntot_amode) <font color=#447700>! ln(smcrit)<a name='1184'></font>
+      real(r8) smc(ntot_amode) <font color=#447700>! critical supersaturation for number mode radius<a name='1185'></font>
+      real(r8) sumflx_fullact<a name='1186'>
+      real(r8) sumflxn(ntot_amode)<a name='1187'>
+      real(r8) sumflxm(ntot_amode)<a name='1188'>
+      real(r8) sumfn(ntot_amode)<a name='1189'>
+      real(r8) sumfm(ntot_amode)<a name='1190'>
+      real(r8) fnold(ntot_amode)   <font color=#447700>! number fraction activated<a name='1191'></font>
+      real(r8) fmold(ntot_amode)   <font color=#447700>! mass fraction activated<a name='1192'></font>
+      real(r8) wold,gold<a name='1193'>
+      real(r8) alogam<a name='1194'>
+      real(r8) rlo,rhi,xint1,xint2,xint3,xint4<a name='1195'>
+      real(r8) wmin,wmax,w,dw,dwmax,dwmin,wnuc,dwnew,wb<a name='1196'>
+      real(r8) dfmin,dfmax,fnew,fold,fnmin,fnbar,fsbar,fmbar<a name='1197'>
+      real(r8) alw,sqrtalw<a name='1198'>
+      real(r8) smax<a name='1199'>
+      real(r8) x,arg<a name='1200'>
+      real(r8) xmincoeff,xcut,volcut,surfcut<a name='1201'>
+      real(r8) z,z1,z2,wf1,wf2,zf1,zf2,gf1,gf2,gf<a name='1202'>
+      real(r8) etafactor1,etafactor2(ntot_amode),etafactor2max<a name='1203'>
+      integer m,n<a name='1204'>
+<font color=#447700>!      numerical integration parameters<a name='1205'></font>
+      real(r8), parameter :: eps=0.3_r8,fmax=0.99_r8,sds=3._r8<a name='1206'>
+ <a name='1207'>
+      real(r8), parameter :: namin=1.e6_r8   <font color=#447700>! minimum aerosol number concentration (/m3)<a name='1208'></font>
+<a name='1209'>
+      integer ndist(nx)  <font color=#447700>! accumulates frequency distribution of integration bins required<a name='1210'></font>
+      data ndist/nx*0/<a name='1211'>
+      save ndist<a name='1212'>
+<a name='1213'>
+      if(ntot_amode&lt;pmode)then<a name='1214'>
+         write(iulog,*)'ntot_amode,pmode in activate =',ntot_amode,pmode<a name='1215'>
+#ifdef WRF_PORT<a name='1216'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_600">(iulog)<a name='1217'>
+#endif <a name='1218'>
+	 call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_18">('activate')<a name='1219'>
+      endif<a name='1220'>
+<a name='1221'>
+      fn(:)=0._r8<a name='1222'>
+      fm(:)=0._r8<a name='1223'>
+      fluxn(:)=0._r8<a name='1224'>
+      fluxm(:)=0._r8<a name='1225'>
+      flux_fullact=0._r8<a name='1226'>
+<a name='1227'>
+      if(nmode.eq.1.and.na(1).lt.1.e-20_r8)return<a name='1228'>
+<a name='1229'>
+      if(sigw.le.1.e-5_r8.and.wbar.le.0.)return<a name='1230'>
+<a name='1231'>
+      pres=rair*rhoair*tair<a name='1232'>
+      diff0=0.211e-4_r8*(p0/pres)*(tair/t0)**1.94<a name='1233'>
+      conduct0=(5.69_r8+0.017_r8*(tair-t0))*4.186e2_r8*1.e-5_r8 <font color=#447700>! convert to J/m/s/deg<a name='1234'></font>
+      es = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_8">(tair)<a name='1235'>
+      qs = epsilo*es/(pres-(1.0_r8 - epsqs)*es)<a name='1236'>
+      dqsdt=latvap/(rh2o*tair*tair)*qs<a name='1237'>
+      alpha=gravit*(latvap/(cpair*rh2o*tair*tair)-1./(rair*tair))<a name='1238'>
+      gamma=(1+latvap/cpair*dqsdt)/(rhoair*qs)<a name='1239'>
+      etafactor2max=1.e10/(alpha*wmaxf)**1.5 <font color=#447700>! this should make eta big if na is very small.<a name='1240'></font>
+<a name='1241'>
+      do m=1,nmode<a name='1242'>
+         if(volume(m).gt.1.e-39_r8.and.na(m).gt.1.e-39_r8)then<a name='1243'>
+<font color=#447700>!            number mode radius (m)<a name='1244'></font>
+<font color=#447700>!           write(iulog,*)'alogsig,volc,na=',alogsig(m),volc(m),na(m)<a name='1245'></font>
+            amcube(m)=(3.*volume(m)/(4.*pi*exp45logsig(m)*na(m)))  <font color=#447700>! only if variable size dist<a name='1246'></font>
+<font color=#447700>!           growth coefficent Abdul-Razzak &amp; Ghan 1998 eqn 16<a name='1247'></font>
+<font color=#447700>!           should depend on mean radius of mode to account for gas kinetic effects<a name='1248'></font>
+<font color=#447700>!           see Fountoukis and Nenes, JGR2005 and Meskhidze et al., JGR2006<a name='1249'></font>
+<font color=#447700>!           for approriate size to use for effective diffusivity.<a name='1250'></font>
+            g=1._r8/(rhoh2o/(diff0*rhoair*qs)                                    &amp;<a name='1251'>
+              +latvap*rhoh2o/(conduct0*tair)*(latvap/(rh2o*tair)-1._r8))<a name='1252'>
+            sqrtg(m)=sqrt(g)<a name='1253'>
+            beta=2._r8*pi*rhoh2o*g*gamma<a name='1254'>
+            etafactor2(m)=1._r8/(na(m)*beta*sqrtg(m))<a name='1255'>
+            if(hygro(m).gt.1.e-10)then<a name='1256'>
+               smc(m)=2.*aten*sqrt(aten/(27.*hygro(m)*amcube(m))) <font color=#447700>! only if variable size dist<a name='1257'></font>
+            else<a name='1258'>
+               smc(m)=100.<a name='1259'>
+            endif<a name='1260'>
+<font color=#447700>!	    write(iulog,*)'sm,hygro,amcube=',smcrit(m),hygro(m),amcube(m)<a name='1261'></font>
+         else<a name='1262'>
+            g=1._r8/(rhoh2o/(diff0*rhoair*qs)                                    &amp;<a name='1263'>
+              +latvap*rhoh2o/(conduct0*tair)*(latvap/(rh2o*tair)-1._r8))<a name='1264'>
+            sqrtg(m)=sqrt(g)<a name='1265'>
+            smc(m)=1._r8<a name='1266'>
+	    etafactor2(m)=etafactor2max <font color=#447700>! this should make eta big if na is very small.<a name='1267'></font>
+         endif<a name='1268'>
+         lnsm(m)=log(smc(m)) <font color=#447700>! only if variable size dist<a name='1269'></font>
+<font color=#447700>!	 write(iulog,'(a,i4,4g12.2)')'m,na,amcube,hygro,sm,lnsm=', &amp;<a name='1270'></font>
+<font color=#447700>!                   m,na(m),amcube(m),hygro(m),sm(m),lnsm(m)<a name='1271'></font>
+      enddo<a name='1272'>
+<a name='1273'>
+      if(sigw.gt.1.e-5_r8)then <font color=#447700>! spectrum of updrafts<a name='1274'></font>
+<a name='1275'>
+         wmax=min(wmaxf,wbar+sds*sigw)<a name='1276'>
+         wmin=max(wminf,-wdiab)<a name='1277'>
+         wmin=max(wmin,wbar-sds*sigw)<a name='1278'>
+         w=wmin<a name='1279'>
+         dwmax=eps*sigw<a name='1280'>
+         dw=dwmax<a name='1281'>
+         dfmax=0.2_r8<a name='1282'>
+         dfmin=0.1_r8<a name='1283'>
+         if(wmax.le.w)then<a name='1284'>
+            do m=1,nmode<a name='1285'>
+               fluxn(m)=0.<a name='1286'>
+               fn(m)=0.<a name='1287'>
+               fluxm(m)=0.<a name='1288'>
+               fm(m)=0.<a name='1289'>
+            enddo<a name='1290'>
+            flux_fullact=0._r8<a name='1291'>
+            return<a name='1292'>
+         endif<a name='1293'>
+         do m=1,nmode<a name='1294'>
+            sumflxn(m)=0._r8<a name='1295'>
+            sumfn(m)=0._r8<a name='1296'>
+	    fnold(m)=0._r8<a name='1297'>
+            sumflxm(m)=0._r8<a name='1298'>
+            sumfm(m)=0._r8<a name='1299'>
+	    fmold(m)=0._r8<a name='1300'>
+         enddo<a name='1301'>
+         sumflx_fullact=0._r8<a name='1302'>
+<a name='1303'>
+         fold=0._r8<a name='1304'>
+         wold=0._r8<a name='1305'>
+         gold=0._r8<a name='1306'>
+<a name='1307'>
+         dwmin = min( dwmax, 0.01_r8 )<a name='1308'>
+<a name='1309'>
+         do n=1,200<a name='1310'>
+ 100        wnuc=w+wdiab<a name='1311'>
+<font color=#447700>!           write(iulog,*)'wnuc=',wnuc<a name='1312'></font>
+            alw=alpha*wnuc<a name='1313'>
+            sqrtalw=sqrt(alw)<a name='1314'>
+	    etafactor1=alw*sqrtalw<a name='1315'>
+<a name='1316'>
+              do m=1,nmode<a name='1317'>
+	         eta(m)=etafactor1*etafactor2(m)<a name='1318'>
+                 zeta(m)=twothird*sqrtalw*aten/sqrtg(m)<a name='1319'>
+              enddo<a name='1320'>
+<a name='1321'>
+              call <A href='../../html_code/phys/module_mixactivate.F.html#MAXSAT'>maxsat</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAXSAT_2">(zeta,eta,nmode,smc,smax)<a name='1322'>
+<font color=#447700>!	      write(iulog,*)'w,smax=',w,smax<a name='1323'></font>
+<a name='1324'>
+              lnsmax=log(smax)<a name='1325'>
+<a name='1326'>
+              x=twothird*(lnsm(nmode)-lnsmax)/(sq2*alogsig(nmode))<a name='1327'>
+              fnew=0.5_r8*(1._r8-erf(x))<a name='1328'>
+<a name='1329'>
+<a name='1330'>
+            dwnew = dw<a name='1331'>
+            if(fnew-fold.gt.dfmax.and.n.gt.1)then<a name='1332'>
+<font color=#447700>!              reduce updraft increment for greater accuracy in integration<a name='1333'></font>
+	       if (dw .gt. 1.01*dwmin) then<a name='1334'>
+                  dw=0.7_r8*dw<a name='1335'>
+                  dw=max(dw,dwmin)<a name='1336'>
+                  w=wold+dw<a name='1337'>
+                  go to 100<a name='1338'>
+               else<a name='1339'>
+                  dwnew = dwmin<a name='1340'>
+               endif<a name='1341'>
+            endif<a name='1342'>
+<a name='1343'>
+            if(fnew-fold.lt.dfmin)then<a name='1344'>
+<font color=#447700>!              increase updraft increment to accelerate integration<a name='1345'></font>
+	       dwnew=min(1.5_r8*dw,dwmax)<a name='1346'>
+            endif<a name='1347'>
+            fold=fnew<a name='1348'>
+<a name='1349'>
+            z=(w-wbar)/(sigw*sq2)<a name='1350'>
+            g=exp(-z*z)<a name='1351'>
+            fnmin=1._r8<a name='1352'>
+            xmincoeff=alogaten-twothird*(lnsmax-alog2)-alog3<a name='1353'>
+<a name='1354'>
+            do m=1,nmode<a name='1355'>
+<font color=#447700>!              modal<a name='1356'></font>
+               x=twothird*(lnsm(m)-lnsmax)/(sq2*alogsig(m))<a name='1357'>
+               fn(m)=0.5_r8*(1.-erf(x))<a name='1358'>
+               fnmin=min(fn(m),fnmin)<a name='1359'>
+<font color=#447700>!               integration is second order accurate<a name='1360'></font>
+<font color=#447700>!               assumes linear variation of f*g with w<a name='1361'></font>
+               fnbar=(fn(m)*g+fnold(m)*gold)<a name='1362'>
+	       arg=x-1.5_r8*sq2*alogsig(m)<a name='1363'>
+               fm(m)=0.5_r8*(1._r8-erf(arg))<a name='1364'>
+               fmbar=(fm(m)*g+fmold(m)*gold)<a name='1365'>
+               wb=(w+wold)<a name='1366'>
+               if(w.gt.0.)then<a name='1367'>
+                  sumflxn(m)=sumflxn(m)+sixth*(wb*fnbar           &amp;<a name='1368'>
+                      +(fn(m)*g*w+fnold(m)*gold*wold))*dw<a name='1369'>
+                  sumflxm(m)=sumflxm(m)+sixth*(wb*fmbar           &amp;<a name='1370'>
+                      +(fm(m)*g*w+fmold(m)*gold*wold))*dw<a name='1371'>
+               endif<a name='1372'>
+               sumfn(m)=sumfn(m)+0.5_r8*fnbar*dw<a name='1373'>
+<font color=#447700>!	       write(iulog,'(a,9g10.2)')'lnsmax,lnsm(m),x,fn(m),fnold(m),g,gold,fnbar,dw=',lnsmax,lnsm(m),x,fn(m),fnold(m),g,gold,fnbar,dw<a name='1374'></font>
+               fnold(m)=fn(m)<a name='1375'>
+               sumfm(m)=sumfm(m)+0.5_r8*fmbar*dw<a name='1376'>
+               fmold(m)=fm(m)<a name='1377'>
+            enddo<a name='1378'>
+<font color=#447700>!           same form as sumflxm but replace the fm with 1.0<a name='1379'></font>
+            sumflx_fullact = sumflx_fullact &amp;<a name='1380'>
+                           + sixth*(wb*(g+gold) + (g*w+gold*wold))*dw<a name='1381'>
+<font color=#447700>!            sumg=sumg+0.5_r8*(g+gold)*dw<a name='1382'></font>
+            gold=g<a name='1383'>
+            wold=w<a name='1384'>
+            dw=dwnew<a name='1385'>
+            if(n.gt.1.and.(w.gt.wmax.or.fnmin.gt.fmax))go to 20<a name='1386'>
+            w=w+dw<a name='1387'>
+         enddo<a name='1388'>
+         write(iulog,*)'do loop is too short in activate'<a name='1389'>
+#ifdef WRF_PORT<a name='1390'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_601">(iulog)<a name='1391'>
+#endif <a name='1392'>
+         write(iulog,*)'wmin=',wmin,' w=',w,' wmax=',wmax,' dw=',dw<a name='1393'>
+#ifdef WRF_PORT<a name='1394'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_602">(iulog)<a name='1395'>
+#endif <a name='1396'>
+         write(iulog,*)'wbar=',wbar,' sigw=',sigw,' wdiab=',wdiab<a name='1397'>
+#ifdef WRF_PORT<a name='1398'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_603">(iulog)<a name='1399'>
+#endif          <a name='1400'>
+         write(iulog,*)'wnuc=',wnuc<a name='1401'>
+#ifdef WRF_PORT<a name='1402'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_604">(iulog)<a name='1403'>
+#endif <a name='1404'>
+         write(iulog,*)'na=',(na(m),m=1,nmode)<a name='1405'>
+#ifdef WRF_PORT<a name='1406'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_605">(iulog)<a name='1407'>
+#endif <a name='1408'>
+         write(iulog,*)'fn=',(fn(m),m=1,nmode)<a name='1409'>
+#ifdef WRF_PORT<a name='1410'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_606">(iulog)<a name='1411'>
+#endif <a name='1412'>
+<font color=#447700>!   dump all subr parameters to allow testing with standalone code<a name='1413'></font>
+<font color=#447700>!   (build a driver that will read input and call activate)<a name='1414'></font>
+         write(iulog,*)'wbar,sigw,wdiab,tair,rhoair,nmode='<a name='1415'>
+#ifdef WRF_PORT<a name='1416'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_607">(iulog)<a name='1417'>
+#endif <a name='1418'>
+         write(iulog,*) wbar,sigw,wdiab,tair,rhoair,nmode<a name='1419'>
+#ifdef WRF_PORT<a name='1420'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_608">(iulog)<a name='1421'>
+#endif<a name='1422'>
+         write(iulog,*)'na=',na<a name='1423'>
+#ifdef WRF_PORT<a name='1424'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_609">(iulog)<a name='1425'>
+#endif<a name='1426'>
+         write(iulog,*)'volume=', (volume(m),m=1,nmode)<a name='1427'>
+#ifdef WRF_PORT<a name='1428'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_610">(iulog)<a name='1429'>
+#endif<a name='1430'>
+         write(iulog,*)'sigman=',sigman<a name='1431'>
+#ifdef WRF_PORT<a name='1432'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_611">(iulog)<a name='1433'>
+#endif<a name='1434'>
+         write(iulog,*)'hydro='<a name='1435'>
+#ifdef WRF_PORT<a name='1436'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_612">(iulog)<a name='1437'>
+#endif<a name='1438'>
+         write(iulog,*) hygro<a name='1439'>
+#ifdef WRF_PORT<a name='1440'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_613">(iulog)<a name='1441'>
+#endif<a name='1442'>
+<a name='1443'>
+         call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_19"><a name='1444'>
+   20    continue<a name='1445'>
+         ndist(n)=ndist(n)+1<a name='1446'>
+         if(w.lt.wmaxf)then<a name='1447'>
+<a name='1448'>
+<font color=#447700>!            contribution from all updrafts stronger than wmax<a name='1449'></font>
+<font color=#447700>!            assuming constant f (close to fmax)<a name='1450'></font>
+            wnuc=w+wdiab<a name='1451'>
+<a name='1452'>
+            z1=(w-wbar)/(sigw*sq2)<a name='1453'>
+            z2=(wmaxf-wbar)/(sigw*sq2)<a name='1454'>
+            g=exp(-z1*z1)<a name='1455'>
+            integ=sigw*0.5*sq2*sqpi*(erf(z2)-erf(z1))<a name='1456'>
+<font color=#447700>!            consider only upward flow into cloud base when estimating flux<a name='1457'></font>
+            wf1=max(w,zero)<a name='1458'>
+            zf1=(wf1-wbar)/(sigw*sq2)<a name='1459'>
+            gf1=exp(-zf1*zf1)<a name='1460'>
+            wf2=max(wmaxf,zero)<a name='1461'>
+            zf2=(wf2-wbar)/(sigw*sq2)<a name='1462'>
+            gf2=exp(-zf2*zf2)<a name='1463'>
+            gf=(gf1-gf2)<a name='1464'>
+            integf=wbar*sigw*0.5*sq2*sqpi*(erf(zf2)-erf(zf1))+sigw*sigw*gf<a name='1465'>
+<a name='1466'>
+            do m=1,nmode<a name='1467'>
+               sumflxn(m)=sumflxn(m)+integf*fn(m)<a name='1468'>
+               sumfn(m)=sumfn(m)+fn(m)*integ<a name='1469'>
+              sumflxm(m)=sumflxm(m)+integf*fm(m)<a name='1470'>
+               sumfm(m)=sumfm(m)+fm(m)*integ<a name='1471'>
+            enddo<a name='1472'>
+<font color=#447700>!           same form as sumflxm but replace the fm with 1.0<a name='1473'></font>
+            sumflx_fullact = sumflx_fullact + integf<a name='1474'>
+<font color=#447700>!            sumg=sumg+integ<a name='1475'></font>
+         endif<a name='1476'>
+<a name='1477'>
+<a name='1478'>
+         do m=1,nmode<a name='1479'>
+            fn(m)=sumfn(m)/(sq2*sqpi*sigw)<a name='1480'>
+<font color=#447700>!            fn(m)=sumfn(m)/(sumg)<a name='1481'></font>
+            if(fn(m).gt.1.01)then<a name='1482'>
+               write(iulog,*)'fn=',fn(m),' &gt; 1 in activate'<a name='1483'>
+#ifdef WRF_PORT<a name='1484'>
+               call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_614">(iulog)<a name='1485'>
+#endif<a name='1486'>
+	       write(iulog,*)'w,m,na,amcube=',w,m,na(m),amcube(m)<a name='1487'>
+#ifdef WRF_PORT<a name='1488'>
+               call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_615">(iulog)<a name='1489'>
+#endif<a name='1490'>
+	       write(iulog,*)'integ,sumfn,sigw=',integ,sumfn(m),sigw<a name='1491'>
+#ifdef WRF_PORT<a name='1492'>
+               call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_616">(iulog)<a name='1493'>
+#endif<a name='1494'>
+	       call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_20">('activate')<a name='1495'>
+            endif<a name='1496'>
+            fluxn(m)=sumflxn(m)/(sq2*sqpi*sigw)<a name='1497'>
+           fm(m)=sumfm(m)/(sq2*sqpi*sigw)<a name='1498'>
+<font color=#447700>!            fm(m)=sumfm(m)/(sumg)<a name='1499'></font>
+            if(fm(m).gt.1.01)then<a name='1500'>
+               write(iulog,*)'fm=',fm(m),' &gt; 1 in activate'<a name='1501'>
+#ifdef WRF_PORT<a name='1502'>
+               call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_617">(iulog)<a name='1503'>
+#endif<a name='1504'>
+            endif<a name='1505'>
+            fluxm(m)=sumflxm(m)/(sq2*sqpi*sigw)<a name='1506'>
+         enddo<a name='1507'>
+<font color=#447700>!        same form as fluxm<a name='1508'></font>
+         flux_fullact = sumflx_fullact/(sq2*sqpi*sigw)<a name='1509'>
+<a name='1510'>
+      else<a name='1511'>
+<a name='1512'>
+<font color=#447700>!        single updraft<a name='1513'></font>
+         wnuc=wbar+wdiab<a name='1514'>
+<a name='1515'>
+         if(wnuc.gt.0._r8)then<a name='1516'>
+<a name='1517'>
+            w=wbar<a name='1518'>
+            alw=alpha*wnuc<a name='1519'>
+            sqrtalw=sqrt(alw)<a name='1520'>
+	    etafactor1=alw*sqrtalw<a name='1521'>
+<a name='1522'>
+            do m=1,nmode<a name='1523'>
+	       eta(m)=etafactor1*etafactor2(m)<a name='1524'>
+               zeta(m)=twothird*sqrtalw*aten/sqrtg(m)<a name='1525'>
+            enddo<a name='1526'>
+<a name='1527'>
+            call <A href='../../html_code/phys/module_mixactivate.F.html#MAXSAT'>maxsat</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_MODAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAXSAT_3">(zeta,eta,nmode,smc,smax)<a name='1528'>
+<a name='1529'>
+            lnsmax=log(smax)<a name='1530'>
+            xmincoeff=alogaten-twothird*(lnsmax-alog2)-alog3<a name='1531'>
+<a name='1532'>
+<a name='1533'>
+            do m=1,nmode<a name='1534'>
+<font color=#447700>!                 modal<a name='1535'></font>
+		  x=twothird*(lnsm(m)-lnsmax)/(sq2*alogsig(m))<a name='1536'>
+                  fn(m)=0.5_r8*(1._r8-erf(x))<a name='1537'>
+		  arg=x-1.5_r8*sq2*alogsig(m)<a name='1538'>
+                  fm(m)=0.5_r8*(1._r8-erf(arg))<a name='1539'>
+                if(wbar.gt.0._r8)then<a name='1540'>
+                   fluxn(m)=fn(m)*w<a name='1541'>
+                   fluxm(m)=fm(m)*w<a name='1542'>
+               endif<a name='1543'>
+            enddo<a name='1544'>
+            flux_fullact = w<a name='1545'>
+         endif<a name='1546'>
+<a name='1547'>
+      endif<a name='1548'>
+<a name='1549'>
+      return<a name='1550'>
+      end subroutine activate_modal<a name='1551'>
+<a name='1552'>
+<A NAME='MAXSAT'><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#MAXSAT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1553'>
+      <font color=#993300>subroutine </font><font color=#cc0000>maxsat</font>(zeta,eta,nmode,smc,smax) <A href='../../call_to/MAXSAT.html' TARGET='index'>7</A><a name='1554'>
+<a name='1555'>
+<font color=#447700>!      calculates maximum supersaturation for multiple<a name='1556'></font>
+<font color=#447700>!      competing aerosol modes.<a name='1557'></font>
+<a name='1558'>
+<font color=#447700>!      Abdul-Razzak and Ghan, A parameterization of aerosol activation.<a name='1559'></font>
+<font color=#447700>!      2. Multiple aerosol types. J. Geophys. Res., 105, 6837-6844.<a name='1560'></font>
+<a name='1561'>
+      implicit none<a name='1562'>
+<a name='1563'>
+      integer nmode <font color=#447700>! number of modes<a name='1564'></font>
+      real(r8) smc(ntot_amode) <font color=#447700>! critical supersaturation for number mode radius<a name='1565'></font>
+      real(r8) zeta(ntot_amode), eta(ntot_amode)<a name='1566'>
+      real(r8) smax <font color=#447700>! maximum supersaturation<a name='1567'></font>
+      integer m  <font color=#447700>! mode index<a name='1568'></font>
+      real(r8) sum, g1, g2, g1sqrt, g2sqrt<a name='1569'>
+<a name='1570'>
+      do m=1,nmode<a name='1571'>
+         if(zeta(m).gt.1.e5_r8*eta(m).or.smc(m)*smc(m).gt.1.e5_r8*eta(m))then<a name='1572'>
+<font color=#447700>!            weak forcing. essentially none activated<a name='1573'></font>
+            smax=1.e-20_r8<a name='1574'>
+         else<a name='1575'>
+<font color=#447700>!            significant activation of this mode. calc activation all modes.<a name='1576'></font>
+            go to 1<a name='1577'>
+         endif<a name='1578'>
+      enddo<a name='1579'>
+<a name='1580'>
+      return<a name='1581'>
+<a name='1582'>
+  1   continue<a name='1583'>
+<a name='1584'>
+      sum=0<a name='1585'>
+      do m=1,nmode<a name='1586'>
+         if(eta(m).gt.1.e-20_r8)then<a name='1587'>
+            g1=zeta(m)/eta(m)<a name='1588'>
+            g1sqrt=sqrt(g1)<a name='1589'>
+            g1=g1sqrt*g1<a name='1590'>
+            g2=smc(m)/sqrt(eta(m)+3._r8*zeta(m))<a name='1591'>
+            g2sqrt=sqrt(g2)<a name='1592'>
+            g2=g2sqrt*g2<a name='1593'>
+            sum=sum+(f1(m)*g1+f2(m)*g2)/(smc(m)*smc(m))<a name='1594'>
+         else<a name='1595'>
+            sum=1.e20_r8<a name='1596'>
+         endif<a name='1597'>
+      enddo<a name='1598'>
+<a name='1599'>
+      smax=1._r8/sqrt(sum)<a name='1600'>
+<a name='1601'>
+      return<a name='1602'>
+<a name='1603'>
+      end subroutine maxsat<a name='1604'>
+<a name='1605'>
+<A NAME='CCNCALC'><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#CCNCALC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1606'>
+      <font color=#993300>subroutine </font><font color=#cc0000>ccncalc</font>(lchnk,ncol,tair,cs,raer,qqcw,ccn,psat,supersat,alogsig,npv) <A href='../../call_to/CCNCALC.html' TARGET='index'>1</A>,<A href='../../call_from/CCNCALC.html' TARGET='index'>8</A><a name='1607'>
+<a name='1608'>
+<font color=#447700>!     calculates number concentration of aerosols activated as CCN at<a name='1609'></font>
+<font color=#447700>!     supersaturation supersat.<a name='1610'></font>
+<font color=#447700>!     assumes an internal mixture of a multiple externally-mixed aerosol modes<a name='1611'></font>
+<font color=#447700>!     cgs units<a name='1612'></font>
+<a name='1613'>
+<font color=#447700>!     Ghan et al., Atmos. Res., 1993, 198-221.<a name='1614'></font>
+<a name='1615'>
+      use <A href='../../html_code/phys/module_cam_shr_kind_mod.F.html#SHR_KIND_MOD'>shr_kind_mod</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#CCNCALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_KIND_MOD_11">,  only: r8 =&gt; shr_kind_r8<a name='1616'>
+#ifndef WRF_PORT<a name='1617'>
+      use ppgrid,        only: pcols, pver, pverp<a name='1618'>
+      use <A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS'>constituents</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#CCNCALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTITUENTS_12">,  only: pcnst<a name='1619'>
+      use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#CCNCALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_16"><a name='1620'>
+#else<a name='1621'>
+      use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#CCNCALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_30">, only: pcols, pver, pverp, pcnst =&gt;pcnst_mp<a name='1622'>
+#endif<a name='1623'>
+      use <A href='../../html_code/phys/module_cam_physconst.F.html#PHYSCONST'>physconst</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#CCNCALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHYSCONST_15">,     only: rhoh2o, mwh2o, r_universal<a name='1624'>
+      use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#CCNCALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_17">, only:<a name='1625'>
+      use <A href='../../html_code/phys/module_cam_error_function.F.html#ERROR_FUNCTION'>error_function</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#CCNCALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ERROR_FUNCTION_5">, only: erf<a name='1626'>
+<a name='1627'>
+      implicit none<a name='1628'>
+<a name='1629'>
+<font color=#447700>!     input<a name='1630'></font>
+<a name='1631'>
+      integer lchnk <font color=#447700>! chunk index<a name='1632'></font>
+      integer, intent(in) :: ncol <font color=#447700>! number of columns<a name='1633'></font>
+      integer, intent(in) :: psat <font color=#447700>! number of supesaturations<a name='1634'></font>
+      real(r8), intent(in) :: raer(pcols,pver,pcnst) <font color=#447700>! aerosol mass, number mixing ratios<a name='1635'></font>
+      type(qqcw_type), intent(in) :: QQCW(:)<a name='1636'>
+<a name='1637'>
+<a name='1638'>
+      real(r8), intent(in) :: tair(pcols,pver)          <font color=#447700>! air temperature (K)<a name='1639'></font>
+      real(r8), intent(in) :: cs(pcols,pver)    <font color=#447700>! air density (kg/m3)<a name='1640'></font>
+      real(r8), intent(in) :: supersat(psat)<a name='1641'>
+      real(r8), intent(in) :: npv(ntot_amode) <font color=#447700>! number per volume concentration<a name='1642'></font>
+      real(r8), intent(in) :: alogsig(ntot_amode) <font color=#447700>! natl log of geometric standard dev of aerosol<a name='1643'></font>
+      real(r8), intent(out) :: ccn(pcols,pver,psat) <font color=#447700>! number conc of aerosols activated at supersat (#/m3)<a name='1644'></font>
+<a name='1645'>
+<font color=#447700>!     local<a name='1646'></font>
+<a name='1647'>
+      real(r8) naerosol(pcols) <font color=#447700>! interstit+activated aerosol number conc (/m3)<a name='1648'></font>
+      real(r8) vaerosol(pcols) <font color=#447700>! interstit+activated aerosol volume conc (m3/m3)<a name='1649'></font>
+      real(r8) exp45logsig(ntot_amode)     <font color=#447700>! exp(4.5*alogsig**2)<a name='1650'></font>
+      real(r8) amcube(pcols)<a name='1651'>
+      real(r8) super(psat) <font color=#447700>! supersaturation<a name='1652'></font>
+      real(r8) amcubecoef(ntot_amode)<a name='1653'>
+      real(r8) :: surften       <font color=#447700>! surface tension of water w/respect to air (N/m)<a name='1654'></font>
+      real(r8) surften_coef<a name='1655'>
+      real(r8) a(pcols) <font color=#447700>! surface tension parameter<a name='1656'></font>
+      real(r8) hygro(pcols)  <font color=#447700>! aerosol hygroscopicity<a name='1657'></font>
+      real(r8) sm(pcols)  <font color=#447700>! critical supersaturation at mode radius<a name='1658'></font>
+      real(r8) argfactor(ntot_amode),arg(pcols)<a name='1659'>
+<font color=#447700>!     mathematical constants<a name='1660'></font>
+      real(r8) pi<a name='1661'>
+      real(r8) twothird,sq2<a name='1662'>
+      integer l,m,n,i,k<a name='1663'>
+      real(r8) log,cc<a name='1664'>
+      real(r8) smcoefcoef,smcoef(pcols)<a name='1665'>
+      integer phase <font color=#447700>! phase of aerosol<a name='1666'></font>
+<a name='1667'>
+      super(:)=supersat(:)*0.01<a name='1668'>
+      pi = 4.*atan(1.0)<a name='1669'>
+      sq2=sqrt(2._r8)<a name='1670'>
+      twothird=2._r8/3._r8<a name='1671'>
+      surften=0.076_r8<a name='1672'>
+      surften_coef=2._r8*mwh2o*surften/(r_universal*rhoh2o)<a name='1673'>
+      smcoefcoef=2._r8/sqrt(27._r8)<a name='1674'>
+<a name='1675'>
+      do m=1,ntot_amode<a name='1676'>
+          exp45logsig(m)=exp(4.5*alogsig(m)*alogsig(m))<a name='1677'>
+	  amcubecoef(m)=3./(4.*pi*exp45logsig(m))<a name='1678'>
+	  argfactor(m)=twothird/(sq2*alogsig(m))<a name='1679'>
+      end do<a name='1680'>
+<a name='1681'>
+      do k=1,pver<a name='1682'>
+<a name='1683'>
+         do i=1,ncol<a name='1684'>
+            ccn(i,k,:)=0.<a name='1685'>
+            a(i)=surften_coef/tair(i,k)<a name='1686'>
+	    smcoef(i)=smcoefcoef*a(i)*sqrt(a(i))<a name='1687'>
+	 end do<a name='1688'>
+<a name='1689'>
+         do m=1,ntot_amode<a name='1690'>
+            phase=3 <font color=#447700>! interstitial+cloudborne<a name='1691'></font>
+            call <A href='../../html_code/phys/module_mixactivate.F.html#LOADAER'>loadaer</A><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#CCNCALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LOADAER_3">(raer,qqcw,1,ncol,k,m,cs,npv(m), phase, &amp;<a name='1692'>
+                         naerosol, vaerosol,  hygro )<a name='1693'>
+            where(naerosol(:ncol)&gt;1.e-3)<a name='1694'>
+               amcube(:ncol)=amcubecoef(m)*vaerosol(:ncol)/naerosol(:ncol)<a name='1695'>
+	       sm(:ncol)=smcoef(:ncol)/sqrt(hygro(:ncol)*amcube(:ncol)) <font color=#447700>! critical supersaturation<a name='1696'></font>
+	    elsewhere<a name='1697'>
+	       sm(:ncol)=1. <font color=#447700>! value shouldn't matter much since naerosol is small<a name='1698'></font>
+	    endwhere<a name='1699'>
+            do l=1,psat<a name='1700'>
+               do i=1,ncol<a name='1701'>
+	          arg(i)=argfactor(m)*log(sm(i)/super(l))<a name='1702'>
+                  ccn(i,k,l)=ccn(i,k,l)+naerosol(i)*0.5*(1._r8-erf(arg(i)))<a name='1703'>
+               enddo<a name='1704'>
+             enddo<a name='1705'>
+         enddo<a name='1706'>
+      enddo<a name='1707'>
+      ccn(:ncol,:,:)=ccn(:ncol,:,:)*1.e-6 <font color=#447700>! convert from #/m3 to #/cm3<a name='1708'></font>
+<a name='1709'>
+      return<a name='1710'>
+      end subroutine ccncalc<a name='1711'>
+<a name='1712'>
+<A NAME='LOADAER'><A href='../../html_code/phys/module_cam_mp_ndrop.F.html#LOADAER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1713'>
+      <font color=#993300>subroutine </font><font color=#cc0000>loadaer</font>(raer,qqcw,istart,istop,k,m,cs,npv1, phase, &amp; <A href='../../call_to/LOADAER.html' TARGET='index'>5</A>,<A href='../../call_from/LOADAER.html' TARGET='index'>6</A><a name='1714'>
+                         naerosol, vaerosol,  hygro )<a name='1715'>
+<a name='1716'>
+      use <A href='../../html_code/phys/module_cam_shr_kind_mod.F.html#SHR_KIND_MOD'>shr_kind_mod</A><A href='../../html_code/phys/module_mixactivate.F.html#LOADAER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_KIND_MOD_12">,  only: r8 =&gt; shr_kind_r8<a name='1717'>
+#ifndef WRF_PORT<a name='1718'>
+      use abortutils,    only: endrun<a name='1719'>
+      use ppgrid,        only: pcols, pver<a name='1720'>
+      use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_mixactivate.F.html#LOADAER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_18"><a name='1721'>
+#else<a name='1722'>
+      use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_mixactivate.F.html#LOADAER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_31">, only: pcols, pver, endrun, pcnst =&gt;pcnst_mp<a name='1723'>
+      use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_mixactivate.F.html#LOADAER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_19">,   only: nspec_amode =&gt; nspec_amode_mp, &amp;<a name='1724'>
+           lmassptr_amode    =&gt; lmassptr_amode_mp , lmassptrcw_amode  =&gt; lmassptrcw_amode_mp, &amp;<a name='1725'>
+           lspectype_amode   =&gt; lspectype_amode_mp, specdens_amode    =&gt; specdens_amode_mp,   &amp;<a name='1726'>
+           spechygro         =&gt; spechygro_mp      , numptr_amode      =&gt; numptr_amode_mp,     &amp;<a name='1727'>
+           numptrcw_amode    =&gt; numptrcw_amode_mp , voltonumbhi_amode =&gt; voltonumbhi_amode_mp,&amp;<a name='1728'>
+           voltonumblo_amode =&gt; voltonumblo_amode_mp <a name='1729'>
+#endif<a name='1730'>
+     <a name='1731'>
+<a name='1732'>
+      implicit none<a name='1733'>
+<a name='1734'>
+      <font color=#447700>!      load aerosol number, volume concentrations, and bulk hygroscopicity<a name='1735'></font>
+<a name='1736'>
+      type(qqcw_type), intent(in) :: QQCW(:)<a name='1737'>
+<a name='1738'>
+      real(r8), intent(in) :: raer(pcols,pver,pcnst) <font color=#447700>! aerosol mass, number mixing ratios<a name='1739'></font>
+       integer, intent(in) :: istart, istop <font color=#447700>! start, stop column index<a name='1740'></font>
+       integer, intent(in) ::  m          <font color=#447700>! m=mode index<a name='1741'></font>
+       integer, intent(in) ::  k          <font color=#447700>! level index<a name='1742'></font>
+       real(r8), intent(in) :: cs(pcols,pver)  <font color=#447700>! air density (kg/m3)<a name='1743'></font>
+       integer, intent(in) :: phase <font color=#447700>! phase of aerosol: 1 for interstitial, 2 for cloud-borne, 3 for sum<a name='1744'></font>
+       real(r8), intent(in) :: npv1 <font color=#447700>! number per volume<a name='1745'></font>
+       real(r8), intent(out) :: naerosol(pcols)                <font color=#447700>! interstitial number conc (/m3)<a name='1746'></font>
+       real(r8), intent(out) :: vaerosol(pcols)       <font color=#447700>! interstitial+activated volume conc (m3/m3)<a name='1747'></font>
+       real(r8), intent(out) :: hygro(pcols) <font color=#447700>! bulk hygroscopicity of mode<a name='1748'></font>
+<a name='1749'>
+<font color=#447700>!      internal<a name='1750'></font>
+<a name='1751'>
+       real(r8) vol(pcols) <font color=#447700>! aerosol volume mixing ratio<a name='1752'></font>
+       integer i,lnum,lnumcw,l,ltype,lmass,lmasscw<a name='1753'>
+<a name='1754'>
+          do i=istart,istop<a name='1755'>
+             vaerosol(i)=0._r8<a name='1756'>
+	     hygro(i)=0._r8<a name='1757'>
+	  end do<a name='1758'>
+<a name='1759'>
+          do l=1,nspec_amode(m)<a name='1760'>
+             lmass=lmassptr_amode(l,m) <font color=#447700>! interstitial<a name='1761'></font>
+             lmasscw=lmassptrcw_amode(l,m) <font color=#447700>! cloud-borne<a name='1762'></font>
+             ltype=lspectype_amode(l,m)<a name='1763'>
+	     if(phase.eq.3)then<a name='1764'>
+	        do i=istart,istop<a name='1765'>
+<font color=#447700>!                  vol(i)=max(raer(i,k,lmass)+raer(i,k,lmasscw),0._r8)/specdens_amode(ltype)<a name='1766'></font>
+                   vol(i)=max(raer(i,k,lmass)+qqcw(lmasscw)%fldcw(i,k),0._r8)/specdens_amode(ltype)<a name='1767'>
+		end do<a name='1768'>
+             elseif(phase.eq.2)then<a name='1769'>
+                do i=istart,istop<a name='1770'>
+                   vol(i)=max(qqcw(lmasscw)%fldcw(i,k),0._r8)/specdens_amode(ltype)<a name='1771'>
+                end do<a name='1772'>
+             elseif(phase.eq.1)then<a name='1773'>
+                do i=istart,istop<a name='1774'>
+                   vol(i)=max(raer(i,k,lmass),0._r8)/specdens_amode(ltype)<a name='1775'>
+		end do<a name='1776'>
+             else<a name='1777'>
+	        write(iulog,*)'phase=',phase,' in loadaer'<a name='1778'>
+#ifdef WRF_PORT<a name='1779'>
+               call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_mixactivate.F.html#LOADAER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_618">(iulog)<a name='1780'>
+#endif<a name='1781'>
+	        call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_mixactivate.F.html#LOADAER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_21">('phase error in loadaer')<a name='1782'>
+	     endif<a name='1783'>
+	     do i=istart,istop<a name='1784'>
+                vaerosol(i)=vaerosol(i)+vol(i)<a name='1785'>
+                hygro(i)=hygro(i)+vol(i)*spechygro(ltype)<a name='1786'>
+	     end do<a name='1787'>
+          enddo<a name='1788'>
+	  do i=istart,istop<a name='1789'>
+             if (vaerosol(i) &gt; 1.0e-30_r8) then   <font color=#447700>! +++xl add 8/2/2007<a name='1790'></font>
+               hygro(i)=hygro(i)/(vaerosol(i))<a name='1791'>
+               vaerosol(i)=vaerosol(i)*cs(i,k)<a name='1792'>
+             else<a name='1793'>
+               hygro(i)=0.0_r8<a name='1794'>
+               vaerosol(i)=0.0_r8<a name='1795'>
+             endif<a name='1796'>
+	  end do<a name='1797'>
+<a name='1798'>
+          lnum=numptr_amode(m)<a name='1799'>
+          lnumcw=numptrcw_amode(m)<a name='1800'>
+          if(lnum.gt.0)then<a name='1801'>
+<font color=#447700>!            aerosol number predicted<a name='1802'></font>
+             if(phase.eq.3)then<a name='1803'>
+	        do i=istart,istop<a name='1804'>
+<font color=#447700>!                  naerosol(i)=(raer(i,k,lnum)+raer(i,k,lnumcw))*cs(i,k)<a name='1805'></font>
+                   naerosol(i)=(raer(i,k,lnum)+qqcw(lnumcw)%fldcw(i,k))*cs(i,k)<a name='1806'>
+		end do<a name='1807'>
+             elseif(phase.eq.2)then<a name='1808'>
+                do i=istart,istop<a name='1809'>
+                   naerosol(i)=qqcw(lnumcw)%fldcw(i,k)*cs(i,k)<a name='1810'>
+                end do<a name='1811'>
+	     else<a name='1812'>
+	        do i=istart,istop<a name='1813'>
+                   naerosol(i)=raer(i,k,lnum)*cs(i,k)<a name='1814'>
+		end do<a name='1815'>
+	     endif<a name='1816'>
+<font color=#447700>!            adjust number so that dgnumlo &lt; dgnum &lt; dgnumhi<a name='1817'></font>
+	     do i=istart,istop<a name='1818'>
+                naerosol(i) = max( naerosol(i), vaerosol(i)*voltonumbhi_amode(m) )<a name='1819'>
+                naerosol(i) = min( naerosol(i), vaerosol(i)*voltonumblo_amode(m) )<a name='1820'>
+	     end do<a name='1821'>
+          else<a name='1822'>
+<font color=#447700>!            aerosol number diagnosed from mass and prescribed size<a name='1823'></font>
+	     do i=istart,istop<a name='1824'>
+                naerosol(i)=vaerosol(i)*npv1<a name='1825'>
+                naerosol(i)=max(naerosol(i),0._r8)<a name='1826'>
+	     end do<a name='1827'>
+          endif<a name='1828'>
+<a name='1829'>
+       return<a name='1830'>
+       end subroutine loadaer<a name='1831'>
+#endif<a name='1832'>
+      end module ndrop<a name='1833'>
+<a name='1834'>
+<a name='1835'>
+<a name='1836'>
+</pre></body></html>

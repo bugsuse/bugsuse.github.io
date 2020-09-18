@@ -1,0 +1,1411 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!<a name='2'></font>
+<font color=#447700>! This module is the entry point from WRF ARW to the wildland <a name='3'></font>
+<font color=#447700>! fire module. The call to fire_driver advances the fire module by <a name='4'></font>
+<font color=#447700>! one timestep. The fire module inputs the wind and outputs <a name='5'></font>
+<font color=#447700>! temperature and humidity tendencies. The fire module also inputs a <a name='6'></font>
+<font color=#447700>! number of constant arrays (fuel data, topography). Additional <a name='7'></font>
+<font color=#447700>! arguments are model state (for data assimilation) and constant arrays <a name='8'></font>
+<font color=#447700>! the model gives to WRF for safekeeping because it is not allowed <a name='9'></font>
+<font color=#447700>! to save anything.<a name='10'></font>
+<font color=#447700>!<a name='11'></font>
+<font color=#447700>! Contributions to this wildland fire module have come from individuals at<a name='12'></font>
+<font color=#447700>! NCAR, the U.S.D.A. Forest Service, the Australian Bureau of Meteorology, <a name='13'></font>
+<font color=#447700>! and the University of Colorado at Denver. <a name='14'></font>
+<font color=#447700>!<a name='15'></font>
+<a name='16'>
+<A NAME='MODULE_FR_FIRE_DRIVER'><A href='../../html_code/phys/module_fr_fire_driver.F.html#MODULE_FR_FIRE_DRIVER' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='17'>
+<font color=#993300>module </font><font color=#cc0000>module_fr_fire_driver</font> <A href='../../call_to/MODULE_FR_FIRE_DRIVER.html' TARGET='index'>1</A><a name='18'>
+<font color=#447700>! use this module for standalone call, you only need to provide some mock-up wrf modules  <a name='19'></font>
+<a name='20'>
+use <A href='../../html_code/phys/module_fr_fire_model.F.html#MODULE_FR_FIRE_MODEL'>module_fr_fire_model</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#module_fr_fire_driver.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_FR_FIRE_MODEL_1"><a name='21'>
+use <A href='../../html_code/phys/module_fr_fire_phys.F.html#MODULE_FR_FIRE_PHYS'>module_fr_fire_phys</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#module_fr_fire_driver.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_FR_FIRE_PHYS_2">, only : fire_params , init_fuel_cats<a name='22'>
+use <A href='../../html_code/phys/module_fr_fire_util.F.html#MODULE_FR_FIRE_UTIL'>module_fr_fire_util</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#module_fr_fire_driver.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_FR_FIRE_UTIL_3"><a name='23'>
+use <A href='../../html_code/phys/module_fr_fire_core.F.html#MODULE_FR_FIRE_CORE'>module_fr_fire_core</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#module_fr_fire_driver.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_FR_FIRE_CORE_1">, only: ignition_line_type<a name='24'>
+<a name='25'>
+USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#module_fr_fire_driver.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_232">, only: domain<a name='26'>
+USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>module_configure</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#module_fr_fire_driver.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_149">, only: grid_config_rec_type<a name='27'>
+use <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#module_fr_fire_driver.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_68">, only: reradius,    &amp; <font color=#447700>! 1/earth radiusw<a name='28'></font>
+                                  g,           &amp; <font color=#447700>! gravitation acceleration<a name='29'></font>
+                                  pi2            <font color=#447700>! 2*pi<a name='30'></font>
+<a name='31'>
+implicit none<a name='32'>
+<a name='33'>
+<a name='34'>
+private<a name='35'>
+public fire_driver_em,use_atm_vars<a name='36'>
+<a name='37'>
+logical:: use_atm_vars=.true.   <font color=#447700>!  interpolate wind from atm mesh and average output fluxes back<a name='38'></font>
+<a name='39'>
+contains<a name='40'>
+<a name='41'>
+#define DEBUG_OUT<a name='42'>
+<A NAME='FIRE_DRIVER_EM'><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='43'>
+<font color=#993300>subroutine </font><font color=#cc0000>fire_driver_em</font> ( grid , config_flags                    &amp;  <A href='../../call_to/FIRE_DRIVER_EM.html' TARGET='index'>2</A>,<A href='../../call_from/FIRE_DRIVER_EM.html' TARGET='index'>7</A><a name='44'>
+            ,fire_ifun_start,fire_ifun_end,tsteps                   &amp;<a name='45'>
+            ,ids,ide, kds,kde, jds,jde                              &amp;<a name='46'>
+            ,ims,ime, kms,kme, jms,jme                              &amp;<a name='47'>
+            ,ips,ipe, kps,kpe, jps,jpe                              &amp;<a name='48'>
+            ,ifds,ifde, jfds,jfde                                   &amp;<a name='49'>
+            ,ifms,ifme, jfms,jfme                                   &amp;<a name='50'>
+            ,ifps,ifpe, jfps,jfpe )<a name='51'>
+<a name='52'>
+<font color=#447700>!*** purpose: driver from grid structure<a name='53'></font>
+<a name='54'>
+<font color=#447700>! Driver layer modules<a name='55'></font>
+#ifdef DM_PARALLEL<a name='56'>
+    USE <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>module_dm</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_151">        , ONLY : ntasks_x,ntasks_y,local_communicator,mytask,ntasks<a name='57'>
+    USE <A href='../../html_code/frame/module_comm_dm.F.html#MODULE_COMM_DM'>module_comm_dm</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_COMM_DM_31"> , ONLY : halo_fire_fuel_sub, halo_fire_tign_sub, halo_fire_wind_f_sub, &amp;<a name='58'>
+halo_fire_wind_a_sub, halo_fire_ph_sub, halo_fire_zsf_sub, halo_fire_longlat_sub, &amp;<a name='59'>
+halo_fire_phb_sub, halo_fire_z0_sub, halo_fire_lfn_sub<a name='60'>
+#endif<a name='61'>
+<a name='62'>
+    implicit none<a name='63'>
+<font color=#447700>!*** arguments<a name='64'></font>
+    TYPE(domain) , TARGET :: grid                             <font color=#447700>! state <a name='65'></font>
+    TYPE (grid_config_rec_type) , INTENT(IN)  :: config_flags <font color=#447700>! namelist<a name='66'></font>
+    integer, intent(in)::     fire_ifun_start,fire_ifun_end,tsteps <font color=#447700>! driver cycle controls<a name='67'></font>
+    integer, intent(in):: &amp;<a name='68'>
+             ids,ide, kds,kde, jds,jde,                              &amp;<a name='69'>
+             ims,ime, kms,kme, jms,jme,                              &amp;<a name='70'>
+             ips,ipe, kps,kpe, jps,jpe,                              &amp;<a name='71'>
+             ifds,ifde, jfds,jfde,                                   &amp;<a name='72'>
+             ifms,ifme, jfms,jfme,                                   &amp;<a name='73'>
+             ifps,ifpe, jfps,jfpe <a name='74'>
+<a name='75'>
+<font color=#447700>!*** local<a name='76'></font>
+    INTEGER:: fire_num_ignitions<a name='77'>
+    integer, parameter::fire_max_ignitions=5<a name='78'>
+    TYPE(ignition_line_type), DIMENSION(fire_max_ignitions):: ignition_line<a name='79'>
+    integer::fire_ifun,ir,jr,fire_ignition_longlat,istep,itimestep<a name='80'>
+    logical::need_lfn_update,restart<a name='81'>
+    real, dimension(ifms:ifme, jfms:jfme)::lfn_out  <a name='82'>
+    real:: corner_ll,corner_ul,corner_ur,corner_lr<a name='83'>
+    character(len=128)msg<a name='84'>
+    real:: unit_fxlong ,unit_fxlat<a name='85'>
+    type(fire_params)::fp<a name='86'>
+<a name='87'>
+<a name='88'>
+<font color=#447700>!*** executable<a name='89'></font>
+<a name='90'>
+<font color=#447700>! populate our structures from wrf<a name='91'></font>
+<a name='92'>
+    <font color=#447700>! pointers to be passed to fire rate of spread formulas<a name='93'></font>
+    fp%vx =&gt; grid%uf         <font color=#447700>! W-E winds used in fire module<a name='94'></font>
+    fp%vy =&gt; grid%vf         <font color=#447700>! S-N winds used in fire module<a name='95'></font>
+    fp%zsf =&gt; grid%zsf       <font color=#447700>! terrain height <a name='96'></font>
+    fp%dzdxf =&gt; grid%dzdxf   <font color=#447700>! terrain grad <a name='97'></font>
+    fp%dzdyf =&gt; grid%dzdyf   <font color=#447700>! terrain grad <a name='98'></font>
+    fp%bbb =&gt; grid%bbb       <font color=#447700>! a rate of spread formula coeff <a name='99'></font>
+    fp%betafl =&gt; grid%betafl <font color=#447700>! a rate of spread formula variable <a name='100'></font>
+    fp%phiwc =&gt; grid%phiwc   <font color=#447700>! a rate of spread formula coeff <a name='101'></font>
+    fp%r_0 =&gt; grid%r_0       <font color=#447700>! a rate of spread formula variable<a name='102'></font>
+    fp%fgip =&gt; grid%fgip     <font color=#447700>! a rate of spread formula coeff <a name='103'></font>
+    fp%ischap =&gt; grid%ischap <font color=#447700>! a rate of spread formula switch<a name='104'></font>
+            <a name='105'>
+    <font color=#447700>! get ignition data <a name='106'></font>
+    call <A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_IGNITION_CONVERT'>fire_ignition_convert</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FIRE_IGNITION_CONVERT_1"> (config_flags,fire_max_ignitions,fire_ignition_longlat, &amp;<a name='107'>
+        ignition_line,fire_num_ignitions,unit_fxlong,unit_fxlat)<a name='108'>
+<a name='109'>
+    <font color=#447700>! copy configuration flags to fire internal structures<a name='110'></font>
+    call <A href='../../html_code/phys/module_fr_fire_driver.F.html#SET_FLAGS'>set_flags</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_FLAGS_1">(config_flags)<a name='111'>
+<a name='112'>
+    <font color=#447700>! refinement r<a name='113'></font>
+    ir=grid%sr_x <font color=#447700>! refinement ratio<a name='114'></font>
+    jr=grid%sr_y<a name='115'>
+    itimestep=grid%itimestep<a name='116'>
+    restart=config_flags%restart<a name='117'>
+<a name='118'>
+    <a name='119'>
+<a name='120'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='121'></font>
+    write(msg,'(a,i1,a,i1,a,i4)') &amp;<a name='122'>
+       'fire_driver_em: ifun from ',fire_ifun_start,' to ',fire_ifun_end,' test steps',tsteps<a name='123'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='124'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_27">(msg)<a name='125'>
+<a name='126'>
+    do istep=0,tsteps <font color=#447700>! istep &gt;0 is for testing only, exit after the first call<a name='127'></font>
+      itimestep = grid%itimestep + istep <font color=#447700>! in the first call, do fire_test_steps steps of the fire model<a name='128'></font>
+<a name='129'>
+      need_lfn_update=.false.<a name='130'>
+      do fire_ifun=fire_ifun_start,fire_ifun_end<a name='131'>
+<a name='132'>
+        <font color=#447700>! 1 = initialize run pass 1: interpolate height to zsf=terrain<a name='133'></font>
+        <font color=#447700>! 2 = initialize run pass 2: set fuel data, terrain gradient<a name='134'></font>
+        <font color=#447700>! 3 = initialize timestep: interpolate winds, check for ignition<a name='135'></font>
+        <font color=#447700>! 4 = do one timestep <a name='136'></font>
+        <font color=#447700>! 5 = copy timestep output to input<a name='137'></font>
+        <font color=#447700>! 6 = compute output fluxes<a name='138'></font>
+<a name='139'>
+#ifdef DM_PARALLEL<a name='140'>
+        if(need_lfn_update)then<a name='141'>
+<font color=#447700>!           halo exchange on lfn width 2<a name='142'></font>
+#include "<A href='../../html_code/include/HALO_FIRE_LFN.inc.html'>HALO_FIRE_LFN.inc</A>"<A NAME="HALO_FIRE_LFN.inc_1"><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='143'>
+        endif<a name='144'>
+<a name='145'>
+        if(fire_ifun.eq.1)then<a name='146'>
+<font color=#447700>!       halo exchange on topography<a name='147'></font>
+#include "<A href='../../html_code/include/HALO_FIRE_LONGLAT.inc.html'>HALO_FIRE_LONGLAT.inc</A>"<A NAME="HALO_FIRE_LONGLAT.inc_2"><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='148'>
+<font color=#447700>!!            if(fire_topo_from_atm.eq.1)then<a name='149'></font>
+<font color=#447700>!!#include "HALO_FIRE_HT.inc"<a name='150'></font>
+<font color=#447700>!!            endif <a name='151'></font>
+<font color=#447700>! base geopotential and roughness<a name='152'></font>
+#include "<A href='../../html_code/include/HALO_FIRE_PHB.inc.html'>HALO_FIRE_PHB.inc</A>"<A NAME="HALO_FIRE_PHB.inc_3"><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='153'>
+#include "<A href='../../html_code/include/HALO_FIRE_Z0.inc.html'>HALO_FIRE_Z0.inc</A>"<A NAME="HALO_FIRE_Z0.inc_4"><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='154'>
+<a name='155'>
+        elseif(fire_ifun.eq.2)then<a name='156'>
+<font color=#447700>!           halo exchange on zsf width 2<a name='157'></font>
+#include "<A href='../../html_code/include/HALO_FIRE_ZSF.inc.html'>HALO_FIRE_ZSF.inc</A>"<A NAME="HALO_FIRE_ZSF.inc_5"><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='158'>
+<a name='159'>
+        elseif(fire_ifun.eq.3)then<a name='160'>
+<font color=#447700>!           halo exchange on atm winds and geopotential, width 1 for interpolation<a name='161'></font>
+#include "<A href='../../html_code/include/HALO_FIRE_WIND_A.inc.html'>HALO_FIRE_WIND_A.inc</A>"<A NAME="HALO_FIRE_WIND_A.inc_6"><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='162'>
+#include "<A href='../../html_code/include/HALO_FIRE_PH.inc.html'>HALO_FIRE_PH.inc</A>"<A NAME="HALO_FIRE_PH.inc_7"><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='163'>
+<a name='164'>
+        elseif(fire_ifun.eq.4)then<a name='165'>
+<font color=#447700>!           halo exchange on fire winds width 2 for a 2-step RK method<a name='166'></font>
+#include "<A href='../../html_code/include/HALO_FIRE_WIND_F.inc.html'>HALO_FIRE_WIND_F.inc</A>"<A NAME="HALO_FIRE_WIND_F.inc_8"><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='167'>
+<a name='168'>
+        elseif(fire_ifun.eq.6)then<a name='169'>
+<font color=#447700>!           computing fuel_left needs ignition time from neighbors<a name='170'></font>
+#include "<A href='../../html_code/include/HALO_FIRE_TIGN.inc.html'>HALO_FIRE_TIGN.inc</A>"<A NAME="HALO_FIRE_TIGN.inc_9"><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='171'>
+<a name='172'>
+        endif<a name='173'>
+#endif<a name='174'>
+        <font color=#447700>! need domain by 1 smaller, in last row.col winds are not set properly<a name='175'></font>
+        call <A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS'>fire_driver_phys</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FIRE_DRIVER_PHYS_1"> ( &amp;<a name='176'>
+            fire_ifun,need_lfn_update,                  &amp;<a name='177'>
+            ids,ide-1, kds,kde, jds,jde-1,                          &amp;<a name='178'>
+            ims,ime, kms,kme, jms,jme,                          &amp;<a name='179'>
+            ips,min(ipe,ide-1), kps,kpe, jps,min(jpe,jde-1),                          &amp; <a name='180'>
+            ifds,ifde-ir, jfds,jfde-jr,                    &amp;<a name='181'>
+            ifms,ifme, jfms,jfme,                    &amp;<a name='182'>
+            ifps,min(ifpe,ifde-ir), jfps,min(jfpe,jfde-jr),      &amp;<a name='183'>
+            ir,jr,                                      &amp; <font color=#447700>! atm/fire grid ratio<a name='184'></font>
+            grid%num_tiles,                             &amp; <font color=#447700>! atm grid tiling<a name='185'></font>
+            grid%i_start,min(grid%i_end,ide-1),                    &amp;<a name='186'>
+            grid%j_start,min(grid%j_end,jde-1),                    &amp;                 <a name='187'>
+            itimestep,restart,config_flags%fire_fuel_read,config_flags%fire_fuel_cat, &amp;  <font color=#447700>! in scalars<a name='188'></font>
+            grid%dt,grid%dx,grid%dy,                    &amp;<a name='189'>
+            grid%u_frame,grid%v_frame,                  &amp;<a name='190'>
+            unit_fxlong,unit_fxlat,                           &amp; <font color=#447700>! coordinates of grid center<a name='191'></font>
+            config_flags%fire_ext_grnd,config_flags%fire_ext_crwn,config_flags%fire_crwn_hgt, &amp;<a name='192'>
+            config_flags%fire_wind_height,              &amp;  <font color=#447700>! height of wind input to fire spread formula<a name='193'></font>
+            fire_num_ignitions,                                &amp; <a name='194'>
+            fire_ignition_longlat,      &amp;<a name='195'>
+            ignition_line,              &amp;<a name='196'>
+            grid%u_2,grid%v_2,           &amp;          <font color=#447700>! atm arrays in<a name='197'></font>
+            grid%ph_2,grid%phb,               &amp; <font color=#447700>! geopotential<a name='198'></font>
+            grid%z0,                        &amp; <font color=#447700>! roughness height<a name='199'></font>
+            grid%ht,                        &amp;                         <font color=#447700>! terrain height<a name='200'></font>
+            grid%xlong,grid%xlat,                         &amp; <font color=#447700>! coordinates of atm grid centers, for ignition location           <a name='201'></font>
+            grid%lfn,grid%tign_g,grid%fuel_frac,          &amp; <font color=#447700>! state arrays, fire grid<a name='202'></font>
+            grid%fire_area,                               &amp; <font color=#447700>! redundant, for display, fire grid<a name='203'></font>
+            lfn_out,                                      &amp; <font color=#447700>! work - one timestep    <a name='204'></font>
+            grid%avg_fuel_frac,                           &amp; <font color=#447700>! out redundant arrays, atm grid<a name='205'></font>
+            grid%grnhfx,grid%grnqfx,grid%canhfx,grid%canqfx, &amp; <font color=#447700>! out redundant arrays, atm grid<a name='206'></font>
+            grid%uah,grid%vah,                          &amp;<a name='207'>
+            grid%fgrnhfx,grid%fgrnqfx,grid%fcanhfx,grid%fcanqfx, &amp; <font color=#447700>! out redundant arrays, atm grid<a name='208'></font>
+            grid%ros,                                   &amp; <font color=#447700>! rate of spread<a name='209'></font>
+            grid%fxlong,grid%fxlat,                           &amp;       <a name='210'>
+            grid%nfuel_cat,                               &amp; <font color=#447700>! input, or internal for safekeeping<a name='211'></font>
+            grid%fuel_time,                      &amp; <a name='212'>
+            fp &amp;<a name='213'>
+        )<a name='214'>
+<a name='215'>
+#ifdef DM_PARALLEL<a name='216'>
+            if(fire_ifun.eq.2)then<a name='217'>
+<font color=#447700>!               halo exchange on all fuel data width 2<a name='218'></font>
+#include "<A href='../../html_code/include/HALO_FIRE_FUEL.inc.html'>HALO_FIRE_FUEL.inc</A>"<A NAME="HALO_FIRE_FUEL.inc_10"><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='219'>
+            endif<a name='220'>
+#endif<a name='221'>
+<a name='222'>
+                <a name='223'>
+<a name='224'>
+      enddo<a name='225'>
+    enddo<a name='226'>
+    if(tsteps&gt;0)call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_EM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_12">('fire_driver_em: test run of uncoupled fire model completed')<a name='227'>
+<a name='228'>
+end subroutine fire_driver_em<a name='229'>
+<a name='230'>
+<font color=#447700>!<a name='231'></font>
+<font color=#447700>!*******************<a name='232'></font>
+<font color=#447700>!<a name='233'></font>
+<a name='234'>
+<font color=#447700>! module_fr_fire_driver%%fire_driver<a name='235'></font>
+<A NAME='FIRE_DRIVER_PHYS'><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='236'>
+<font color=#993300>subroutine </font><font color=#cc0000>fire_driver_phys</font> (ifun,need_lfn_update,    &amp; <A href='../../call_to/FIRE_DRIVER_PHYS.html' TARGET='index'>1</A>,<A href='../../call_from/FIRE_DRIVER_PHYS.html' TARGET='index'>84</A><a name='237'>
+    ids,ide, kds,kde, jds,jde,                    &amp; <font color=#447700>! atm grid dimensions<a name='238'></font>
+    ims,ime, kms,kme, jms,jme,                    &amp;<a name='239'>
+    ips,ipe, kps,kpe, jps,jpe,                    &amp;<a name='240'>
+    ifds, ifde, jfds, jfde,                       &amp; <font color=#447700>! fire grid dimensions<a name='241'></font>
+    ifms, ifme, jfms, jfme,                       &amp;<a name='242'>
+    ifps, ifpe, jfps, jfpe,                       &amp; <font color=#447700>! fire patch in - will use smaller<a name='243'></font>
+    ir,jr,                                        &amp; <font color=#447700>! atm/fire grid ratio<a name='244'></font>
+    num_tiles,i_start,i_end,j_start,j_end,        &amp; <font color=#447700>! atm grid tiling<a name='245'></font>
+    itimestep,restart,ifuelread,nfuel_cat0,dt,dx,dy,      &amp; <font color=#447700>! in scalars<a name='246'></font>
+    u_frame,v_frame,                              &amp;<a name='247'>
+    unit_fxlong,unit_fxlat,                       &amp; <font color=#447700>! fxlong, fxlat units in m  <a name='248'></font>
+    fire_ext_grnd,fire_ext_crwn,fire_crwn_hgt,    &amp;<a name='249'>
+    fire_wind_height,                             &amp; <font color=#447700>! for vertical wind interpolation<a name='250'></font>
+    num_ignitions,                                &amp; <a name='251'>
+    ignition_longlat,                             &amp;<a name='252'>
+    ignition_line,                                &amp;<a name='253'>
+    u,v,                                       &amp; <font color=#447700>! in arrays, atm grid<a name='254'></font>
+    ph,phb,                                       &amp;<a name='255'>
+    z0,zs,                                        &amp; <a name='256'>
+    xlong,xlat,                                   &amp;<a name='257'>
+    lfn,tign,fuel_frac,                           &amp; <font color=#447700>! state arrays, fire grid<a name='258'></font>
+    fire_area,                                    &amp; <font color=#447700>! redundant state, fire grid<a name='259'></font>
+    lfn_out,                                      &amp; <font color=#447700>! out level set function    <a name='260'></font>
+    avg_fuel_frac,                                &amp;<a name='261'>
+    grnhfx,grnqfx,canhfx,canqfx,                  &amp; <font color=#447700>! out redundant arrays, atm grid  <a name='262'></font>
+    uah,vah,                                      &amp; <font color=#447700>! out atm grid<a name='263'></font>
+    fgrnhfx,fgrnqfx,fcanhfx,fcanqfx,              &amp; <font color=#447700>! out redundant arrays, fire grid<a name='264'></font>
+    ros,                                          &amp;<a name='265'>
+    fxlong,fxlat,                                 &amp; <font color=#447700>!  <a name='266'></font>
+    nfuel_cat,                                    &amp; <font color=#447700>! in array, data, fire grid, or constant internal<a name='267'></font>
+    fuel_time,                                &amp; <font color=#447700>! save constant internal data, fire grid<a name='268'></font>
+    fp                                           &amp; <font color=#447700>! fire params<a name='269'></font>
+    )<a name='270'>
+USE <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>module_dm</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_152">, only:wrf_dm_maxval<a name='271'>
+<a name='272'>
+implicit none<a name='273'>
+<a name='274'>
+<font color=#447700>!*** arguments<a name='275'></font>
+<a name='276'>
+integer, intent(in)::ifun,                        &amp;<a name='277'>
+    ids,ide, kds,kde, jds,jde,                    &amp; <font color=#447700>! atm domain bounds<a name='278'></font>
+    ims,ime, kms,kme, jms,jme,                    &amp; <font color=#447700>! atm memory bounds <a name='279'></font>
+    ips,ipe, kps,kpe, jps,jpe,                    &amp; <font color=#447700>! atm patch bounds<a name='280'></font>
+    ifds, ifde, jfds, jfde,                       &amp; <font color=#447700>! fire domain bounds<a name='281'></font>
+    ifms, ifme, jfms, jfme,                       &amp; <font color=#447700>! fire memory bounds<a name='282'></font>
+    ifps, ifpe, jfps, jfpe,                       &amp; <font color=#447700>! fire patch bounds<a name='283'></font>
+    ir,jr,                                        &amp; <font color=#447700>! atm/fire grid refinement ratio<a name='284'></font>
+    itimestep,                                    &amp; <font color=#447700>! number of this timestep<a name='285'></font>
+    ifuelread,                                    &amp; <font color=#447700>! how to initialize nfuel_cat:<a name='286'></font>
+                                                       <font color=#447700>! -1=not at all, done outside <a name='287'></font>
+                                                       <font color=#447700>! 0=from nfuel_cat0<a name='288'></font>
+                                                       <font color=#447700>! 1=from altitude<a name='289'></font>
+                                                       <font color=#447700>! 2=from file<a name='290'></font>
+    nfuel_cat0,                                   &amp; <font color=#447700>! fuel category to initialize everything to<a name='291'></font>
+    num_tiles                                       <font color=#447700>! number of tiles<a name='292'></font>
+<a name='293'>
+logical, intent(in)::restart<a name='294'>
+    <a name='295'>
+<a name='296'>
+logical, intent(out)::need_lfn_update<a name='297'>
+<a name='298'>
+integer,dimension(num_tiles),intent(in) :: i_start,i_end,j_start,j_end  <font color=#447700>! atm grid tiling<a name='299'></font>
+<a name='300'>
+real, intent(in):: &amp;<a name='301'>
+    dt,                                           &amp; <font color=#447700>! time step<a name='302'></font>
+    dx,dy,                                        &amp; <font color=#447700>! atm grid step<a name='303'></font>
+    u_frame,v_frame,                              &amp; <font color=#447700>! velocity offset<a name='304'></font>
+    unit_fxlong,unit_fxlat,                       &amp; <font color=#447700>! fxlong, fxlat units in m  <a name='305'></font>
+    fire_crwn_hgt,                                &amp; <font color=#447700>! lowest height crown fire heat is released (m)<a name='306'></font>
+    fire_ext_grnd,                                &amp; <font color=#447700>! extinction depth of surface fire heat flux (m)<a name='307'></font>
+    fire_ext_crwn,                                &amp; <font color=#447700>! wind height for vertical interploation to fire spread<a name='308'></font>
+    fire_wind_height <a name='309'>
+<a name='310'>
+<a name='311'>
+integer, intent(in):: num_ignitions                 <font color=#447700>! number of ignitions, can be 0<a name='312'></font>
+integer, intent(in):: ignition_longlat       <font color=#447700>! if 1 ignition give as long/lat, otherwise as m from lower left corner<a name='313'></font>
+TYPE (ignition_line_type), DIMENSION(num_ignitions), intent(out):: ignition_line<a name='314'>
+<a name='315'>
+real,intent(in),dimension(ims:ime,kms:kme,jms:jme)::u,v, &amp; <font color=#447700>! wind velocity (m/s) (staggered atm grid) <a name='316'></font>
+                              ph, phb                      <font color=#447700>! geopotential (w-points atm grid)<a name='317'></font>
+real,intent(in),dimension(ims:ime, jms:jme)::   z0, &amp;    <font color=#447700>! roughness height<a name='318'></font>
+                                                zs       <font color=#447700>! terrain height  <a name='319'></font>
+real,intent(out),dimension(ims:ime,jms:jme)::&amp;<a name='320'>
+    uah,                                           &amp; <font color=#447700>! atm wind at fire_wind_height, diagnostics<a name='321'></font>
+    vah                                              <font color=#447700>! atm wind at fire_wind_height, diagnostics<a name='322'></font>
+<a name='323'>
+real, dimension(ims:ime, jms:jme), intent(inout)::xlong, xlat <font color=#447700>! inout because of extension at bdry<a name='324'></font>
+    <a name='325'>
+real, intent(inout), dimension(ifms:ifme,jfms:jfme):: &amp;<a name='326'>
+    nfuel_cat                                       <font color=#447700>! fuel data; can be also set inside (cell based, fire grid)<a name='327'></font>
+<a name='328'>
+real, intent(inout), dimension(ifms:ifme, jfms:jfme)::     &amp;<a name='329'>
+    lfn,tign,fuel_frac,                        &amp;     <font color=#447700>! state: level function, ign time, fuel left<a name='330'></font>
+    lfn_out                                    <font color=#447700>! fire wind velocities<a name='331'></font>
+<a name='332'>
+real, intent(out), dimension(ifms:ifme, jfms:jfme)::  &amp;<a name='333'>
+    fire_area                                        <font color=#447700>! fraction of each cell burning<a name='334'></font>
+<a name='335'>
+real, intent(out), dimension(ims:ime, jms:jme):: &amp;  <font color=#447700>! redundant arrays, for display purposes only (atm grid)<a name='336'></font>
+    avg_fuel_frac,                               &amp;  <font color=#447700>! average fuel fraction<a name='337'></font>
+    grnhfx,                                      &amp;  <font color=#447700>! heat flux from surface fire (W/m^2) <a name='338'></font>
+    grnqfx,                                      &amp;  <font color=#447700>! moisture flux from surface fire (W/m^2) <a name='339'></font>
+    canhfx,                                      &amp;  <font color=#447700>! heat flux from crown fire (W/m^2) <a name='340'></font>
+    canqfx                                         <font color=#447700>! moisture flux from crown fire (W/m^2) <a name='341'></font>
+<a name='342'>
+real, intent(out), dimension(ifms:ifme, jfms:jfme):: &amp;  <font color=#447700>! redundant arrays, for display only, fire grid<a name='343'></font>
+    fgrnhfx,                                      &amp;  <font color=#447700>! heat flux from surface fire (W/m^2) <a name='344'></font>
+    fgrnqfx,                                      &amp;  <font color=#447700>! moisture flux from surface fire (W/m^2) <a name='345'></font>
+    fcanhfx,                                      &amp;  <font color=#447700>! heat flux from crown fire (W/m^2) <a name='346'></font>
+    fcanqfx,                                      &amp;   <font color=#447700>! moisture flux from crown fire (W/m^2) <a name='347'></font>
+    ros                                             <font color=#447700>! fire rate of spread (m/s)<a name='348'></font>
+<a name='349'>
+<font color=#447700>!  ***** data (constant in time) *****<a name='350'></font>
+<a name='351'>
+real, dimension(ifms:ifme, jfms:jfme), intent(inout)::fxlong,fxlat <font color=#447700>! fire mesh coordinates<a name='352'></font>
+real, intent(out), dimension(ifms:ifme, jfms:jfme)::fuel_time   <font color=#447700>! fire params arrays<a name='353'></font>
+<a name='354'>
+type(fire_params),intent(inout)::fp<a name='355'>
+    <a name='356'>
+<font color=#447700>!*** local<a name='357'></font>
+real :: dxf,dyf,time_start,latm, s<a name='358'>
+integer :: its,ite,jts,jte,kts,kte, &amp;            <font color=#447700>! tile<a name='359'></font>
+    ij,i,j,k,id,pid,ipe1,jpe1,ite1,jte1, &amp;<a name='360'>
+    ifts,ifte,jfts,jfte                          <font color=#447700>! fire tile<a name='361'></font>
+character(len=128)::msg<a name='362'>
+character(len=3)::kk<a name='363'>
+integer::ignitions_done_tile(num_tiles),ignited_tile(num_ignitions,num_tiles)<a name='364'>
+integer::ignitions_done,ignited_patch(num_ignitions),idex,jdex<a name='365'>
+<a name='366'>
+<a name='367'>
+<font color=#447700>!*** executable<a name='368'></font>
+<a name='369'>
+<font color=#447700>! time - assume dt does not change<a name='370'></font>
+time_start = itimestep * dt<a name='371'>
+<a name='372'>
+<font color=#447700>! fire mesh step<a name='373'></font>
+dxf=dx/ir<a name='374'>
+dyf=dy/jr<a name='375'>
+<a name='376'>
+<a name='377'>
+<a name='378'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='379'></font>
+write(msg,'(a,2f15.6)')'atmosphere mesh step:',dx,dy<a name='380'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_28">(msg)<a name='381'>
+write(msg,'(a,2f15.6)')'fire mesh step:      ',dxf,dyf<a name='382'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_29">(msg)<a name='383'>
+write(msg,7001)'atm domain      ','ids',ids,ide,jds,jde<a name='384'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_30">(msg)                    <a name='385'>
+write(msg,7001)'atm memory      ','ims',ims,ime,jms,jme<a name='386'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_31">(msg)                    <a name='387'>
+write(msg,7001)'atm patch       ','ips',ips,ipe,jps,jpe<a name='388'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_32">(msg)                    <a name='389'>
+write(msg,7001)'fire domain     ','ifds',ifds,ifde,jfds,jfde<a name='390'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_33">(msg)                    <a name='391'>
+write(msg,7001)'fire memory     ','ifms',ifms,ifme,jfms,jfme<a name='392'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_34">(msg)                    <a name='393'>
+write(msg,7001)'fire patch      ','ifps',ifps,ifpe,jfps,jfpe<a name='394'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_35">(msg)                    <a name='395'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='396'></font>
+<a name='397'>
+<font color=#447700>! check mesh dimensions<a name='398'></font>
+call <A href='../../html_code/phys/module_fr_fire_driver.F.html#CHECK_FMESH'>check_fmesh</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_FMESH_1">(ids,ide,ifds,ifde,ir,'id')           <font color=#447700>! check if atm and fire grids line up<a name='399'></font>
+call <A href='../../html_code/phys/module_fr_fire_driver.F.html#CHECK_FMESH'>check_fmesh</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_FMESH_2">(jds,jde,jfds,jfde,jr,'jd')<a name='400'>
+call <A href='../../html_code/phys/module_fr_fire_driver.F.html#CHECK_FMESH'>check_fmesh</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_FMESH_3">(ips,ipe,ifps,ifpe,ir,'ip')<a name='401'>
+call <A href='../../html_code/phys/module_fr_fire_driver.F.html#CHECK_FMESH'>check_fmesh</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_FMESH_4">(jps,jpe,jfps,jfpe,jr,'jp')<a name='402'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_6">(ips,ipe,jps,jpe,ims,ime,jms,jme)        <font color=#447700>! check if atm patch fits in atm array<a name='403'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_7">(ifps,ifpe,jfps,jfpe,ifms,ifme,jfms,jfme) <font color=#447700>! check if fire patch fits in fire array<a name='404'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_8">(ips,ipe,jps,jpe,ids,ide,jds,jde)        <font color=#447700>! check if atm patch fits in atm domain<a name='405'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_9">(ifps,ifpe,jfps,jfpe,ifds,ifde,jfds,jfde) <font color=#447700>! check if fire patch fits in fire domain<a name='406'></font>
+<a name='407'>
+<font color=#447700>!$OMP SINGLE<a name='408'></font>
+<font color=#447700>! init rest of fuel tables with derived constants<a name='409'></font>
+if(ifun.eq.1) then<a name='410'>
+   call <A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS'>init_fuel_cats</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INIT_FUEL_CATS_1">  <font color=#447700>! common for all threads<a name='411'></font>
+endif<a name='412'>
+<font color=#447700>!$OMP END SINGLE<a name='413'></font>
+<a name='414'>
+<a name='415'>
+pid=0<a name='416'>
+if(fire_print_file.gt.0)then<a name='417'>
+    if(itimestep.le.fire_print_file.or.mod(itimestep,fire_print_file).eq.0)pid=itimestep <font color=#447700>! print 1-fire_print_file then every fire_print_file-th<a name='418'></font>
+endif<a name='419'>
+<a name='420'>
+if(ifun.eq.3)then<a name='421'>
+ call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM'>print_chsum</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_CHSUM_1">(itimestep,ims,ime,kms,kme,jms,jme,ids,ide,kds,kde,jds,jde,ips,ipe,kps,kpe,jps,jpe,1,0,0,u,'u')<a name='422'>
+ call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM'>print_chsum</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_CHSUM_2">(itimestep,ims,ime,kms,kme,jms,jme,ids,ide,kds,kde,jds,jde,ips,ipe,kps,kpe,jps,jpe,0,0,1,v,'v')<a name='423'>
+ call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM'>print_chsum</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_CHSUM_3">(itimestep,ims,ime,kms,kme,jms,jme,ids,ide,kds,kde,jds,jde,ips,ipe,kps,kpe,jps,jpe,0,1,0,ph,'ph')<a name='424'>
+endif<a name='425'>
+<a name='426'>
+<font color=#447700>! fake atm tile bounds<a name='427'></font>
+kts=kps<a name='428'>
+kte=kpe<a name='429'>
+<a name='430'>
+<font color=#447700>! staggered atm patch bounds<a name='431'></font>
+ipe1=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_1">(ipe.eq.ide,ipe+1,ipe)<a name='432'>
+jpe1=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_2">(jpe.eq.jde,jpe+1,jpe)<a name='433'>
+<a name='434'>
+<font color=#447700>! set up fire tiles &amp; interpolate to fire grid<a name='435'></font>
+<font color=#447700>!$OMP PARALLEL DO PRIVATE(ij,its,ite,jts,jte,ite1,jte1,ifts,ifte,jfts,jfte,msg,id) &amp;<a name='436'></font>
+<font color=#447700>!$OMP SCHEDULE(STATIC)<a name='437'></font>
+do ij=1,num_tiles<a name='438'>
+<a name='439'>
+    id = <A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_3">(pid.ne.0,pid+ij*10000,0) <font color=#447700>! for print<a name='440'></font>
+<a name='441'>
+    ignitions_done_tile(ij)=0<a name='442'>
+<a name='443'>
+    <font color=#447700>! set up tile bounds    <a name='444'></font>
+    its = i_start(ij)  <font color=#447700>! start atmospheric tile in i<a name='445'></font>
+    ite = i_end(ij)    <font color=#447700>! end atmospheric tile in i<a name='446'></font>
+    jts = j_start(ij)  <font color=#447700>! start atmospheric tile in j<a name='447'></font>
+    jte = j_end(ij)    <font color=#447700>! end atmospheric tile in j<a name='448'></font>
+    ifts= (its-ids)*ir+ifds       <font color=#447700>! start fire tile in i<a name='449'></font>
+    ifte= (ite-ids+1)*ir+ifds-1   <font color=#447700>! end fire tile in i<a name='450'></font>
+    jfts= (jts-jds)*jr+jfds       <font color=#447700>! start fire tile in j<a name='451'></font>
+    jfte= (jte-jds+1)*jr+jfds-1   <font color=#447700>! end fire tile in j<a name='452'></font>
+        <a name='453'>
+<font color=#447700>! staggered atm tile bounds<a name='454'></font>
+    ite1=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_4">(ite.eq.ide,ite+1,ite)<a name='455'>
+    jte1=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_5">(jte.eq.jde,jte+1,jte)<a name='456'>
+<a name='457'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='458'></font>
+    write(msg,'(a,i3,1x,a,i7,1x,a,i3)')'tile=',ij,' id=',id,' ifun=',ifun<a name='459'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_36">(msg)<a name='460'>
+    write(msg,7001)'atm tile   ','its',its,ite,jts,jte<a name='461'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_37">(msg)                   <a name='462'>
+    write(msg,7001)'fire tile  ','ifts',ifts,ifte,jfts,jfte<a name='463'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_38">(msg)                    <a name='464'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='465'></font>
+<a name='466'>
+    <font color=#447700>! check the tiles<a name='467'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_10">(its,ite,jts,jte,ips,ipe,jps,jpe)                 <font color=#447700>! check if atm tile fits in atm patch<a name='468'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_11">(ifts,ifte,jfts,jfte,ifps,ifpe,jfps,jfpe)         <font color=#447700>! check if fire tile fits in fire patch<a name='469'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_12">(ifts-2,ifte+2,jfts-2,jfte+2,ifms,ifme,jfms,jfme)<font color=#447700>! check if fire node tile fits in memory<a name='470'></font>
+<a name='471'>
+<a name='472'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='473'></font>
+    write(msg,'(a,i6,a,2(f15.6,a))')'time step',itimestep,' at',time_start,' duration',dt,'s'<a name='474'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_39">(msg)<a name='475'>
+    7001 format(a,' dimensions ',a4,':',i6,' to ',i6,' by ',i6,' to ',i6)<a name='476'>
+    write(msg,'(a,2i9)')'refinement ratio:',ir,jr<a name='477'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='478'></font>
+<a name='479'>
+    if(ifun.eq.1)then   <font color=#447700>! set terrain<a name='480'></font>
+<a name='481'>
+      if(restart)then<a name='482'>
+          <a name='483'>
+          call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_40">('restart - topo initialization skipped')<a name='484'>
+<a name='485'>
+      else<a name='486'>
+<font color=#447700>!<a name='487'></font>
+<font color=#447700>!        call print_2d_stats(ips,ipe,jps,jpe,ims,ime,jms,jme,zs,'driver:zs')<a name='488'></font>
+<font color=#447700>!    <a name='489'></font>
+<font color=#447700>!        ! interpolate terrain height<a name='490'></font>
+<font color=#447700>!        if(fire_topo_from_atm.eq.1)then<a name='491'></font>
+<font color=#447700>!            call interpolate_z2fire(id,                 &amp; ! for debug output, &lt;= 0 no output<a name='492'></font>
+<font color=#447700>!                ids,ide,  jds,jde,                    &amp; ! atm grid dimensions<a name='493'></font>
+<font color=#447700>!                ims,ime,  jms,jme,                    &amp;<a name='494'></font>
+<font color=#447700>!                ips,ipe,jps,jpe,                              &amp;<a name='495'></font>
+<font color=#447700>!                its,ite,jts,jte,                              &amp;<a name='496'></font>
+<font color=#447700>!                ifds, ifde, jfds, jfde,                       &amp; ! fire grid dimensions<a name='497'></font>
+<font color=#447700>!                ifms, ifme, jfms, jfme,                       &amp;<a name='498'></font>
+<font color=#447700>!                ifts,ifte,jfts,jfte,                          &amp;<a name='499'></font>
+<font color=#447700>!                ir,jr,                                        &amp; ! atm/fire grid ratio<a name='500'></font>
+<font color=#447700>!                zs,                                       &amp; ! atm grid arrays in<a name='501'></font>
+<font color=#447700>!                fp%zsf)                                      ! fire grid arrays out<a name='502'></font>
+<font color=#447700>!        else<a name='503'></font>
+<font color=#447700>!!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='504'></font>
+<font color=#447700>!           write(msg,'(a,i3,a)')'fire_topo_from_atm=',fire_topo_from_atm,' assuming ZSF set, interpolation skipped'<a name='505'></font>
+<font color=#447700>!!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='506'></font>
+<font color=#447700>!        endif<a name='507'></font>
+<a name='508'>
+        if(ignition_longlat .eq.0)then<a name='509'>
+            <font color=#447700>! set ideal fire mesh coordinates - used for ignition only<a name='510'></font>
+            <font color=#447700>! do not forget to set unit_fxlong, unit_fxlat outside of parallel loop<a name='511'></font>
+            <font color=#447700>!call set_ideal_coord( dxf,dyf, &amp;<a name='512'></font>
+            <font color=#447700>!    ifds,ifde,jfds,jfde,  &amp;<a name='513'></font>
+            <font color=#447700>!    ifms,ifme,jfms,jfme,  &amp;<a name='514'></font>
+            <font color=#447700>!    ifts,ifte,jfts,jfte,  &amp;<a name='515'></font>
+            <font color=#447700>!    fxlong,fxlat          )<a name='516'></font>
+            <font color=#447700>!call set_ideal_coord( dx,dy, &amp;<a name='517'></font>
+            <font color=#447700>!    ids,ide,jds,jde,  &amp;<a name='518'></font>
+            <font color=#447700>!    ims,ime,jms,jme,  &amp;<a name='519'></font>
+            <font color=#447700>!    its,ite,jts,jte,  &amp;<a name='520'></font>
+            <font color=#447700>!    xlong,xlat          )<a name='521'></font>
+        elseif(use_atm_vars)then<a name='522'>
+            <font color=#447700>! assume halo xlong xlat<a name='523'></font>
+            <font color=#447700>! interpolate nodal coordinates<a name='524'></font>
+<a name='525'>
+#ifdef DEBUG_OUT<a name='526'>
+         call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_16">(its,ite,jts,jte,ims,ime,jms,jme,xlat,'xlat',id)<a name='527'>
+         call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_17">(its,ite,jts,jte,ims,ime,jms,jme,xlong,'xlong',id)<a name='528'>
+#endif<a name='529'>
+        call <A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_Z2FIRE'>interpolate_z2fire</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERPOLATE_Z2FIRE_1">(id,                 &amp; <font color=#447700>! for debug output, &lt;= 0 no output<a name='530'></font>
+            ids,ide,  jds,jde,                    &amp; <font color=#447700>! atm grid dimensions<a name='531'></font>
+            ims,ime,  jms,jme,                    &amp;<a name='532'>
+            ips,ipe,jps,jpe,                              &amp;<a name='533'>
+            its,ite,jts,jte,                              &amp;<a name='534'>
+            ifds, ifde, jfds, jfde,                       &amp; <font color=#447700>! fire grid dimensions<a name='535'></font>
+            ifms, ifme, jfms, jfme,                       &amp;<a name='536'>
+            ifts,ifte,jfts,jfte,                          &amp;<a name='537'>
+            ir,jr,                                        &amp; <font color=#447700>! atm/fire grid ratio<a name='538'></font>
+            xlat,                                       &amp; <font color=#447700>! atm grid arrays in<a name='539'></font>
+            fxlat)                                      <font color=#447700>! fire grid arrays out<a name='540'></font>
+<a name='541'>
+        call <A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_Z2FIRE'>interpolate_z2fire</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERPOLATE_Z2FIRE_2">(id,                 &amp; <font color=#447700>! for debug output, &lt;= 0 no output<a name='542'></font>
+            ids,ide,  jds,jde,                    &amp; <font color=#447700>! atm grid dimensions<a name='543'></font>
+            ims,ime,  jms,jme,                    &amp;<a name='544'>
+            ips,ipe,jps,jpe,                              &amp;<a name='545'>
+            its,ite,jts,jte,                              &amp;<a name='546'>
+            ifds, ifde, jfds, jfde,                       &amp; <font color=#447700>! fire grid dimensions<a name='547'></font>
+            ifms, ifme, jfms, jfme,                       &amp;<a name='548'>
+            ifts,ifte,jfts,jfte,                          &amp;<a name='549'>
+            ir,jr,                                        &amp; <font color=#447700>! atm/fire grid ratio<a name='550'></font>
+            xlong,                                       &amp; <font color=#447700>! atm grid arrays in<a name='551'></font>
+            fxlong)                                      <font color=#447700>! fire grid arrays out<a name='552'></font>
+<a name='553'>
+        endif<a name='554'>
+<a name='555'>
+     endif<a name='556'>
+<a name='557'>
+    elseif(ifun.eq.2)then  <a name='558'>
+               <a name='559'>
+        <font color=#447700>! after the loop where zsf created exited and all synced<a name='560'></font>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_9">(ifts,ifte,jfts,jfte,ifms,ifme,jfms,jfme,fp%zsf,'driver_phys:zsf')        <a name='561'>
+<a name='562'>
+    elseif(ifun.eq.3)then  <font color=#447700>! interpolate winds to the fire grid<a name='563'></font>
+    <a name='564'>
+      if(use_atm_vars)then                                  <a name='565'>
+     <a name='566'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_18">(its,ite,jts,jte,ims,ime,jms,jme,z0,'z0',id)<a name='567'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3'>write_array_m3</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M3_1">(its,ite1,kts,kde-1,jts,jte,ims,ime,kms,kme,jms,jme,u,'u_2',id)<a name='568'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3'>write_array_m3</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M3_2">(its,ite,kts,kde-1,jts,jte1,ims,ime,kms,kme,jms,jme,v,'v_2',id)<a name='569'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3'>write_array_m3</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M3_3">(its,ite,kts,kde,jts,jte,ims,ime,kms,kme,jms,jme,ph,'ph_2',id)<a name='570'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3'>write_array_m3</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M3_4">(its,ite,kts,kde,jts,jte,ims,ime,kms,kme,jms,jme,phb,'phb',id)<a name='571'>
+        call <A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE'>interpolate_atm2fire</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERPOLATE_ATM2FIRE_1">(id,                     &amp; <font color=#447700>! flag for debug output<a name='572'></font>
+            fire_wind_height,                             &amp; <font color=#447700>! height to interpolate to<a name='573'></font>
+            ids,ide, kds,kde, jds,jde,                    &amp; <font color=#447700>! atm grid dimensions<a name='574'></font>
+            ims,ime, kms,kme, jms,jme,                    &amp;<a name='575'>
+            ips,ipe, jps,jpe,                             &amp;<a name='576'>
+            its,ite,jts,jte,                              &amp;                    <a name='577'>
+            ifds, ifde, jfds, jfde,                       &amp; <font color=#447700>! fire grid dimensions<a name='578'></font>
+            ifms, ifme, jfms, jfme,                       &amp;<a name='579'>
+            ifps, ifpe, jfps, jfpe,                       &amp; <font color=#447700>! fire patch bounds<a name='580'></font>
+            ifts, ifte, jfts, jfte,                       &amp;<a name='581'>
+            ir,jr,                                        &amp; <font color=#447700>! atm/fire grid ratio<a name='582'></font>
+            u_frame, v_frame,                             &amp; <font color=#447700>! velocity frame correction<a name='583'></font>
+            u,v,                                          &amp; <font color=#447700>! 3D atm grid arrays in<a name='584'></font>
+            ph,phb,                                       &amp;<a name='585'>
+            z0,zs,                                        &amp; <font color=#447700>! 2D atm grid arrays in<a name='586'></font>
+            uah,vah,                                      &amp; <font color=#447700>! 2D atm grid out<a name='587'></font>
+            fp%vx,fp%vy)                                    <font color=#447700>! fire grid arrays out<a name='588'></font>
+      endif<a name='589'>
+    <a name='590'>
+    endif<a name='591'>
+<a name='592'>
+<font color=#447700>!   the following executes in any case<a name='593'></font>
+<a name='594'>
+    call <A href='../../html_code/phys/module_fr_fire_model.F.html#FIRE_MODEL'>fire_model</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FIRE_MODEL_1"> (id,ifun,restart,need_lfn_update,  &amp;<a name='595'>
+        num_ignitions,                          &amp; <font color=#447700>! switches<a name='596'></font>
+        ifuelread,nfuel_cat0,                   &amp; <font color=#447700>! initialize fuel categories<a name='597'></font>
+        ifds,ifde,jfds,jfde,                    &amp; <font color=#447700>! fire domain dims<a name='598'></font>
+        ifms,ifme,jfms,jfme,                    &amp; <font color=#447700>! fire memory dims<a name='599'></font>
+        ifps,ifpe,jfps,jfpe,                    &amp;<a name='600'>
+        ifts,ifte,jfts,jfte,                    &amp; <font color=#447700>! fire patch dims<a name='601'></font>
+        time_start,dt,                          &amp; <font color=#447700>! time and increment<a name='602'></font>
+        dxf,dyf,                                &amp; <font color=#447700>! fire mesh spacing<a name='603'></font>
+        ignition_line,                          &amp; <font color=#447700>! description of ignition lines<a name='604'></font>
+        ignitions_done_tile(ij),ignited_tile(1,ij),  &amp;<a name='605'>
+        fxlong,fxlat,unit_fxlong,unit_fxlat,      &amp; <font color=#447700>! fire mesh coordinates<a name='606'></font>
+        lfn,lfn_out,tign,fuel_frac,                     &amp; <font color=#447700>! state: level function, ign time, fuel left<a name='607'></font>
+        fire_area,                              &amp; <font color=#447700>! output: fraction of cell burning<a name='608'></font>
+        fgrnhfx,fgrnqfx,                        &amp; <font color=#447700>! output: heat fluxes<a name='609'></font>
+        ros,                                    &amp; <font color=#447700>! output: rate of spread for display<a name='610'></font>
+        nfuel_cat,                              &amp; <font color=#447700>! fuel data per point <a name='611'></font>
+        fuel_time,                              &amp; <font color=#447700>! save derived internal data<a name='612'></font>
+        fp                                      &amp; <font color=#447700>! fire coefficients<a name='613'></font>
+    )<a name='614'>
+    <a name='615'>
+    if(ifun.eq.6)then <font color=#447700>! heat fluxes into the atmosphere    <a name='616'></font>
+    <a name='617'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_10">(ifts,ifte,jfts,jfte,ifms,ifme,jfms,jfme,fgrnhfx,'fire_driver:fgrnhfx')<a name='618'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_11">(ifts,ifte,jfts,jfte,ifms,ifme,jfms,jfme,fgrnqfx,'fire_driver:fgrnqfx')<a name='619'>
+    <a name='620'>
+        <font color=#447700>! sum the fluxes over atm cells<a name='621'></font>
+        if(use_atm_vars)then                                  <a name='622'>
+          call <A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS'>sum_2d_cells</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SUM_2D_CELLS_1">(        &amp;<a name='623'>
+            ifms,ifme,jfms,jfme,  &amp;<a name='624'>
+            ifts,ifte,jfts,jfte,  &amp;<a name='625'>
+            fuel_frac,              &amp;<a name='626'>
+            ims, ime, jms, jme,   &amp;<a name='627'>
+            its,ite,jts,jte,      &amp;<a name='628'>
+            avg_fuel_frac)<a name='629'>
+          call <A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS'>sum_2d_cells</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SUM_2D_CELLS_2">(        &amp;<a name='630'>
+            ifms,ifme,jfms,jfme,  &amp;<a name='631'>
+            ifts,ifte,jfts,jfte,  &amp;<a name='632'>
+            fgrnhfx,              &amp;<a name='633'>
+            ims, ime, jms, jme,   &amp;<a name='634'>
+            its,ite,jts,jte,      &amp;<a name='635'>
+            grnhfx)<a name='636'>
+<font color=#447700>!comment out the next call to get results as before commit 55fd92051196b796891b60cb7ec1c4bdb8800078<a name='637'></font>
+          call <A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS'>sum_2d_cells</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SUM_2D_CELLS_3">(        &amp;<a name='638'>
+            ifms,ifme,jfms,jfme,  &amp;<a name='639'>
+            ifts,ifte,jfts,jfte,  &amp;<a name='640'>
+            fgrnqfx,              &amp;<a name='641'>
+            ims, ime, jms, jme,   &amp;<a name='642'>
+            its,ite,jts,jte,      &amp;<a name='643'>
+            grnqfx)<a name='644'>
+<a name='645'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='646'></font>
+          write(msg,'(a,f6.3)')'fire-atmosphere feedback scaling ',fire_atm_feedback<a name='647'>
+<font color=#447700>!$OMP end CRITICAL(FIRE_DRIVER_CRIT)<a name='648'></font>
+	  call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_41">(msg)<a name='649'>
+          s = 1./(ir*jr)<a name='650'>
+          do j=jts,jte<a name='651'>
+            do i=its,ite<a name='652'>
+                <font color=#447700>! scale surface fluxes to get the averages<a name='653'></font>
+                avg_fuel_frac(i,j)=avg_fuel_frac(i,j)*s<a name='654'>
+                grnhfx(i,j)=fire_atm_feedback*grnhfx(i,j)*s<a name='655'>
+                grnqfx(i,j)=fire_atm_feedback*grnqfx(i,j)*s<a name='656'>
+                <font color=#447700>! we do not have canopy fluxes yet...<a name='657'></font>
+                canhfx(i,j)=0<a name='658'>
+                canqfx(i,j)=0<a name='659'>
+            enddo<a name='660'>
+          enddo<a name='661'>
+<a name='662'>
+          call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_12">(its,ite,jts,jte,ims,ime,jms,jme,grnhfx,'fire_driver:grnhfx')<a name='663'>
+          call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_13">(its,ite,jts,jte,ims,ime,jms,jme,grnqfx,'fire_driver:grnqfx')<a name='664'>
+       endif<a name='665'>
+<a name='666'>
+    endif <font color=#447700>! ifun=6<a name='667'></font>
+<a name='668'>
+enddo <font color=#447700>! tiles<a name='669'></font>
+<font color=#447700>!$OMP END PARALLEL DO<a name='670'></font>
+<a name='671'>
+#ifdef DEBUG_OUT<a name='672'>
+if(ifun.eq.1)then<a name='673'>
+    if(pid.ne.0)then<a name='674'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_19">(ips,ipe,jps,jpe,ims,ime,jms,jme,zs,'zs',pid)<a name='675'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_20">(ifps,ifpe,jfps,jfpe,ifms,ifme,jfms,jfme,fp%zsf,'zsf',pid)<a name='676'>
+    endif<a name='677'>
+endif<a name='678'>
+#endif<a name='679'>
+<a name='680'>
+if (ifun.eq.3)then<a name='681'>
+    ignitions_done=ignitions_done_tile(1) <font color=#447700>! all should be the same<a name='682'></font>
+    do i=1,ignitions_done<a name='683'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='684'></font>
+        write(msg,'(2(a,i4,1x))')'fire_driver_phys: checking ignition ',i,' of ',ignitions_done<a name='685'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='686'></font>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_42">(msg)<a name='687'>
+        ignited_patch(i)=0<a name='688'>
+        do ij=1,num_tiles<a name='689'>
+            ignited_patch(i)=ignited_patch(i)+ignited_tile(i,ij)<a name='690'>
+        enddo<a name='691'>
+#ifdef DM_PARALLEL<a name='692'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_43">('fire_driver_phys: checking ignitions, collect counts')<a name='693'>
+        call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_MAXVAL'>wrf_dm_maxval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_MAXVAL_10">(ignited_patch(i),idex,jdex)<a name='694'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_44">('fire_driver_phys: collected')<a name='695'>
+#endif<a name='696'>
+        if(ignited_patch(i).eq.0)then<a name='697'>
+            call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_13">('fire_driver_phys: Ignition failed, no nodes ignited. Bad coordinates?')<a name='698'>
+        endif<a name='699'>
+    enddo<a name='700'>
+<a name='701'>
+ call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM'>print_chsum</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_CHSUM_4">(itimestep,ims,ime,1,1,jms,jme,ids,ide,1,1,jds,jde,ips,ipe,1,1,jps,jpe,1,0,0,uah,'uah')<a name='702'>
+ call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM'>print_chsum</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_CHSUM_5">(itimestep,ims,ime,1,1,jms,jme,ids,ide,1,1,jds,jde,ips,ipe,1,1,jps,jpe,0,0,1,vah,'vah')<a name='703'>
+ call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM'>print_chsum</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_CHSUM_6">(itimestep,ifms,ifme,1,1,jfms,jfme,ifds,ifde,1,1,jfds,jfde,ifps,ifpe,1,1,jfps,jfpe,0,0,0,fp%vx,'uf')<a name='704'>
+ call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM'>print_chsum</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_CHSUM_7">(itimestep,ifms,ifme,1,1,jfms,jfme,ifds,ifde,1,1,jfds,jfde,ifps,ifpe,1,1,jfps,jfpe,0,0,0,fp%vy,'vf')<a name='705'>
+#ifdef DEBUG_OUT<a name='706'>
+    if(pid.gt.0)then<a name='707'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_21">(ips,ipe1,jps,jpe,ims,ime,jms,jme,uah,'uah',pid)<a name='708'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_22">(ips,ipe,jps,jpe1,ims,ime,jms,jme,vah,'vah',pid)<a name='709'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_23">(ips,ipe,jps,jpe,ims,ime,jms,jme,grnhfx,'grnhfx',pid)<a name='710'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_24">(ips,ipe,jps,jpe,ims,ime,jms,jme,grnqfx,'grnqfx',pid)<a name='711'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3'>write_array_m3</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M3_5">(ips,ipe1,kds,kde+1,jps,jpe,ims,ime,kms,kme,jms,jme,u,'u',pid)<a name='712'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3'>write_array_m3</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M3_6">(ips,ipe,kds,kde+1,jps,jpe1,ims,ime,kms,kme,jms,jme,v,'v',pid)<a name='713'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_25">(ifps,ifpe,jfps,jfpe,ifms,ifme,jfms,jfme,fp%vx,'uf',pid)<a name='714'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_26">(ifps,ifpe,jfps,jfpe,ifms,ifme,jfms,jfme,fp%vy,'vf',pid)<a name='715'>
+    endif<a name='716'>
+#endif<a name='717'>
+endif<a name='718'>
+<a name='719'>
+if(ifun.eq.5)then<a name='720'>
+#ifdef DEBUG_OUT<a name='721'>
+    if(pid.gt.0)then<a name='722'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_27">(ifps,ifpe,jfps,jfpe,ifms,ifme,jfms,jfme,lfn,'lfn',pid)<a name='723'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_28">(ifps,ifpe,jfps,jfpe,ifms,ifme,jfms,jfme,tign,'tign',pid)<a name='724'>
+    endif<a name='725'>
+#endif<a name='726'>
+endif<a name='727'>
+<a name='728'>
+if(ifun.eq.6)then<a name='729'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM'>print_chsum</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_CHSUM_8">(itimestep,ifms,ifme,1,1,jfms,jfme,ifds,ifde,1,1,jfds,jfde,ifps,ifpe,1,1,jfps,jfpe,0,0,0,fgrnhfx,'fgrnhfx')<a name='730'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM'>print_chsum</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_CHSUM_9">(itimestep,ifms,ifme,1,1,jfms,jfme,ifds,ifde,1,1,jfds,jfde,ifps,ifpe,1,1,jfps,jfpe,0,0,0,fgrnqfx,'fgrnqfx')<a name='731'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM'>print_chsum</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_CHSUM_10">(itimestep,ims,ime,1,1,jms,jme,ids,ide,1,1,jds,jde,ips,ipe,1,1,jps,jpe,0,0,0,grnhfx,'grnhfx')<a name='732'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM'>print_chsum</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_CHSUM_11">(itimestep,ims,ime,1,1,jms,jme,ids,ide,1,1,jds,jde,ips,ipe,1,1,jps,jpe,0,0,0,grnqfx,'grnqfx')<a name='733'>
+#ifdef DEBUG_OUT<a name='734'>
+    if(pid.gt.0)then<a name='735'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_29">(ips,ipe,jps,jpe,ims,ime,jms,jme,grnhfx,'grnhfx',pid)<a name='736'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_30">(ips,ipe,jps,jpe,ims,ime,jms,jme,grnqfx,'grnqfx',pid)<a name='737'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_31">(ifps,ifpe,jfps,jfpe,ifms,ifme,jfms,jfme,fuel_frac,'fuel_frac',pid)<a name='738'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_32">(ifps,ifpe,jfps,jfpe,ifms,ifme,jfms,jfme,fgrnhfx,'fgrnhfx',pid)<a name='739'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_DRIVER_PHYS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_33">(ifps,ifpe,jfps,jfpe,ifms,ifme,jfms,jfme,fgrnqfx,'fgrnqfx',pid)<a name='740'>
+    endif<a name='741'>
+#endif<a name='742'>
+endif<a name='743'>
+<a name='744'>
+end subroutine fire_driver_phys<a name='745'>
+<font color=#447700>!<a name='746'></font>
+<font color=#447700>!*******************<a name='747'></font>
+<font color=#447700>!<a name='748'></font>
+<a name='749'>
+<A NAME='FIRE_IGNITION_CONVERT'><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_IGNITION_CONVERT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='750'>
+<font color=#993300>subroutine </font><font color=#cc0000>fire_ignition_convert</font> (config_flags,fire_max_ignitions,fire_ignition_longlat, &amp; <A href='../../call_to/FIRE_IGNITION_CONVERT.html' TARGET='index'>1</A>,<A href='../../call_from/FIRE_IGNITION_CONVERT.html' TARGET='index'>5</A><a name='751'>
+    ignition_line,fire_num_ignitions,unit_fxlong,unit_fxlat)<a name='752'>
+    USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>module_configure</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_IGNITION_CONVERT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_150">, only : grid_config_rec_type<a name='753'>
+    implicit none<a name='754'>
+<font color=#447700>! create ignition arrays from scalar flags<a name='755'></font>
+<font color=#447700>!*** arguments<a name='756'></font>
+    TYPE (grid_config_rec_type) , INTENT(IN)          :: config_flags<a name='757'>
+    integer, intent(in)::fire_max_ignitions<a name='758'>
+    TYPE (ignition_line_type), DIMENSION(fire_max_ignitions), intent(out):: ignition_line <font color=#447700>! any values from input discarded <a name='759'></font>
+    integer, intent(out)::fire_num_ignitions,fire_ignition_longlat<a name='760'>
+    real, intent(out)::unit_fxlong,unit_fxlat<a name='761'>
+<font color=#447700>!*** local<a name='762'></font>
+    integer::i<a name='763'>
+    logical:: real,ideal<a name='764'>
+    real::lat_ctr,lon_ctr<a name='765'>
+<font color=#447700>!*** executable<a name='766'></font>
+    <font color=#447700>! this is only until I figure out how to input arrays through the namelist...<a name='767'></font>
+    if(fire_max_ignitions.lt.5)call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_IGNITION_CONVERT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_14">('fire_max_ignitions too small')<a name='768'>
+    <font color=#447700>! figure out which kind of coordinates from the first given<a name='769'></font>
+    ideal=config_flags%fire_ignition_start_x1 .ne.0. .or. config_flags%fire_ignition_start_y1 .ne. 0.<a name='770'>
+    real=config_flags%fire_ignition_start_lon1 .ne. 0. .or. config_flags%fire_ignition_start_lat1 .ne. 0.<a name='771'>
+    if(ideal)call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_IGNITION_CONVERT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_45">('Using ideal ignition coordinates, m from the lower left domain corner')<a name='772'>
+    if(real)call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_IGNITION_CONVERT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_46">('Using real ignition coordinates, longitude and latitude')<a name='773'>
+    if(ideal.and.real)call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#FIRE_IGNITION_CONVERT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_15">('Only one of the ideal or real coordinates may be given')<a name='774'>
+<a name='775'>
+    fire_ignition_longlat=0  <font color=#447700>! default, if no ignition<a name='776'></font>
+    if(ideal)then<a name='777'>
+       <font color=#447700>! use values from _x and _y variables<a name='778'></font>
+       fire_ignition_longlat=0<a name='779'>
+       ignition_line(1)%start_x=config_flags%fire_ignition_start_x1<a name='780'>
+       ignition_line(1)%start_y=config_flags%fire_ignition_start_y1<a name='781'>
+       ignition_line(1)%end_x=config_flags%fire_ignition_end_x1<a name='782'>
+       ignition_line(1)%end_y=config_flags%fire_ignition_end_y1<a name='783'>
+       ignition_line(2)%start_x=config_flags%fire_ignition_start_x2<a name='784'>
+       ignition_line(2)%start_y=config_flags%fire_ignition_start_y2<a name='785'>
+       ignition_line(2)%end_x=config_flags%fire_ignition_end_x2<a name='786'>
+       ignition_line(2)%end_y=config_flags%fire_ignition_end_y2<a name='787'>
+       ignition_line(3)%start_x=config_flags%fire_ignition_start_x3<a name='788'>
+       ignition_line(3)%start_y=config_flags%fire_ignition_start_y3<a name='789'>
+       ignition_line(3)%end_x=config_flags%fire_ignition_end_x3<a name='790'>
+       ignition_line(3)%end_y=config_flags%fire_ignition_end_y3<a name='791'>
+       ignition_line(4)%start_x=config_flags%fire_ignition_start_x4<a name='792'>
+       ignition_line(4)%start_y=config_flags%fire_ignition_start_y4<a name='793'>
+       ignition_line(4)%end_x=config_flags%fire_ignition_end_x4<a name='794'>
+       ignition_line(4)%end_y=config_flags%fire_ignition_end_y4<a name='795'>
+       ignition_line(5)%start_x=config_flags%fire_ignition_start_x5<a name='796'>
+       ignition_line(5)%start_y=config_flags%fire_ignition_start_y5<a name='797'>
+       ignition_line(5)%end_x=config_flags%fire_ignition_end_x5<a name='798'>
+       ignition_line(5)%end_y=config_flags%fire_ignition_end_y5<a name='799'>
+    endif<a name='800'>
+    if(real)then<a name='801'>
+        <font color=#447700>! use values from _long and _lat<a name='802'></font>
+       fire_ignition_longlat=1<a name='803'>
+       ignition_line(1)%start_x=config_flags%fire_ignition_start_lon1<a name='804'>
+       ignition_line(1)%start_y=config_flags%fire_ignition_start_lat1<a name='805'>
+       ignition_line(1)%end_x=config_flags%fire_ignition_end_lon1<a name='806'>
+       ignition_line(1)%end_y=config_flags%fire_ignition_end_lat1<a name='807'>
+       ignition_line(2)%start_x=config_flags%fire_ignition_start_lon2<a name='808'>
+       ignition_line(2)%start_y=config_flags%fire_ignition_start_lat2<a name='809'>
+       ignition_line(2)%end_x=config_flags%fire_ignition_end_lon2<a name='810'>
+       ignition_line(2)%end_y=config_flags%fire_ignition_end_lat2<a name='811'>
+       ignition_line(3)%start_x=config_flags%fire_ignition_start_lon3<a name='812'>
+       ignition_line(3)%start_y=config_flags%fire_ignition_start_lat3<a name='813'>
+       ignition_line(3)%end_x=config_flags%fire_ignition_end_lon3<a name='814'>
+       ignition_line(3)%end_y=config_flags%fire_ignition_end_lat3<a name='815'>
+       ignition_line(4)%start_x=config_flags%fire_ignition_start_lon4<a name='816'>
+       ignition_line(4)%start_y=config_flags%fire_ignition_start_lat4<a name='817'>
+       ignition_line(4)%end_x=config_flags%fire_ignition_end_lon4<a name='818'>
+       ignition_line(4)%end_y=config_flags%fire_ignition_end_lat4<a name='819'>
+       ignition_line(5)%start_x=config_flags%fire_ignition_start_lon5<a name='820'>
+       ignition_line(5)%start_y=config_flags%fire_ignition_start_lat5<a name='821'>
+       ignition_line(5)%end_x=config_flags%fire_ignition_end_lon5<a name='822'>
+       ignition_line(5)%end_y=config_flags%fire_ignition_end_lat5<a name='823'>
+    endif<a name='824'>
+    <font color=#447700>! common to both cases<a name='825'></font>
+       ignition_line(1)%ros=config_flags%fire_ignition_ros1 <a name='826'>
+       ignition_line(1)%radius=config_flags%fire_ignition_radius1 <a name='827'>
+       ignition_line(1)%start_time=config_flags%fire_ignition_start_time1 <a name='828'>
+       ignition_line(1)%end_time=config_flags%fire_ignition_end_time1 <a name='829'>
+       ignition_line(2)%ros=config_flags%fire_ignition_ros2 <a name='830'>
+       ignition_line(2)%radius=config_flags%fire_ignition_radius2 <a name='831'>
+       ignition_line(2)%start_time=config_flags%fire_ignition_start_time2 <a name='832'>
+       ignition_line(2)%end_time=config_flags%fire_ignition_end_time2 <a name='833'>
+       ignition_line(3)%ros=config_flags%fire_ignition_ros3 <a name='834'>
+       ignition_line(3)%radius=config_flags%fire_ignition_radius3 <a name='835'>
+       ignition_line(3)%start_time=config_flags%fire_ignition_start_time3 <a name='836'>
+       ignition_line(3)%end_time=config_flags%fire_ignition_end_time3 <a name='837'>
+       ignition_line(4)%ros=config_flags%fire_ignition_ros4 <a name='838'>
+       ignition_line(4)%radius=config_flags%fire_ignition_radius4 <a name='839'>
+       ignition_line(4)%start_time=config_flags%fire_ignition_start_time4 <a name='840'>
+       ignition_line(4)%end_time=config_flags%fire_ignition_end_time4 <a name='841'>
+       ignition_line(5)%ros=config_flags%fire_ignition_ros5 <a name='842'>
+       ignition_line(5)%radius=config_flags%fire_ignition_radius5 <a name='843'>
+       ignition_line(5)%start_time=config_flags%fire_ignition_start_time5<a name='844'>
+       ignition_line(5)%end_time=config_flags%fire_ignition_end_time5<a name='845'>
+<a name='846'>
+    <font color=#447700>! <a name='847'></font>
+        fire_num_ignitions=0      <a name='848'>
+        do i=1,min(5,config_flags%fire_num_ignitions)<a name='849'>
+            <font color=#447700>! count the ignitions <a name='850'></font>
+            if(ignition_line(i)%radius.gt.0.)fire_num_ignitions=i<a name='851'>
+            <font color=#447700>! expand ignition data given as zero<a name='852'></font>
+            if(ignition_line(i)%end_x.eq.0.)ignition_line(i)%end_x=ignition_line(i)%start_x<a name='853'>
+            if(ignition_line(i)%end_y.eq.0.)ignition_line(i)%end_y=ignition_line(i)%start_y<a name='854'>
+            if(ignition_line(i)%end_time.eq.0.)ignition_line(i)%end_time=ignition_line(i)%start_time<a name='855'>
+        enddo<a name='856'>
+<a name='857'>
+    if(fire_ignition_longlat .eq. 0)then<a name='858'>
+       <font color=#447700>! ideal<a name='859'></font>
+       <font color=#447700>!  ignition is in m<a name='860'></font>
+       unit_fxlong=1.  <a name='861'>
+       unit_fxlat=1.<a name='862'>
+       <font color=#447700>! will set fire mesh coordinates to uniform mesh below<a name='863'></font>
+    else<a name='864'>
+       <font color=#447700>! real<a name='865'></font>
+       lat_ctr=config_flags%cen_lat<a name='866'>
+       lon_ctr=config_flags%cen_lon<a name='867'>
+       <font color=#447700>! 1 degree in m (approximate OK)<a name='868'></font>
+       unit_fxlat=pi2/(360.*reradius)  <font color=#447700>! earth circumference in m / 360 degrees<a name='869'></font>
+       unit_fxlong=cos(lat_ctr*pi2/360.)*unit_fxlat  <font color=#447700>! latitude<a name='870'></font>
+    endif<a name='871'>
+<a name='872'>
+end subroutine fire_ignition_convert<a name='873'>
+<a name='874'>
+<font color=#447700>!<a name='875'></font>
+<font color=#447700>!*****************************<a name='876'></font>
+<font color=#447700>!<a name='877'></font>
+<a name='878'>
+<A NAME='INTERPOLATE_Z2FIRE'><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_Z2FIRE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='879'>
+<font color=#993300>subroutine </font><font color=#cc0000>interpolate_z2fire</font>(id,                 &amp; <font color=#447700>! for debug output, &lt;= 0 no output <A href='../../call_to/INTERPOLATE_Z2FIRE.html' TARGET='index'>2</A>,<A href='../../call_from/INTERPOLATE_Z2FIRE.html' TARGET='index'>6</A><a name='880'></font>
+    ids,ide, jds,jde,                    &amp; <font color=#447700>! atm grid dimensions<a name='881'></font>
+    ims,ime, jms,jme,                    &amp;<a name='882'>
+    ips,ipe,jps,jpe,                              &amp;<a name='883'>
+    its,ite,jts,jte,                              &amp;<a name='884'>
+    ifds, ifde, jfds, jfde,                       &amp; <font color=#447700>! fire grid dimensions<a name='885'></font>
+    ifms, ifme, jfms, jfme,                       &amp;<a name='886'>
+    ifts,ifte,jfts,jfte,                          &amp;<a name='887'>
+    ir,jr,                                        &amp; <font color=#447700>! atm/fire grid ratio<a name='888'></font>
+    zs,                                       &amp; <font color=#447700>! atm grid arrays in<a name='889'></font>
+    zsf)                                      <font color=#447700>! fire grid arrays out<a name='890'></font>
+    <a name='891'>
+implicit none<a name='892'>
+<font color=#447700>!*** purpose: interpolate height<a name='893'></font>
+<a name='894'>
+<font color=#447700>!*** arguments<a name='895'></font>
+integer, intent(in)::id,                          &amp;<a name='896'>
+    ids,ide, jds,jde,                    &amp; <font color=#447700>! atm domain bounds<a name='897'></font>
+    ims,ime,jms,jme,                    &amp; <font color=#447700>! atm memory bounds <a name='898'></font>
+    ips,ipe,jps,jpe,                              &amp;<a name='899'>
+    its,ite,jts,jte,                              &amp; <font color=#447700>! atm tile bounds<a name='900'></font>
+    ifds, ifde, jfds, jfde,                       &amp; <font color=#447700>! fire domain bounds<a name='901'></font>
+    ifms, ifme, jfms, jfme,                       &amp; <font color=#447700>! fire memory bounds<a name='902'></font>
+    ifts,ifte,jfts,jfte,                          &amp; <font color=#447700>! fire tile bounds<a name='903'></font>
+    ir,jr                                         <font color=#447700>! atm/fire grid refinement ratio<a name='904'></font>
+real, intent(in), dimension(ims:ime, jms:jme):: zs  <font color=#447700>! terrain height at atm cell centers                                        &amp; ! terrain height  <a name='905'></font>
+real,intent(out), dimension(ifms:ifme,jfms:jfme)::&amp;<a name='906'>
+    zsf                                             <font color=#447700>! terrain height fire grid nodes<a name='907'></font>
+    <a name='908'>
+    <a name='909'>
+<font color=#447700>!*** local<a name='910'></font>
+real, dimension(its-2:ite+2,jts-2:jte+2):: za      <font color=#447700>! terrain height<a name='911'></font>
+integer:: i,j,jts1,jte1,its1,ite1,jfts1,jfte1,ifts1,ifte1,itso,jtso,iteo,jteo<a name='912'>
+<a name='913'>
+<font color=#447700>! terrain height<a name='914'></font>
+<a name='915'>
+    jts1=max(jts-1,jds) <font color=#447700>! lower loop limit by one less when at end of domain<a name='916'></font>
+    its1=max(its-1,ids) <font color=#447700>! ASSUMES THE HALO IS THERE if patch != domain<a name='917'></font>
+    jte1=min(jte+1,jde) <a name='918'>
+    ite1=min(ite+1,ide)<a name='919'>
+    do j = jts1,jte1<a name='920'>
+        do i = its1,ite1 <a name='921'>
+            <font color=#447700>! copy to local array<a name='922'></font>
+            za(i,j)=zs(i,j)           <a name='923'>
+        enddo<a name='924'>
+    enddo<a name='925'>
+<a name='926'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY'>continue_at_boundary</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_Z2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONTINUE_AT_BOUNDARY_2">(1,1,0., &amp; <font color=#447700>! do x direction or y direction<a name='927'></font>
+    its-2,ite+2,jts-2,jte+2,           &amp;                <font color=#447700>! memory dims<a name='928'></font>
+    ids,ide,jds,jde, &amp;            <font color=#447700>! domain dims - winds defined up to +1<a name='929'></font>
+    ips,ipe,jps,jpe, &amp;            <font color=#447700>! patch dims - winds defined up to +1<a name='930'></font>
+    its1,ite1,jts1,jte1, &amp;                <font color=#447700>! tile dims<a name='931'></font>
+    itso,jtso,iteo,jteo, &amp;<a name='932'>
+    za)                               <font color=#447700>! array<a name='933'></font>
+<a name='934'>
+    <font color=#447700>! interpolate to tile plus strip along domain boundary if at boundary<a name='935'></font>
+    jfts1=<A href='../../html_code/phys/module_fr_fire_util.F.html#SNODE'>snode</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_Z2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SNODE_1">(jfts,jfds,-1) <font color=#447700>! lower loop limit by one less when at end of domain<a name='936'></font>
+    ifts1=<A href='../../html_code/phys/module_fr_fire_util.F.html#SNODE'>snode</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_Z2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SNODE_2">(ifts,ifds,-1)<a name='937'>
+    jfte1=<A href='../../html_code/phys/module_fr_fire_util.F.html#SNODE'>snode</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_Z2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SNODE_3">(jfte,jfde,+1) <a name='938'>
+    ifte1=<A href='../../html_code/phys/module_fr_fire_util.F.html#SNODE'>snode</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_Z2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SNODE_4">(ifte,ifde,+1)<a name='939'>
+                     <a name='940'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D'>interpolate_2d</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_Z2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERPOLATE_2D_1">(  &amp;<a name='941'>
+        its-2,ite+2,jts-2,jte+2, &amp; <font color=#447700>! memory dims atm grid tile<a name='942'></font>
+        its1-1,ite1+1,jts1-1,jte1+1, &amp; <font color=#447700>! where atm grid values set<a name='943'></font>
+        ifms,ifme,jfms,jfme,    &amp; <font color=#447700>! array dims fire grid<a name='944'></font>
+        ifts1,ifte1,jfts1,jfte1,  &amp; <font color=#447700>! dimensions fire grid tile<a name='945'></font>
+        ir,jr,                  &amp; <font color=#447700>! refinement ratio<a name='946'></font>
+        real(ids),real(jds),ifds+(ir-1)*0.5,jfds+(jr-1)*0.5, &amp; <font color=#447700>! line up by lower left corner of domain<a name='947'></font>
+        za,                     &amp; <font color=#447700>! in atm grid     <a name='948'></font>
+        zsf)                      <font color=#447700>! out fire grid<a name='949'></font>
+<a name='950'>
+end subroutine interpolate_z2fire<a name='951'>
+<font color=#447700>!<a name='952'></font>
+<font color=#447700>!*****************************<a name='953'></font>
+<font color=#447700>!<a name='954'></font>
+<a name='955'>
+<A NAME='INTERPOLATE_ATM2FIRE'><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='956'>
+<font color=#993300>subroutine </font><font color=#cc0000>interpolate_atm2fire</font>(id,               &amp; <font color=#447700>! for debug output, &lt;= 0 no output <A href='../../call_to/INTERPOLATE_ATM2FIRE.html' TARGET='index'>1</A>,<A href='../../call_from/INTERPOLATE_ATM2FIRE.html' TARGET='index'>43</A><a name='957'></font>
+    fire_wind_height,                             &amp; <font color=#447700>! interpolation height<a name='958'></font>
+    ids,ide, kds,kde, jds,jde,                    &amp; <font color=#447700>! atm grid dimensions<a name='959'></font>
+    ims,ime, kms,kme, jms,jme,                    &amp;<a name='960'>
+    ips,ipe,jps,jpe,                              &amp;<a name='961'>
+    its,ite,jts,jte,                              &amp;<a name='962'>
+    ifds, ifde, jfds, jfde,                       &amp; <font color=#447700>! fire grid dimensions<a name='963'></font>
+    ifms, ifme, jfms, jfme,                       &amp;<a name='964'>
+    ifps, ifpe, jfps, jfpe,                       &amp; <font color=#447700>! fire patch bounds<a name='965'></font>
+    ifts,ifte,jfts,jfte,                          &amp;<a name='966'>
+    ir,jr,                                        &amp; <font color=#447700>! atm/fire grid ratio<a name='967'></font>
+    u_frame, v_frame,                             &amp; <font color=#447700>! velocity frame correction<a name='968'></font>
+    u,v,                                          &amp; <font color=#447700>! atm grid arrays in<a name='969'></font>
+    ph,phb,                                       &amp;<a name='970'>
+    z0,zs,                                        &amp;<a name='971'>
+    uah,vah,                                      &amp;<a name='972'>
+    uf,vf)                                          <font color=#447700>! fire grid arrays out<a name='973'></font>
+    <a name='974'>
+implicit none<a name='975'>
+<font color=#447700>!*** purpose: interpolate winds and height<a name='976'></font>
+<a name='977'>
+<font color=#447700>!*** arguments<a name='978'></font>
+integer, intent(in)::id                           <a name='979'>
+real, intent(in):: fire_wind_height                 <font color=#447700>! height above the terrain for vertical interpolation<a name='980'></font>
+integer, intent(in)::                             &amp;<a name='981'>
+    ids,ide, kds,kde, jds,jde,                    &amp; <font color=#447700>! atm domain bounds<a name='982'></font>
+    ims,ime, kms,kme, jms,jme,                    &amp; <font color=#447700>! atm memory bounds <a name='983'></font>
+    ips,ipe,jps,jpe,                              &amp;<a name='984'>
+    its,ite,jts,jte,                              &amp; <font color=#447700>! atm tile bounds<a name='985'></font>
+    ifds, ifde, jfds, jfde,                       &amp; <font color=#447700>! fire domain bounds<a name='986'></font>
+    ifms, ifme, jfms, jfme,                       &amp; <font color=#447700>! fire memory bounds<a name='987'></font>
+    ifps, ifpe, jfps, jfpe,                       &amp; <font color=#447700>! fire patch bounds<a name='988'></font>
+    ifts,ifte,jfts,jfte,                          &amp; <font color=#447700>! fire tile bounds<a name='989'></font>
+    ir,jr                                         <font color=#447700>! atm/fire grid refinement ratio<a name='990'></font>
+real, intent(in):: u_frame, v_frame                 <font color=#447700>! velocity frame correction<a name='991'></font>
+real,intent(in),dimension(ims:ime,kms:kme,jms:jme)::&amp;<a name='992'>
+    u,v,                                          &amp; <font color=#447700>! atm wind velocity, staggered  <a name='993'></font>
+    ph,phb                                          <font color=#447700>! geopotential<a name='994'></font>
+real,intent(in),dimension(ims:ime,jms:jme)::&amp;<a name='995'>
+    z0,                                           &amp; <font color=#447700>! roughness height<a name='996'></font>
+    zs                                              <font color=#447700>! terrain height<a name='997'></font>
+real,intent(out),dimension(ims:ime,jms:jme)::&amp;<a name='998'>
+    uah,                                           &amp; <font color=#447700>! atm wind at fire_wind_height, diagnostics<a name='999'></font>
+    vah                                              <font color=#447700>! <a name='1000'></font>
+real,intent(out), dimension(ifms:ifme,jfms:jfme)::&amp;<a name='1001'>
+    uf,vf                                           <font color=#447700>! wind velocity fire grid nodes <a name='1002'></font>
+    <a name='1003'>
+    <a name='1004'>
+<font color=#447700>!*** local<a name='1005'></font>
+character(len=256)::msg<a name='1006'>
+#define TDIMS its-2,ite+2,jts-2,jte+2<a name='1007'>
+real, dimension(its-2:ite+2,jts-2:jte+2):: ua,va   <font color=#447700>! atm winds, interpolated over height, still staggered grid<a name='1008'></font>
+real, dimension(its-2:ite+2,kds:kde,jts-2:jte+2):: altw,altub,altvb,hgtu,hgtv <font color=#447700>! altitudes<a name='1009'></font>
+integer:: i,j,k,ifts1,ifte1,jfts1,jfte1,ite1,jte1<a name='1010'>
+integer::itst,itet,jtst,jtet,itsu,iteu,jtsu,jteu,itsv,itev,jtsv,jtev<a name='1011'>
+integer::kdmax,its1,jts1,ips1,jps1<a name='1012'>
+integer::itsou,iteou,jtsou,jteou,itsov,iteov,jtsov,jteov<a name='1013'>
+real:: ground,loght,loglast,logz0,logfwh,ht,zr<a name='1014'>
+real::r_nan<a name='1015'>
+integer::i_nan<a name='1016'>
+equivalence (i_nan,r_nan)<a name='1017'>
+<a name='1018'>
+<font color=#447700>!*** executable<a name='1019'></font>
+<a name='1020'>
+<font color=#447700>! debug init local arrays<a name='1021'></font>
+i_nan=2147483647<a name='1022'>
+ua=r_nan<a name='1023'>
+va=r_nan<a name='1024'>
+altw=r_nan<a name='1025'>
+altub=r_nan<a name='1026'>
+hgtu=r_nan<a name='1027'>
+hgtv=r_nan<a name='1028'>
+<a name='1029'>
+<a name='1030'>
+if(kds.ne.1)then<a name='1031'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='1032'></font>
+  write(msg,*)'WARNING: bottom index kds=',kds,' should be 1?'<a name='1033'>
+  call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_47">(msg)<a name='1034'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='1035'></font>
+endif<a name='1036'>
+<a name='1037'>
+<font color=#447700>!                            ^ j<a name='1038'></font>
+<font color=#447700>!        ------------        |<a name='1039'></font>
+<font color=#447700>!        |          |         ----&gt; i<a name='1040'></font>
+<font color=#447700>!        u    p     |<a name='1041'></font>
+<font color=#447700>!        |          |    nodes in cell (i,j)<a name='1042'></font>
+<font color=#447700>!        ------v-----    view from top     <a name='1043'></font>
+<font color=#447700>!<a name='1044'></font>
+<font color=#447700>!             v(ide,jde+1)<a name='1045'></font>
+<font color=#447700>!            -------x------        <a name='1046'></font>
+<font color=#447700>!            |            |      <a name='1047'></font>
+<font color=#447700>!            |            |      <a name='1048'></font>
+<font color=#447700>! u(ide,jde) x      x     x u(ide+1,jde) <a name='1049'></font>
+<font color=#447700>!            | p(ide,hde) |   <a name='1050'></font>
+<font color=#447700>!            |            |   p=ph,phb,z0,...<a name='1051'></font>
+<font color=#447700>!            -------x------        <a name='1052'></font>
+<font color=#447700>!              v(ide,jde)<a name='1053'></font>
+<font color=#447700>!<a name='1054'></font>
+<font color=#447700>! staggered values set u(ids:ide+1,jds:jde) v(ids:ide,jds:jde+1)<a name='1055'></font>
+<font color=#447700>! p=ph+phb set at (ids:ide,jds:jde) <a name='1056'></font>
+<font color=#447700>! location of u(i,j) needs p(i-1,j) and p(i,j)<a name='1057'></font>
+<font color=#447700>! location of v(i,j) needs p(i,j-1) and p(i,j)<a name='1058'></font>
+<font color=#447700>! *** NOTE need HALO in ph, phb<a name='1059'></font>
+<font color=#447700>! so we can compute only u(ids+1:ide,jds:jde) v(ids:ide,jds+1,jde)<a name='1060'></font>
+<font color=#447700>! unless we extend p at the boundary<a name='1061'></font>
+<font color=#447700>! but because we care about the fire way in the inside it does not matter<a name='1062'></font>
+<font color=#447700>! if the fire gets close to domain boundary the simulation is over anyway<a name='1063'></font>
+<a name='1064'>
+    ite1=<A href='../../html_code/phys/module_fr_fire_util.F.html#SNODE'>snode</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SNODE_5">(ite,ide,1)<a name='1065'>
+    jte1=<A href='../../html_code/phys/module_fr_fire_util.F.html#SNODE'>snode</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SNODE_6">(jte,jde,1)<a name='1066'>
+    <font color=#447700>! do this in any case to check for nans<a name='1067'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_3D_STATS'>print_3d_stats</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_3D_STATS_3">(its,ite1,kds,kde,jts,jte,ims,ime,kms,kme,jms,jme,u,'wind U in')<a name='1068'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_3D_STATS'>print_3d_stats</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_3D_STATS_4">(its,ite,kds,kde,jts,jte1,ims,ime,kms,kme,jms,jme,v,'wind V in')<a name='1069'>
+<a name='1070'>
+    if(fire_print_msg.gt.0)then<a name='1071'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='1072'></font>
+       write(msg,'(a,f7.2,a)')'interpolate_atm2fire: log-interpolation of wind to',fire_wind_height,' m'<a name='1073'>
+       call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_48">(msg)<a name='1074'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='1075'></font>
+    endif<a name='1076'>
+<a name='1077'>
+    <font color=#447700>! indexing<a name='1078'></font>
+       <a name='1079'>
+    <font color=#447700>! file for u<a name='1080'></font>
+    itst=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_6">(ids.eq.its,its,its-1)<a name='1081'>
+    itet=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_7">(ide.eq.ite,ite,ite+1)<a name='1082'>
+    jtst=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_8">(jds.ge.jts,jts,jts-1)<a name='1083'>
+    jtet=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_9">(jde.eq.jte,jte,jte+1)<a name='1084'>
+<a name='1085'>
+if(fire_print_msg.ge.1)then<a name='1086'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='1087'></font>
+  write(msg,7001)'atm input  ','tile',its,ite,jts,jte<a name='1088'>
+  call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_49">(msg)<a name='1089'>
+  write(msg,7001)'altw       ','tile',itst,itet,jtst,jtet<a name='1090'>
+  call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_50">(msg)<a name='1091'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='1092'></font>
+endif<a name='1093'>
+7001 format(a,' dimensions ',a4,':',i6,' to ',i6,' by ',i6,' to ',i6)<a name='1094'>
+<a name='1095'>
+    kdmax=kde-1   <font color=#447700>! max layer to interpolate from, can be less<a name='1096'></font>
+<a name='1097'>
+    do j = jtst,jtet<a name='1098'>
+      do k=kds,kdmax+1<a name='1099'>
+        do i = itst,itet       <a name='1100'>
+          altw(i,k,j) = (ph(i,k,j)+phb(i,k,j))/g             <font color=#447700>! altitude of the bottom w-point <a name='1101'></font>
+        enddo<a name='1102'>
+      enddo<a name='1103'>
+    enddo<a name='1104'>
+<a name='1105'>
+<font color=#447700>! values at u points<a name='1106'></font>
+    itsu=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_10">(ids.eq.its,its+1,its)  <font color=#447700>! staggered direction<a name='1107'></font>
+    iteu=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_11">(ide.eq.ite,ite,ite+1)  <font color=#447700>! staggered direction<a name='1108'></font>
+    jtsu=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_12">(jds.ge.jts,jts,jts-1)<a name='1109'>
+    jteu=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_13">(jde.eq.jte,jte,jte+1)<a name='1110'>
+<a name='1111'>
+if(fire_print_msg.ge.1)then<a name='1112'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='1113'></font>
+  write(msg,7001)'u interp at','tile',itsu,iteu,jtsu,jteu<a name='1114'>
+  call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_51">(msg)<a name='1115'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='1116'></font>
+endif<a name='1117'>
+<a name='1118'>
+    do j = jtsu,jteu          <a name='1119'>
+      do k=kds,kdmax+1<a name='1120'>
+        do i = itsu,iteu       <a name='1121'>
+          altub(i,k,j)= 0.5*(altw(i-1,k,j)+altw(i,k,j))      <font color=#447700>! altitude of the bottom point under u-point<a name='1122'></font>
+        enddo<a name='1123'>
+      enddo<a name='1124'>
+      do k=kds,kdmax<a name='1125'>
+        do i = itsu,iteu       <a name='1126'>
+          hgtu(i,k,j) =  0.5*(altub(i,k,j)+altub(i,k+1,j)) - altub(i,kds,j)  <font color=#447700>! height of the u-point above the ground<a name='1127'></font>
+        enddo<a name='1128'>
+      enddo<a name='1129'>
+    enddo<a name='1130'>
+<a name='1131'>
+<font color=#447700>! values at v points<a name='1132'></font>
+    jtsv=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_14">(jds.eq.jts,jts+1,jts)  <font color=#447700>! staggered direction<a name='1133'></font>
+    jtev=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_15">(jde.eq.jte,jte,jte+1)  <font color=#447700>! staggered direction<a name='1134'></font>
+    itsv=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_16">(ids.ge.its,its,its-1)<a name='1135'>
+    itev=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_17">(ide.eq.ite,ite,ite+1)<a name='1136'>
+<a name='1137'>
+if(fire_print_msg.ge.1)then<a name='1138'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='1139'></font>
+  write(msg,7001)'v interp at','tile',itsv,itev,jtsv,jtev<a name='1140'>
+  call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_52">(msg)<a name='1141'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='1142'></font>
+endif<a name='1143'>
+    do j = jtsv,jtev          <a name='1144'>
+      do k=kds,kdmax+1<a name='1145'>
+        do i = itsv,itev       <a name='1146'>
+          altvb(i,k,j)= 0.5*(altw(i,k,j-1)+altw(i,k,j))      <font color=#447700>! altitude of the bottom point under v-point<a name='1147'></font>
+        enddo<a name='1148'>
+      enddo<a name='1149'>
+      do k=kds,kdmax<a name='1150'>
+        do i = itsv,itev       <a name='1151'>
+          hgtv(i,k,j) =  0.5*(altvb(i,k,j)+altvb(i,k+1,j)) - altvb(i,kds,j)  <font color=#447700>! height of the v-point above the ground<a name='1152'></font>
+        enddo<a name='1153'>
+      enddo<a name='1154'>
+    enddo<a name='1155'>
+<a name='1156'>
+#ifdef DEBUG_OUT<a name='1157'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3'>write_array_m3</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M3_7">(itsu,iteu,kds,kdmax,jtsu,jteu,its-2,ite+2,kds,kde,jts-2,jte+2,altub,'altub',id)<a name='1158'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3'>write_array_m3</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M3_8">(itsv,itev,kds,kdmax,jtsv,jtev,its-2,ite+2,kds,kde,jts-2,jte+2,altvb,'altvb',id)<a name='1159'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3'>write_array_m3</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M3_9">(itsu,iteu,kds,kdmax,jtsu,jteu,its-2,ite+2,kds,kde,jts-2,jte+2,hgtu,'hgtu',id)<a name='1160'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3'>write_array_m3</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M3_10">(itsv,itev,kds,kdmax,jtsv,jtev,its-2,ite+2,kds,kde,jts-2,jte+2,hgtv,'hgtv',id)<a name='1161'>
+#endif<a name='1162'>
+    logfwh = log(fire_wind_height)<a name='1163'>
+<a name='1164'>
+    <font color=#447700>! interpolate u, staggered in X<a name='1165'></font>
+<a name='1166'>
+    do j = jtsu,jteu            <font color=#447700>! compute on domain by 1 smaller, otherwise z0 and ph not available<a name='1167'></font>
+      do i = itsu,iteu        <font color=#447700>! compute with halo 2<a name='1168'></font>
+        zr = 0.5*(z0(i,j)+z0(i-1,j)) <font color=#447700>! interpolated roughness length under this u point<a name='1169'></font>
+        if(fire_wind_height &gt; zr)then       <font color=#447700>!  <a name='1170'></font>
+          do k=kds,kdmax<a name='1171'>
+            ht = hgtu(i,k,j)      <font color=#447700>! height of this u point above the ground<a name='1172'></font>
+            if( .not. ht &lt; fire_wind_height) then <font color=#447700>! found layer k this point is in<a name='1173'></font>
+              loght = log(ht)<a name='1174'>
+              if(k.eq.kds)then               <font color=#447700>! first layer, log linear interpolation from 0 at zr<a name='1175'></font>
+                logz0 = log(zr)<a name='1176'>
+                ua(i,j)= u(i,k,j)*(logfwh-logz0)/(loght-logz0)<a name='1177'>
+              else                           <font color=#447700>! log linear interpolation<a name='1178'></font>
+                loglast=log(hgtu(i,k-1,j))<a name='1179'>
+                ua(i,j)= u(i,k-1,j) + (u(i,k,j) - u(i,k-1,j)) * ( logfwh - loglast) / (loght - loglast)<a name='1180'>
+              endif<a name='1181'>
+              goto 10<a name='1182'>
+            endif<a name='1183'>
+            if(k.eq.kdmax)then                 <font color=#447700>! last layer, still not high enough<a name='1184'></font>
+              ua(i,j)=u(i,k,j) <a name='1185'>
+            endif<a name='1186'>
+          enddo<a name='1187'>
+10        continue<a name='1188'>
+        else  <font color=#447700>! roughness higher than the fire wind height<a name='1189'></font>
+          ua(i,j)=0.<a name='1190'>
+        endif<a name='1191'>
+      enddo<a name='1192'>
+    enddo<a name='1193'>
+<a name='1194'>
+    <font color=#447700>! interpolate v, staggered in Y<a name='1195'></font>
+<a name='1196'>
+    do j = jtsv,jtev<a name='1197'>
+      do i = itsv,itev<a name='1198'>
+        zr = 0.5*(z0(i,j-1)+z0(i,j)) <font color=#447700>! roughness length under this v point<a name='1199'></font>
+        if(fire_wind_height &gt; zr)then       <font color=#447700>!  <a name='1200'></font>
+          do k=kds,kdmax<a name='1201'>
+            ht = hgtv(i,k,j)      <font color=#447700>! height of this u point above the ground<a name='1202'></font>
+            if( .not. ht &lt; fire_wind_height) then <font color=#447700>! found layer k this point is in<a name='1203'></font>
+              loght = log(ht)<a name='1204'>
+              if(k.eq.kds)then               <font color=#447700>! first layer, log linear interpolation from 0 at zr<a name='1205'></font>
+                logz0 = log(zr)<a name='1206'>
+                va(i,j)= v(i,k,j)*(logfwh-logz0)/(loght-logz0)<a name='1207'>
+              else                           <font color=#447700>! log linear interpolation<a name='1208'></font>
+                loglast=log(hgtv(i,k-1,j))<a name='1209'>
+                va(i,j)= v(i,k-1,j) + (v(i,k,j) - v(i,k-1,j)) * ( logfwh - loglast) / (loght - loglast)<a name='1210'>
+              endif<a name='1211'>
+              goto 11<a name='1212'>
+            endif<a name='1213'>
+            if(k.eq.kdmax)then                 <font color=#447700>! last layer, still not high enough<a name='1214'></font>
+              va(i,j)=v(i,k,j) <a name='1215'>
+            endif<a name='1216'>
+          enddo<a name='1217'>
+11        continue<a name='1218'>
+        else  <font color=#447700>! roughness higher than the fire wind height<a name='1219'></font>
+          va(i,j)=0.<a name='1220'>
+        endif<a name='1221'>
+      enddo<a name='1222'>
+    enddo<a name='1223'>
+<a name='1224'>
+#ifdef DEBUG_OUT<a name='1225'>
+<font color=#447700>!   store the output for diagnostics<a name='1226'></font>
+    do j = jts,jte1<a name='1227'>
+      do i = its,ite1<a name='1228'>
+        uah(i,j)=ua(i,j)<a name='1229'>
+        vah(i,j)=va(i,j)<a name='1230'>
+      enddo<a name='1231'>
+    enddo<a name='1232'>
+<a name='1233'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_34">(its,ite1,jts,jte,ims,ime,jms,jme,uah,'uah_n',id) <font color=#447700>! no reflection<a name='1234'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_35">(its,ite,jts,jte1,ims,ime,jms,jme,vah,'vah_n',id)<a name='1235'>
+#endif<a name='1236'>
+<a name='1237'>
+    ips1 = <A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_18">(ips.eq.ids,ips+1,ips)<a name='1238'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY'>continue_at_boundary</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONTINUE_AT_BOUNDARY_3">(1,1,0., &amp; <font color=#447700>! x direction <a name='1239'></font>
+       TDIMS,                  &amp;<font color=#447700>! memory dims atm grid tile<a name='1240'></font>
+       ids+1,ide,jds,jde, &amp;     <font color=#447700>! domain dims - where u defined<a name='1241'></font>
+       ips1,ipe,jps,jpe, &amp;     <font color=#447700>! patch dims <a name='1242'></font>
+       itsu,iteu,jtsu,jteu, &amp; <font color=#447700>! tile dims - in nonextended direction one beyond if at patch boundary but not domain<a name='1243'></font>
+       itsou,iteou,jtsou,jteou, &amp; <font color=#447700>! out, where set<a name='1244'></font>
+       ua)                           <font color=#447700>! array<a name='1245'></font>
+<a name='1246'>
+    jps1 = <A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_19">(jps.eq.jds,jps+1,jps)<a name='1247'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY'>continue_at_boundary</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONTINUE_AT_BOUNDARY_4">(1,1,0., &amp; <font color=#447700>! y direction <a name='1248'></font>
+       TDIMS,                  &amp; <font color=#447700>! memory dims atm grid tile<a name='1249'></font>
+       ids,ide,jds+1,jde, &amp;      <font color=#447700>! domain dims - where v wind defined<a name='1250'></font>
+       ips,ipe,jps1,jpe, &amp;        <font color=#447700>! patch dims <a name='1251'></font>
+       itsv,itev,jtsv,jtev, &amp; <font color=#447700>! tile dims<a name='1252'></font>
+       itsov,iteov,jtsov,jteov, &amp; <font color=#447700>! where set<a name='1253'></font>
+       va)                           <font color=#447700>! array<a name='1254'></font>
+<a name='1255'>
+<font color=#447700>!   store the output for diagnostics<a name='1256'></font>
+    do j = jts,jte1<a name='1257'>
+      do i = its,ite1<a name='1258'>
+        uah(i,j)=ua(i,j)<a name='1259'>
+        vah(i,j)=va(i,j)<a name='1260'>
+      enddo<a name='1261'>
+    enddo<a name='1262'>
+<a name='1263'>
+#ifdef DEBUG_OUT<a name='1264'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_36">(itsou,iteou,jtsou,jteou,TDIMS,ua,'ua',id)<a name='1265'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_37">(itsov,iteov,jtsov,jteov,TDIMS,va,'va',id)<a name='1266'>
+#endif<a name='1267'>
+<a name='1268'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='1269'></font>
+    <font color=#447700>! don't have all values valid, don't check<a name='1270'></font>
+     write(msg,12)'atm mesh wind U at',fire_wind_height,' m'<a name='1271'>
+     call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_14">(itsou,iteou,jtsou,jteou,TDIMS,ua,msg)<a name='1272'>
+     write(msg,12)'atm mesh wind V at',fire_wind_height,' m'<a name='1273'>
+     call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_15">(itsov,iteov,jtsov,jteov,TDIMS,va,msg)<a name='1274'>
+12  format(a,f6.2,a)<a name='1275'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_16">(its,ite1,jts,jte,ims,ime,jms,jme,uah,'UAH')<a name='1276'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_17">(its,ite,jts,jte1,ims,ime,jms,jme,vah,'VAH')<a name='1277'>
+    <font color=#447700>!call write_array_m(its,ite1,jts,jte,ims,ime,jms,jme,uah,'uah',id)<a name='1278'></font>
+    <font color=#447700>!call write_array_m(its,ite,jts,jte1,ims,ime,jms,jme,vah,'vah',id)<a name='1279'></font>
+<font color=#447700>!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='1280'></font>
+<a name='1281'>
+<font color=#447700>!      ---------------<a name='1282'></font>
+<font color=#447700>!     | F | F | F | F |   Example of atmospheric and fire grid with<a name='1283'></font>
+<font color=#447700>!     |-------|-------|   ir=jr=4.<a name='1284'></font>
+<font color=#447700>!     | F | F | F | F |   Winds are given at the midpoints of the sides of the atmosphere grid,<a name='1285'></font>
+<font color=#447700>!     ua------z-------|   interpolated to midpoints of the cells of the fine fire grid F.<a name='1286'></font>
+<font color=#447700>!     | F | F | F | F |   This is (1,1) cell of atmosphere grid, and [*] is the (1,1) cell of the fire grid.<a name='1287'></font>
+<font color=#447700>!     |---------------|   ua(1,1) &lt;--&gt; uf(0.5,2.5)<a name='1288'></font>
+<font color=#447700>!     | * | F | F | F |   va(1,1) &lt;--&gt; vf(2.5,0.5)<a name='1289'></font>
+<font color=#447700>!      -------va------    za(1,1) &lt;--&gt; zf(2.5,2.5)<a name='1290'></font>
+<font color=#447700>!<a name='1291'></font>
+<font color=#447700>!   ^ x2<a name='1292'></font>
+<font color=#447700>!   |  --------va(1,2)---------<a name='1293'></font>
+<font color=#447700>!   | |            |           |   Example of atmospheric and fire grid with<a name='1294'></font>
+<font color=#447700>!   | |            |           |   ir=jr=1.<a name='1295'></font>
+<font color=#447700>!   | |          za,zf         |   Winds are given at the midpoints of the sides of the atmosphere grid,<a name='1296'></font>
+<font color=#447700>!   | ua(1,1)----uf,vf-----ua(2,1) interpolated to midpoints of the cells of the (the same) fire grid <a name='1297'></font>
+<font color=#447700>!   | |           (1,1)        |   ua(1,1) &lt;--&gt; uf(0.5,1) <a name='1298'></font>
+<font color=#447700>!   | |            |           |   va(1,1) &lt;--&gt; vf(1,0.5) <a name='1299'></font>
+<font color=#447700>!   | |            |           |   za(1,1) &lt;--&gt; zf(1,1)<a name='1300'></font>
+<font color=#447700>!   |  --------va(1,1)---------<a name='1301'></font>
+<font color=#447700>!   |--------------------&gt; x1 <a name='1302'></font>
+<font color=#447700>!<a name='1303'></font>
+<font color=#447700>! Meshes are aligned by the lower left cell of the domain. Then in the above figure<a name='1304'></font>
+<font color=#447700>! u = node with the ua component of the wind at (ids,jds), midpoint of side<a name='1305'></font>
+<font color=#447700>! v = node with the va component of the wind at (ids,jds), midpoint of side<a name='1306'></font>
+<font color=#447700>! * = fire grid node at (ifds,jfds)<a name='1307'></font>
+<font color=#447700>! z = node with height, midpoint of cell<a name='1308'></font>
+<font color=#447700>! <a name='1309'></font>
+<font color=#447700>! ua(ids,jds)=uf(ifds-0.5,jfds+jr*0.5-0.5)         = uf(ifds-0.5,jfds+(jr-1)*0.5)<a name='1310'></font>
+<font color=#447700>! va(ids,jds)=vf(ifds+ir*0.5-0.5,jfds-0.5)         = vf(ifds+(ir-1)*0.5,jfds-0.5)<a name='1311'></font>
+<font color=#447700>! za(ids,jds)=zf(ifds+ir*0.5-0.5,jfds+jr*0.5-0.5)  = zf(ifds+(ir-1)*0.5,jfds+(jr-1)*0.5)<a name='1312'></font>
+    <a name='1313'>
+    <font color=#447700>! ifts1=max(snode(ifts,ifps,-1),ifds) ! go 1 beyond patch boundary but not at domain boundary<a name='1314'></font>
+    <font color=#447700>! ifte1=min(snode(ifte,ifpe,+1),ifde)<a name='1315'></font>
+    <font color=#447700>! jfts1=max(snode(jfts,jfps,-1),jfds)<a name='1316'></font>
+    <font color=#447700>! jfte1=min(snode(jfte,jfpe,+1),jfde)<a name='1317'></font>
+<a name='1318'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D'>interpolate_2d</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERPOLATE_2D_2">(  &amp;<a name='1319'>
+        TDIMS,                  &amp; <font color=#447700>! memory dims atm grid tile<a name='1320'></font>
+        itsou,iteou,jtsou,jteou,&amp; <font color=#447700>! where set<a name='1321'></font>
+        ifms,ifme,jfms,jfme,    &amp; <font color=#447700>! array dims fire grid<a name='1322'></font>
+        ifts,ifte,jfts,jfte,&amp; <font color=#447700>! dimensions on the fire grid to interpolate to<a name='1323'></font>
+        ir,jr,                  &amp; <font color=#447700>! refinement ratio<a name='1324'></font>
+        real(ids),real(jds),ifds-0.5,jfds+(jr-1)*0.5, &amp; <font color=#447700>! line up by lower left corner of domain<a name='1325'></font>
+        ua,                     &amp; <font color=#447700>! in atm grid     <a name='1326'></font>
+        uf)                      <font color=#447700>! out fire grid<a name='1327'></font>
+<a name='1328'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D'>interpolate_2d</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERPOLATE_2D_3">(  &amp;<a name='1329'>
+        TDIMS,                  &amp; <font color=#447700>! memory dims atm grid tile<a name='1330'></font>
+        itsov,iteov,jtsov,jteov,&amp; <font color=#447700>! where set <a name='1331'></font>
+        ifms,ifme,jfms,jfme,    &amp; <font color=#447700>! array dims fire grid<a name='1332'></font>
+        ifts,ifte,jfts,jfte,&amp; <font color=#447700>! dimensions on the fire grid to interpolate to<a name='1333'></font>
+        ir,jr,                  &amp; <font color=#447700>! refinement ratio<a name='1334'></font>
+        real(ids),real(jds),ifds+(ir-1)*0.5,jfds-0.5, &amp; <font color=#447700>! line up by lower left corner of domain<a name='1335'></font>
+        va,                     &amp; <font color=#447700>! in atm grid     <a name='1336'></font>
+        vf)                      <font color=#447700>! out fire grid<a name='1337'></font>
+<a name='1338'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS_VEC'>print_2d_stats_vec</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_VEC_1">(ifts,ifte,jfts,jfte,ifms,ifme,jfms,jfme,uf,vf,'fire wind (m/s)')<a name='1339'>
+<font color=#447700>! call print_2d_stats_vec(ifts1,ifte1,jfts1,jfte1,ifms,ifme,jfms,jfme,uf,vf,'fire wind extended')<a name='1340'></font>
+#ifdef DEBUG_OUT<a name='1341'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_38">(ifts,ifte,jfts,jfte,ifms,ifme,jfms,jfme,uf,'uf1',id)<a name='1342'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#INTERPOLATE_ATM2FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_39">(ifts,ifte,jfts,jfte,ifms,ifme,jfms,jfme,vf,'vf1',id)<a name='1343'>
+        <font color=#447700>! call write_array_m(ifts1,ifte1,jfts1,jfte1,ifms,ifme,jfms,jfme,uf,'uf1',id)<a name='1344'></font>
+        <font color=#447700>! call write_array_m(ifts1,ifte1,jfts1,jfte1,ifms,ifme,jfms,jfme,vf,'vf1',id)<a name='1345'></font>
+#endif<a name='1346'>
+return<a name='1347'>
+<a name='1348'>
+end subroutine interpolate_atm2fire<a name='1349'>
+<a name='1350'>
+<font color=#447700>!<a name='1351'></font>
+<font color=#447700>!***<a name='1352'></font>
+<font color=#447700>!<a name='1353'></font>
+<a name='1354'>
+<A NAME='CHECK_FMESH'><A href='../../html_code/phys/module_fr_fire_driver.F.html#CHECK_FMESH' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1355'>
+<font color=#993300>subroutine </font><font color=#cc0000>check_fmesh</font>(ids,ide,ifds,ifde,ir,s) <A href='../../call_to/CHECK_FMESH.html' TARGET='index'>4</A>,<A href='../../call_from/CHECK_FMESH.html' TARGET='index'>1</A><a name='1356'>
+<font color=#447700>!*** purpose: check if fire and atm meshes line up<a name='1357'></font>
+implicit none<a name='1358'>
+<font color=#447700>!*** arguments<a name='1359'></font>
+integer, intent(in)::ids,ide,ifds,ifde,ir<a name='1360'>
+character(len=*),intent(in)::s<a name='1361'>
+<font color=#447700>!*** local<a name='1362'></font>
+character(len=128)msg<a name='1363'>
+<font color=#447700>!*** executable<a name='1364'></font>
+if ((ide-ids+1)*ir.ne.(ifde-ifds+1))then<a name='1365'>
+<font color=#447700>!$OMP CRITICAL(FIRE_DRIVER_CRIT)<a name='1366'></font>
+    write(msg,1)s,ids,ide,ifds,ifde,ir<a name='1367'>
+1   format('module_fr_fire_driver: incompatible bounds ',a,' atm ',i5,':',i5,' fire ',i5,':',i5,' ratio ',i3)    <a name='1368'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_DRIVER_CRIT)<a name='1369'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_driver.F.html#CHECK_FMESH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_16">(msg)<a name='1370'>
+endif<a name='1371'>
+end subroutine check_fmesh<a name='1372'>
+<a name='1373'>
+<font color=#447700>!<a name='1374'></font>
+<font color=#447700>!*****************************<a name='1375'></font>
+<font color=#447700>!<a name='1376'></font>
+<A NAME='SET_FLAGS'><A href='../../html_code/phys/module_fr_fire_driver.F.html#SET_FLAGS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1377'>
+<font color=#993300>subroutine </font><font color=#cc0000>set_flags</font>(config_flags) <A href='../../call_to/SET_FLAGS.html' TARGET='index'>1</A><a name='1378'>
+implicit none<a name='1379'>
+TYPE (grid_config_rec_type) , INTENT(IN)          :: config_flags<a name='1380'>
+<font color=#447700>! copy flags from wrf to module_fr_fire_util<a name='1381'></font>
+<font color=#447700>! for instructions how to add a flag see the top of module_fr_fire_util.F<a name='1382'></font>
+<a name='1383'>
+<a name='1384'>
+fire_print_msg          = config_flags%fire_print_msg<a name='1385'>
+fire_print_file         = config_flags%fire_print_file<a name='1386'>
+fuel_left_method        = config_flags%fire_fuel_left_method<a name='1387'>
+fuel_left_irl           = config_flags%fire_fuel_left_irl<a name='1388'>
+fuel_left_jrl           = config_flags%fire_fuel_left_jrl<a name='1389'>
+fire_const_time         = config_flags%fire_const_time<a name='1390'>
+fire_const_grnhfx       = config_flags%fire_const_grnhfx<a name='1391'>
+fire_const_grnqfx       = config_flags%fire_const_grnqfx<a name='1392'>
+fire_atm_feedback       = config_flags%fire_atm_feedback<a name='1393'>
+boundary_guard          = config_flags%fire_boundary_guard<a name='1394'>
+fire_back_weight        = config_flags%fire_back_weight<a name='1395'>
+fire_grows_only         = config_flags%fire_grows_only<a name='1396'>
+fire_upwinding          = config_flags%fire_upwinding<a name='1397'>
+fire_upwind_split       = config_flags%fire_upwind_split <a name='1398'>
+fire_viscosity          = config_flags%fire_viscosity <a name='1399'>
+fire_lfn_ext_up         = config_flags%fire_lfn_ext_up <a name='1400'>
+fire_test_steps         = config_flags%fire_test_steps <a name='1401'>
+<font color=#447700>!fire_topo_from_atm      = config_flags%fire_topo_from_atm<a name='1402'></font>
+fire_advection          = config_flags%fire_advection<a name='1403'>
+<a name='1404'>
+<a name='1405'>
+<a name='1406'>
+<a name='1407'>
+end subroutine set_flags<a name='1408'>
+<a name='1409'>
+end module module_fr_fire_driver<a name='1410'>
+</pre></body></html>

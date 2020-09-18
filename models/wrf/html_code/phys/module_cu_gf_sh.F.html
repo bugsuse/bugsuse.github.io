@@ -1,0 +1,850 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>! module cup_gf_sh will call shallow convection as described in Grell and<a name='2'></font>
+<font color=#447700>! Freitas (2016). Input variables are:<a name='3'></font>
+<font color=#447700>!    zo               Height at model levels<a name='4'></font>
+<font color=#447700>!    t,tn             Temperature without and with forcing at model levels<a name='5'></font>
+<font color=#447700>!    q,qo             mixing ratio without and with forcing at model levels<a name='6'></font>
+<font color=#447700>!    po               pressure at model levels (mb)<a name='7'></font>
+<font color=#447700>!    psur             surface pressure (mb)<a name='8'></font>
+<font color=#447700>!    z1               surface height<a name='9'></font>
+<font color=#447700>!    dhdt             forcing for boundary layer equilibrium   <a name='10'></font>
+<font color=#447700>!    hfx,qfx          in w/m2 (positive, if upward from sfc)<a name='11'></font>
+<font color=#447700>!    kpbl             level of boundaty layer height<a name='12'></font>
+<font color=#447700>!    xland            land mask (1. for land)<a name='13'></font>
+<font color=#447700>!    ichoice          which closure to choose <a name='14'></font>
+<font color=#447700>!                     1: old g<a name='15'></font>
+<font color=#447700>!                     2: zws<a name='16'></font>
+<font color=#447700>!                     3: dhdt<a name='17'></font>
+<font color=#447700>!                     0: average<a name='18'></font>
+<font color=#447700>!    tcrit            parameter for water/ice conversion (258)<a name='19'></font>
+<font color=#447700>!<a name='20'></font>
+<font color=#447700>!!!!!!!!!!!! Variables that are diagnostic<a name='21'></font>
+<font color=#447700>!<a name='22'></font>
+<font color=#447700>!    zuo               normalized mass flux profile<a name='23'></font>
+<font color=#447700>!    xmb_out           base mass flux<a name='24'></font>
+<font color=#447700>!    kbcon             convective cloud base<a name='25'></font>
+<font color=#447700>!    ktop              cloud top<a name='26'></font>
+<font color=#447700>!    k22               level of updraft originating air<a name='27'></font>
+<font color=#447700>!    ierr              error flag<a name='28'></font>
+<font color=#447700>!    ierrc             error description<a name='29'></font>
+<font color=#447700>!<a name='30'></font>
+<font color=#447700>!!!!!!!!!!!! Variables that are on output<a name='31'></font>
+<font color=#447700>!    outt               temperature tendency (K/s)<a name='32'></font>
+<font color=#447700>!    outq               mixing ratio tendency (kg/kg/s)<a name='33'></font>
+<font color=#447700>!    outqc              cloud water/ice tendency (kg/kg/s)<a name='34'></font>
+<font color=#447700>!    pre                precip rate (mm/s)<a name='35'></font>
+<font color=#447700>!    cupclw             incloud mixing ratio of cloudwater/ice (for radiation)<a name='36'></font>
+<font color=#447700>!                       this needs heavy tuning factors, since cloud fraction is<a name='37'></font>
+<font color=#447700>!                       not included (kg/kg)<a name='38'></font>
+<font color=#447700>!    cnvwt              required for GFS physics<a name='39'></font>
+<font color=#447700>!<a name='40'></font>
+<font color=#447700>!    itf,ktf,its,ite, kts,kte are dimensions<a name='41'></font>
+<font color=#447700>!    ztexec,zqexec    excess temperature and moisture for updraft<a name='42'></font>
+<A NAME='MODULE_CU_GF_SH'><A href='../../html_code/phys/module_cu_gf_sh.F.html#MODULE_CU_GF_SH' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='43'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_cu_gf_sh</font> <A href='../../call_to/MODULE_CU_GF_SH.html' TARGET='index'>1</A><a name='44'>
+    real, parameter:: c1_shal=0.<font color=#447700>! .0005<a name='45'></font>
+    real, parameter:: g  =9.81<a name='46'>
+    real, parameter:: cp =1004.<a name='47'>
+    real, parameter:: xlv=2.5e6<a name='48'>
+    real, parameter:: r_v=461.<a name='49'>
+    real, parameter:: c0_shal=.001<a name='50'>
+    real, parameter:: fluxtune=1.5<a name='51'>
+<a name='52'>
+<a name='53'>
+contains<a name='54'>
+<A NAME='CUP_GF_SH'><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='55'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>CUP_gf_sh</font> (                                              &amp; <A href='../../call_to/CUP_GF_SH.html' TARGET='index'>1</A>,<A href='../../call_from/CUP_GF_SH.html' TARGET='index'>20</A><a name='56'>
+<font color=#447700>! input variables, must be supplied<a name='57'></font>
+                         zo,T,Q,Z1,TN,QO,PO,PSUR,dhdt,kpbl,rho,     &amp;<a name='58'>
+                         hfx,qfx,xland,ichoice,tcrit,dtime, &amp;<a name='59'>
+<font color=#447700>! input variables. Ierr should be initialized to zero or larger than zero for<a name='60'></font>
+<font color=#447700>! turning off shallow convection for grid points<a name='61'></font>
+                         zuo,xmb_out,kbcon,ktop,k22,ierr,ierrc,    &amp;<a name='62'>
+<font color=#447700>! output tendencies<a name='63'></font>
+                         OUTT,OUTQ,OUTQC,cnvwt,pre,cupclw,             &amp;<a name='64'>
+<font color=#447700>! dimesnional variables<a name='65'></font>
+                         itf,ktf,its,ite, kts,kte,ipr)<a name='66'>
+<font color=#447700>!<a name='67'></font>
+<font color=#447700>! this module needs some subroutines from gf_deep<a name='68'></font>
+<font color=#447700>!<a name='69'></font>
+  use <A href='../../html_code/phys/module_cu_gf_deep.F.html#MODULE_CU_GF_DEEP'>module_cu_gf_deep</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CU_GF_DEEP_1">,only:cup_env,cup_env_clev,get_cloud_bc,cup_minimi,  &amp;<a name='70'>
+                      get_inversion_layers,rates_up_pdf,get_cloud_bc,     &amp;<a name='71'>
+                      cup_up_aa0,cup_kbcon,get_lateral_massflux<a name='72'>
+     implicit none<a name='73'>
+     integer                                                           &amp;<a name='74'>
+        ,intent (in   )                   ::                           &amp;<a name='75'>
+        itf,ktf,        &amp;<a name='76'>
+        its,ite, kts,kte,ipr<a name='77'>
+     logical :: MAKE_CALC_FOR_XK = .true.<a name='78'>
+     integer, intent (in   )              ::                           &amp;<a name='79'>
+        ichoice<a name='80'>
+  <font color=#447700>!<a name='81'></font>
+  <font color=#447700>! <a name='82'></font>
+  <font color=#447700>!<a name='83'></font>
+  <font color=#447700>! outtem = output temp tendency (per s)<a name='84'></font>
+  <font color=#447700>! outq   = output q tendency (per s)<a name='85'></font>
+  <font color=#447700>! outqc  = output qc tendency (per s)<a name='86'></font>
+  <font color=#447700>! pre    = output precip<a name='87'></font>
+     real,    dimension (its:ite,kts:kte)                              &amp;<a name='88'>
+        ,intent (inout  )                   ::                           &amp;<a name='89'>
+        cnvwt,OUTT,OUTQ,OUTQC,cupclw,zuo<a name='90'>
+     real,    dimension (its:ite)                                      &amp;<a name='91'>
+        ,intent (out  )                   ::                           &amp;<a name='92'>
+        xmb_out<a name='93'>
+     integer,    dimension (its:ite)                                   &amp;<a name='94'>
+        ,intent (inout  )                   ::                           &amp;<a name='95'>
+        ierr<a name='96'>
+     integer,    dimension (its:ite)                                   &amp;<a name='97'>
+        ,intent (out  )                   ::                           &amp;<a name='98'>
+        kbcon,ktop,k22<a name='99'>
+     integer,    dimension (its:ite)                                   &amp;<a name='100'>
+        ,intent (in  )                   ::                           &amp;<a name='101'>
+        kpbl<a name='102'>
+  <font color=#447700>!<a name='103'></font>
+  <font color=#447700>! basic environmental input includes a flag (ierr) to turn off<a name='104'></font>
+  <font color=#447700>! convection for this call only and at that particular gridpoint<a name='105'></font>
+  <font color=#447700>!<a name='106'></font>
+     real,    dimension (its:ite,kts:kte)                              &amp;<a name='107'>
+        ,intent (in   )                   ::                           &amp;<a name='108'>
+        T,PO,tn,dhdt,rho<a name='109'>
+     real,    dimension (its:ite,kts:kte)                              &amp;<a name='110'>
+        ,intent (inout)                   ::                           &amp;<a name='111'>
+         Q,QO<a name='112'>
+     real, dimension (its:ite)                                         &amp;<a name='113'>
+        ,intent (in   )                   ::                           &amp;<a name='114'>
+        xland,Z1,PSUR,hfx,qfx<a name='115'>
+       <a name='116'>
+       real                                                            &amp;<a name='117'>
+        ,intent (in   )                   ::                           &amp;<a name='118'>
+        dtime,tcrit<a name='119'>
+  <font color=#447700>!<a name='120'></font>
+  <font color=#447700>!***************** the following are your basic environmental<a name='121'></font>
+  <font color=#447700>!                  variables. They carry a "_cup" if they are<a name='122'></font>
+  <font color=#447700>!                  on model cloud levels (staggered). They carry<a name='123'></font>
+  <font color=#447700>!                  an "o"-ending (z becomes zo), if they are the forced<a name='124'></font>
+  <font color=#447700>!                  variables. <a name='125'></font>
+  <font color=#447700>!<a name='126'></font>
+  <font color=#447700>! z           = heights of model levels<a name='127'></font>
+  <font color=#447700>! q           = environmental mixing ratio<a name='128'></font>
+  <font color=#447700>! qes         = environmental saturation mixing ratio<a name='129'></font>
+  <font color=#447700>! t           = environmental temp<a name='130'></font>
+  <font color=#447700>! p           = environmental pressure<a name='131'></font>
+  <font color=#447700>! he          = environmental moist static energy<a name='132'></font>
+  <font color=#447700>! hes         = environmental saturation moist static energy<a name='133'></font>
+  <font color=#447700>! z_cup       = heights of model cloud levels<a name='134'></font>
+  <font color=#447700>! q_cup       = environmental q on model cloud levels<a name='135'></font>
+  <font color=#447700>! qes_cup     = saturation q on model cloud levels<a name='136'></font>
+  <font color=#447700>! t_cup       = temperature (Kelvin) on model cloud levels<a name='137'></font>
+  <font color=#447700>! p_cup       = environmental pressure<a name='138'></font>
+  <font color=#447700>! he_cup = moist static energy on model cloud levels<a name='139'></font>
+  <font color=#447700>! hes_cup = saturation moist static energy on model cloud levels<a name='140'></font>
+  <font color=#447700>! gamma_cup = gamma on model cloud levels<a name='141'></font>
+  <font color=#447700>! dby = buoancy term<a name='142'></font>
+  <font color=#447700>! entr = entrainment rate<a name='143'></font>
+  <font color=#447700>! bu = buoancy term<a name='144'></font>
+  <font color=#447700>! gamma_cup = gamma on model cloud levels<a name='145'></font>
+  <font color=#447700>! qrch = saturation q in cloud<a name='146'></font>
+  <font color=#447700>! pwev = total normalized integrated evaoprate (I2)<a name='147'></font>
+  <font color=#447700>! z1 = terrain elevation<a name='148'></font>
+  <font color=#447700>! psur        = surface pressure<a name='149'></font>
+  <font color=#447700>! zu      = updraft normalized mass flux<a name='150'></font>
+  <font color=#447700>! kbcon       = LFC of parcel from k22<a name='151'></font>
+  <font color=#447700>! k22         = updraft originating level<a name='152'></font>
+  <font color=#447700>! ichoice       = flag if only want one closure (usually set to zero!)<a name='153'></font>
+  <font color=#447700>! dby = buoancy term<a name='154'></font>
+  <font color=#447700>! ktop = cloud top (output)<a name='155'></font>
+  <font color=#447700>! xmb    = total base mass flux<a name='156'></font>
+  <font color=#447700>! hc = cloud moist static energy<a name='157'></font>
+  <font color=#447700>! hkb = moist static energy at originating level<a name='158'></font>
+<a name='159'>
+     real,    dimension (its:ite,kts:kte) ::                           &amp;<a name='160'>
+        entr_rate_2d,he,hes,qes,z,                      &amp;<a name='161'>
+        heo,heso,qeso,zo,                                              &amp;<a name='162'>
+        xhe,xhes,xqes,xz,xt,xq,                                        &amp;<a name='163'>
+        qes_cup,q_cup,he_cup,hes_cup,z_cup,p_cup,gamma_cup,t_cup,      &amp;<a name='164'>
+        qeso_cup,qo_cup,heo_cup,heso_cup,zo_cup,po_cup,gammao_cup,     &amp;<a name='165'>
+        tn_cup,                                                        &amp;<a name='166'>
+        xqes_cup,xq_cup,xhe_cup,xhes_cup,xz_cup,     &amp;<a name='167'>
+        xt_cup,dby,hc,zu,   &amp;<a name='168'>
+        dbyo,qco,pwo,hco,qrco,     &amp;<a name='169'>
+        dbyt,xdby,xhc,xzu,            &amp;<a name='170'>
+<a name='171'>
+  <font color=#447700>! cd  = detrainment function for updraft<a name='172'></font>
+  <font color=#447700>! dellat = change of temperature per unit mass flux of cloud ensemble<a name='173'></font>
+  <font color=#447700>! dellaq = change of q per unit mass flux of cloud ensemble<a name='174'></font>
+  <font color=#447700>! dellaqc = change of qc per unit mass flux of cloud ensemble<a name='175'></font>
+<a name='176'>
+        cd,DELLAH,DELLAQ,DELLAT,DELLAQC<a name='177'>
+<a name='178'>
+  <font color=#447700>! aa0 cloud work function for downdraft<a name='179'></font>
+  <font color=#447700>! aa0     = cloud work function without forcing effects<a name='180'></font>
+  <font color=#447700>! aa1     = cloud work function with forcing effects<a name='181'></font>
+  <font color=#447700>! xaa0    = cloud work function with cloud effects (ensemble dependent)<a name='182'></font>
+<a name='183'>
+     real,    dimension (its:ite) ::                                   &amp;<a name='184'>
+       zws,ztexec,zqexec,pre,AA1,AA0,XAA0,HKB,                          &amp;<a name='185'>
+       flux_tun,HKBO,XHKB,                                    &amp;<a name='186'>
+       rand_vmas,xmbmax,XMB,                         &amp;<a name='187'>
+       cap_max,entr_rate,                                    &amp;<a name='188'>
+       cap_max_increment<a name='189'>
+     integer,    dimension (its:ite) ::                                &amp;<a name='190'>
+       kstabi,xland1,KBMAX,ktopx<a name='191'>
+<a name='192'>
+     integer                              ::                           &amp;<a name='193'>
+       I,K,ki<a name='194'>
+     real                                 ::                           &amp;<a name='195'>
+      dz,mbdt,zkbmax,      &amp;<a name='196'>
+      cap_maxs,trash,trash2,frh<a name='197'>
+      <a name='198'>
+      real buo_flux,pgeoh,dp,entup,detup,totmas<a name='199'>
+<a name='200'>
+     real xff_shal(3),blqe,xkshal<a name='201'>
+     character*50 :: ierrc(its:ite)<a name='202'>
+     real,    dimension (its:ite,kts:kte) ::                           &amp;<a name='203'>
+       up_massentr,up_massdetr,up_massentro,up_massdetro<a name='204'>
+     real :: C_up,x_add,qaver<a name='205'>
+     real,    dimension (its:ite,kts:kte) :: dtempdz<a name='206'>
+     integer, dimension (its:ite,kts:kte) ::  k_inv_layers <a name='207'>
+     integer, dimension (its:ite) ::  start_level<a name='208'>
+     start_level(:)=0<a name='209'>
+     rand_vmas(:)=0.<a name='210'>
+     flux_tun=fluxtune<a name='211'>
+      do i=its,itf<a name='212'>
+        xland1(i)=int(xland(i)+.001) <font color=#447700>! 1.<a name='213'></font>
+        ktopx(i)=0<a name='214'>
+        if(xland(i).gt.1.5 .or. xland(i).lt.0.5)then<a name='215'>
+            xland1(i)=0<a name='216'>
+<font color=#447700>!            ierr(i)=100<a name='217'></font>
+        endif<a name='218'>
+        pre(i)=0.<a name='219'>
+        xmb_out(i)=0.<a name='220'>
+        cap_max_increment(i)=25.<a name='221'>
+        ierrc(i)=" "<a name='222'>
+        entr_rate(i) = 9.e-5 <font color=#447700>! 1.75e-3 ! 1.2e-3 ! .2/50.<a name='223'></font>
+      enddo<a name='224'>
+<font color=#447700>!<a name='225'></font>
+<font color=#447700>!--- initial entrainment rate (these may be changed later on in the<a name='226'></font>
+<font color=#447700>!--- program<a name='227'></font>
+<font color=#447700>!<a name='228'></font>
+      <a name='229'>
+<font color=#447700>!<a name='230'></font>
+<font color=#447700>!--- initial detrainmentrates<a name='231'></font>
+<font color=#447700>!<a name='232'></font>
+      do k=kts,ktf<a name='233'>
+      do i=its,itf<a name='234'>
+        up_massentro(i,k)=0.<a name='235'>
+        up_massdetro(i,k)=0.<a name='236'>
+        z(i,k)=zo(i,k)<a name='237'>
+        xz(i,k)=zo(i,k)<a name='238'>
+        qrco(i,k)=0.<a name='239'>
+        pwo(i,k)=0.<a name='240'>
+        cd(i,k)=1.*entr_rate(i)<a name='241'>
+        dellaqc(i,k)=0.<a name='242'>
+        cupclw(i,k)=0.<a name='243'>
+      enddo<a name='244'>
+      enddo<a name='245'>
+<font color=#447700>!<a name='246'></font>
+<font color=#447700>!--- max/min allowed value for epsilon (ratio downdraft base mass flux/updraft<a name='247'></font>
+<font color=#447700>!<a name='248'></font>
+<font color=#447700>!--- minimum depth (m), clouds must have<a name='249'></font>
+<font color=#447700>!<a name='250'></font>
+<font color=#447700>!<a name='251'></font>
+<font color=#447700>!--- maximum depth (mb) of capping <a name='252'></font>
+<font color=#447700>!--- inversion (larger cap = no convection)<a name='253'></font>
+<font color=#447700>!<a name='254'></font>
+      cap_maxs=125.<a name='255'>
+      DO i=its,itf<a name='256'>
+        kbmax(i)=1<a name='257'>
+        aa0(i)=0.<a name='258'>
+        aa1(i)=0.<a name='259'>
+      enddo<a name='260'>
+      do i=its,itf<a name='261'>
+          cap_max(i)=cap_maxs<a name='262'>
+          ztexec(i)  = 0.<a name='263'>
+          zqexec(i)  = 0.<a name='264'>
+          zws(i)     = 0.<a name='265'>
+      enddo<a name='266'>
+      do i=its,itf<a name='267'>
+         <font color=#447700>!- buoyancy flux (H+LE)<a name='268'></font>
+         buo_flux= (hfx(i)/cp+0.608*t(i,1)*qfx(i)/xlv)/rho(i,1)<a name='269'>
+         pgeoh = zo(i,2)*g<a name='270'>
+         <font color=#447700>!-convective-scale velocity w*<a name='271'></font>
+         zws(i) = max(0.,flux_tun(i)*0.41*buo_flux*zo(i,2)*g/t(i,1))<a name='272'>
+         if(zws(i) &gt; TINY(pgeoh)) then<a name='273'>
+          <font color=#447700>!-convective-scale velocity w*<a name='274'></font>
+          zws(i) = 1.2*zws(i)**.3333<a name='275'>
+          <font color=#447700>!- temperature excess <a name='276'></font>
+          ztexec(i)     = MAX(flux_tun(i)*hfx(i)/(rho(i,1)*zws(i)*cp),0.0)<a name='277'>
+          <font color=#447700>!- moisture  excess<a name='278'></font>
+          zqexec(i)     = MAX(flux_tun(i)*qfx(i)/xlv/(rho(i,1)*zws(i)),0.)<a name='279'>
+         endif<a name='280'>
+       <font color=#447700>!- zws for shallow convection closure (Grant 2001)<a name='281'></font>
+       <font color=#447700>!- height of the pbl<a name='282'></font>
+       zws(i) = max(0.,flux_tun(i)*0.41*buo_flux*zo(i,kpbl(i))*g/t(i,kpbl(i)))<a name='283'>
+       zws(i) = 1.2*zws(i)**.3333<a name='284'>
+       zws(i) = zws(i)*rho(i,kpbl(i)) <font color=#447700>!check if zrho is correct<a name='285'></font>
+<a name='286'>
+      enddo<a name='287'>
+<a name='288'>
+<font color=#447700>!<a name='289'></font>
+<font color=#447700>!--- max height(m) above ground where updraft air can originate<a name='290'></font>
+<font color=#447700>!<a name='291'></font>
+      zkbmax=3000.<a name='292'>
+<font color=#447700>!<a name='293'></font>
+<font color=#447700>!--- calculate moist static energy, heights, qes<a name='294'></font>
+<font color=#447700>!<a name='295'></font>
+      call <A href='../../html_code/phys/module_cu_gf_deep.F.html#CUP_ENV'>cup_env</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CUP_ENV_10">(z,qes,he,hes,t,q,po,z1, &amp;<a name='296'>
+           psur,ierr,tcrit,-1,   &amp;<a name='297'>
+           itf,ktf, &amp;<a name='298'>
+           its,ite, kts,kte)<a name='299'>
+      call <A href='../../html_code/phys/module_cu_gf_deep.F.html#CUP_ENV'>cup_env</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CUP_ENV_11">(zo,qeso,heo,heso,tn,qo,po,z1, &amp;<a name='300'>
+           psur,ierr,tcrit,-1,   &amp;<a name='301'>
+           itf,ktf, &amp;<a name='302'>
+           its,ite, kts,kte)<a name='303'>
+<a name='304'>
+<font color=#447700>!<a name='305'></font>
+<font color=#447700>!--- environmental values on cloud levels<a name='306'></font>
+<font color=#447700>!<a name='307'></font>
+      call <A href='../../html_code/phys/module_cu_gf_deep.F.html#CUP_ENV_CLEV'>cup_env_clev</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CUP_ENV_CLEV_10">(t,qes,q,he,hes,z,po,qes_cup,q_cup,he_cup, &amp;<a name='308'>
+           hes_cup,z_cup,p_cup,gamma_cup,t_cup,psur, &amp;<a name='309'>
+           ierr,z1,          &amp;<a name='310'>
+           itf,ktf, &amp;<a name='311'>
+           its,ite, kts,kte)<a name='312'>
+      call <A href='../../html_code/phys/module_cu_gf_deep.F.html#CUP_ENV_CLEV'>cup_env_clev</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CUP_ENV_CLEV_11">(tn,qeso,qo,heo,heso,zo,po,qeso_cup,qo_cup, &amp;<a name='313'>
+           heo_cup,heso_cup,zo_cup,po_cup,gammao_cup,tn_cup,psur,  &amp;<a name='314'>
+           ierr,z1,          &amp;<a name='315'>
+           itf,ktf, &amp;<a name='316'>
+           its,ite, kts,kte)<a name='317'>
+      do i=its,itf<a name='318'>
+        if(ierr(i).eq.0)then<a name='319'>
+<font color=#447700>!<a name='320'></font>
+      do k=kts,ktf<a name='321'>
+        if(zo_cup(i,k).gt.zkbmax+z1(i))then<a name='322'>
+          kbmax(i)=k<a name='323'>
+          go to 25<a name='324'>
+        endif<a name='325'>
+      enddo<a name='326'>
+ 25   continue<a name='327'>
+<font color=#447700>!<a name='328'></font>
+      kbmax(i)=min(kbmax(i),ktf/2)<a name='329'>
+      endif<a name='330'>
+      enddo<a name='331'>
+<a name='332'>
+<font color=#447700>!<a name='333'></font>
+<font color=#447700>!<a name='334'></font>
+<font color=#447700>!<a name='335'></font>
+<font color=#447700>!------- DETERMINE LEVEL WITH HIGHEST MOIST STATIC ENERGY CONTENT - K22<a name='336'></font>
+<font color=#447700>!<a name='337'></font>
+       DO 36 i=its,itf<a name='338'>
+         if(kpbl(i).gt.3)cap_max(i)=po_cup(i,kpbl(i))<a name='339'>
+         IF(ierr(I) == 0)THEN<a name='340'>
+          k22(i)=maxloc(HEO_CUP(i,2:kbmax(i)),1)<a name='341'>
+          k22(i)=max(2,k22(i))<a name='342'>
+          IF(K22(I).GT.KBMAX(i))then<a name='343'>
+           ierr(i)=2<a name='344'>
+           ierrc(i)="could not find k22"<a name='345'>
+           ktop(i)=0<a name='346'>
+           k22(i)=0<a name='347'>
+           kbcon(i)=0<a name='348'>
+         endif<a name='349'>
+         endif<a name='350'>
+ 36   CONTINUE<a name='351'>
+<font color=#447700>!<a name='352'></font>
+<font color=#447700>!--- DETERMINE THE LEVEL OF CONVECTIVE CLOUD BASE  - KBCON<a name='353'></font>
+<font color=#447700>!<a name='354'></font>
+      do i=its,itf<a name='355'>
+       if(ierr(I).eq.0)then<a name='356'>
+             x_add = xlv*zqexec(i)+cp*ztexec(i)<a name='357'>
+             call <A href='../../html_code/phys/module_cu_gf_deep.F.html#GET_CLOUD_BC'>get_cloud_bc</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_CLOUD_BC_7">(kte,he_cup (i,1:kte),hkb (i),k22(i),x_add)<a name='358'>
+             call <A href='../../html_code/phys/module_cu_gf_deep.F.html#GET_CLOUD_BC'>get_cloud_bc</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_CLOUD_BC_8">(kte,heo_cup(i,1:kte),hkbo(i),k22(i),x_add)<a name='359'>
+       endif <font color=#447700>! ierr<a name='360'></font>
+      enddo<a name='361'>
+<a name='362'>
+<font color=#447700>!JOE-Georg and Saulo's new idea:<a name='363'></font>
+      do i=its,itf<a name='364'>
+      do k=kts,ktf<a name='365'>
+          dbyo(i,k)= 0. <font color=#447700>!hkbo(i)-heso_cup(i,k)<a name='366'></font>
+      enddo<a name='367'>
+      enddo<a name='368'>
+<a name='369'>
+      call <A href='../../html_code/phys/module_cu_gf_deep.F.html#CUP_KBCON'>cup_kbcon</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CUP_KBCON_9">(ierrc,cap_max_increment,5,k22,kbcon,heo_cup,heso_cup, &amp;<a name='370'>
+           hkbo,ierr,kbmax,po_cup,cap_max, &amp;<a name='371'>
+           ztexec,zqexec, &amp;<a name='372'>
+           0,itf,ktf, &amp;<a name='373'>
+           its,ite, kts,kte, &amp;<a name='374'>
+           z_cup,entr_rate,heo,0)<a name='375'>
+<font color=#447700>!--- get inversion layers for cloud tops<a name='376'></font>
+      call <A href='../../html_code/phys/module_cu_gf_deep.F.html#CUP_MINIMI'>cup_minimi</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CUP_MINIMI_6">(HEso_cup,Kbcon,kbmax,kstabi,ierr,  &amp;<a name='377'>
+           itf,ktf, &amp;<a name='378'>
+           its,ite, kts,kte)<a name='379'>
+<font color=#447700>!<a name='380'></font>
+      call <A href='../../html_code/phys/module_cu_gf_deep.F.html#GET_INVERSION_LAYERS'>get_inversion_layers</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_INVERSION_LAYERS_2">(ierr,p_cup,t_cup,z_cup,q_cup,qes_cup,k_inv_layers,&amp;<a name='381'>
+                           kbcon,kstabi,dtempdz,itf,ktf,its,ite, kts,kte)<a name='382'>
+<font color=#447700>!<a name='383'></font>
+<font color=#447700>!<a name='384'></font>
+      DO i=its,itf<a name='385'>
+         entr_rate_2d(i,:)=entr_rate(i)<a name='386'>
+         IF(ierr(I) == 0)THEN<a name='387'>
+            start_level(i)=k22(i)<a name='388'>
+            x_add = xlv*zqexec(i)+cp*ztexec(i)<a name='389'>
+            call <A href='../../html_code/phys/module_cu_gf_deep.F.html#GET_CLOUD_BC'>get_cloud_bc</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_CLOUD_BC_9">(kte,he_cup (i,1:kte),hkb (i),k22(i),x_add)<a name='390'>
+            if(kbcon(i).gt.ktf-4)then<a name='391'>
+                ierr(i)=231<a name='392'>
+            endif<a name='393'>
+            do k=kts,ktf<a name='394'>
+               frh = 2.*min(qo_cup(i,k)/qeso_cup(i,k),1.)<a name='395'>
+               entr_rate_2d(i,k)=entr_rate(i)*(2.3-frh)<a name='396'>
+               cd(i,k)=entr_rate_2d(i,k)<a name='397'>
+            enddo<a name='398'>
+<font color=#447700>!<a name='399'></font>
+<font color=#447700>! first estimate for shallow convection<a name='400'></font>
+<font color=#447700>!<a name='401'></font>
+            ktop(i)=1<a name='402'>
+<font color=#447700>!            if(k_inv_layers(i,1).gt.0)then<a name='403'></font>
+<font color=#447700>!!               ktop(i)=min(k_inv_layers(i,1),k_inv_layers(i,2))<a name='404'></font>
+            if(k_inv_layers(i,1).gt.0 .and.   &amp;<a name='405'>
+               (po_cup(i,kbcon(i))-po_cup(i,k_inv_layers(i,1))).lt.200.)then<a name='406'>
+               ktop(i)=k_inv_layers(i,1)<a name='407'>
+            else<a name='408'>
+               do k=kbcon(i)+1,ktf<a name='409'>
+                  if((po_cup(i,kbcon(i))-po_cup(i,k)).gt.200.)then<a name='410'>
+                    ktop(i)=k<a name='411'>
+                    exit<a name='412'>
+                  endif<a name='413'>
+               enddo<a name='414'>
+            endif<a name='415'>
+         endif<a name='416'>
+      enddo<a name='417'>
+<font color=#447700>! get normalized mass flux profile<a name='418'></font>
+      call <A href='../../html_code/phys/module_cu_gf_deep.F.html#RATES_UP_PDF'>rates_up_pdf</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RATES_UP_PDF_3">(rand_vmas,ipr,'shallow',ktop,ierr,po_cup,entr_rate_2d,hkbo,heo,heso_cup,zo_cup, &amp;<a name='419'>
+           xland1,kstabi,k22,kbcon,its,ite,itf,kts,kte,ktf,zuo,kpbl,ktopx,ktopx,kbcon)<a name='420'>
+      do i=its,itf<a name='421'>
+        if(ierr(i).eq.0)then<a name='422'>
+<font color=#447700>!           do k=maxloc(zuo(i,:),1),1,-1 ! ktop(i)-1,1,-1<a name='423'></font>
+<font color=#447700>!             if(zuo(i,k).lt.1.e-6)then<a name='424'></font>
+<font color=#447700>!               k22(i)=k+1<a name='425'></font>
+<font color=#447700>!               start_level(i)=k22(i)<a name='426'></font>
+<font color=#447700>!               exit<a name='427'></font>
+<font color=#447700>!             endif<a name='428'></font>
+<font color=#447700>!           enddo<a name='429'></font>
+           if(k22(i).gt.1)then<a name='430'>
+             do k=1,k22(i)-1<a name='431'>
+              zuo(i,k)=0.<a name='432'>
+              zu (i,k)=0.<a name='433'>
+              xzu(i,k)=0.<a name='434'>
+             enddo<a name='435'>
+           endif<a name='436'>
+           do k=maxloc(zuo(i,:),1),ktop(i)<a name='437'>
+             if(zuo(i,k).lt.1.e-6)then<a name='438'>
+               ktop(i)=k-1<a name='439'>
+               exit<a name='440'>
+             endif<a name='441'>
+           enddo<a name='442'>
+           do k=k22(i),ktop(i)<a name='443'>
+             xzu(i,k)= zuo(i,k)<a name='444'>
+              zu(i,k)= zuo(i,k)<a name='445'>
+           enddo<a name='446'>
+           do k=ktop(i)+1,ktf<a name='447'>
+             zuo(i,k)=0.<a name='448'>
+             zu (i,k)=0.<a name='449'>
+             xzu(i,k)=0.<a name='450'>
+           enddo<a name='451'>
+           k22(i)=max(2,k22(i))<a name='452'>
+        endif<a name='453'>
+      enddo<a name='454'>
+<font color=#447700>!<a name='455'></font>
+<font color=#447700>! calculate mass entrainment and detrainment<a name='456'></font>
+<font color=#447700>!<a name='457'></font>
+      CALL <A href='../../html_code/phys/module_cu_gf_deep.F.html#GET_LATERAL_MASSFLUX'>get_lateral_massflux</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_LATERAL_MASSFLUX_2">(itf,ktf, its,ite, kts,kte &amp;<a name='458'>
+                                ,ierr,ktop,zo_cup,zuo,cd,entr_rate_2d        &amp;<a name='459'>
+                                ,up_massentro, up_massdetro ,up_massentr, up_massdetr &amp;<a name='460'>
+                                ,'shallow',kbcon,k22)<a name='461'>
+<a name='462'>
+      do k=kts,ktf<a name='463'>
+      do i=its,itf<a name='464'>
+         hc(i,k)=0.<a name='465'>
+         qco(i,k)=0.<a name='466'>
+         qrco(i,k)=0.<a name='467'>
+         DBY(I,K)=0.<a name='468'>
+         hco(i,k)=0.<a name='469'>
+         DBYo(I,K)=0.<a name='470'>
+      enddo<a name='471'>
+      enddo<a name='472'>
+      do i=its,itf<a name='473'>
+       IF(ierr(I) /= 0) cycle<a name='474'>
+         do k=1,start_level(i)-1<a name='475'>
+            hc(i,k)=he_cup(i,k)<a name='476'>
+            hco(i,k)=heo_cup(i,k)<a name='477'>
+         enddo<a name='478'>
+         k=start_level(i)<a name='479'>
+         hc(i,k)=hkb(i)<a name='480'>
+         hco(i,k)=hkbo(i)<a name='481'>
+      enddo<a name='482'>
+<font color=#447700>!<a name='483'></font>
+<font color=#447700>!<a name='484'></font>
+      do 42 i=its,itf<a name='485'>
+        dbyt(i,:)=0.<a name='486'>
+        IF(ierr(I) /= 0) cycle<a name='487'>
+         do k=start_level(i)+1,ktop(i)<a name='488'>
+          hc(i,k)=(hc(i,k-1)*zu(i,k-1)-.5*up_massdetr(i,k-1)*hc(i,k-1)+ &amp;<a name='489'>
+                         up_massentr(i,k-1)*he(i,k-1))   /            &amp;<a name='490'>
+                         (zu(i,k-1)-.5*up_massdetr(i,k-1)+up_massentr(i,k-1))<a name='491'>
+          dby(i,k)=max(0.,hc(i,k)-hes_cup(i,k))<a name='492'>
+          hco(i,k)=(hco(i,k-1)*zuo(i,k-1)-.5*up_massdetro(i,k-1)*hco(i,k-1)+ &amp;<a name='493'>
+                         up_massentro(i,k-1)*heo(i,k-1))   /            &amp;<a name='494'>
+                         (zuo(i,k-1)-.5*up_massdetro(i,k-1)+up_massentro(i,k-1))<a name='495'>
+          dbyo(i,k)=hco(i,k)-heso_cup(i,k)<a name='496'>
+          DZ=Zo_cup(i,K+1)-Zo_cup(i,K)<a name='497'>
+          dbyt(i,k)=dbyt(i,k-1)+dbyo(i,k)*dz<a name='498'>
+         enddo<a name='499'>
+       ki=maxloc(dbyt(i,:),1)<a name='500'>
+       if(ktop(i).gt.ki+1)then<a name='501'>
+         ktop(i)=ki+1<a name='502'>
+         zuo(i,ktop(i)+1:ktf)=0.<a name='503'>
+         zu(i,ktop(i)+1:ktf)=0.<a name='504'>
+         cd(i,ktop(i)+1:ktf)=0.<a name='505'>
+         up_massdetro(i,ktop(i))=zuo(i,ktop(i))<a name='506'>
+<font color=#447700>!         up_massentro(i,ktop(i))=0.<a name='507'></font>
+         up_massentro(i,ktop(i):ktf)=0.<a name='508'>
+         up_massdetro(i,ktop(i)+1:ktf)=0.<a name='509'>
+         entr_rate_2d(i,ktop(i)+1:ktf)=0.<a name='510'>
+<a name='511'>
+<font color=#447700>!         ierr(i)=423<a name='512'></font>
+       endif<a name='513'>
+<a name='514'>
+         if(ktop(i).lt.kbcon(i)+1)then<a name='515'>
+            ierr(i)=5<a name='516'>
+            ierrc(i)='ktop is less than kbcon+1'<a name='517'>
+             go to 42<a name='518'>
+         endif<a name='519'>
+         if(ktop(i).gt.ktf-2)then<a name='520'>
+             ierr(i)=5<a name='521'>
+             ierrc(i)="ktop is larger than ktf-2"<a name='522'>
+             go to 42<a name='523'>
+         endif<a name='524'>
+<font color=#447700>!<a name='525'></font>
+         call <A href='../../html_code/phys/module_cu_gf_deep.F.html#GET_CLOUD_BC'>get_cloud_bc</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_CLOUD_BC_10">(kte,qo_cup (i,1:kte),qaver,k22(i))<a name='526'>
+         qaver = qaver + zqexec(i)<a name='527'>
+         do k=1,start_level(i)-1<a name='528'>
+           qco (i,k)= qo_cup(i,k)<a name='529'>
+         enddo<a name='530'>
+         k=start_level(i)<a name='531'>
+         qco (i,k)= qaver <a name='532'>
+<font color=#447700>!<a name='533'></font>
+         do k=start_level(i)+1,ktop(i)<a name='534'>
+          trash=QESo_cup(I,K)+(1./XLV)*(GAMMAo_cup(i,k) &amp;<a name='535'>
+                /(1.+GAMMAo_cup(i,k)))*DBYo(I,K)<a name='536'>
+          <font color=#447700>!- total water liq+vapour<a name='537'></font>
+          trash2  = qco(i,k-1) <font color=#447700>! +qrco(i,k-1)<a name='538'></font>
+          qco (i,k)=   (trash2* ( zuo(i,k-1)-0.5*up_massdetr(i,k-1)) + &amp;<a name='539'>
+                       up_massentr(i,k-1)*qo(i,k-1))   /            &amp;<a name='540'>
+                       (zuo(i,k-1)-.5*up_massdetr(i,k-1)+up_massentr(i,k-1))<a name='541'>
+<a name='542'>
+          if(qco(i,k)&gt;=trash ) then <a name='543'>
+              DZ=Z_cup(i,K)-Z_cup(i,K-1)<a name='544'>
+              <font color=#447700>! cloud liquid water<a name='545'></font>
+              qrco(i,k)= (qco(i,k)-trash)/(1.+(c0_shal+c1_shal)*dz)<a name='546'>
+<font color=#447700>!              qrco(i,k)= (qco(i,k)-trash)/(1.+c0_shal*dz)<a name='547'></font>
+              pwo(i,k)=c0_shal*dz*qrco(i,k)*zuo(i,k)<a name='548'>
+              <font color=#447700>! cloud water vapor <a name='549'></font>
+              qco (i,k)= trash+qrco(i,k)<a name='550'>
+        <a name='551'>
+          else<a name='552'>
+              qrco(i,k)= 0.0<a name='553'>
+          endif <a name='554'>
+          cupclw(i,k)=qrco(i,k)<a name='555'>
+         enddo<a name='556'>
+         trash=0.<a name='557'>
+         trash2=0.<a name='558'>
+         do k=k22(i)+1,ktop(i)<a name='559'>
+          dp=100.*(po_cup(i,k)-po_cup(i,k+1))<a name='560'>
+          cnvwt(i,k)=zuo(i,k)*cupclw(i,k)*g/dp<a name='561'>
+          trash2=trash2+entr_rate_2d(i,k)<a name='562'>
+          qco(i,k)=qco(i,k)-qrco(i,k)<a name='563'>
+         enddo<a name='564'>
+         do k=k22(i)+1,max(kbcon(i),k22(i)+1)<a name='565'>
+          trash=trash+entr_rate_2d(i,k)<a name='566'>
+         enddo<a name='567'>
+         do k=ktop(i)+1,ktf-1<a name='568'>
+           hc  (i,k)=hes_cup (i,k)<a name='569'>
+           hco (i,k)=heso_cup(i,k)<a name='570'>
+           qco (i,k)=qeso_cup(i,k)<a name='571'>
+           qrco(i,k)=0.<a name='572'>
+           dby (i,k)=0.<a name='573'>
+           dbyo(i,k)=0.<a name='574'>
+           zu  (i,k)=0.<a name='575'>
+           xzu (i,k)=0.<a name='576'>
+           zuo (i,k)=0.<a name='577'>
+         enddo<a name='578'>
+ 42 continue<a name='579'>
+<font color=#447700>!<a name='580'></font>
+<font color=#447700>!--- calculate workfunctions for updrafts<a name='581'></font>
+<font color=#447700>!<a name='582'></font>
+      IF(MAKE_CALC_FOR_XK) THEN<a name='583'>
+        call <A href='../../html_code/phys/module_cu_gf_deep.F.html#CUP_UP_AA0'>cup_up_aa0</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CUP_UP_AA0_12">(aa0,z,zu,dby,GAMMA_CUP,t_cup, &amp;<a name='584'>
+            kbcon,ktop,ierr,           &amp;<a name='585'>
+            itf,ktf, its,ite, kts,kte)<a name='586'>
+        call <A href='../../html_code/phys/module_cu_gf_deep.F.html#CUP_UP_AA0'>cup_up_aa0</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CUP_UP_AA0_13">(aa1,zo,zuo,dbyo,GAMMAo_CUP,tn_cup, &amp;<a name='587'>
+            kbcon,ktop,ierr,           &amp;<a name='588'>
+            itf,ktf, its,ite, kts,kte)<a name='589'>
+        do i=its,itf<a name='590'>
+          if(ierr(i) == 0)then<a name='591'>
+           if(aa1(i) &lt;= 0.)then<a name='592'>
+               ierr(i)=17<a name='593'>
+               ierrc(i)="cloud work function zero"<a name='594'>
+           endif<a name='595'>
+         endif<a name='596'>
+       enddo<a name='597'>
+      ENDIF<a name='598'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='599'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='600'></font>
+<a name='601'>
+<font color=#447700>!<a name='602'></font>
+<font color=#447700>!--- change per unit mass that a model cloud would modify the environment<a name='603'></font>
+<font color=#447700>!<a name='604'></font>
+<font color=#447700>!--- 1. in bottom layer<a name='605'></font>
+<font color=#447700>!<a name='606'></font>
+      do k=kts,kte<a name='607'>
+       do i=its,itf<a name='608'>
+        dellah(i,k)=0.<a name='609'>
+        dellaq(i,k)=0.<a name='610'>
+       enddo<a name='611'>
+      enddo<a name='612'>
+<font color=#447700>!<a name='613'></font>
+<font color=#447700>!----------------------------------------------  cloud level ktop<a name='614'></font>
+<font color=#447700>!<a name='615'></font>
+<font color=#447700>!- - - - - - - - - - - - - - - - - - - - - - - - model level ktop-1<a name='616'></font>
+<font color=#447700>!      .               .                 .<a name='617'></font>
+<font color=#447700>!      .               .                 .<a name='618'></font>
+<font color=#447700>!      .               .                 .<a name='619'></font>
+<font color=#447700>!      .               .                 .<a name='620'></font>
+<font color=#447700>!      .               .                 .<a name='621'></font>
+<font color=#447700>!      .               .                 .<a name='622'></font>
+<font color=#447700>!<a name='623'></font>
+<font color=#447700>!----------------------------------------------  cloud level k+2<a name='624'></font>
+<font color=#447700>!<a name='625'></font>
+<font color=#447700>!- - - - - - - - - - - - - - - - - - - - - - - - model level k+1<a name='626'></font>
+<font color=#447700>!<a name='627'></font>
+<font color=#447700>!----------------------------------------------  cloud level k+1<a name='628'></font>
+<font color=#447700>!<a name='629'></font>
+<font color=#447700>!- - - - - - - - - - - - - - - - - - - - - - - - model level k<a name='630'></font>
+<font color=#447700>!<a name='631'></font>
+<font color=#447700>!----------------------------------------------  cloud level k<a name='632'></font>
+<font color=#447700>!<a name='633'></font>
+<font color=#447700>!      .               .                 .<a name='634'></font>
+<font color=#447700>!      .               .                 .<a name='635'></font>
+<font color=#447700>!      .               .                 .<a name='636'></font>
+<font color=#447700>!      .               .                 .<a name='637'></font>
+<font color=#447700>!      .               .                 .<a name='638'></font>
+<font color=#447700>!      .               .                 .<a name='639'></font>
+<font color=#447700>!      .               .                 .<a name='640'></font>
+<font color=#447700>!      .               .                 .<a name='641'></font>
+<font color=#447700>!      .               .                 .<a name='642'></font>
+<font color=#447700>!      .               .                 .<a name='643'></font>
+<font color=#447700>!<a name='644'></font>
+<font color=#447700>!----------------------------------------------  cloud level 3<a name='645'></font>
+<font color=#447700>!<a name='646'></font>
+<font color=#447700>!- - - - - - - - - - - - - - - - - - - - - - - - model level 2<a name='647'></font>
+<font color=#447700>!<a name='648'></font>
+<font color=#447700>!----------------------------------------------  cloud level 2<a name='649'></font>
+<font color=#447700>!<a name='650'></font>
+<font color=#447700>!- - - - - - - - - - - - - - - - - - - - - - - - model level 1<a name='651'></font>
+      trash2=0.<a name='652'>
+      do i=its,itf<a name='653'>
+        if(ierr(i).eq.0)then<a name='654'>
+         do k=k22(i),ktop(i)<a name='655'>
+            <font color=#447700>! entrainment/detrainment for updraft<a name='656'></font>
+            entup=up_massentro(i,k)<a name='657'>
+            detup=up_massdetro(i,k)<a name='658'>
+            totmas=detup-entup+zuo(i,k+1)-zuo(i,k)<a name='659'>
+            if(abs(totmas).gt.1.e-6)then<a name='660'>
+               write(0,*)'*********************',i,k,totmas<a name='661'>
+               write(0,*)k22(i),kbcon(i),ktop(i)<a name='662'>
+            endif<a name='663'>
+            dp=100.*(po_cup(i,k)-po_cup(i,k+1))<a name='664'>
+            dellah(i,k) =-(zuo(i,k+1)*(hco(i,k+1)-heo_cup(i,k+1) )-     &amp;<a name='665'>
+                           zuo(i,k  )*(hco(i,k  )-heo_cup(i,k  ) ))*g/dp<a name='666'>
+<a name='667'>
+            <font color=#447700>!-- take out cloud liquid water for detrainment<a name='668'></font>
+            dz=zo_cup(i,k+1)-zo_cup(i,k)<a name='669'>
+            if(k.lt.ktop(i))then<a name='670'>
+             dellaqc(i,k)= zuo(i,k)*c1_shal*qrco(i,k)*dz/dp*g <font color=#447700>!  detup*0.5*(qrco(i,k+1)+qrco(i,k)) *g/dp<a name='671'></font>
+            else<a name='672'>
+             dellaqc(i,k)=   detup*qrco(i,k) *g/dp<a name='673'>
+            endif<a name='674'>
+<a name='675'>
+            <font color=#447700>!-- condensation source term = detrained + flux divergence of <a name='676'></font>
+            <font color=#447700>!-- cloud liquid water (qrco)<a name='677'></font>
+            C_up = dellaqc(i,k)+(zuo(i,k+1)* qrco(i,k+1) -       &amp;<a name='678'>
+                                  zuo(i,k  )* qrco(i,k  )  )*g/dp<a name='679'>
+<font color=#447700>!            C_up = dellaqc(i,k)<a name='680'></font>
+            <font color=#447700>!-- water vapor budget (flux divergence of Q_up-Q_env - condensation<a name='681'></font>
+            <font color=#447700>!term)<a name='682'></font>
+            dellaq(i,k) =-(zuo(i,k+1)*(qco(i,k+1)-qo_cup(i,k+1) ) -      &amp;<a name='683'>
+                           zuo(i,k  )*(qco(i,k  )-qo_cup(i,k  ) ) )*g/dp &amp;<a name='684'>
+                           - C_up - 0.5*(pwo (i,k)+pwo (i,k+1))*g/dp<a name='685'>
+          enddo<a name='686'>
+        endif<a name='687'>
+      enddo<a name='688'>
+<a name='689'>
+<font color=#447700>!<a name='690'></font>
+<font color=#447700>!--- using dellas, calculate changed environmental profiles<a name='691'></font>
+<font color=#447700>!<a name='692'></font>
+      mbdt=.5 <font color=#447700>!3.e-4<a name='693'></font>
+<a name='694'>
+      do k=kts,ktf<a name='695'>
+       do i=its,itf<a name='696'>
+         dellat(i,k)=0.<a name='697'>
+         if(ierr(i)/=0)cycle<a name='698'>
+         xhe(i,k)=dellah(i,k)*mbdt+heo(i,k)<a name='699'>
+         xq (i,k)=max(1.e-16,(dellaq(i,k)+dellaqc(i,k))*mbdt+qo(i,k))<a name='700'>
+         dellat(i,k)=(1./cp)*(dellah(i,k)-xlv*(dellaq(i,k)))<a name='701'>
+         xt (i,k)= (-dellaqc(i,k)*xlv/cp+dellat(i,k))*mbdt+tn(i,k)<a name='702'>
+         xt (i,k)=  max(190.,xt(i,k))<a name='703'>
+         <a name='704'>
+       enddo<a name='705'>
+      enddo<a name='706'>
+      do i=its,itf<a name='707'>
+       if(ierr(i).eq.0)then<a name='708'>
+<font color=#447700>!        xhkb(i)=hkbo(i)+(dellah(i,k22(i)))*mbdt<a name='709'></font>
+        xhe(i,ktf)=heo(i,ktf)<a name='710'>
+        xq(i,ktf)=qo(i,ktf)<a name='711'>
+        xt(i,ktf)=tn(i,ktf)<a name='712'>
+       endif<a name='713'>
+      enddo<a name='714'>
+<font color=#447700>!<a name='715'></font>
+<font color=#447700>!<a name='716'></font>
+     IF(MAKE_CALC_FOR_XK) THEN<a name='717'>
+<font color=#447700>!<a name='718'></font>
+<font color=#447700>!--- calculate moist static energy, heights, qes<a name='719'></font>
+<font color=#447700>!<a name='720'></font>
+      call <A href='../../html_code/phys/module_cu_gf_deep.F.html#CUP_ENV'>cup_env</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CUP_ENV_12">(xz,xqes,xhe,xhes,xt,xq,po,z1, &amp;<a name='721'>
+           psur,ierr,tcrit,-1,   &amp;<a name='722'>
+           itf,ktf, &amp;<a name='723'>
+           its,ite, kts,kte)<a name='724'>
+<font color=#447700>!<a name='725'></font>
+<font color=#447700>!--- environmental values on cloud levels<a name='726'></font>
+<font color=#447700>!<a name='727'></font>
+      call <A href='../../html_code/phys/module_cu_gf_deep.F.html#CUP_ENV_CLEV'>cup_env_clev</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CUP_ENV_CLEV_12">(xt,xqes,xq,xhe,xhes,xz,po,xqes_cup,xq_cup, &amp;<a name='728'>
+           xhe_cup,xhes_cup,xz_cup,po_cup,gamma_cup,xt_cup,psur,   &amp;<a name='729'>
+           ierr,z1,          &amp;<a name='730'>
+           itf,ktf, &amp;<a name='731'>
+           its,ite, kts,kte)<a name='732'>
+<font color=#447700>!<a name='733'></font>
+<font color=#447700>!<a name='734'></font>
+<font color=#447700>!**************************** static control<a name='735'></font>
+      do k=kts,ktf<a name='736'>
+      do i=its,itf<a name='737'>
+         xhc(i,k)=0.<a name='738'>
+         xDBY(I,K)=0.<a name='739'>
+      enddo<a name='740'>
+      enddo<a name='741'>
+      do i=its,itf<a name='742'>
+        if(ierr(i).eq.0)then<a name='743'>
+         x_add = xlv*zqexec(i)+cp*ztexec(i)<a name='744'>
+         call <A href='../../html_code/phys/module_cu_gf_deep.F.html#GET_CLOUD_BC'>get_cloud_bc</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_CLOUD_BC_11">(kte,xhe_cup (i,1:kte),xhkb (i),k22(i),x_add)<a name='745'>
+         do k=1,start_level(i)-1<a name='746'>
+            xhc(i,k)=xhe_cup(i,k)<a name='747'>
+         enddo<a name='748'>
+         k=start_level(i)<a name='749'>
+         xhc(i,k)=xhkb(i)<a name='750'>
+        endif <font color=#447700>!ierr<a name='751'></font>
+      enddo<a name='752'>
+<font color=#447700>!<a name='753'></font>
+<font color=#447700>!<a name='754'></font>
+      do i=its,itf<a name='755'>
+       if(ierr(i).eq.0)then<a name='756'>
+        xzu(i,1:ktf)=zuo(i,1:ktf)	<a name='757'>
+        do k=start_level(i)+1,ktop(i)<a name='758'>
+         xhc(i,k)=(xhc(i,k-1)*xzu(i,k-1)-.5*up_massdetro(i,k-1)*xhc(i,k-1)+ &amp;<a name='759'>
+                          up_massentro(i,k-1)*xhe(i,k-1))   /            &amp;<a name='760'>
+                          (xzu(i,k-1)-.5*up_massdetro(i,k-1)+up_massentro(i,k-1))<a name='761'>
+         xdby(i,k)=xhc(i,k)-xhes_cup(i,k)<a name='762'>
+        enddo<a name='763'>
+        do k=ktop(i)+1,ktf<a name='764'>
+           xHC (i,K)=xhes_cup(i,k)<a name='765'>
+           xDBY(I,K)=0.<a name='766'>
+           xzu (i,k)=0.<a name='767'>
+        enddo<a name='768'>
+       endif<a name='769'>
+      enddo<a name='770'>
+<a name='771'>
+<font color=#447700>!<a name='772'></font>
+<font color=#447700>!--- workfunctions for updraft<a name='773'></font>
+<font color=#447700>!<a name='774'></font>
+      call <A href='../../html_code/phys/module_cu_gf_deep.F.html#CUP_UP_AA0'>cup_up_aa0</A><A href='../../html_code/phys/module_cu_gf_sh.F.html#CUP_GF_SH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CUP_UP_AA0_14">(xaa0,xz,xzu,xdby,GAMMA_CUP,xt_cup, &amp;<a name='775'>
+           kbcon,ktop,ierr,           &amp;<a name='776'>
+           itf,ktf, &amp;<a name='777'>
+           its,ite, kts,kte)<a name='778'>
+<font color=#447700>!<a name='779'></font>
+     ENDIF<a name='780'>
+<font color=#447700>!<a name='781'></font>
+<font color=#447700>!<a name='782'></font>
+<font color=#447700>! now for shallow forcing<a name='783'></font>
+<font color=#447700>!<a name='784'></font>
+       do i=its,itf<a name='785'>
+        xmb(i)=0.<a name='786'>
+        xff_shal(1:3)=0.<a name='787'>
+        if(ierr(i).eq.0)then<a name='788'>
+          xmbmax(i)=1.0  <a name='789'>
+<font color=#447700>!         xmbmax(i)=100.*(p(i,kbcon(i))-p(i,kbcon(i)+1))/(g*dtime)<a name='790'></font>
+<font color=#447700>!<a name='791'></font>
+<font color=#447700>!-stabilization closure<a name='792'></font>
+          xkshal=(xaa0(i)-aa1(i))/mbdt<a name='793'>
+             if(xkshal.le.0.and.xkshal.gt.-.01*mbdt) &amp;<a name='794'>
+                           xkshal=-.01*mbdt<a name='795'>
+             if(xkshal.gt.0.and.xkshal.lt.1.e-2) &amp;<a name='796'>
+                           xkshal=1.e-2<a name='797'>
+<a name='798'>
+          xff_shal(1)=max(0.,-(aa1(i)-aa0(i))/(xkshal*dtime))<a name='799'>
+<font color=#447700>!<a name='800'></font>
+<font color=#447700>!- closure from Grant (2001)<a name='801'></font>
+          xff_shal(2)=.03*zws(i)<a name='802'>
+<font color=#447700>!- boundary layer QE closure<a name='803'></font>
+          blqe=0.<a name='804'>
+          trash=0.<a name='805'>
+          do k=1,kpbl(i)<a name='806'>
+                blqe=blqe+100.*dhdt(i,k)*(po_cup(i,k)-po_cup(i,k+1))/g<a name='807'>
+          enddo<a name='808'>
+          trash=max((hc(i,kbcon(i))-he_cup(i,kbcon(i))),1.e1)<a name='809'>
+          xff_shal(3)=max(0.,blqe/trash)<a name='810'>
+          xff_shal(3)=min(xmbmax(i),xff_shal(3))<a name='811'>
+<font color=#447700>!- average <a name='812'></font>
+          xmb(i)=(xff_shal(1)+xff_shal(2)+xff_shal(3))/3.<a name='813'>
+          xmb(i)=min(xmbmax(i),xmb(i))<a name='814'>
+          if(ichoice &gt; 0)xmb(i)=min(xmbmax(i),xff_shal(ichoice))<a name='815'>
+          if(xmb(i) &lt;= 0.)then<a name='816'>
+             ierr(i)=21<a name='817'>
+             ierrc(i)="21"<a name='818'>
+          endif<a name='819'>
+        endif<a name='820'>
+        if(ierr(i).ne.0)then<a name='821'>
+           k22  (i)=0<a name='822'>
+           kbcon(i)=0<a name='823'>
+           ktop (i)=0<a name='824'>
+           xmb  (i)=0.<a name='825'>
+           outt (i,:)=0.<a name='826'>
+           outq (i,:)=0.<a name='827'>
+           outqc(i,:)=0.<a name='828'>
+        else if(ierr(i).eq.0)then<a name='829'>
+          xmb_out(i)=xmb(i)<a name='830'>
+<font color=#447700>! <a name='831'></font>
+<font color=#447700>! final tendencies<a name='832'></font>
+<font color=#447700>!<a name='833'></font>
+          pre(i)=0.<a name='834'>
+          do k=2,ktop(i)<a name='835'>
+           outt (i,k)= dellat (i,k)*xmb(i)<a name='836'>
+           outq (i,k)= dellaq (i,k)*xmb(i)<a name='837'>
+           outqc(i,k)= dellaqc(i,k)*xmb(i)<a name='838'>
+           pre  (i)  = pre(i)+pwo(i,k)*xmb(i)<a name='839'>
+          enddo<a name='840'>
+        endif<a name='841'>
+       enddo<a name='842'>
+<font color=#447700>!      <a name='843'></font>
+<font color=#447700>! done shallow<a name='844'></font>
+<font color=#447700>!--------------------------done------------------------------<a name='845'></font>
+<font color=#447700>!<a name='846'></font>
+<a name='847'>
+   END SUBROUTINE CUP_gf_sh<a name='848'>
+END MODULE module_cu_gf_sh<a name='849'>
+</pre></body></html>

@@ -1,0 +1,1284 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:MODEL_LAYER:PHYSICS<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<font color=#447700>! Grenier-Bretherton mixing PBL scheme (GBM PBL):<a name='4'></font>
+<font color=#447700>!<a name='5'></font>
+<font color=#447700>! REFERENCES<a name='6'></font>
+<font color=#447700>! 1) Grenier, H., and C. S. Bretherton, 2001: A moist PBL parameterization <a name='7'></font>
+<font color=#447700>!    for large-scale models and its application to subtropical cloud-topped <a name='8'></font>
+<font color=#447700>!    marine boundary layers. Mon. Wea. Rev., 129, 357-377. <a name='9'></font>
+<font color=#447700>!    ("GB01" in the comments)<a name='10'></font>
+<font color=#447700>! 2) Galperin, B., L. H. Kantha, S. Hassid, and A. Rosati, 1988: <a name='11'></font>
+<font color=#447700>!    A quasi-equilibrium turbulent energy model for geophysical flows. <a name='12'></font>
+<font color=#447700>!    J. Atmos. Sci., 45, 55-62.<a name='13'></font>
+<font color=#447700>!    ("Gal88" in the comments)<a name='14'></font>
+<font color=#447700>! 3) Mellor, G., and T. Yamada, 1982: Development of a turbulence closure<a name='15'></font>
+<font color=#447700>!    model for geophysical fluid problems. Rev. Astrophys.Space Phys., <a name='16'></font>
+<font color=#447700>!    20, 851-875.<a name='17'></font>
+<font color=#447700>!    ("MY82" in the comments)<a name='18'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='19'></font>
+<font color=#447700>!! Natalie Perlin, October 2012 nperlin@coas.oregonstate.edu<a name='20'></font>
+<font color=#447700>!! <a name='21'></font>
+<font color=#447700>!! GBM PBL Code history:<a name='22'></font>
+<font color=#447700>!! <a name='23'></font>
+<font color=#447700>!! Herve Grenier, Christopher Bretherton - original contribution<a name='24'></font>
+<font color=#447700>!! Jim McCaa - late 1990s, 2000-2001<a name='25'></font>
+<font color=#447700>!! Nicolai Thum  2004-2005(?)<a name='26'></font>
+<font color=#447700>!! Qingtao Song - 2007-2008<a name='27'></font>
+<font color=#447700>!! Natalie Perlin 2011-2012<a name='28'></font>
+<font color=#447700>!<a name='29'></font>
+<a name='30'>
+<A NAME='MODULE_BL_GBMPBL'><A href='../../html_code/phys/module_bl_gbmpbl.F.html#MODULE_BL_GBMPBL' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='31'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_bl_gbmpbl</font> <A href='../../call_to/MODULE_BL_GBMPBL.html' TARGET='index'>2</A><a name='32'>
+<a name='33'>
+   USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_bl_gbmpbl.F.html#module_bl_gbmpbl.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_40">, ONLY: cp, g, rcp, r_d,            &amp;<a name='34'>
+                                     r_v, svp1, svp2, svp3,      &amp;<a name='35'>
+                                     svpt0, ep_1, ep_2, xlv,     &amp;<a name='36'>
+                                     karman<a name='37'>
+public gbmpbl<a name='38'>
+public gbmpblinit<a name='39'>
+private<a name='40'>
+<a name='41'>
+CONTAINS<a name='42'>
+<a name='43'>
+<A NAME='GBMPBL'><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBMPBL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='44'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>GBMPBL</font>(U3D,V3D,TH3D,T3D,QV3D,QC3D,QI3D,P3D,PI3D,     &amp; <A href='../../call_to/GBMPBL.html' TARGET='index'>1</A>,<A href='../../call_from/GBMPBL.html' TARGET='index'>1</A><a name='45'>
+       RUBLTEN,RVBLTEN,RTHBLTEN,                                  &amp;<a name='46'>
+       RQVBLTEN,RQCBLTEN,RQIBLTEN,                                &amp; <a name='47'>
+       KZM_GBM,KTH_GBM,KETHL_GBM,EL_GBM,                          &amp;<a name='48'>
+       dz8w,z,PSFC,TKE_PBL,RTHRATEN,                              &amp;<a name='49'>
+       ZNT,UST,ZOL,HOL,PBL,KPBL2D,REGIME,PSIM,PSIH,               &amp; <a name='50'>
+       XLAND,HFX,QFX,TSK,GZ1OZ0,WSPD,BR,                          &amp;<a name='51'>
+       DT,DTMIN,                                                  &amp;<a name='52'>
+       ids,ide, jds,jde, kds,kde,                                 &amp;<a name='53'>
+       ims,ime, jms,jme, kms,kme,                                 &amp;<a name='54'>
+       its,ite, jts,jte, kts,kte                        )<a name='55'>
+    <font color=#447700>!-------------------------------------------------------------------<a name='56'></font>
+    IMPLICIT NONE<a name='57'>
+    <font color=#447700>!-------------------------------------------------------------------<a name='58'></font>
+    <font color=#447700>!-- U3D         3D u-velocity interpolated to theta points (m/s)<a name='59'></font>
+    <font color=#447700>!-- V3D         3D v-velocity interpolated to theta points (m/s)<a name='60'></font>
+    <font color=#447700>!-- TH3D	3D potential temperature (K)<a name='61'></font>
+    <font color=#447700>!-- T3D         temperature (K)<a name='62'></font>
+    <font color=#447700>!-- QV3D        3D water vapor mixing ratio (Kg/Kg)<a name='63'></font>
+    <font color=#447700>!-- QC3D        3D cloud mixing ratio (Kg/Kg)<a name='64'></font>
+    <font color=#447700>!-- QI3D        3D ice mixing ratio (Kg/Kg)<a name='65'></font>
+    <font color=#447700>!-- P3D         3D pressure (Pa)<a name='66'></font>
+    <font color=#447700>!-- PI3D	3D exner function (dimensionless)<a name='67'></font>
+    <font color=#447700>!-- RUBLTEN     Rho_dU tendency due to<a name='68'></font>
+    <font color=#447700>!               PBL parameterization (kg/m^3 . m/s)<a name='69'></font>
+    <font color=#447700>!-- RVBLTEN     Rho_dV tendency due to<a name='70'></font>
+    <font color=#447700>!               PBL parameterization (kg/m^3 . m/s)<a name='71'></font>
+    <font color=#447700>!-- RTHBLTEN    Rho_dTheta_m tendency due to<a name='72'></font>
+    <font color=#447700>!               PBL parameterization (kg/m^3 . K)<a name='73'></font>
+    <font color=#447700>!-- RQVBLTEN    Rho_dQv tendency due to<a name='74'></font>
+    <font color=#447700>!               PBL parameterization (kg/m^3 . kg/kg)<a name='75'></font>
+    <font color=#447700>!-- RQCBLTEN    Rho_dQc tendency due to<a name='76'></font>
+    <font color=#447700>!               PBL parameterization (kg/m^3 . kg/kg)<a name='77'></font>
+    <font color=#447700>!-- RQIBLTEN    Rho_dQi tendency due to<a name='78'></font>
+    <font color=#447700>!               PBL parameterization (kg/m^3 . kg/kg)<a name='79'></font>
+    <font color=#447700>! <a name='80'></font>
+    <font color=#447700>!-- KZM_GBM       exchange coefficient for momentum (m^2/s) <a name='81'></font>
+    <font color=#447700>!-- KTH_GBM       exchange coefficient for heat (K m/s)<a name='82'></font>
+    <font color=#447700>!-- KETHL_GBM     exchange coeff. for TKE enhanced (m^2/s)<a name='83'></font>
+    <font color=#447700>! <a name='84'></font>
+    <font color=#447700>! NB!! Vertical staggering of the GBM output variables <a name='85'></font>
+    <font color=#447700>!  is as follows:<a name='86'></font>
+    <font color=#447700>!  KZM_GBM, KTH_GBM are on full levels, starting from the sfc <a name='87'></font>
+    <font color=#447700>!  KETHL_GBM is on half-levels<a name='88'></font>
+    <font color=#447700>!  TKE_PBL and EL_GBM are on full levels, starting from the sfc<a name='89'></font>
+    <font color=#447700>!<a name='90'></font>
+    <font color=#447700>!-- cp          heat capacity at constant pressure for dry air (J/kg/K)<a name='91'></font>
+    <font color=#447700>!-- g           acceleration due to gravity (m/s^2)<a name='92'></font>
+    <font color=#447700>!-- rcp         R/CP<a name='93'></font>
+    <font color=#447700>!-- r_d         gas constant for dry air (J/kg/K)<a name='94'></font>
+    <font color=#447700>!-- P_QI	species index for cloud ice<a name='95'></font>
+    <font color=#447700>!-- dz8w	dz between full levels (m)<a name='96'></font>
+    <font color=#447700>!-- z		height above sea level (m)<a name='97'></font>
+    <font color=#447700>!-- XLV         latent heat of vaporization (J/kg)<a name='98'></font>
+    <font color=#447700>!-- r_v		gas constant for water vapor (J/kg/K)<a name='99'></font>
+    <font color=#447700>!-- PSFC        pressure at the surface (Pa)<a name='100'></font>
+    <font color=#447700>!-- ZNT		roughness length (m)<a name='101'></font>
+    <font color=#447700>!-- UST		u* in similarity theory (m/s)<a name='102'></font>
+    <font color=#447700>!-- ZOL		z/L height over Monin-Obukhov length<a name='103'></font>
+    <font color=#447700>!-- HOL		PBL height over Monin-Obukhov length<a name='104'></font>
+    <font color=#447700>!-- PBL		PBL height (m)<a name='105'></font>
+    <font color=#447700>!-- KPBL2D     Layer index containing PBL top within or at the base interface<a name='106'></font>
+    <font color=#447700>!-- REGIME	flag indicating PBL regime (stable, unstable, etc.)<a name='107'></font>
+    <font color=#447700>!-- PSIM        similarity stability function for momentum<a name='108'></font>
+    <font color=#447700>!-- PSIH        similarity stability function for heat<a name='109'></font>
+    <font color=#447700>!-- XLAND	land mask (1 for land, 2 for water)<a name='110'></font>
+    <font color=#447700>!-- HFX		upward heat flux at the surface (W/m^2)<a name='111'></font>
+    <font color=#447700>!-- QFX		upward moisture flux at the surface (kg/m^2/s)<a name='112'></font>
+    <font color=#447700>!-- TSK		surface temperature (K)<a name='113'></font>
+    <font color=#447700>!-- GZ1OZ0      log(z/z0) where z0 is roughness length<a name='114'></font>
+    <font color=#447700>!-- WSPD        wind speed at lowest model level (m/s)<a name='115'></font>
+    <font color=#447700>!-- BR          bulk Richardson number in surface layer<a name='116'></font>
+    <font color=#447700>!-- DT		time step (s)<a name='117'></font>
+    <font color=#447700>!-- DTMIN	time step (minute)<a name='118'></font>
+    <font color=#447700>!-- svp1        constant for saturation vapor pressure (kPa)<a name='119'></font>
+    <font color=#447700>!-- svp2        constant for saturation vapor pressure (dimensionless)<a name='120'></font>
+    <font color=#447700>!-- svp3        constant for saturation vapor pressure (K)<a name='121'></font>
+    <font color=#447700>!-- svpt0       constant for saturation vapor pressure (K)<a name='122'></font>
+    <font color=#447700>!-- ep_1        constant for virtual temperature (r_v/r_d - 1) (dimensionless)<a name='123'></font>
+    <font color=#447700>!-- ep_2        constant for specific humidity calculation<a name='124'></font>
+    <font color=#447700>!-- karman      Von Karman constant<a name='125'></font>
+    <font color=#447700>!-- ids         start index for i in domain<a name='126'></font>
+    <font color=#447700>!-- ide         end index for i in domain<a name='127'></font>
+    <font color=#447700>!-- jds         start index for j in domain<a name='128'></font>
+    <font color=#447700>!-- jde         end index for j in domain<a name='129'></font>
+    <font color=#447700>!-- kds         start index for k in domain<a name='130'></font>
+    <font color=#447700>!-- kde         end index for k in domain<a name='131'></font>
+    <font color=#447700>!-- ims         start index for i in memory<a name='132'></font>
+    <font color=#447700>!-- ime         end index for i in memory<a name='133'></font>
+    <font color=#447700>!-- jms         start index for j in memory<a name='134'></font>
+    <font color=#447700>!-- jme         end index for j in memory<a name='135'></font>
+    <font color=#447700>!-- kms         start index for k in memory<a name='136'></font>
+    <font color=#447700>!-- kme         end index for k in memory<a name='137'></font>
+    <font color=#447700>!-- its         start index for i in tile<a name='138'></font>
+    <font color=#447700>!-- ite         end index for i in tile<a name='139'></font>
+    <font color=#447700>!-- jts         start index for j in tile<a name='140'></font>
+    <font color=#447700>!-- jte         end index for j in tile<a name='141'></font>
+    <font color=#447700>!-- kts         start index for k in tile<a name='142'></font>
+    <font color=#447700>!-- kte         end index for k in tile<a name='143'></font>
+    <font color=#447700>!-------------------------------------------------------------------<a name='144'></font>
+<a name='145'>
+    INTEGER,  INTENT(IN   )   ::      ids,ide, jds,jde, kds,kde, &amp;<a name='146'>
+         ims,ime, jms,jme, kms,kme, &amp;<a name='147'>
+         its,ite, jts,jte, kts,kte<a name='148'>
+<a name='149'>
+    REAL,     INTENT(IN   )   ::      DT,DTMIN<a name='150'>
+<a name='151'>
+    REAL,     DIMENSION( ims:ime, kms:kme, jms:jme )           , &amp;<a name='152'>
+         INTENT(IN   )   ::                           QV3D, &amp;<a name='153'>
+         QC3D, &amp;<a name='154'>
+         QI3D, &amp;<a name='155'>
+         P3D, &amp;<a name='156'>
+         PI3D, &amp;<a name='157'>
+         TH3D, &amp;<a name='158'>
+         T3D, &amp;<a name='159'>
+         dz8w, &amp;<a name='160'>
+         z   <a name='161'>
+<a name='162'>
+    <font color=#447700>!<a name='163'></font>
+    REAL,     DIMENSION( ims:ime, kms:kme, jms:jme )           , &amp;<a name='164'>
+         INTENT(INOUT)   ::                          RUBLTEN, &amp;<a name='165'>
+         RVBLTEN, &amp;<a name='166'>
+         RTHBLTEN, &amp;<a name='167'>
+         RQVBLTEN, &amp;<a name='168'>
+         RQCBLTEN, &amp;<a name='169'>
+         RQIBLTEN<a name='170'>
+<a name='171'>
+    REAL,     DIMENSION( ims:ime, kms:kme, jms:jme )           , &amp;<a name='172'>
+         INTENT(OUT)   ::   KZM_GBM,KTH_GBM,KETHL_GBM, EL_GBM<a name='173'>
+<a name='174'>
+    REAL,     DIMENSION( ims:ime, jms:jme )                    , &amp;<a name='175'>
+         INTENT(IN   )   ::                          XLAND, &amp;<a name='176'>
+         HFX, &amp;<a name='177'>
+         QFX, &amp;<a name='178'>
+         REGIME<a name='179'>
+<a name='180'>
+    REAL,     DIMENSION( ims:ime, jms:jme )                    , &amp;<a name='181'>
+         INTENT(INOUT)   ::                            HOL, &amp;<a name='182'>
+         UST, &amp;<a name='183'>
+         PBL, &amp;<a name='184'>
+         ZNT<a name='185'>
+    INTEGER,  DIMENSION( ims:ime, jms:jme )                    , &amp;<a name='186'>
+         INTENT(INOUT)   ::                            KPBL2D<a name='187'>
+<a name='188'>
+    <font color=#447700>!<a name='189'></font>
+<font color=#447700>!m The following 5 variables are changed to memory size from tile size--<a name='190'></font>
+<font color=#447700>!<a name='191'></font>
+     REAL,     DIMENSION( ims:ime, jms:jme ), INTENT(IN   )  ::    &amp;<a name='192'>
+                                                             PSIM, &amp;<a name='193'>
+                                                             PSIH<a name='194'>
+<a name='195'>
+     REAL,     DIMENSION( ims:ime, jms:jme ), INTENT(INOUT)   ::   &amp;<a name='196'>
+                                                             WSPD<a name='197'>
+<a name='198'>
+     REAL,     DIMENSION( ims:ime, jms:jme ), INTENT(IN   )   ::   &amp;<a name='199'>
+                                                           GZ1OZ0, &amp;<a name='200'>
+                                                               BR<a name='201'>
+<a name='202'>
+      REAL,     DIMENSION( ims:ime, jms:jme )                    , &amp;<a name='203'>
+                INTENT(IN   )               ::               PSFC<a name='204'>
+<a name='205'>
+      REAL,     DIMENSION( ims:ime, jms:jme )                    , &amp;<a name='206'>
+                INTENT(IN   )   ::                            TSK<a name='207'>
+<a name='208'>
+      REAL,     DIMENSION( ims:ime, jms:jme )                    , &amp;<a name='209'>
+                INTENT(INOUT)   ::                            ZOL<a name='210'>
+                                                                      <a name='211'>
+      REAL,     DIMENSION( ims:ime, kms:kme, jms:jme )           , &amp;<a name='212'>
+                INTENT(IN   )   ::                            U3D, &amp;<a name='213'>
+                                                              V3D<a name='214'>
+<a name='215'>
+    REAL,DIMENSION(IMS:IME,KMS:KME,JMS:JME)                          &amp;<a name='216'>
+         ,INTENT(INOUT) ::                    TKE_PBL<a name='217'>
+    REAL,DIMENSION(IMS:IME,KMS:KME,JMS:JME)                          &amp;<a name='218'>
+         ,INTENT(IN) ::                    RTHRATEN<a name='219'>
+<a name='220'>
+    <font color=#447700>! LOCAL VARIABLES<a name='221'></font>
+<a name='222'>
+    REAL,       DIMENSION( its:ite, kts:kte )          ::   dz8w2d, &amp; <a name='223'>
+         z2d,t2dten_ra<a name='224'>
+<a name='225'>
+    INTEGER ::  I,J,K,NK,pass<a name='226'>
+    CHARACTER(LEN=200)        :: string<a name='227'>
+    REAL,DIMENSION(IMS:IME,KMS:KME)   :: TKE2d_1,TKE2d_2 ,          &amp;<a name='228'>
+                                         u2dblten_1,u2dblten_2,     &amp;<a name='229'>
+                                         v2dblten_1,v2dblten_2<a name='230'>
+<a name='231'>
+    tke2d_1 = 0.0 <a name='232'>
+    tke2d_2 = 0.0 <a name='233'>
+    u2dblten_1 = 0.0 <a name='234'>
+    u2dblten_2 = 0.0 <a name='235'>
+    v2dblten_1 = 0.0 <a name='236'>
+    v2dblten_2 = 0.0 <a name='237'>
+    t2dten_ra  = 0.0 <a name='238'>
+    <a name='239'>
+    DO J=jts,jte<a name='240'>
+       DO k=kts,kte<a name='241'>
+          NK=kme-k<a name='242'>
+          DO i=its,ite<a name='243'>
+             dz8w2d(I,K) = dz8w(i,K,j)<a name='244'>
+             z2d(I,K) = z(i,NK,j)<a name='245'>
+             t2dten_ra(i,k) = RTHRATEN(i,k,j)*PI3D(I,K,J)<a name='246'>
+             <font color=#447700>!t2dten is flipped inside the code<a name='247'></font>
+<font color=#447700>! TKE_PBL = tke2d = 0.5 * (q**2) == e<a name='248'></font>
+<font color=#447700>! tke_2d_2 in gbmpbl is equivalent to "e" in GB01<a name='249'></font>
+             tke2d_2(i,k)= TKE_PBL(i,k,j) <a name='250'>
+          ENDDO<a name='251'>
+       ENDDO<a name='252'>
+<a name='253'>
+    do pass=1,2<a name='254'>
+       CALL <A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBM2D'>GBM2D</A><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBMPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GBM2D_1">(J,U3D(ims,kms,j),V3D(ims,kms,j),T3D(ims,kms,j),&amp;<a name='255'>
+            QV3D(ims,kms,j),QC3D(ims,kms,j),QI3D(ims,kms,j),     &amp;<a name='256'>
+            P3D(ims,kms,j),u2dblten_2(ims,kms),v2dblten_2(ims,kms),&amp;<a name='257'>
+            RTHBLTEN(ims,kms,j),RQVBLTEN(ims,kms,j),             &amp;<a name='258'>
+            RQCBLTEN(ims,kms,j),RQIBLTEN(ims,kms,j),             &amp;<a name='259'>
+            KZM_GBM(ims,kms,j),KTH_GBM(ims,kms,j),               &amp;<a name='260'>
+            KETHL_GBM(ims,kms,j),EL_GBM(ims,kms,j),              &amp;<a name='261'>
+            TKE2d_2(ims,kms),t2dten_ra,                          &amp;<a name='262'>
+            dz8w2d,z2d,                                          &amp;<a name='263'>
+            PSFC(ims,j),ZNT(ims,j),UST(ims,j),ZOL(ims,j),        &amp;<a name='264'>
+            HOL(ims,j),PBL(ims,j),KPBL2D(ims,j),PSIM(ims,j),     &amp;<a name='265'>
+            PSIH(ims,j),XLAND(ims,j),HFX(ims,j),QFX(ims,j),      &amp;<a name='266'>
+            TSK(ims,j),GZ1OZ0(ims,j),WSPD(ims,j),BR(ims,j),      &amp;<a name='267'>
+            DT,DTMIN,                                            &amp;<a name='268'>
+            ids,ide, jds,jde, kds,kde,                           &amp;<a name='269'>
+            ims,ime, jms,jme, kms,kme,                           &amp;<a name='270'>
+            its,ite, jts,jte, kts,kte                            )<a name='271'>
+      if(pass==1)then<a name='272'>
+        TKE2d_1=tke2d_2 <font color=#447700>!tke at n+1<a name='273'></font>
+        u2dblten_1=u2dblten_2<a name='274'>
+        v2dblten_1=v2dblten_2<a name='275'>
+      end if<a name='276'>
+      if(pass==2)then<a name='277'>
+<font color=#447700>! tke_2d_2 in gbmpbl is equivalent to e == 2*(q**2)<a name='278'></font>
+        TKE_PBL(:,:,j)=tke2d_1 <font color=#447700>!otherwise tke is advanced to n+2<a name='279'></font>
+        rublten(:,:,j)=0.5*(u2dblten_2+u2dblten_1)<a name='280'>
+        rvblten(:,:,j)=0.5*(v2dblten_2+v2dblten_1)<a name='281'>
+      end if<a name='282'>
+    end do<a name='283'>
+<a name='284'>
+<a name='285'>
+       DO k=kts,kte<a name='286'>
+          DO i=its,ite<a name='287'>
+             RTHBLTEN(I,K,J)=RTHBLTEN(I,K,J)/PI3D(I,K,J)<a name='288'>
+          ENDDO<a name='289'>
+       ENDDO<a name='290'>
+    ENDDO<a name='291'>
+<a name='292'>
+  END SUBROUTINE GBMPBL<a name='293'>
+<a name='294'>
+<A NAME='GBM2D'><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBM2D' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='295'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>GBM2D</font>(J,U2D,V2D,T2D,QV2D,QC2D,QI2D,P2D,    &amp; <A href='../../call_to/GBM2D.html' TARGET='index'>1</A>,<A href='../../call_from/GBM2D.html' TARGET='index'>10</A><a name='296'>
+       U2DTEN,V2DTEN,T2DTEN,                            &amp;<a name='297'>
+       QV2DTEN,QC2DTEN,QI2DTEN,                         &amp; <a name='298'>
+       KZM2D,KTH2D,KETHL2D,EL2D,                        &amp;<a name='299'>
+       TKE2D,T2DTEN_RA,                                 &amp;<a name='300'>
+       dz8w2d,z2d,PSFCPA,                               &amp;<a name='301'>
+       ZNT,UST,ZOL,HOL,PBL,kpbl1d,PSIM,PSIH,            &amp;<a name='302'>
+       XLAND,HFX,QFX,TSK,GZ1OZ0,WSPD,BR,                &amp;<a name='303'>
+       DT,DTMIN,                                        &amp;<a name='304'>
+       ids,ide, jds,jde, kds,kde,                       &amp;<a name='305'>
+       ims,ime, jms,jme, kms,kme,                       &amp;<a name='306'>
+       its,ite, jts,jte, kts,kte                        )<a name='307'>
+    <font color=#447700>!-------------------------------------------------------------------<a name='308'></font>
+    implicit none<a name='309'>
+    <font color=#447700>!<a name='310'></font>
+    INTEGER,  INTENT(IN   )   ::      ids,ide, jds,jde, kds,kde, &amp;<a name='311'>
+         ims,ime, jms,jme, kms,kme, &amp;<a name='312'>
+         its,ite, jts,jte, kts,kte,J<a name='313'>
+    <font color=#447700>!<a name='314'></font>
+    REAL,     INTENT(IN   )   ::      DT,DTMIN<a name='315'>
+    REAL                      ::     SVP1PA<a name='316'>
+<a name='317'>
+    REAL,     DIMENSION( ims:ime, kms:kme )                    , &amp;<a name='318'>
+         INTENT(IN   )   ::                           QV2D, &amp;<a name='319'>
+         QC2D, &amp;<a name='320'>
+         QI2D, &amp;<a name='321'>
+         P2D, &amp;<a name='322'>
+         T2D<a name='323'>
+<a name='324'>
+    <font color=#447700>!<a name='325'></font>
+    REAL,     DIMENSION( ims:ime, kms:kme )                    , &amp;<a name='326'>
+         INTENT(INOUT)   ::                         U2DTEN, &amp;<a name='327'>
+         V2DTEN, &amp;<a name='328'>
+         T2DTEN, &amp;<a name='329'>
+         QV2DTEN, &amp;<a name='330'>
+         QC2DTEN, &amp;<a name='331'>
+         QI2DTEN, &amp;<a name='332'>
+         tke2d<a name='333'>
+    <font color=#447700>!<a name='334'></font>
+    REAL,     DIMENSION( ims:ime, kms:kme )                    , &amp;<a name='335'>
+         INTENT(OUT)   ::    KZM2d,KTH2d,KETHL2d,EL2D<a name='336'>
+<a name='337'>
+    REAL,     DIMENSION( ims:ime )                             , &amp;<a name='338'>
+         INTENT(INOUT)   ::                            HOL, &amp;<a name='339'>
+         UST, &amp;<a name='340'>
+         PBL, &amp;<a name='341'>
+         ZNT<a name='342'>
+<a name='343'>
+    INTEGER,  DIMENSION( ims:ime )                             , &amp;<a name='344'>
+         INTENT(INOUT)   ::                            kpbl1d<a name='345'>
+<a name='346'>
+    REAL,     DIMENSION( ims:ime )                             , &amp;<a name='347'>
+         INTENT(IN   )   ::                          XLAND, &amp;<a name='348'>
+         HFX, &amp;<a name='349'>
+         QFX<a name='350'>
+    <font color=#447700>!<a name='351'></font>
+    REAL,     DIMENSION( ims:ime ), INTENT(IN   )   ::      PSIM, &amp;<a name='352'>
+         PSIH<a name='353'>
+<a name='354'>
+    REAL,     DIMENSION( ims:ime ), INTENT(INOUT)   ::      WSPD<a name='355'>
+<a name='356'>
+    REAL,     DIMENSION( ims:ime ), INTENT(IN   )   ::    GZ1OZ0, &amp;<a name='357'>
+         BR<a name='358'>
+<a name='359'>
+    REAL,     DIMENSION( ims:ime )                             , &amp;<a name='360'>
+         INTENT(IN   )               ::             PSFCPA<a name='361'>
+<a name='362'>
+    REAL,     DIMENSION( ims:ime )                             , &amp;<a name='363'>
+         INTENT(IN   )   ::                            TSK<a name='364'>
+<a name='365'>
+    REAL,     DIMENSION( ims:ime )                             , &amp;<a name='366'>
+         INTENT(INOUT)   ::                            ZOL<a name='367'>
+<a name='368'>
+    <font color=#447700>!<a name='369'></font>
+    REAL,     DIMENSION( its:ite, kts:kte ) ,                    &amp;<a name='370'>
+         INTENT(IN)      ::                         dz8w2d, &amp;<a name='371'>
+         z2d,t2dten_ra<a name='372'>
+    <font color=#447700>!                                                                                <a name='373'></font>
+    REAL,     DIMENSION( ims:ime, kms:kme )                    , &amp;<a name='374'>
+         INTENT(IN   )   ::                            U2D, &amp;<a name='375'>
+         V2D<a name='376'>
+    <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='377'></font>
+    <font color=#447700>!     PBL SCHEME                                                      C<a name='378'></font>
+    <font color=#447700>!     Questions? Contact mccaa@atmos.washington.edu                   C<a name='379'></font>
+    <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='380'></font>
+    <font color=#447700>!     <a name='381'></font>
+    <font color=#447700>!     Order of events:<a name='382'></font>
+    <font color=#447700>!     0.  Preliminaries:  Some things we only need to do once<a name='383'></font>
+    <font color=#447700>!     1.  First, save initial values and calculate some derivatives.<a name='384'></font>
+    <font color=#447700>!     4.  Calculate the buoyancy jump at flux levels<a name='385'></font>
+    <font color=#447700>!     5.  Calculate the pbl height and length scale<a name='386'></font>
+    <font color=#447700>!     6.  Compute diffusivity profiles<a name='387'></font>
+    <font color=#447700>!     7.  Implicit diffusion of thetal, total water<a name='388'></font>
+    <font color=#447700>!     8.  Implicit diffusion of momentum<a name='389'></font>
+    <font color=#447700>!     9.  Implicit diffusion of cloud ice<a name='390'></font>
+    <font color=#447700>!     10. Prediction of TKE<a name='391'></font>
+    <font color=#447700>!     11. Calculation of tendencies for output to model<a name='392'></font>
+    <font color=#447700>!     <a name='393'></font>
+    <font color=#447700>!     Local variables on full levels<a name='394'></font>
+    real zqx(kts:kte+2)<a name='395'>
+    REAL KTH(KTS:KTE+1),KZM(KTS:KTE+1),RHOXFL(KTS:KTE+1),tke(kts:kte+1),tkes(kts:kte+1), &amp;<a name='396'>
+         rrhoxfl(kts:kte+1),BBLS(KTS:KTE+1),NSQUAR(KTS:KTE+1),BOUYAN(KTS:KTE+1), &amp;<a name='397'>
+         DQWDZ(kts:kte+1),rdza(kts:kte+1),dza(kts:kte+1),SVS(KTS:KTE+1),presfl(kts:kte+1), &amp;<a name='398'>
+         exnerfl(kts:kte+1),SHEAR(KTS:KTE+1),rexnerfl(kts:kte+1),rcldb(kts:kte+1), &amp;<a name='399'>
+         epop(kts:kte+1),DTLDZ(KTS:KTE+1)<a name='400'>
+    <font color=#447700>!     Local variables on half levels<a name='401'></font>
+    REAL UX(KTS:KTE),VX(KTS:KTE),THX(KTS:KTE),QX(KTS:KTE),THVX(KTS:KTE),zax(kts:kte),qix(kts:kte), &amp;<a name='402'>
+         KETHL(KTS:KTE),THLX(KTS:KTE),THXS(KTS:KTE),tx(kts:kte),tvx(kts:kte),rttenx(kts:kte), &amp;<a name='403'>
+         PRESHL(KTS:KTE),QCX(KTS:KTE),QWX(KTS:KTE),dzq(kts:kte),rRHOXHL(KTS:KTE),UXS(KTS:KTE), &amp;<a name='404'>
+         QXS(KTS:KTE),RHOXHL(KTS:KTE),exnerhl(kts:kte),rexnerhl(kts:kte),rdzq(kts:kte), &amp;<a name='405'>
+         VXS(KTS:KTE),qixs(kts:kte),qcxs(kts:kte)<a name='406'>
+    REAL,     DIMENSION( its:ite ) :: wspd1<a name='407'>
+    REAL UFLXP,VFLXP,RHOXSF,Q0S, &amp;<a name='408'>
+         RDT,dt2, &amp;<a name='409'>
+         aone,atwo,czero,tskx, &amp;<a name='410'>
+         tvcon,fracz,dudz,dvdz,rvls,thv0,dthv,xfr, &amp;<a name='411'>
+         cpoxlv,r1cp,rczero, &amp;<a name='412'>
+         templ,temps,gamcrt,gamcrq,cell, &amp;<a name='413'>
+         rwspd,cfac, &amp;<a name='414'>
+         thgb,pblx,gothv,capcd,capch,capcq, &amp;<a name='415'>
+         ustx,ustxm,qfxx,hfxx,rlwp,tkeavg,wstar,xlvocp,wso,phih, &amp;<a name='416'>
+         rstbl,vk,tbbls,pref<a name='417'>
+    integer i,k,l,iconv,ilay, &amp;<a name='418'>
+         ktop(kts:kte),kpbl2dx,kmix2dx, &amp;<a name='419'>
+         iteration,pass,kr,&amp;<a name='420'>
+	 ktop_save(kts:kte) <font color=#447700>!NT new to store original height in case layers get merged<a name='421'></font>
+    <font color=#447700>!     Arrays for tridiagonal matrix solver<a name='422'></font>
+    real aimp(kts:kte),bimp(kts:kte),cimp(kts:kte)<a name='423'>
+    real uimp1(kts:kte),rimp1(kts:kte)<a name='424'>
+    real uimp2(kts:kte),rimp2(kts:kte)<a name='425'>
+    <font color=#447700>!NT some temporary variables to recompute n2<a name='426'></font>
+    real  THX_t,THVX_t,DTHV_t<a name='427'>
+    <font color=#447700>!     <a name='428'></font>
+    parameter(XFR=0.1)        <font color=#447700>!Fraction of turb layer to be considered in bbls<a name='429'></font>
+<font color=#447700>!    parameter(aone=1.9*xfr,atwo=15.,cfac=7.8)  orig, why is atwo 15!???? atn aone 1.9<a name='430'></font>
+    parameter(aone=1.9*xfr,atwo=10.,cfac=7.8) <a name='431'>
+    parameter(czero=5.869)    <font color=#447700>! b1/2**(3/2)<a name='432'></font>
+    parameter(rstbl=1.5)      <font color=#447700>! empirical constant for l at stable interfaces<a name='433'></font>
+    PARAMETER (GAMCRT=3.,GAMCRQ=2.E-3)<a name='434'>
+    parameter(vk=0.4)<a name='435'>
+    parameter(pref = 100000.)<a name='436'>
+    <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='437'></font>
+    <font color=#447700>!     <a name='438'></font>
+    <font color=#447700>!     ---0---  Preliminaries:  Some things we only need to do once<a name='439'></font>
+    <font color=#447700>!     <a name='440'></font>
+    RDT=1./DT <a name='441'>
+    dt2=dt <a name='442'>
+    SVP1PA=svp1*10. <font color=#447700>! NT actually this is svp1 in mb<a name='443'></font>
+    cpoxlv = cp/xlv<a name='444'>
+    xlvocp = xlv/cp<a name='445'>
+    r1cp = 1./cp<a name='446'>
+    rczero = 1./czero<a name='447'>
+<a name='448'>
+    <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='449'></font>
+    <font color=#447700>!     This is the beginning of big I loop<a name='450'></font>
+    <font color=#447700>!     <a name='451'></font>
+    <font color=#447700>!     ---1---   First, save initial values and calculate some derivatives.<a name='452'></font>
+    <font color=#447700>!     <a name='453'></font>
+    DO I=its,ite<a name='454'>
+       <font color=#447700>!     Copy in j-dependent variables<a name='455'></font>
+       tskx = tsk(i)<a name='456'>
+       pblx = pbl(i)<a name='457'>
+       qfxx = qfx(i)<a name='458'>
+       hfxx = hfx(i)<a name='459'>
+       zqx(kte+1)=0.0<a name='460'>
+       zqx(kte+1+1)=0.0<a name='461'>
+       tke(kte+1) = 0.0<a name='462'>
+       DO K = kte,kts,-1<a name='463'>
+          KR = kte+1-K<a name='464'>
+          zqx(k)= zqx(k+1) + dz8w2d(i,kr)<a name='465'>
+          zax(k)=0.5*(zqx(k)+zqx(k+1))<a name='466'>
+          tke(k) = tke2d(i,kr)<a name='467'>
+          <font color=#447700>!     Wind components<a name='468'></font>
+          UX(K)=U2D(I,KR)  <font color=#447700>!<a name='469'></font>
+          VX(K)=V2D(I,KR)  <font color=#447700>!<a name='470'></font>
+          TX(K)=T2D(I,KR)<a name='471'>
+          QX(K)=QV2D(I,KR)<a name='472'>
+          QCX(K)=QC2D(I,KR)<a name='473'>
+          qix(k)=qi2D(i,kr)<a name='474'>
+          rttenx(k)=t2dten_ra(i,kr)<a name='475'>
+       ENDDO<a name='476'>
+       <font color=#447700>!     Done copying j-dependent variables<a name='477'></font>
+       tkes(kte+1) = tke(kte+1)<a name='478'>
+       do k = kts,kte<a name='479'>
+          kr = kte+1-k<a name='480'>
+          <font color=#447700>!     Pressure at half levels<a name='481'></font>
+          PRESHL(K)=p2d(i,kr)<a name='482'>
+          DZQ(K)=ZQX(K)-ZQX(K+1)<a name='483'>
+          rdzq(k)=1./dzq(k)<a name='484'>
+          exnerhl(k)=(preshl(k)/pref)**rcp<a name='485'>
+          rexnerhl(k)=1./exnerhl(k)<a name='486'>
+          THX(K)=TX(K)*rexnerhl(k)<a name='487'>
+          QWX(K) = QX(K) + QCX(K)<a name='488'>
+          TVCON=(1.+ep_1*QX(K)-qcx(k))<a name='489'>
+          TVX(K)=TX(K)*TVCON  <font color=#447700>! virtual temperature<a name='490'></font>
+          THVX(K)=THX(K)*TVCON<a name='491'>
+          THLX(K) = THX(K) - XLVOCP * rexnerhl(K) * QCX(K)<a name='492'>
+          <font color=#447700>!     SAVE INITIAL VALUES of winds, thx, and qx<a name='493'></font>
+          tkes(k) = tke(k)<a name='494'>
+          UXS(K)  = UX(K)<a name='495'>
+          VXS(K)  = VX(K)<a name='496'>
+          THXS(K) = THX(K)<a name='497'>
+          QXS(K) = QX(K)<a name='498'>
+          qixs(k) = qix(k)<a name='499'>
+          qcxs(k) = qcx(k)<a name='500'>
+          <font color=#447700>!     Density at half levels<a name='501'></font>
+          RHOXHL(K)=PRESHL(K)/(r_d*TVX(K))<a name='502'>
+          rrhoxhl(k)=1./rhoxhl(k)<a name='503'>
+       enddo<a name='504'>
+       <font color=#447700>!     Density and vertical derivatives at the full sigma levels.<a name='505'></font>
+       presfl(1)=0.<a name='506'>
+       DO K = 2, kte<a name='507'>
+          kr = kte+1-k<a name='508'>
+          <font color=#447700>!     Pressure at full levels<a name='509'></font>
+          PRESFL(K)=exp(0.5*(log(p2d(i,kr+1))+log(p2d(i,kr))))<a name='510'>
+          epop(k)=ep_2/presfl(k)<a name='511'>
+          DZA(K)=ZAX(K-1)-ZAX(K)<a name='512'>
+          rdza(k)=1./dza(k)<a name='513'>
+          exnerfl(k)=(presfl(k)/pref)**rcp<a name='514'>
+          rexnerfl(k)=1./exnerfl(k)<a name='515'>
+          FRACZ=(ZQX(K)-ZAX(K))*RDZA(K)<a name='516'>
+          RHOXFL(K)=RHOXHL(K)+(RHOXHL(K-1)-RHOXHL(K))*FRACZ<a name='517'>
+          RRHOXFL(K)=1./RHOXFL(K)<a name='518'>
+          DUDZ =  (UX(K-1)  - UX(K))  *RDZA(K)<a name='519'>
+          DVDZ =  (VX(K-1)  - VX(K))  *RDZA(K)<a name='520'>
+          SVS(K)= DUDZ*DUDZ + DVDZ*DVDZ<a name='521'>
+          DQWDZ(K) =  (QWX(K-1)  - QWX(K))  *RDZA(K)<a name='522'>
+          DTLDZ(K) =  (THLX(K-1)  - THLX(K))  *RDZA(K)<a name='523'>
+       ENDDO<a name='524'>
+<font color=#447700>!write(*,*)'dzq', dzq<a name='525'></font>
+<font color=#447700>!write(*,*)'dza', dza<a name='526'></font>
+       <font color=#447700>!     Pressure at the surface (in centibars)<a name='527'></font>
+       PRESFL(KTE+1)=psfcpa(i)<a name='528'>
+       rexnerfl(kte+1)=(pref/presfl(kte+1))**rcp<a name='529'>
+       exnerfl(kte+1)=1./rexnerfl(kte+1)<a name='530'>
+       <font color=#447700>!     Saturation Mixing Ratio at Surface<a name='531'></font>
+       q0s=ep_2/(PRESFL(KTE+1)/(100.*SVP1PA*EXP(svp2*(tskx-svpt0)/(tskx-svp3)))-1.)<a name='532'>
+       <font color=#447700>!     COMPUTE SOIL POTENTIAL TEMPERATURE<a name='533'></font>
+       THGB = TSKX * rexnerfl(kte+1)<a name='534'>
+       <font color=#447700>!     DENSITY AT THE SURFACE<a name='535'></font>
+       RHOXSF=(PRESFL(KTE+1))/(r_d*TVX(kte))<a name='536'>
+       <font color=#447700>!     More surface variables<a name='537'></font>
+       WSPD1(i)=SQRT(UX(KTE)*UX(KTE)+VX(KTE)*VX(KTE))+1.e-4<a name='538'>
+       THV0=THGB*(1.+ep_1*Q0S)<a name='539'>
+       DTHV=(THVX(KTE)-THV0)<a name='540'>
+       gothv = g/thvx(kte)<a name='541'>
+       <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='542'></font>
+       ustx = wspd1(i)*vk/(gz1oz0(i)-psim(i))<a name='543'>
+       ustxm = amax1(ustx,0.1)<a name='544'>
+       if ((xland(i)-1.5).lt.0)  ustx = ustxm   <a name='545'>
+       <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='546'></font>
+       <font color=#447700>!     <a name='547'></font>
+       <font color=#447700>!     <a name='548'></font>
+       <font color=#447700>!     ---4---   Calculate the buoyancy jump at flux levels<a name='549'></font>
+       <font color=#447700>!     <a name='550'></font>
+       call <A href='../../html_code/phys/module_bl_gbmpbl.F.html#N2'>n2</A><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="N2_1">(thlx,exnerfl,epop,qwx,cpoxlv,rdza,            &amp;<a name='551'>
+            rexnerfl,kts,kte,nsquar,rcldb,xlvocp,svp1pa)<a name='552'>
+       nsquar(kte+1)=  g/thvx(kte) * dthv / zax(kte)<a name='553'>
+       <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='554'></font>
+       <font color=#447700>!     <a name='555'></font>
+       <font color=#447700>!     ---5--- Calculate the pbl height and length scale<a name='556'></font>
+       <font color=#447700>!     <a name='557'></font>
+       call <A href='../../html_code/phys/module_bl_gbmpbl.F.html#PBLHGT'>pblhgt</A><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PBLHGT_1">( &amp;<a name='558'>
+            <font color=#447700>! input variables &amp;<a name='559'></font>
+       zqx,kts,kte, &amp;<a name='560'>
+            nsquar,tke,presfl,rhoxfl,rcldb,exnerfl, &amp;<a name='561'>
+            rttenx,thvx,thlx,thx,qwx,rexnerhl,qcx, &amp;<a name='562'>
+            xfr,xlvocp,aone,atwo,rstbl,            &amp;<a name='563'>
+            <font color=#447700>! output variables &amp;<a name='564'></font>
+       bbls,pblx, &amp;<a name='565'>
+            ktop,iconv,kmix2dx,kpbl2dx)<a name='566'>
+       <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='567'></font>
+       <font color=#447700>!     <a name='568'></font>
+       <font color=#447700>!     ---6---   Compute diffusivity profiles<a name='569'></font>
+       <font color=#447700>!     <a name='570'></font>
+       do pass = 1,2<a name='571'>
+          call <A href='../../html_code/phys/module_bl_gbmpbl.F.html#MY'>my</A><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MY_1">( &amp;<a name='572'>
+               <font color=#447700>! Input variables &amp;<a name='573'></font>
+          bbls,nsquar,tke,iconv,ktop,thlx,thx,qwx,     &amp;<a name='574'>
+               xlvocp,rcldb,rexnerhl,aone,atwo,kts,kte, &amp;<a name='575'>
+               <font color=#447700>! Output variables &amp;<a name='576'></font>
+          kzm,kth,kethl )<a name='577'>
+          <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='578'></font>
+          <font color=#447700>!     <a name='579'></font>
+          <font color=#447700>!     ---7---    Implicit diffusion of thetal, total water<a name='580'></font>
+          <font color=#447700>!     <a name='581'></font>
+          <font color=#447700>!     First find the coefficients that apply to all scalars at half-levels<a name='582'></font>
+          do k = 1, kte<a name='583'>
+             if(k.eq.1)then<a name='584'>
+                aimp(k)=0.<a name='585'>
+             else<a name='586'>
+                aimp(k)=-(rhoxfl(k)*rrhoxhl(k))* &amp;<a name='587'>
+                     kth(k) * dt2 *rdzq(k)*rdza(k)<a name='588'>
+             endif<a name='589'>
+             if(k.eq.kte)then<a name='590'>
+                cimp(k)=0.<a name='591'>
+             else<a name='592'>
+                cimp(k)=-(rhoxfl(k+1)*rrhoxhl(k))* &amp;<a name='593'>
+                     kth(k+1) * dt2 *rdzq(k)*rdza(k+1)<a name='594'>
+             endif<a name='595'>
+             bimp(k) = 1 - aimp(k) - cimp(k)<a name='596'>
+             <font color=#447700>!     Now find right side for various scalars:<a name='597'></font>
+             <font color=#447700>!     No flux out top, so no (k.eq.1)<a name='598'></font>
+             if(k.eq.kte)then  <font color=#447700>! at surface<a name='599'></font>
+                <font color=#447700>!     Include surface latent heat flux<a name='600'></font>
+                rimp2(k) = qwx(k) + dt2 * qfxx*rrhoxhl(k)*rdzq(kte)<a name='601'>
+                <font color=#447700>!     Include surface sensible heat flux<a name='602'></font>
+                rimp1(k) = thlx(k) + &amp;<a name='603'>
+                     dt2 * hfxx*rrhoxhl(k)*r1cp*rdzq(kte)*rexnerhl(kte)<a name='604'>
+             else<a name='605'>
+                rimp2(k) = qwx(k)<a name='606'>
+                rimp1(k) = thlx(k)<a name='607'>
+             endif<a name='608'>
+          enddo<a name='609'>
+          call <A href='../../html_code/phys/module_ra_flg.F.html#TRIDAG'>tridag</A><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRIDAG_1">(aimp,bimp,cimp,rimp1,uimp1,kte)<a name='610'>
+          call <A href='../../html_code/phys/module_ra_flg.F.html#TRIDAG'>tridag</A><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRIDAG_2">(aimp,bimp,cimp,rimp2,uimp2,kte)<a name='611'>
+          <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='612'></font>
+          <font color=#447700>!     <a name='613'></font>
+          <font color=#447700>!     Recompute the buoyancy jump at flux levels<a name='614'></font>
+          <font color=#447700>!     <a name='615'></font>
+          call <A href='../../html_code/phys/module_bl_gbmpbl.F.html#N2'>n2</A><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="N2_2">(uimp1,exnerfl,epop,uimp2,cpoxlv,rdza,       &amp;<a name='616'>
+	       rexnerfl, kts,kte,nsquar,rcldb,xlvocp,svp1pa)<a name='617'>
+	       <font color=#447700>!NT new recompute also n2 at sfc!!<a name='618'></font>
+               <font color=#447700>! THLX(K) = THX(K) - XLVOCP * rexnerhl(K) * QCX(K)<a name='619'></font>
+               THX_t = uimp1(KTE) + XLVOCP * rexnerhl(KTE) * QCX(KTE)<a name='620'>
+               THVX_t=THX_t*TVCON<a name='621'>
+               DTHV_t=(THVX_t-THV0)<a name='622'>
+               nsquar(kte+1)=  g/thvx_t * dthv_t / zax(kte)<a name='623'>
+	       <font color=#447700>!NT end<a name='624'></font>
+          <font color=#447700>!     Update only nsquar, then go back<a name='625'></font>
+       <font color=#447700>!TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT<a name='626'></font>
+       <font color=#447700>!<a name='627'></font>
+       <font color=#447700>!       Recompute pbl-height? since n2 changes; use uimp1 instead thlx<a name='628'></font>
+       <font color=#447700>!       TEST!!!<a name='629'></font>
+       <font color=#447700>!<a name='630'></font>
+<font color=#447700>!NT       call pblhgt( &amp;<a name='631'></font>
+<font color=#447700>!NT            ! input variables &amp;<a name='632'></font>
+<font color=#447700>!NT       zqx,kts,kte, &amp;<a name='633'></font>
+<font color=#447700>!NT            nsquar,tke,presfl,rhoxfl,rcldb,exnerfl, &amp;<a name='634'></font>
+<font color=#447700>!NT            rttenx,thvx,uimp1,thx,qwx,rexnerhl,qcx, &amp;<a name='635'></font>
+<font color=#447700>!NT            xfr,xlvocp,aone,atwo,rstbl, &amp;<a name='636'></font>
+<font color=#447700>!NT            ! output variables &amp;<a name='637'></font>
+<font color=#447700>!NT       bbls,pblx, &amp;<a name='638'></font>
+<font color=#447700>!NT            ktop,iconv,kmix2dx,kpbl2dx)<a name='639'></font>
+       <font color=#447700>!TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT<a name='640'></font>
+       enddo<a name='641'>
+       <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='642'></font>
+       <font color=#447700>!     <a name='643'></font>
+       <font color=#447700>!     Update the scalars (only after second pass)<a name='644'></font>
+       <font color=#447700>!     <a name='645'></font>
+       <font color=#447700>!     Calculate new values of thx, qx and qcx using new values of thlx and qcx.<a name='646'></font>
+       do  k = 1, kte<a name='647'>
+          thlx(k) = uimp1(k)<a name='648'>
+          qwx(k) = uimp2(k)<a name='649'>
+          if(k.ge.2) DQWDZ(K) = (QWX(K-1) - QWX(K)) *RDZA(K)<a name='650'>
+          if(k.ge.2) DTLDZ(K) = (THLX(K-1) - THLX(K)) *RDZA(K)<a name='651'>
+          templ = thlx(k)*exnerhl(k)<a name='652'>
+          temps = templ<a name='653'>
+          rvls = ep_2/ &amp;<a name='654'>
+               (preshl(k)/(100.*svp1pa*EXP(svp2*(temps-svpt0)/(temps-svp3)))-1.)<a name='655'>
+          do iteration = 1, 3<a name='656'>
+             temps = temps  + ((templ-temps)*cp/xlv + qwx(k)-rvls)/ &amp;<a name='657'>
+                  (cp/xlv+ep_2*xlv*rvls/r_d/temps/temps)<a name='658'>
+             rvls = ep_2/ &amp;<a name='659'>
+                  (preshl(k)/(100.*svp1pa*EXP(svp2*(temps-svpt0)/(temps-svp3)))-1.)<a name='660'>
+          enddo<a name='661'>
+          qcx(k)=max(qwx(k)-rvls,0.)<a name='662'>
+          qx(k) = qwx(k) - qcx(k)<a name='663'>
+          thx(k) = (templ+qcx(k)*xlv/cp) / exnerhl(k) <font color=#447700>! theta_l<a name='664'></font>
+          THVX(K)=THX(K)*(1.+ep_1*QX(K)-QCX(K)) <font color=#447700>!NT is this GB01:A13 then it should<a name='665'></font>
+<font color=#447700>!NT       qx=q_v ; qwx=q_t; qcx=q_l<a name='666'></font>
+<font color=#447700>!nt thvx is theta virtual<a name='667'></font>
+       ENDDO<a name='668'>
+       <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='669'></font>
+       <font color=#447700>!     <a name='670'></font>
+       <font color=#447700>!     ---8--- Implicit diffusion of momentum<a name='671'></font>
+       <font color=#447700>!     <a name='672'></font>
+       <font color=#447700>!     First find the coefficients that apply to winds at half-levels<a name='673'></font>
+       do k = 1, kte<a name='674'>
+          if(k.eq.1)then<a name='675'>
+             aimp(k)=0.<a name='676'>
+          else<a name='677'>
+             aimp(k)=-(rhoxfl(k)*rrhoxhl(k))* &amp;<a name='678'>
+                  kzm(k) * dt2 *rdzq(k)*rdza(k)<a name='679'>
+          endif<a name='680'>
+          if(k.eq.kte)then<a name='681'>
+             cimp(k)=0.<a name='682'>
+          else<a name='683'>
+             cimp(k)=-(rhoxfl(k+1)*rrhoxhl(k))* &amp;<a name='684'>
+                  kzm(k+1) * dt2 *rdzq(k)*rdza(k+1)<a name='685'>
+          endif<a name='686'>
+          bimp(k) = 1 - aimp(k) - cimp(k)<a name='687'>
+          <font color=#447700>!     Now find right side <a name='688'></font>
+          <font color=#447700>!     No flux out top, so no (k.eq.1)<a name='689'></font>
+          if(k.eq.kte)then<a name='690'>
+             <font color=#447700>!     At surface<a name='691'></font>
+             UFLXP=-USTX*USTX*UX(KTE)/WSPD1(i)<a name='692'>
+             VFLXP=-USTX*USTX*VX(KTE)/WSPD1(i)<a name='693'>
+             <font color=#447700>!     Include surface momentum fluxes<a name='694'></font>
+             rimp1(k) = ux(k) + dt2 *  &amp;<a name='695'>
+                  uflxp * (rhoxsf*rrhoxhl(k)) *rdzq(kte)<a name='696'>
+             rimp2(k) = vx(k) + dt2 *  &amp;<a name='697'>
+                  vflxp * (rhoxsf*rrhoxhl(k)) *rdzq(kte)<a name='698'>
+          else<a name='699'>
+             rimp1(k) = ux(k)<a name='700'>
+             rimp2(k) = vx(k)<a name='701'>
+          endif<a name='702'>
+       enddo<a name='703'>
+       call <A href='../../html_code/phys/module_ra_flg.F.html#TRIDAG'>tridag</A><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRIDAG_3">(aimp,bimp,cimp,rimp1,uimp1,kte)<a name='704'>
+       call <A href='../../html_code/phys/module_ra_flg.F.html#TRIDAG'>tridag</A><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRIDAG_4">(aimp,bimp,cimp,rimp2,uimp2,kte)<a name='705'>
+       <font color=#447700>!     Update the winds<a name='706'></font>
+       do  k = 1, kte<a name='707'>
+          ux(k) = uimp1(k)<a name='708'>
+          vx(k) = uimp2(k)<a name='709'>
+          if(k.ge.2)then<a name='710'>
+             DUDZ =  (UX(K-1)  - UX(K))  *RDZA(K)<a name='711'>
+             DVDZ =  (VX(K-1)  - VX(K))  *RDZA(K)<a name='712'>
+             SVS(K)= DUDZ*DUDZ + DVDZ*DVDZ<a name='713'>
+          endif<a name='714'>
+       enddo<a name='715'>
+       <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='716'></font>
+       <font color=#447700>!     <a name='717'></font>
+       <font color=#447700>!     ---9---    Implicit diffusion of cloud ice<a name='718'></font>
+       <font color=#447700>!     <a name='719'></font>
+       <font color=#447700>!     First find the coefficients that apply to all scalars at half-levels<a name='720'></font>
+       do k = 1, kte<a name='721'>
+          if(k.eq.1)then<a name='722'>
+             aimp(k)=0.<a name='723'>
+          else<a name='724'>
+             aimp(k)=-(rhoxfl(k)*rrhoxhl(k))* &amp;<a name='725'>
+                  kth(k) * dt2 *rdzq(k)*rdza(k)<a name='726'>
+          endif<a name='727'>
+          if(k.eq.kte)then<a name='728'>
+             cimp(k)=0.<a name='729'>
+          else<a name='730'>
+             cimp(k)=-(rhoxfl(k+1)*rrhoxhl(k))* &amp;<a name='731'>
+                  kth(k+1) * dt2 *rdzq(k)*rdza(k+1)<a name='732'>
+          endif<a name='733'>
+          bimp(k) = 1 - aimp(k) - cimp(k)<a name='734'>
+          <font color=#447700>!     Now find right side for various scalars:<a name='735'></font>
+          <font color=#447700>!     No flux out top, so no (k.eq.1)<a name='736'></font>
+          <font color=#447700>!     No flux in bottom, so no (k.eq.kte)<a name='737'></font>
+          rimp1(k) = qix(k)<a name='738'>
+          <font color=#447700>!            rimp2(k) = qncx(k)<a name='739'></font>
+       enddo<a name='740'>
+       call <A href='../../html_code/phys/module_ra_flg.F.html#TRIDAG'>tridag</A><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRIDAG_5">(aimp,bimp,cimp,rimp1,qix,kte)<a name='741'>
+       <font color=#447700>!         call tridag(aimp,bimp,cimp,rimp2,qncx,kte)<a name='742'></font>
+       <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='743'></font>
+       <font color=#447700>!     <a name='744'></font>
+       <font color=#447700>!     ---10---   Prediction of TKE<a name='745'></font>
+       <font color=#447700>!     <a name='746'></font>
+       <font color=#447700>!     Features:<a name='747'></font>
+       <font color=#447700>!     a. Explicit calculation of buoyancy and shear terms using<a name='748'></font>
+       <font color=#447700>!     time=t+1 values of thetal, qw, and winds<a name='749'></font>
+       <font color=#447700>!     b. Surface TKE is diagnosed<a name='750'></font>
+       <font color=#447700>!     c. Semi-implicit calculation of dissipation term and<a name='751'></font>
+       <font color=#447700>!     implicit calculation of turbulent transfer term <a name='752'></font>
+       <font color=#447700>!     First, buoyancy and shear terms<a name='753'></font>
+       DO K=2,KTE<a name='754'>
+          <font color=#447700>!     Compute buoyancy term with new values of thetal<a name='755'></font>
+          BOUYAN(K)=-KTH(K)*nsquar(K)<a name='756'>
+          <font color=#447700>!     Compute shear term with new values of svs<a name='757'></font>
+          SHEAR(K)  = KZM(K) * SVS(K)<a name='758'>
+       ENDDO<a name='759'>
+       do ilay = 1,iconv<a name='760'>
+          k = ktop(ilay)<a name='761'>
+          if(qcx(k).gt.1e-8.and.k.gt.1) bouyan(k) = bouyan(k) - &amp; <font color=#447700>!NT GB01:A14<a name='762'></font>
+               rttenx(k)*(presfl(k+1)-presfl(k)) * rrhoxfl(k) &amp;<a name='763'>
+               * rexnerfl(k) / thvx(k) <a name='764'>
+       enddo<a name='765'>
+       <font color=#447700>!     TKE at top is fixed<a name='766'></font>
+       tke(1)=0.<a name='767'>
+       bbls(1)= 0.0<a name='768'>
+       <font color=#447700>!     Diagnose TKE at surface, following MY 82, B1 ** (2/3) / 2 = 3.25<a name='769'></font>
+       tke(kte+1)=3.25 * ustx * ustx <font color=#447700>! normal<a name='770'></font>
+       <font color=#447700>!     tke(kte+1)=.33*wstar**2 ! dryrun<a name='771'></font>
+       <font color=#447700>!     Now the implicit calculations<a name='772'></font>
+       <font color=#447700>!     First find the coefficients that apply for full levels<a name='773'></font>
+       do k = 2, kte<a name='774'>
+          if(k.eq.2)then<a name='775'>
+             aimp(k-1)=0.<a name='776'>
+          else<a name='777'>
+             aimp(k-1)=-(rhoxhl(k-1)*rrhoxfl(k))* &amp;<a name='778'>
+                  kethl(k-1)*dt2*rdzq(k-1)*rdza(k)<a name='779'>
+          endif<a name='780'>
+          if(k.eq.kte)then<a name='781'>
+             cimp(k-1)=0.<a name='782'>
+             <font color=#447700>!     Account for implicit part of flux between level kte and surface<a name='783'></font>
+             if(bbls(k).gt.0)then<a name='784'>
+                bimp(k-1) = 1 - aimp(k-1) - cimp(k-1) + &amp;<a name='785'>
+                     dt2 * ( sqrt(tke(k))*rczero/bbls(k) + &amp;<a name='786'>
+                     rhoxhl(k)*rrhoxfl(k)*kethl(k)*rdzq(k)*rdza(k) )<a name='787'>
+             else<a name='788'>
+                bimp(k-1) = 1 - aimp(k-1) - cimp(k-1) + &amp;<a name='789'>
+                     dt2 * rhoxhl(k)*rrhoxfl(k)* kethl(k)*rdzq(k)*rdza(k)<a name='790'>
+             endif<a name='791'>
+<a name='792'>
+          else<a name='793'>
+             cimp(k-1)=-(rhoxhl(k)*rrhoxfl(k))* &amp;<a name='794'>
+                  kethl(k)*dt2*rdzq(k)*rdza(k)<a name='795'>
+             tbbls = max(bbls(k),bbls(k+1))<a name='796'>
+             if(tbbls.gt.0)then<a name='797'>
+                bimp(k-1)= 1 - aimp(k-1) - cimp(k-1) + dt2 * sqrt(tke(k))*rczero/tbbls<a name='798'>
+             else<a name='799'>
+                bimp(k-1)= 1 - aimp(k-1) - cimp(k-1)<a name='800'>
+             endif<a name='801'>
+          endif<a name='802'>
+          <font color=#447700>!     Now find right side <a name='803'></font>
+          if(k.eq.kte)then<a name='804'>
+             <font color=#447700>!     Account for fixed part of flux between level kte and surface<a name='805'></font>
+             rimp1(k-1) = tke(k) + dt2 * ( SHEAR(K)+BOUYAN(K) + &amp;<a name='806'>
+                  tke(kte+1)*(rhoxhl(k)*rrhoxfl(k))*kethl(k)*rdzq(k)*rdza(k) )<a name='807'>
+          else<a name='808'>
+             rimp1(k-1) = tke(k) + dt2 * (SHEAR(K)+BOUYAN(K))<a name='809'>
+          endif<a name='810'>
+       enddo<a name='811'>
+<a name='812'>
+       call <A href='../../html_code/phys/module_ra_flg.F.html#TRIDAG'>tridag</A><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBM2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRIDAG_6">(aimp,bimp,cimp,rimp1,uimp1,kte-1)<a name='813'>
+       <font color=#447700>!     Update the tke<a name='814'></font>
+       do  k = 2, kte<a name='815'>
+          tke(k) = max(uimp1(k-1),0.001) <font color=#447700>! background tke .001<a name='816'></font>
+       enddo<a name='817'>
+       <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='818'></font>
+       <font color=#447700>!     <a name='819'></font>
+       <font color=#447700>!     ---11---   Calculation of tendencies for output to model<a name='820'></font>
+       <font color=#447700>!     <a name='821'></font>
+<a name='822'>
+       DO K=KTS,KTE<a name='823'>
+          kr = kte+1-k<a name='824'>
+          U2DTEN(I,KR)= (UX(K)-UXS(K))*RDT<a name='825'>
+          V2DTEN(I,KR)=(VX(K)-VXS(K))*RDT<a name='826'>
+          T2DTEN(I,KR)=(THX(K)-THXS(K))*EXNERHL(K)*RDT<a name='827'>
+          QV2DTEN(I,KR) = (QX(K)-QXS(K))*RDT<a name='828'>
+          qi2Dten(i,kr) = (qix(k)-qixs(k))*rdt<a name='829'>
+          qc2Dten(i,kr) = (qcx(k)-qcxs(k))*rdt<a name='830'>
+          tke2d(i,kr)=tke(k)<a name='831'>
+          kzm2d(i,kr)=kzm(k)<a name='832'>
+          kth2d(i,kr)=kth(k)<a name='833'>
+          kethl2d(i,kr)=kethl(k)<a name='834'>
+          EL2D(i,kr) = bbls(k)<a name='835'>
+       ENDDO<a name='836'>
+       <font color=#447700>!     Copy out j-dependent variables<a name='837'></font>
+       pbl(i)=pblx<a name='838'>
+       ust(i)=ustx<a name='839'>
+       kpbl1d(i)=kte+1-kpbl2dx<a name='840'>
+    end do<a name='841'>
+    <font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='842'></font>
+    RETURN<a name='843'>
+  END SUBROUTINE GBM2D<a name='844'>
+  <font color=#447700>!CCCCCCCCCCCCCCCCCCCCC END OF PBL SUBROUTINE CCCCCCCCCCCCCCCCCCCCCCCCC<a name='845'></font>
+  <font color=#447700>!<a name='846'></font>
+<A NAME='TRIDAG'><A href='../../html_code/phys/module_bl_gbmpbl.F.html#TRIDAG' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='847'>
+  <font color=#993300>subroutine </font><font color=#cc0000>tridag</font>(a,b,c,r,u,n) <A href='../../call_to/TRIDAG.html' TARGET='index'>7</A>,<A href='../../call_from/TRIDAG.html' TARGET='index'>2</A><a name='848'>
+    <font color=#447700>!     Solves tridiagonal matrix<a name='849'></font>
+    <font color=#447700>!     See "Numerical Recipes in Fortran 77", p. 42<a name='850'></font>
+    implicit none<a name='851'>
+    integer n,nmax<a name='852'>
+    real a(n),b(n),c(n),r(n),u(n)<a name='853'>
+    parameter (nmax=100)<a name='854'>
+    integer j<a name='855'>
+    real rbet,gam(nmax)<a name='856'>
+    rbet=1./b(1)<a name='857'>
+    u(1)=r(1)*rbet<a name='858'>
+    do j=2,n<a name='859'>
+       gam(j)=c(j-1)*rbet<a name='860'>
+       rbet=1./(b(j)-a(j)*gam(j))<a name='861'>
+       u(j)=(r(j)-a(j)*u(j-1))*rbet<a name='862'>
+    end do<a name='863'>
+    do  j=n-1,1,-1<a name='864'>
+       u(j)=u(j)-gam(j+1)*u(j+1)<a name='865'>
+    end do<a name='866'>
+    return<a name='867'>
+  end subroutine tridag<a name='868'>
+      <a name='869'>
+<A NAME='PBLHGT'><A href='../../html_code/phys/module_bl_gbmpbl.F.html#PBLHGT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='870'>
+  <font color=#993300>subroutine </font><font color=#cc0000>pblhgt</font>( &amp; <A href='../../call_to/PBLHGT.html' TARGET='index'>1</A><a name='871'>
+       <font color=#447700>! input variables<a name='872'></font>
+       zqx,kts,kte, &amp;<a name='873'>
+       nsquar,tke,presfl,rhoxfl,rcldb,exnerfl, &amp;<a name='874'>
+       rttenx,thvx,thlx,thx,qwx,rexnerhl,qcx, &amp;<a name='875'>
+       xfr,xlvocp,aone,atwo,rstbl,            &amp;<a name='876'>
+       <font color=#447700>! output variables<a name='877'></font>
+       bbls,pblx, &amp;<a name='878'>
+       ktop,iconv,kmix2dx,kpbl2dx &amp;<a name='879'>
+       )<a name='880'>
+    <a name='881'>
+    implicit none<a name='882'>
+    <font color=#447700>!     Input variables<a name='883'></font>
+    real zqx(kts:kte+2)<a name='884'>
+    real nsquar(kts:kte+1),tke(kts:kte+1),presfl(kts:kte+1),rhoxfl(kts:kte+1), &amp;<a name='885'>
+         rcldb(kts:kte+1),exnerfl(kts:kte+1)<a name='886'>
+    real rttenx(kts:kte),thvx(kts:kte),thlx(kts:kte),thx(kts:kte),qwx(kts:kte), &amp;<a name='887'>
+         rexnerhl(kts:kte),qcx(kts:kte)<a name='888'>
+    real xfr,xlvocp,aone,atwo,rstbl<a name='889'>
+    <font color=#447700>!     Output variables<a name='890'></font>
+    real bbls(kts:kte+1), pblx<a name='891'>
+    integer ktop(kts:kte+1), iconv,kmix2dx,kpbl2dx, &amp;<a name='892'>
+            ktop_save(kts:kte+1)<a name='893'>
+<a name='894'>
+    <font color=#447700>!     Local variables<a name='895'></font>
+    integer kbot(kts:kte+1),kts,kte,kstart<a name='896'>
+    integer istabl,ibeg,ilay,nlev,k,itemp<a name='897'>
+    real blinf,rnnll,tkeavg,trnnll,radnnll,delthvl,elambda, &amp;<a name='898'>
+         bige,biga,entnnll,tbbls<a name='899'>
+<a name='900'>
+    <font color=#447700>!     Find noncontiguous convectively unstable layers<a name='901'></font>
+    iconv = 0<a name='902'>
+    istabl = 1<a name='903'>
+    do k=2,kte+1   <font color=#447700>!nt nscquar is defined at kte+1 after the call to n2<a name='904'></font>
+       if(nsquar(k).le.0)then   <a name='905'>
+          if(istabl.eq.1)then<a name='906'>
+             iconv = iconv + 1<a name='907'>
+             ktop(iconv)=k<a name='908'>
+          endif<a name='909'>
+          istabl=0<a name='910'>
+          kbot(iconv)=k<a name='911'>
+       else<a name='912'>
+          istabl=1<a name='913'>
+          BBLS(K) = MIN(rstbl*SQRT(TKE(K)/NSQUAR(K)),karman*ZQX(K))<a name='914'>
+       endif<a name='915'>
+    enddo<a name='916'>
+    <font color=#447700>!NT new<a name='917'></font>
+<font color=#447700>!     if(ktop(iconv).eq.kte+1 .and. kbot(iconv).eq.kte+1)then<a name='918'></font>
+<font color=#447700>!	     iconv=iconv-1 !NT don't let the bottome layer be a convective top.<a name='919'></font>
+<font color=#447700>!     end if<a name='920'></font>
+    <font color=#447700>!NT end<a name='921'></font>
+	      <a name='922'>
+    <font color=#447700>!     Now see if they have sufficient buoyant convection to connect<a name='923'></font>
+<font color=#447700>!NT save ktops to be able to reset top of a merged layers<a name='924'></font>
+   ktop_save=ktop<a name='925'>
+<font color=#447700>!NT put this if-statement in to make sure;<a name='926'></font>
+  IF(iconv.ge.1)THEN<a name='927'>
+<font color=#447700>!NT<a name='928'></font>
+    ibeg = 1<a name='929'>
+2745 do ilay = ibeg, iconv<a name='930'>
+       blinf = xfr*(zqx(ktop(ilay)-1) - zqx(kbot(ilay)+1))<a name='931'>
+       <font color=#447700>!     Find average n*n*l*l for layer<a name='932'></font>
+       rnnll = 0.<a name='933'>
+       tkeavg = 0.<a name='934'>
+       nlev = kbot(ilay)-ktop(ilay)+1<a name='935'>
+       do k = ktop(ilay), kbot(ilay)<a name='936'>
+          bbls(k) = min(blinf,karman*ZQX(K))<a name='937'>
+          rnnll = rnnll + nsquar(k)*bbls(k)*bbls(k)   <font color=#447700>!NT is not averaged, but correct<a name='938'></font>
+          tkeavg = tkeavg + tke(k) / nlev<a name='939'>
+       enddo<a name='940'>
+       <font color=#447700>!     First extend up<a name='941'></font>
+       kstart=ktop(ilay)-1<a name='942'>
+<font color=#447700>!NT orig       do k = ktop(ilay)-1,2,-1<a name='943'></font>
+       do k = kstart,2,-1<a name='944'>
+          ktop(ilay)=k        <font color=#447700>! We always go up at least one, for the entrainment interface<a name='945'></font>
+          bbls(k) = min(karman * ZQX(K),blinf)<a name='946'>
+          trnnll = nsquar(k)*bbls(k)*bbls(k)<a name='947'>
+          if(trnnll*nlev.ge.-0.5*rnnll) goto 2746 <font color=#447700>! Is it the top?<a name='948'></font>
+<font color=#447700>!NT test          if(trnnll*nlev.ge.-0.7*rnnll) goto 2746 ! Requires stronger jump to be top<a name='949'></font>
+<font color=#447700>!NT doesn't workkpbl           if(trnnll*nlev.ge.-0.5*rnnll.and. &amp;<a name='950'></font>
+<font color=#447700>!NT n2 gets recomputed      nsquar(k).ge.1.e-6) goto 2746 ! Avoids weak layers with even weaker tops<a name='951'></font>
+<font color=#447700>!NT after pblhgt                           ! Imagine n2 small negative over several layers<a name='952'></font>
+                                           <font color=#447700>! then average rnnll is very small and a very weak <a name='953'></font>
+                                           <font color=#447700>! pos n2 is enough to be 'inversion' top. This makes<a name='954'></font>
+                                           <font color=#447700>! sure that we go up at least one more.<a name='955'></font>
+          if(ilay.gt.1) then<a name='956'>
+             if(ktop(ilay).eq.kbot(ilay-1))then <font color=#447700>! did we merge with layer above?<a name='957'></font>
+                ibeg = ilay - 1<a name='958'>
+   <font color=#447700>!NT orig     ktop(ibeg)=ktop(ibeg)+1 !NT not correct if one up was not inversion, the new thicker<a name='959'></font>
+                                        <font color=#447700>!NT layer might have different average properties, should<a name='960'></font>
+                                        <font color=#447700>!NT reset to original ktop<a name='961'></font>
+                ktop(ibeg)=ktop_save(ibeg) <font color=#447700>!NT new<a name='962'></font>
+                kbot(ibeg)=kbot(ibeg+1)<a name='963'>
+                iconv = iconv - 1<a name='964'>
+                do itemp = ibeg+1,iconv <font color=#447700>!NT if there's a layer below decrease layer index<a name='965'></font>
+                   ktop(itemp)=ktop(itemp+1)<a name='966'>
+                   kbot(itemp)=kbot(itemp+1)<a name='967'>
+                   ktop_save(itemp)=ktop_save(itemp+1) <font color=#447700>!NT new<a name='968'></font>
+                enddo<a name='969'>
+                goto 2745        <font color=#447700>! recompute for the new, deeper layer<a name='970'></font>
+             endif<a name='971'>
+          endif<a name='972'>
+          rnnll = rnnll + trnnll<a name='973'>
+          nlev = nlev + 1 <font color=#447700>!NT moved up<a name='974'></font>
+       enddo<a name='975'>
+       <font color=#447700>!     Add radiative/entrainment contribution to total<a name='976'></font>
+2746   k = ktop(ilay) <a name='977'>
+       radnnll = 0.<a name='978'>
+       if(qcx(k).gt.1e-8) radnnll =  &amp;<a name='979'>
+            rttenx(k)*(presfl(k+1)-presfl(k))/ &amp;<a name='980'>
+            (rhoxfl(k)*thvx(k)*exnerfl(k))<a name='981'>
+       entnnll = 0.<a name='982'>
+       if(k.ge.3)then<a name='983'>
+          delthvl = (thlx(k-2)+thx(k-2)*ep_1*qwx(k-2)) &amp;<a name='984'>
+               - (thlx(k) + thx(k)*ep_1*qwx(k))<a name='985'>
+          elambda = xlvocp*rcldb(k)*rexnerhl(k)/max(delthvl,0.1)<a name='986'>
+          bige = 0.8 * elambda<a name='987'>
+          biga = aone * (1 + atwo * bige)<a name='988'>
+          entnnll = biga * sqrt(tkeavg**3) / bbls(k)<a name='989'>
+       endif<a name='990'>
+       if(tkeavg.gt.0.) rnnll = rnnll + min(0.,bbls(k)/sqrt(tkeavg) * (radnnll + entnnll) )<a name='991'>
+       <font color=#447700>!     Now extend down<a name='992'></font>
+       do k = kbot(ilay)+1,kte+1<a name='993'>
+          tbbls = min(karman * ZQX(K),blinf)<a name='994'>
+          trnnll = nsquar(k)*tbbls*tbbls<a name='995'>
+          if(trnnll*nlev.ge.-0.5*rnnll)goto 2747 <font color=#447700>!  Is it the bottom?<a name='996'></font>
+          kbot(ilay)=k<a name='997'>
+          if(ilay.lt.iconv.and.kbot(ilay).eq.ktop(ilay+1))then <font color=#447700>! did we merge with layer below?<a name='998'></font>
+<font color=#447700>!NT orig             ktop(ilay)=ktop(ilay)+1<a name='999'></font>
+             ktop(ilay)=ktop_save(ilay)<a name='1000'>
+             kbot(ilay)=kbot(ilay+1)<a name='1001'>
+             iconv = iconv - 1<a name='1002'>
+             do itemp = ilay+1,iconv<a name='1003'>
+                ktop(itemp)=ktop(itemp+1)<a name='1004'>
+                kbot(itemp)=kbot(itemp+1)<a name='1005'>
+                ktop_save(itemp)=ktop_save(itemp+1)<a name='1006'>
+             enddo<a name='1007'>
+             goto 2745        <font color=#447700>! recompute for the new, deeper layer<a name='1008'></font>
+          endif<a name='1009'>
+          rnnll = rnnll + trnnll<a name='1010'>
+          bbls(k)=tbbls<a name='1011'>
+          nlev = nlev + 1<a name='1012'>
+       enddo<a name='1013'>
+2747   continue<a name='1014'>
+    enddo <font color=#447700>!NT all sorting is done, go through layers and calk l<a name='1015'></font>
+    do ilay = 1, iconv<a name='1016'>
+       blinf = xfr*(zqx(ktop(ilay)-1) - zqx(kbot(ilay)+1))<a name='1017'>
+       do k = ktop(ilay),kbot(ilay)<a name='1018'>
+          bbls(k) = min(karman * ZQX(K),blinf)<a name='1019'>
+       enddo<a name='1020'>
+    enddo<a name='1021'>
+<font color=#447700>!NT added to check if iconv .ge. 1<a name='1022'></font>
+ ENDIF  <a name='1023'>
+<font color=#447700>!NT end<a name='1024'></font>
+    <font color=#447700>!     We should now have tops and bottoms for iconv layers<a name='1025'></font>
+    <font color=#447700>! NT not clear how kpbl2dx should work, but doesn't matter since<a name='1026'></font>
+    <font color=#447700>! NT only kmix2dx is used no matter what kpbl2dx is.<a name='1027'></font>
+    <font color=#447700>! NT Looks like it could be used to choose between mixing pbl and<a name='1028'></font>
+    <font color=#447700>! NT convective pbl height if there are more than 1 unstable layers<a name='1029'></font>
+			<a name='1030'>
+    if(iconv.gt.0)then<a name='1031'>
+       if(kbot(iconv).eq.kte+1)then<a name='1032'>
+          kmix2dx = ktop(iconv)<a name='1033'>
+          if(kpbl2dx.ge.0)then<a name='1034'>
+             if(iconv.gt.1)then<a name='1035'>
+                kpbl2dx = ktop(iconv-1)<a name='1036'>
+             else<a name='1037'>
+                kpbl2dx = kmix2dx<a name='1038'>
+             endif<a name='1039'>
+          else<a name='1040'>
+             kpbl2dx=-kpbl2dx<a name='1041'>
+          endif<a name='1042'>
+       else<a name='1043'>
+          kmix2dx = kte<a name='1044'>
+          if(kpbl2dx.ge.0)then<a name='1045'>
+             kpbl2dx = ktop(iconv)<a name='1046'>
+          else<a name='1047'>
+             kpbl2dx = -kpbl2dx<a name='1048'>
+          endif<a name='1049'>
+       endif<a name='1050'>
+    else<a name='1051'>
+       kmix2dx = kte<a name='1052'>
+       if(kpbl2dx.ge.0)then<a name='1053'>
+          kpbl2dx = kmix2dx<a name='1054'>
+       else<a name='1055'>
+          kpbl2dx = -kpbl2dx<a name='1056'>
+       endif<a name='1057'>
+    endif<a name='1058'>
+    pblx=ZQX(KMIX2DX)<a name='1059'>
+    return<a name='1060'>
+  end subroutine pblhgt<a name='1061'>
+<a name='1062'>
+<a name='1063'>
+<A NAME='ROOTS'><A href='../../html_code/phys/module_bl_gbmpbl.F.html#ROOTS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1064'>
+  <font color=#993300>subroutine </font><font color=#cc0000>roots</font>(a,b,c,r1,r2) <A href='../../call_to/ROOTS.html' TARGET='index'>3</A><a name='1065'>
+    implicit none<a name='1066'>
+    real a,b,c,r1,r2,q<a name='1067'>
+    if(a.eq.0)then            <font color=#447700>! form b*x + c = 0<a name='1068'></font>
+       if(b.eq.0)then         <font color=#447700>! failure: c = 0<a name='1069'></font>
+          r1 = -9.99e33<a name='1070'>
+       else                   <font color=#447700>! b*x + c = 0<a name='1071'></font>
+          r1 = -c / b<a name='1072'>
+       endif<a name='1073'>
+       r2 = r1<a name='1074'>
+    else<a name='1075'>
+       if(b.eq.0.)then        <font color=#447700>! form a*x**2 + c = 0<a name='1076'></font>
+          if(a*c.gt.0.)then   <font color=#447700>! failure: x**2 = -c/a &lt; 0<a name='1077'></font>
+             r1 =  -9.99e33<a name='1078'>
+          else                <font color=#447700>! x**2 = -c/a <a name='1079'></font>
+             r1 = sqrt(-c/a)<a name='1080'>
+          endif<a name='1081'>
+          r2 = -r1<a name='1082'>
+       else                   <font color=#447700>! form a*x**2 + b*x + c = 0<a name='1083'></font>
+          if((b**2 - 4*a*c).lt.0.)then <font color=#447700>! failure, no real roots<a name='1084'></font>
+             r1 =  -9.99e33<a name='1085'>
+             r2 = -r1<a name='1086'>
+          else<a name='1087'>
+             q = - 0.5 * ( b + sign(1.0,b) * &amp;<a name='1088'>
+                  sqrt(b**2 - 4*a*c) )<a name='1089'>
+             r1 = q/a<a name='1090'>
+             r2 = c/q<a name='1091'>
+          endif<a name='1092'>
+       endif<a name='1093'>
+    endif<a name='1094'>
+    return<a name='1095'>
+  end subroutine roots<a name='1096'>
+<a name='1097'>
+<A NAME='N2'><A href='../../html_code/phys/module_bl_gbmpbl.F.html#N2' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1098'>
+  <font color=#993300>subroutine </font><font color=#cc0000>n2</font>(thlx,exnerfl,epop,qwx,cpoxlv,rdza,        &amp; <A href='../../call_to/N2.html' TARGET='index'>2</A><a name='1099'>
+       rexnerfl, kts,kte, nsquar,rcldb,xlvocp, svp1pa)<a name='1100'>
+    implicit none<a name='1101'>
+    <font color=#447700>!     Input/output variables<a name='1102'></font>
+    real thlx(kts:kte),exnerfl(kts:kte+1),epop(kts:kte+1),qwx(kts:kte), &amp;<a name='1103'>
+         rexnerfl(kts:kte+1),rdza(kts:kte+1),nsquar(kts:kte+1),rcldb(kts:kte+1)<a name='1104'>
+    real cpoxlv,xlvocp,svp1pa<a name='1105'>
+    <font color=#447700>!     Local variables<a name='1106'></font>
+    real templ,rvls,temps,tempv,tvbl,rcld,tvab,thvxfl,dtvdz<a name='1107'>
+    integer k,kts,kte<a name='1108'>
+<a name='1109'>
+    DO K = 2, KTE<a name='1110'>
+       <font color=#447700>!     Buoyancy is jump in thetav across flux level/dza<a name='1111'></font>
+       <font color=#447700>!     First, layer below, go up and see if anything condenses.<a name='1112'></font>
+       templ = thlx(k)*exnerfl(k)<a name='1113'>
+       rvls  = 100.*svp1pa*EXP(svp2*(templ-svpt0)/(templ-svp3))*epop(k)<a name='1114'>
+       temps=templ + (qwx(k)-rvls)/(cpoxlv + &amp;<a name='1115'>
+            ep_2*xlv*rvls/(r_d*templ**2))<a name='1116'>
+       rvls  = 100.*svp1pa*EXP(svp2*(temps-svpt0)/(temps-svp3))*epop(k)<a name='1117'>
+       rcldb(k)=max(qwx(k)-rvls,0.)<a name='1118'>
+       tempv = (templ + xlvocp*rcldb(k)) * &amp;<a name='1119'>
+            (1 + ep_1*(qwx(k)-rcldb(k)) - rcldb(k))<a name='1120'>
+       tvbl = tempv*rexnerfl(k) <a name='1121'>
+       <font color=#447700>!     Now do layer above; go down to see how much evaporates<a name='1122'></font>
+       templ = thlx(k-1)*exnerfl(k)<a name='1123'>
+       rvls  = 100.*svp1pa*EXP(svp2*(templ-svpt0)/(templ-svp3))*epop(k)<a name='1124'>
+       temps=templ+(qwx(k-1)-rvls)/(cpoxlv+ &amp;<a name='1125'>
+            ep_2*xlv*rvls/(r_d*templ**2))<a name='1126'>
+       rvls  = 100.*svp1pa*EXP(svp2*(temps-svpt0)/(temps-svp3))*epop(k)<a name='1127'>
+       rcld=max(qwx(k-1)-rvls,0.)<a name='1128'>
+       tempv = (templ + xlvocp*rcld) * &amp;<a name='1129'>
+            (1 + ep_1*(qwx(k-1)-rcld) - rcld)<a name='1130'>
+       tvab = tempv*rexnerfl(k) <a name='1131'>
+       <font color=#447700>!     <a name='1132'></font>
+       thvxfl= .5 * (tvab+tvbl)<a name='1133'>
+       dtvdz = (tvab - tvbl) *rdza(k)<a name='1134'>
+       nsquar(k) = g/thvxfl * dtvdz<a name='1135'>
+    ENDDO<a name='1136'>
+    nsquar(1)=nsquar(2)<a name='1137'>
+    return<a name='1138'>
+  end subroutine n2<a name='1139'>
+<a name='1140'>
+<A NAME='MY'><A href='../../html_code/phys/module_bl_gbmpbl.F.html#MY' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1141'>
+  <font color=#993300>subroutine </font><font color=#cc0000>my</font>( &amp; <A href='../../call_to/MY.html' TARGET='index'>1</A><a name='1142'>
+       <font color=#447700>! Input variables &amp;<a name='1143'></font>
+    bbls,nsquar,tke,iconv,ktop,thlx,thx,qwx,     &amp;<a name='1144'>
+         xlvocp,rcldb,rexnerhl,aone,atwo,kts,kte, &amp;<a name='1145'>
+         <font color=#447700>! Output variables &amp;<a name='1146'></font>
+         kzm,kth,kethl)<a name='1147'>
+    implicit none<a name='1148'>
+    real bbls(kts:kte+1),nsquar(kts:kte+1),tke(kts:kte+1),thlx(kts:kte),thx(kts:kte), &amp;<a name='1149'>
+         qwx(kts:kte),kzm(kts:kte+1),kth(kts:kte+1),kethl(kts:kte)<a name='1150'>
+    real xlvocp,rcldb(kts:kte+1),rexnerhl(kts:kte),aone,atwo<a name='1151'>
+    integer iconv,ktop(kts:kte)<a name='1152'>
+    <font color=#447700>!     Local variables<a name='1153'></font>
+    real gh,a1,b1,c1,a2,b2,a1ob1,nuk,delthvl,elambda,bige,biga,kmax,n2min<a name='1154'>
+    real sm(kts:kte+1),sh(kts:kte+1)<a name='1155'>
+    integer k,ilay,kts,kte<a name='1156'>
+    parameter(A1=0.92,B1=16.6,C1=0.08,A2=0.74,B2=10.1)<a name='1157'>
+    parameter(nuk=5.0)        <font color=#447700>!multiplier for kethl, GB01 value<a name='1158'></font>
+<a name='1159'>
+    parameter(kmax=1000.)      <font color=#447700>! max for kethl <a name='1160'></font>
+    parameter(n2min=1.e-7)     <font color=#447700>! min for n2<a name='1161'></font>
+    a1ob1 = a1/b1<a name='1162'>
+<a name='1163'>
+    <font color=#447700>!     Calculate the diffusivities for momentum, thetal, qw and tke<a name='1164'></font>
+    <font color=#447700>!     KTH and KZM are at full levels.<a name='1165'></font>
+    <font color=#447700>!     KETHL is at half levels. NT: BMG03:6/7<a name='1166'></font>
+    kzm(kte+1)=0.<a name='1167'>
+    kth(kte+1)=0.<a name='1168'>
+    kzm(1)=0.<a name='1169'>
+    kth(1)=0.<a name='1170'>
+    sm(kte+1)=1.<a name='1171'>
+    sh(kte+1)=1.<a name='1172'>
+    sm(1) = 1. <a name='1173'>
+    sh(1) = 1. <a name='1174'>
+    DO K = KTE, 2, -1<a name='1175'>
+<font color=#447700>! According on how the TKE equiation is computed, the "tke" variable in gbmpbl !NP<a name='1176'></font>
+<font color=#447700>! is equivalent to "e" in GB01 paper, or e==(q^2 / 2)  in MY82 or Gal88.       !NP<a name='1177'></font>
+<font color=#447700>! Calculations of gh (MY82, Eq.33(b) and Gal88, Eq.26) contain q^2;            !NP<a name='1178'></font>
+<font color=#447700>! therefore, gh in the code below should contain (2*tke)                       !NP<a name='1179'></font>
+       gh =-bbls(k)*bbls(k)*nsquar(k)/(2*tke(k)+1e-9) <font color=#447700>! MY82:33b/ Gal88:26<a name='1180'></font>
+       gh = min(gh,0.0233)<a name='1181'>
+       gh = max(gh,-0.28)  <font color=#447700>! according to Gal88:30;  -0.28 &lt; gh &lt; 0.0233<a name='1182'></font>
+       sm(k) = a1 * (1. - 3.*c1 - 6.*a1ob1 - 3.*a2*gh* &amp;<a name='1183'>
+            ((b2-3.*a2)*(1.-6.*a1ob1) - 3.*c1*(b2+6.*a1))) / &amp;<a name='1184'>
+            ((1. - 3.*a2*gh*(6.*a1 + b2)) * (1. - 9.*a1*a2*gh))<a name='1185'>
+       sh(k) = a2 * (1. - 6.*a1ob1) / (1. - 3.*a2*gh*(6.*a1+b2))<a name='1186'>
+<font color=#447700>! See the previous comments regarding the convention of "e", "q^2/2" and "tke".!NP<a name='1187'></font>
+<font color=#447700>! In order to use "q" in the calculations of kzm and kzh, apply "sqrt(2*tke)"  !NP<a name='1188'></font>
+       kzm(k) = min(bbls(k)*sqrt(2*tke(k))*sm(k),kmax) <a name='1189'>
+       kth(k) = min(bbls(k)*sqrt(2*tke(k))*sh(k),kmax)<a name='1190'>
+<font color=#447700>! <a name='1191'></font>
+       kethl(k)=nuk*sqrt(kzm(k)*kzm(k+1)) <font color=#447700>! GB01:A7<a name='1192'></font>
+       kethl(k)=min(kethl(k),kmax) <font color=#447700>! keep in bounds<a name='1193'></font>
+    ENDDO<a name='1194'>
+    <font color=#447700>!     Special case for tops of convective layers<a name='1195'></font>
+    <font color=#447700>! NT GB01 calls this local entrainment closure : 28<a name='1196'></font>
+     do ilay = 1,iconv<a name='1197'>
+      k = ktop(ilay)<a name='1198'>
+      IF(nsquar(k).ge.n2min)THEN <font color=#447700>!NTnew<a name='1199'></font>
+      kethl(k  )=nuk*kzm(k+1)<a name='1200'>
+      if(k.ge.3)then <font color=#447700>!NT only in combination with previous n2 test.<a name='1201'></font>
+         kethl(k-1)=0.0   <font color=#447700>!NT no transport through inversion<a name='1202'></font>
+         delthvl = (thlx(k-2)+thx(k-2)*ep_1*qwx(k-2)) - &amp;   <font color=#447700>!NT GB01:18,B12<a name='1203'></font>
+              (thlx(k) + thx(k) * ep_1 * qwx(k))<a name='1204'>
+         elambda = xlvocp*rcldb(k)*rexnerhl(k)/max(delthvl,0.1)<a name='1205'>
+         bige = 0.8 * elambda<a name='1206'>
+         biga = aone * (1 + atwo * bige)<a name='1207'>
+         kth(k) = min(kth(k), biga*sqrt(TKE(k)**3)/NSQUAR(k)/ &amp;<a name='1208'>
+              max(bbls(k),bbls(k+1)))<a name='1209'>
+         kzm(k) = min(kzm(k), kth(k) / sh(k+1) * sm(k+1)) <font color=#447700>! prandtl number from layer below<a name='1210'></font>
+        endif<a name='1211'>
+    ENDIF <font color=#447700>!NTnew end<a name='1212'></font>
+   enddo<a name='1213'>
+     <font color=#447700>!     Need KETHL at the top (top-down indexing)<a name='1214'></font>
+     KETHL(1) = kethl(2)<a name='1215'>
+     <font color=#447700>!     Replace KETHL at the surface with something non-zero (top-down indexing) <a name='1216'></font>
+     kethl(kte) = nuk*0.5*kzm(kte)<a name='1217'>
+    return<a name='1218'>
+  end subroutine my<a name='1219'>
+<a name='1220'>
+<A NAME='GBMPBLINIT'><A href='../../html_code/phys/module_bl_gbmpbl.F.html#GBMPBLINIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1221'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>gbmpblinit</font>(RUBLTEN,RVBLTEN,RTHBLTEN,RQVBLTEN,        &amp; <A href='../../call_to/GBMPBLINIT.html' TARGET='index'>1</A><a name='1222'>
+       RQCBLTEN,RQIBLTEN,P_QI,P_FIRST_SCALAR,       &amp;<a name='1223'>
+       TKE_PBL,KTH_GBM,                             &amp;<a name='1224'>
+       restart,allowed_to_read,                     &amp;<a name='1225'>
+       ids, ide, jds, jde, kds, kde,                &amp;<a name='1226'>
+       ims, ime, jms, jme, kms, kme,                &amp;<a name='1227'>
+       its, ite, jts, jte, kts, kte                 )<a name='1228'>
+    <font color=#447700>!-------------------------------------------------------------------          <a name='1229'></font>
+    IMPLICIT NONE<a name='1230'>
+    <font color=#447700>!-------------------------------------------------------------------          <a name='1231'></font>
+    LOGICAL , INTENT(IN)          :: restart,allowed_to_read<a name='1232'>
+    INTEGER , INTENT(IN)          ::  ids, ide, jds, jde, kds, kde, &amp;<a name='1233'>
+         ims, ime, jms, jme, kms, kme, &amp;<a name='1234'>
+         its, ite, jts, jte, kts, kte<a name='1235'>
+    INTEGER , INTENT(IN)          ::  P_QI,P_FIRST_SCALAR<a name='1236'>
+<a name='1237'>
+    REAL , DIMENSION( ims:ime , kms:kme , jms:jme ) , INTENT(OUT) ::         &amp;<a name='1238'>
+         RUBLTEN, &amp;<a name='1239'>
+         RVBLTEN, &amp;<a name='1240'>
+         RTHBLTEN, &amp;<a name='1241'>
+         RQVBLTEN, &amp;<a name='1242'>
+         RQCBLTEN, &amp; <a name='1243'>
+         RQIBLTEN, &amp;<a name='1244'>
+         TKE_PBL,  &amp;<a name='1245'>
+         KTH_GBM<a name='1246'>
+    INTEGER :: i, j, k, itf, jtf, ktf<a name='1247'>
+<a name='1248'>
+    jtf=min0(jte,jde-1)<a name='1249'>
+    ktf=min0(kte,kde-1)<a name='1250'>
+    itf=min0(ite,ide-1)<a name='1251'>
+<a name='1252'>
+    IF(.not.restart)THEN<a name='1253'>
+       DO j=jts,jtf<a name='1254'>
+          DO k=kts,ktf<a name='1255'>
+             DO i=its,itf<a name='1256'>
+                RUBLTEN(i,k,j)=0.<a name='1257'>
+                RVBLTEN(i,k,j)=0.<a name='1258'>
+                RTHBLTEN(i,k,j)=0.<a name='1259'>
+                RQVBLTEN(i,k,j)=0.<a name='1260'>
+                RQCBLTEN(i,k,j)=0.<a name='1261'>
+                TKE_PBL(i,k,j)=0.001 <font color=#447700>! use array for TKE<a name='1262'></font>
+                KTH_GBM(i,k,j)=0.<a name='1263'>
+             ENDDO<a name='1264'>
+          ENDDO<a name='1265'>
+       ENDDO<a name='1266'>
+    ENDIF<a name='1267'>
+<a name='1268'>
+    IF (P_QI .ge. P_FIRST_SCALAR .and. .not.restart) THEN<a name='1269'>
+       DO j=jts,jtf<a name='1270'>
+          DO k=kts,ktf<a name='1271'>
+             DO i=its,itf<a name='1272'>
+                RQIBLTEN(i,k,j)=0.<a name='1273'>
+             ENDDO<a name='1274'>
+          ENDDO<a name='1275'>
+       ENDDO<a name='1276'>
+    ENDIF<a name='1277'>
+<a name='1278'>
+  END SUBROUTINE gbmpblinit<a name='1279'>
+<font color=#447700>!-------------------------------------------------------------------          <a name='1280'></font>
+<a name='1281'>
+END MODULE module_bl_gbmpbl<a name='1282'>
+<a name='1283'>
+</pre></body></html>

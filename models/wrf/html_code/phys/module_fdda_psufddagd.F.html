@@ -1,0 +1,1595 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!wrf:model_layer:physics<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<font color=#447700>!ckay=KIRAN ALAPATY @ US EPA -- November 01, 2015<a name='4'></font>
+<font color=#447700>!<a name='5'></font>
+<font color=#447700>! Tim Glotfelty@CNSU; AJ Deng@PSU<a name='6'></font>
+<font color=#447700>!modified for use with FASDAS <a name='7'></font>
+<font color=#447700>!Flux Adjusting Surface Data Assimilation System to assimilate <a name='8'></font>
+<font color=#447700>!surface layer and soil layers temperature and moisture using<a name='9'></font>
+<font color=#447700>! surfance reanalsys <a name='10'></font>
+<font color=#447700>!Reference: Alapaty et al., 2008: Development of the flux-adjusting surface<a name='11'></font>
+<font color=#447700>! data assimilation system for mesoscale models. JAMC, 47, 2331-2350<a name='12'></font>
+<a name='13'>
+<font color=#447700>!<a name='14'></font>
+<font color=#447700>!<a name='15'></font>
+<A NAME='MODULE_FDDA_PSUFDDAGD'><A href='../../html_code/phys/module_fdda_psufddagd.F.html#MODULE_FDDA_PSUFDDAGD' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='16'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_fdda_psufddagd</font> <A href='../../call_to/MODULE_FDDA_PSUFDDAGD.html' TARGET='index'>2</A><a name='17'>
+<a name='18'>
+CONTAINS<a name='19'>
+<font color=#447700>!<a name='20'></font>
+<font color=#447700>!-------------------------------------------------------------------<a name='21'></font>
+<font color=#447700>!<a name='22'></font>
+<A NAME='FDDAGD'><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='23'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>fddagd</font>(itimestep,dx,dt,xtime,  &amp; <A href='../../call_to/FDDAGD.html' TARGET='index'>1</A>,<A href='../../call_from/FDDAGD.html' TARGET='index'>12</A><a name='24'>
+               id,analysis_interval, end_fdda_hour, &amp;<a name='25'>
+               if_no_pbl_nudging_uv, if_no_pbl_nudging_t, if_no_pbl_nudging_q, &amp;<a name='26'>
+               if_zfac_uv, k_zfac_uv, if_zfac_t, k_zfac_t, if_zfac_q, k_zfac_q, &amp;<a name='27'>
+               guv, gt, gq, if_ramping, dtramp_min,  &amp;<a name='28'>
+<a name='29'>
+               grid_sfdda, &amp;<a name='30'>
+               analysis_interval_sfc, end_fdda_hour_sfc, guv_sfc, gt_sfc, gq_sfc, &amp;<a name='31'>
+               rinblw, &amp;<a name='32'>
+<a name='33'>
+               u3d,v3d,th3d,t3d,                 &amp;<a name='34'>
+               qv3d,     &amp;<a name='35'>
+               p3d,pi3d,                &amp;<a name='36'>
+               u_ndg_old,v_ndg_old,t_ndg_old,q_ndg_old,mu_ndg_old,       &amp;<a name='37'>
+               u_ndg_new,v_ndg_new,t_ndg_new,q_ndg_new,mu_ndg_new,       &amp;<a name='38'>
+     u10_ndg_old, v10_ndg_old, t2_ndg_old, th2_ndg_old, q2_ndg_old, &amp;<a name='39'>
+     rh_ndg_old, psl_ndg_old, ps_ndg_old, tob_ndg_old, odis_ndg_old, &amp;<a name='40'>
+     u10_ndg_new, v10_ndg_new, t2_ndg_new, th2_ndg_new, q2_ndg_new, &amp;<a name='41'>
+     rh_ndg_new, psl_ndg_new, ps_ndg_new, tob_ndg_new, odis_ndg_new, &amp;<a name='42'>
+               RUNDGDTEN,RVNDGDTEN,RTHNDGDTEN,RQVNDGDTEN,RMUNDGDTEN,&amp;<a name='43'>
+               fasdas, SDA_HFX, SDA_QFX,                            &amp; <font color=#447700>! fasdas<a name='44'></font>
+               HFX_FDDA,dz8w,                                       &amp; <font color=#447700>! fasdas<a name='45'></font>
+               pblh, ht, regime, znt, z, z_at_w,                             &amp;<a name='46'>
+               ids,ide, jds,jde, kds,kde,                           &amp;<a name='47'>
+               ims,ime, jms,jme, kms,kme,                           &amp;<a name='48'>
+               its,ite, jts,jte, kts,kte                        )<a name='49'>
+<a name='50'>
+<font color=#447700>!-------------------------------------------------------------------<a name='51'></font>
+   implicit none<a name='52'>
+<font color=#447700>!-------------------------------------------------------------------<a name='53'></font>
+<font color=#447700>!<a name='54'></font>
+<font color=#447700>!   This code was implemented by Aijun Deng (Penn State).  The 3-D analysis nudging was comleted <a name='55'></font>
+<font color=#447700>!   and released in December 2006.  The surface analysis nudging capability was added and <a name='56'></font>
+<font color=#447700>!   released in March 2009 with WRFV3.1.<a name='57'></font>
+<font color=#447700>!<a name='58'></font>
+<font color=#447700>!-- u3d         3d u-velocity staggered on u points<a name='59'></font>
+<font color=#447700>!-- v3d         3d v-velocity staggered on v points<a name='60'></font>
+<font color=#447700>!-- th3d        3d potential temperature (k)<a name='61'></font>
+<font color=#447700>!-- t3d         temperature (k)<a name='62'></font>
+<font color=#447700>!-- qv3d        3d water vapor mixing ratio (kg/kg)<a name='63'></font>
+<font color=#447700>!-- p3d         3d pressure (pa)<a name='64'></font>
+<font color=#447700>!-- pi3d        3d exner function (dimensionless)<a name='65'></font>
+<font color=#447700>!-- rundgdten   staggered u tendency due to<a name='66'></font>
+<font color=#447700>!               fdda grid nudging (m/s/s)<a name='67'></font>
+<font color=#447700>!-- rvndgdten   staggered v tendency due to<a name='68'></font>
+<font color=#447700>!               fdda grid nudging (m/s/s)<a name='69'></font>
+<font color=#447700>!-- rthndgdten  theta tendency due to<a name='70'></font>
+<font color=#447700>!               fdda grid nudging (K/s)<a name='71'></font>
+<font color=#447700>!-- rqvndgdten  qv tendency due to<a name='72'></font>
+<font color=#447700>!               fdda grid nudging (kg/kg/s)<a name='73'></font>
+<font color=#447700>!-- rmundgdten  mu tendency due to<a name='74'></font>
+<font color=#447700>!               fdda grid nudging (Pa/s)<a name='75'></font>
+<font color=#447700>!-- ids         start index for i in domain<a name='76'></font>
+<font color=#447700>!-- ide         end index for i in domain<a name='77'></font>
+<font color=#447700>!-- jds         start index for j in domain<a name='78'></font>
+<font color=#447700>!-- jde         end index for j in domain<a name='79'></font>
+<font color=#447700>!-- kds         start index for k in domain<a name='80'></font>
+<font color=#447700>!-- kde         end index for k in domain<a name='81'></font>
+<font color=#447700>!-- ims         start index for i in memory<a name='82'></font>
+<font color=#447700>!-- ime         end index for i in memory<a name='83'></font>
+<font color=#447700>!-- jms         start index for j in memory<a name='84'></font>
+<font color=#447700>!-- jme         end index for j in memory<a name='85'></font>
+<font color=#447700>!-- kms         start index for k in memory<a name='86'></font>
+<font color=#447700>!-- kme         end index for k in memory<a name='87'></font>
+<font color=#447700>!-- its         start index for i in tile<a name='88'></font>
+<font color=#447700>!-- ite         end index for i in tile<a name='89'></font>
+<font color=#447700>!-- jts         start index for j in tile<a name='90'></font>
+<font color=#447700>!-- jte         end index for j in tile<a name='91'></font>
+<font color=#447700>!-- kts         start index for k in tile<a name='92'></font>
+<font color=#447700>!-- kte         end index for k in tile<a name='93'></font>
+<font color=#447700>!-------------------------------------------------------------------<a name='94'></font>
+<font color=#447700>!<a name='95'></font>
+   INTEGER,  INTENT(IN)   ::      itimestep, analysis_interval, end_fdda_hour<a name='96'>
+   INTEGER,  INTENT(IN)   ::      analysis_interval_sfc, end_fdda_hour_sfc<a name='97'>
+   INTEGER,  INTENT(IN)   ::      grid_sfdda<a name='98'>
+<a name='99'>
+   INTEGER,  INTENT(IN)   ::      if_no_pbl_nudging_uv, if_no_pbl_nudging_t, &amp;<a name='100'>
+                                  if_no_pbl_nudging_q<a name='101'>
+   INTEGER,  INTENT(IN)   ::      if_zfac_uv, if_zfac_t, if_zfac_q<a name='102'>
+   INTEGER,  INTENT(IN)   ::      k_zfac_uv,  k_zfac_t,  k_zfac_q<a name='103'>
+   INTEGER,  INTENT(IN)   ::      if_ramping<a name='104'>
+<a name='105'>
+   INTEGER , INTENT(IN)   ::      id<a name='106'>
+   REAL,     INTENT(IN)   ::      DT, dx, xtime, dtramp_min<a name='107'>
+<a name='108'>
+   INTEGER,  INTENT(IN)   ::      ids,ide, jds,jde, kds,kde, &amp;<a name='109'>
+                                  ims,ime, jms,jme, kms,kme, &amp;<a name='110'>
+                                  its,ite, jts,jte, kts,kte<a name='111'>
+ <a name='112'>
+   REAL,     DIMENSION( ims:ime, kms:kme, jms:jme ), &amp;<a name='113'>
+             INTENT(IN)   ::                   qv3d, &amp;<a name='114'>
+                                               p3d, &amp;<a name='115'>
+                                              pi3d, &amp;<a name='116'>
+                                              th3d, &amp;<a name='117'>
+                                               t3d, &amp;<a name='118'>
+                                                 z, &amp;<a name='119'>
+                                            z_at_w<a name='120'>
+<a name='121'>
+   REAL,     DIMENSION( ims:ime, kms:kme, jms:jme ), &amp;<a name='122'>
+             INTENT(INOUT)   ::           rundgdten, &amp;<a name='123'>
+                                          rvndgdten, &amp;<a name='124'>
+                                         rthndgdten, &amp;<a name='125'>
+                                         rqvndgdten<a name='126'>
+<font color=#447700>!<a name='127'></font>
+<font color=#447700>! FASDAS<a name='128'></font>
+<font color=#447700>!<a name='129'></font>
+   INTEGER,  INTENT(IN)   ::      fasdas<a name='130'>
+   REAL,     DIMENSION( ims:ime, jms:jme ), &amp;<a name='131'>
+             INTENT(INOUT)   ::           SDA_HFX, &amp;<a name='132'>
+                                          SDA_QFX<a name='133'>
+   REAL,     DIMENSION( ims:ime, kms:kme, jms:jme ), &amp;<a name='134'>
+             INTENT(INOUT)   ::           HFX_FDDA<a name='135'>
+   REAL,     DIMENSION( ims:ime, kms:kme, jms:jme ), &amp;<a name='136'>
+             INTENT(IN)   ::                   dz8w<a name='137'>
+<font color=#447700>!<a name='138'></font>
+<font color=#447700>! END FASDAS<a name='139'></font>
+<font color=#447700>!<a name='140'></font>
+<a name='141'>
+   REAL,     DIMENSION( ims:ime, jms:jme ), &amp;<a name='142'>
+             INTENT(INOUT)   ::          rmundgdten<a name='143'>
+<a name='144'>
+   REAL,     DIMENSION( ims:ime, kms:kme, jms:jme ), &amp;<a name='145'>
+             INTENT(IN)      ::           u_ndg_old, &amp;<a name='146'>
+                                          v_ndg_old, &amp;<a name='147'>
+                                          t_ndg_old, &amp;<a name='148'>
+                                          q_ndg_old, &amp;<a name='149'>
+                                          u_ndg_new, &amp;<a name='150'>
+                                          v_ndg_new, &amp;<a name='151'>
+                                          t_ndg_new, &amp;<a name='152'>
+                                          q_ndg_new<a name='153'>
+                                                           <a name='154'>
+   REAL,       DIMENSION( ims:ime, jms:jme ),            &amp;   <a name='155'>
+               INTENT(IN)       ::                       u10_ndg_old,  &amp;<a name='156'>
+                                                         v10_ndg_old,  &amp;<a name='157'>
+                                                         t2_ndg_old,   &amp;<a name='158'>
+                                                         th2_ndg_old,  &amp;<a name='159'>
+                                                         q2_ndg_old,   &amp;<a name='160'>
+                                                         rh_ndg_old,   &amp;<a name='161'>
+                                                         psl_ndg_old,  &amp;<a name='162'>
+                                                         ps_ndg_old,   &amp;<a name='163'>
+                                                         u10_ndg_new,  &amp;<a name='164'>
+                                                         v10_ndg_new,  &amp;<a name='165'>
+                                                         t2_ndg_new,   &amp;<a name='166'>
+                                                         th2_ndg_new,  &amp;<a name='167'>
+                                                         q2_ndg_new,   &amp;<a name='168'>
+                                                         rh_ndg_new,   &amp;<a name='169'>
+                                                         psl_ndg_new,  &amp;<a name='170'>
+                                                         ps_ndg_new<a name='171'>
+<a name='172'>
+   REAL,       DIMENSION( ims:ime, jms:jme ),            &amp;   <a name='173'>
+               INTENT(IN)       ::                       tob_ndg_old,  &amp;<a name='174'>
+                                                         tob_ndg_new<a name='175'>
+<a name='176'>
+   REAL,     DIMENSION( ims:ime, jms:jme ), &amp;<a name='177'>
+             INTENT(INOUT) ::   mu_ndg_old, &amp;<a name='178'>
+                                mu_ndg_new<a name='179'>
+<a name='180'>
+   REAL,       DIMENSION( ims:ime, jms:jme ),            &amp;   <a name='181'>
+               INTENT(IN)       ::                       odis_ndg_old, odis_ndg_new<a name='182'>
+<a name='183'>
+   REAL,     DIMENSION( ims:ime, kms:kme, jms:jme ), &amp;<a name='184'>
+             INTENT(IN)   ::                    u3d, &amp;<a name='185'>
+                                                v3d<a name='186'>
+<a name='187'>
+   REAL,  DIMENSION( ims:ime, jms:jme ), INTENT(IN) :: pblh, &amp;<a name='188'>
+                                                       ht, &amp;<a name='189'>
+                                                       regime, &amp;<a name='190'>
+                                                       znt<a name='191'>
+<a name='192'>
+   REAL, INTENT(IN)    :: guv, gt, gq<a name='193'>
+   REAL, INTENT(IN)    :: guv_sfc, gt_sfc, gq_sfc, rinblw<a name='194'>
+<a name='195'>
+   INTEGER             :: i, j, k, itsu, jtsv, itf, jtf, ktf, i0, k0, j0<a name='196'>
+   REAL                :: xtime_old, xtime_new, coef, val_analysis<a name='197'>
+   INTEGER             :: kpbl, dbg_level<a name='198'>
+<a name='199'>
+   REAL                :: zpbl, zagl, zagl_bot, zagl_top, tfac, actual_end_fdda_min<a name='200'>
+   <font color=#447700>!BPR BEGIN<a name='201'></font>
+   REAL                :: tfac_sfc, actual_end_fdda_min_sfc<a name='202'>
+   <font color=#447700>!BPR END<a name='203'></font>
+   REAL, DIMENSION( its:ite, kts:kte, jts:jte, 4 ) :: wpbl  <font color=#447700>! 1: u, 2: v, 3: t, 4: q<a name='204'></font>
+   REAL, DIMENSION( kts:kte, 4 )                   :: wzfac <font color=#447700>! 1: u, 2: v, 3: t, 4: q<a name='205'></font>
+<a name='206'>
+<font color=#447700>!  TWG 2015 Pseudo Radiative Flux<a name='207'></font>
+   REAL, DIMENSION( its:ite, kts:kte, jts:jte) :: rho_air<a name='208'>
+<font color=#447700>!  END TWG 2015<a name='209'></font>
+<a name='210'>
+   LOGICAL , EXTERNAL  :: wrf_dm_on_monitor<a name='211'>
+<a name='212'>
+   CHARACTER (LEN=256) :: message<a name='213'>
+   INTEGER :: int4<a name='214'>
+<a name='215'>
+<a name='216'>
+   int4 = 1  <font color=#447700>! 1: temporal interpolation. else: target nudging toward *_ndg_new values<a name='217'></font>
+<a name='218'>
+   actual_end_fdda_min = end_fdda_hour*60.0<a name='219'>
+   <font color=#447700>!BPR BEGIN<a name='220'></font>
+   actual_end_fdda_min_sfc = end_fdda_hour*60.0<a name='221'>
+   <font color=#447700>!BPR END<a name='222'></font>
+   IF( if_ramping == 1 .AND. dtramp_min &gt; 0.0 ) &amp;<a name='223'>
+       actual_end_fdda_min = end_fdda_hour*60.0 + ABS(dtramp_min)<a name='224'>
+       <font color=#447700>!BPR BEGIN<a name='225'></font>
+       actual_end_fdda_min_sfc = end_fdda_hour_sfc*60.0 + ABS(dtramp_min)<a name='226'>
+       <font color=#447700>!BPR END<a name='227'></font>
+   <font color=#447700>!BPR BEGIN<a name='228'></font>
+   <font color=#447700>!IF( xtime &gt; actual_end_fdda_min ) THEN<a name='229'></font>
+   IF( ( xtime &gt; actual_end_fdda_min ) .AND. ( xtime &gt; actual_end_fdda_min_sfc ) ) THEN<a name='230'>
+   <font color=#447700>!BPR END<a name='231'></font>
+<font color=#447700>!  If xtime is greater than the end time, no need to calculate tendencies. Just set the tendencies <a name='232'></font>
+<font color=#447700>!  to zero to turn off nudging and return.<a name='233'></font>
+     DO j = jts, jte<a name='234'>
+     DO k = kts, kte<a name='235'>
+     DO i = its, ite<a name='236'>
+       RUNDGDTEN(i,k,j) = 0.0<a name='237'>
+       RVNDGDTEN(i,k,j) = 0.0<a name='238'>
+       RTHNDGDTEN(i,k,j) = 0.0<a name='239'>
+       RQVNDGDTEN(i,k,j) = 0.0<a name='240'>
+       IF( k .EQ. kts ) RMUNDGDTEN(i,j) = 0.<a name='241'>
+     ENDDO<a name='242'>
+     ENDDO<a name='243'>
+     ENDDO<a name='244'>
+     RETURN<a name='245'>
+   ENDIF<a name='246'>
+<a name='247'>
+   IF( analysis_interval &lt;= 0 )CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_631">('In grid FDDA, gfdda_interval_m must be &gt; 0')<a name='248'>
+   xtime_old = FLOOR(xtime/analysis_interval) * analysis_interval * 1.0<a name='249'>
+   xtime_new = xtime_old + analysis_interval<a name='250'>
+   IF( int4 == 1 ) THEN<a name='251'>
+     coef = (xtime-xtime_old)/(xtime_new-xtime_old)<a name='252'>
+   ELSE<a name='253'>
+     coef = 1.0          <font color=#447700>! Nudging toward a target value (*_ndg_new values)<a name='254'></font>
+   ENDIF<a name='255'>
+<a name='256'>
+   IF ( wrf_dm_on_monitor()) THEN<a name='257'>
+<a name='258'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#GET_WRF_DEBUG_LEVEL'>get_wrf_debug_level</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_WRF_DEBUG_LEVEL_6">( dbg_level )<a name='259'>
+<a name='260'>
+     IF( xtime-xtime_old &lt; 0.5*dt/60.0 ) THEN<a name='261'>
+<a name='262'>
+       IF( xtime &lt; end_fdda_hour*60.0 ) THEN<a name='263'>
+         WRITE(message,'(a,i1,a,f10.3,a)') &amp;<a name='264'>
+          'D0',id,' 3-D analysis nudging reads new data at time = ', xtime, ' min.'<a name='265'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_655">( TRIM(message) )<a name='266'>
+         WRITE(message,'(a,i1,a,2f8.2,a)') &amp;<a name='267'>
+          'D0',id,' 3-D analysis nudging bracketing times = ', xtime_old, xtime_new, ' min.'<a name='268'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_656">( TRIM(message) )<a name='269'>
+       ENDIF<a name='270'>
+<a name='271'>
+       actual_end_fdda_min = end_fdda_hour*60.0<a name='272'>
+       IF( if_ramping == 1 .AND. dtramp_min &gt; 0.0 ) &amp;<a name='273'>
+           actual_end_fdda_min = end_fdda_hour*60.0 + ABS(dtramp_min)<a name='274'>
+<a name='275'>
+       IF( dbg_level .GE. 10 .AND. xtime &lt;= actual_end_fdda_min ) THEN<a name='276'>
+<font color=#447700>!        Find the mid point of the tile and print out the sample values<a name='277'></font>
+         i0 = (ite-its)/2+its<a name='278'>
+         j0 = (jte-jts)/2+jts <a name='279'>
+<a name='280'>
+         IF( guv &gt; 0.0 ) THEN<a name='281'>
+           DO k = kts, kte<a name='282'>
+             WRITE(message,'(a,i1,a,3i4,a,f10.4,a,f10.4)') &amp;<a name='283'>
+               '    D0',id,' sample 3-D analysis values at i,k,j=', i0, k, j0, &amp;<a name='284'>
+               ' u_ndg_old=', u_ndg_old(i0,k,j0), ' u_ndg_new=', u_ndg_new(i0,k,j0)<a name='285'>
+             CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_657">( TRIM(message) )<a name='286'>
+           ENDDO<a name='287'>
+           WRITE(message,'(a,i1,a,3i4,a,f10.4,a,f10.4)') &amp;<a name='288'>
+             '    D0',id,' sample 3-D analysis values at i,k,j=', i0, k, j0, &amp;<a name='289'>
+             ' mu_ndg_old=', mu_ndg_old(i0,j0), ' mu_ndg_new=', mu_ndg_new(i0,j0)<a name='290'>
+           CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_658">( TRIM(message) )<a name='291'>
+           DO k = kts, kte<a name='292'>
+             WRITE(message,'(a,i1,a,3i4,a,f10.4,a,f10.4)') &amp;<a name='293'>
+               '    D0',id,' sample 3-D analysis values at i,k,j=', i0, k, j0, &amp;<a name='294'>
+               ' v_ndg_old=', v_ndg_old(i0,k,j0), ' v_ndg_new=', v_ndg_new(i0,k,j0)<a name='295'>
+             CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_659">( TRIM(message) )<a name='296'>
+           ENDDO<a name='297'>
+         ENDIF<a name='298'>
+<a name='299'>
+         IF( gt &gt; 0.0 ) THEN<a name='300'>
+           DO k = kts, kte<a name='301'>
+             WRITE(message,'(a,i1,a,3i4,a,f10.4,a,f10.4)') &amp;<a name='302'>
+               '    D0',id,' sample 3-D analysis values at i,k,j=', i0, k, j0, &amp;<a name='303'>
+               ' t_ndg_old=', t_ndg_old(i0,k,j0), ' t_ndg_new=', t_ndg_new(i0,k,j0)<a name='304'>
+             CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_660">( TRIM(message) )<a name='305'>
+           ENDDO<a name='306'>
+         ENDIF<a name='307'>
+<a name='308'>
+         IF( gq &gt; 0.0 ) THEN<a name='309'>
+           DO k = kts, kte<a name='310'>
+             WRITE(message,'(a,i1,a,3i4,a,f10.4,a,f10.4)') &amp;<a name='311'>
+               '    D0',id,' sample 3-D analysis values at i,k,j=', i0, k, j0, &amp;<a name='312'>
+               ' q_ndg_old=', q_ndg_old(i0,k,j0), ' q_ndg_new=', q_ndg_new(i0,k,j0)<a name='313'>
+             CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_661">( TRIM(message) )<a name='314'>
+           ENDDO<a name='315'>
+         ENDIF<a name='316'>
+<a name='317'>
+        IF( int4 == 1 ) then<a name='318'>
+           WRITE(message,'(a,i1,a)') '    D0',id, &amp;<a name='319'>
+              ' 3-D nudging towards the temporally interpolated analysis'<a name='320'>
+         ELSE<a name='321'>
+           WRITE(message,'(a,i1,a)') '    D0',id, &amp;<a name='322'>
+              ' 3-D nudging towards the target analysis'<a name='323'>
+         ENDIF<a name='324'>
+<a name='325'>
+       ENDIF<a name='326'>
+     ENDIF<a name='327'>
+   ENDIF<a name='328'>
+<a name='329'>
+   jtsv=MAX0(jts,jds+1)<a name='330'>
+   itsu=MAX0(its,ids+1)<a name='331'>
+<a name='332'>
+   jtf=MIN0(jte,jde-1)<a name='333'>
+   ktf=MIN0(kte,kde-1)<a name='334'>
+   itf=MIN0(ite,ide-1)<a name='335'>
+<font color=#447700>!<a name='336'></font>
+<font color=#447700>! If the user-defined namelist switches (if_no_pbl_nudging_uv, if_no_pbl_nudging_t, <a name='337'></font>
+<font color=#447700>! if_no_pbl_nudging_q switches) are set to 1, compute the weighting function, wpbl(:,k,:,:), <a name='338'></font>
+<font color=#447700>! based on the PBL depth.  wpbl = 1 above the PBL and wpbl = 0 in the PBL.  If all <a name='339'></font>
+<font color=#447700>! the switches are set to zero, wpbl = 1 (default value).<a name='340'></font>
+<font color=#447700>!<a name='341'></font>
+   wpbl(:,:,:,:) = 1.0<a name='342'>
+<a name='343'>
+   IF( if_no_pbl_nudging_uv == 1 .OR. grid_sfdda &gt;= 1 ) THEN<a name='344'>
+<a name='345'>
+     DO j=jts,jtf <a name='346'>
+     DO i=itsu,itf<a name='347'>
+<a name='348'>
+       kpbl = 1<a name='349'>
+       zpbl = 0.5 * ( pblh(i-1,j) + pblh(i,j) )<a name='350'>
+<a name='351'>
+       loop_ku: DO k=kts,ktf <a name='352'>
+<font color=#447700>!        zagl     = 0.5 * ( z(i-1,k,j)-ht(i-1,j) + z(i,k,j)-ht(i,j) )<a name='353'></font>
+         zagl_bot = 0.5 * ( z_at_w(i-1,k,  j)-ht(i-1,j) + z_at_w(i,k,  j)-ht(i,j) )<a name='354'>
+         zagl_top = 0.5 * ( z_at_w(i-1,k+1,j)-ht(i-1,j) + z_at_w(i,k+1,j)-ht(i,j) )<a name='355'>
+         IF( zpbl &gt;= zagl_bot .AND. zpbl &lt; zagl_top ) THEN<a name='356'>
+           kpbl = k<a name='357'>
+           EXIT loop_ku<a name='358'>
+         ENDIF<a name='359'>
+       ENDDO loop_ku<a name='360'>
+<a name='361'>
+       DO k=kts,ktf <a name='362'>
+         IF( k &lt;= kpbl   ) wpbl(i, k, j, 1) = 0.0<a name='363'>
+         IF( k == kpbl+1 ) wpbl(i, k, j, 1) = 0.1<a name='364'>
+         IF( k &gt;  kpbl+1 ) wpbl(i, k, j, 1) = 1.0<a name='365'>
+       ENDDO<a name='366'>
+<a name='367'>
+     ENDDO<a name='368'>
+     ENDDO<a name='369'>
+<a name='370'>
+     DO i=its,itf<a name='371'>
+     DO j=jtsv,jtf<a name='372'>
+<a name='373'>
+       kpbl = 1<a name='374'>
+       zpbl = 0.5 * ( pblh(i,j-1) + pblh(i,j) )<a name='375'>
+<a name='376'>
+       loop_kv: DO k=kts,ktf<a name='377'>
+<font color=#447700>!        zagl     = 0.5 * ( z(i,k,j-1)-ht(i,j-1) + z(i,k,j)-ht(i,j) )<a name='378'></font>
+         zagl_bot = 0.5 * ( z_at_w(i,k,  j-1)-ht(i,j-1) + z_at_w(i,k,  j)-ht(i,j) )<a name='379'>
+         zagl_top = 0.5 * ( z_at_w(i,k+1,j-1)-ht(i,j-1) + z_at_w(i,k+1,j)-ht(i,j) )<a name='380'>
+         IF( zpbl &gt;= zagl_bot .AND. zpbl &lt; zagl_top ) THEN<a name='381'>
+           kpbl = k<a name='382'>
+           EXIT loop_kv<a name='383'>
+         ENDIF<a name='384'>
+       ENDDO loop_kv<a name='385'>
+<a name='386'>
+       DO k=kts,ktf<a name='387'>
+         IF( k &lt;= kpbl   ) wpbl(i, k, j, 2) = 0.0<a name='388'>
+         IF( k == kpbl+1 ) wpbl(i, k, j, 2) = 0.1<a name='389'>
+         IF( k &gt;  kpbl+1 ) wpbl(i, k, j, 2) = 1.0<a name='390'>
+       ENDDO<a name='391'>
+<a name='392'>
+     ENDDO<a name='393'>
+     ENDDO<a name='394'>
+<a name='395'>
+   ENDIF<a name='396'>
+<a name='397'>
+   IF( if_no_pbl_nudging_t == 1 .OR. grid_sfdda &gt;= 1 ) THEN<a name='398'>
+   <a name='399'>
+     DO j=jts,jtf<a name='400'>
+     DO i=its,itf<a name='401'>
+<a name='402'>
+       kpbl = 1<a name='403'>
+       zpbl = pblh(i,j)<a name='404'>
+        <a name='405'>
+       loop_kt: DO k=kts,ktf<a name='406'>
+<font color=#447700>!        zagl     = z(i,k,j)-ht(i,j)<a name='407'></font>
+         zagl_bot = z_at_w(i,k,  j)-ht(i,j)<a name='408'>
+         zagl_top = z_at_w(i,k+1,j)-ht(i,j)<a name='409'>
+         IF( zpbl &gt;= zagl_bot .AND. zpbl &lt; zagl_top ) THEN<a name='410'>
+           kpbl = k<a name='411'>
+           EXIT loop_kt<a name='412'>
+         ENDIF<a name='413'>
+       ENDDO loop_kt<a name='414'>
+<a name='415'>
+       DO k=kts,ktf<a name='416'>
+         IF( k &lt;= kpbl   ) wpbl(i, k, j, 3) = 0.0<a name='417'>
+         IF( k == kpbl+1 ) wpbl(i, k, j, 3) = 0.1<a name='418'>
+         IF( k &gt;  kpbl+1 ) wpbl(i, k, j, 3) = 1.0<a name='419'>
+       ENDDO <a name='420'>
+        <a name='421'>
+     ENDDO<a name='422'>
+     ENDDO<a name='423'>
+<a name='424'>
+   ENDIF<a name='425'>
+<a name='426'>
+   IF( if_no_pbl_nudging_q == 1 .OR. grid_sfdda &gt;= 1 ) THEN<a name='427'>
+   <a name='428'>
+     DO j=jts,jtf<a name='429'>
+     DO i=its,itf<a name='430'>
+<a name='431'>
+       kpbl = 1<a name='432'>
+       zpbl = pblh(i,j)<a name='433'>
+          <a name='434'>
+       loop_kq: DO k=kts,ktf<a name='435'>
+<font color=#447700>!        zagl     = z(i,k,j)-ht(i,j)<a name='436'></font>
+         zagl_bot = z_at_w(i,k,  j)-ht(i,j)<a name='437'>
+         zagl_top = z_at_w(i,k+1,j)-ht(i,j)<a name='438'>
+         IF( zpbl &gt;= zagl_bot .AND. zpbl &lt; zagl_top ) THEN<a name='439'>
+           kpbl = k<a name='440'>
+           EXIT loop_kq<a name='441'>
+         ENDIF<a name='442'>
+       ENDDO loop_kq<a name='443'>
+<a name='444'>
+       DO k=kts,ktf<a name='445'>
+         IF( k &lt;= kpbl   ) wpbl(i, k, j, 4) = 0.0<a name='446'>
+         IF( k == kpbl+1 ) wpbl(i, k, j, 4) = 0.1<a name='447'>
+         IF( k &gt;  kpbl+1 ) wpbl(i, k, j, 4) = 1.0<a name='448'>
+       ENDDO <a name='449'>
+            <a name='450'>
+     ENDDO  <a name='451'>
+     ENDDO<a name='452'>
+        <a name='453'>
+   ENDIF<a name='454'>
+<font color=#447700>!<a name='455'></font>
+<font color=#447700>! If the user-defined namelist switches (if_zfac_uv, if_zfac_t,<a name='456'></font>
+<font color=#447700>! if_zfac_q swithes) are set to 1, compute the weighting function, wzfac(k,:),<a name='457'></font>
+<font color=#447700>! based on the namelist specified k values (k_zfac_uv, k_zfac_t and k_zfac_q) below which analysis <a name='458'></font>
+<font color=#447700>! nudging is turned off (wzfac = 1 above k_zfac_x and = 0 in below k_zfac_x).  If all<a name='459'></font>
+<font color=#447700>! the switche are set to zero, wzfac = 1 (default value).<a name='460'></font>
+<font color=#447700>!<a name='461'></font>
+   wzfac(:,:) = 1.0<a name='462'>
+<a name='463'>
+   IF( if_zfac_uv == 1 ) THEN<a name='464'>
+<a name='465'>
+     DO j=jts,jtf<a name='466'>
+     DO i=itsu,itf<a name='467'>
+     DO k=kts,ktf<a name='468'>
+       IF( k &lt;= k_zfac_uv   ) wzfac(k, 1:2) = 0.0<a name='469'>
+       IF( k == k_zfac_uv+1 ) wzfac(k, 1:2) = 0.1<a name='470'>
+       IF( k &gt;  k_zfac_uv+1 ) wzfac(k, 1:2) = 1.0<a name='471'>
+     ENDDO<a name='472'>
+     ENDDO<a name='473'>
+     ENDDO<a name='474'>
+<a name='475'>
+   ENDIF<a name='476'>
+<a name='477'>
+   IF( if_zfac_t == 1 ) THEN<a name='478'>
+<a name='479'>
+     DO j=jts,jtf<a name='480'>
+     DO i=itsu,itf<a name='481'>
+     DO k=kts,ktf<a name='482'>
+       IF( k &lt;= k_zfac_t   ) wzfac(k, 3) = 0.0<a name='483'>
+       IF( k == k_zfac_t+1 ) wzfac(k, 3) = 0.1<a name='484'>
+       IF( k &gt;  k_zfac_t+1 ) wzfac(k, 3) = 1.0<a name='485'>
+     ENDDO<a name='486'>
+     ENDDO<a name='487'>
+     ENDDO<a name='488'>
+<a name='489'>
+   ENDIF<a name='490'>
+<a name='491'>
+   IF( if_zfac_q == 1 ) THEN<a name='492'>
+       <a name='493'>
+     DO j=jts,jtf<a name='494'>
+     DO i=itsu,itf <a name='495'>
+     DO k=kts,ktf<a name='496'>
+       IF( k &lt;= k_zfac_q   ) wzfac(k, 4) = 0.0<a name='497'>
+       IF( k == k_zfac_q+1 ) wzfac(k, 4) = 0.1 <a name='498'>
+       IF( k &gt;  k_zfac_q+1 ) wzfac(k, 4) = 1.0<a name='499'>
+     ENDDO  <a name='500'>
+     ENDDO<a name='501'>
+     ENDDO<a name='502'>
+<a name='503'>
+   ENDIF<a name='504'>
+<font color=#447700>!<a name='505'></font>
+<font color=#447700>! If if_ramping and dtramp_min are defined by user, compute a time weighting function, tfac, <a name='506'></font>
+<font color=#447700>! for analysis nudging so that at the end of the nudging period (which has to be at a <a name='507'></font>
+<font color=#447700>! analysis time) we ramp down the nudging coefficient, based on the use-defined sign of dtramp_min.<a name='508'></font>
+<font color=#447700>!<a name='509'></font>
+<font color=#447700>! When dtramp_min is negative, ramping ends at end_fdda_hour and starts at <a name='510'></font>
+<font color=#447700>! end_fdda_hour-ABS(dtramp_min).  <a name='511'></font>
+<font color=#447700>!<a name='512'></font>
+<font color=#447700>! When dtramp_min is positive, ramping starts at end_fdda_hour and ends at <a name='513'></font>
+<font color=#447700>! end_fdda_hour+ABS(dtramp_min). <a name='514'></font>
+<font color=#447700>! BPR BEGIN<a name='515'></font>
+<font color=#447700>! In this case, during the rampdown we nudge towards the most recent past analysis and ignore<a name='516'></font>
+<font color=#447700>! the future analysis (implemented by setting coef = 0.0)<a name='517'></font>
+<font color=#447700>! THE FOLLOWING COMMENT IS NO LONGER APPLICABLE<a name='518'></font>
+<font color=#447700>! In this case, the obs values are extrapolated using <a name='519'></font>
+<font color=#447700>! the obs tendency saved from the previous FDDA window.  More specifically for extrapolation, <a name='520'></font>
+<font color=#447700>! coef (see codes below) is recalculated to reflect extrapolation during the ramping period.<a name='521'></font>
+<font color=#447700>! THE PRECEDING COMMENT IS NOT LONGER APPLICABLE<a name='522'></font>
+<font color=#447700>! BPR END<a name='523'></font>
+<font color=#447700>!<a name='524'></font>
+   tfac = 1.0<a name='525'>
+   <font color=#447700>!BPR BEGIN<a name='526'></font>
+   tfac_sfc = 1.0<a name='527'>
+   <font color=#447700>!BPR END<a name='528'></font>
+<a name='529'>
+   IF( if_ramping == 1 .AND. ABS(dtramp_min) &gt; 0.0 ) THEN<a name='530'>
+ <a name='531'>
+     IF( dtramp_min &lt;= 0.0 ) THEN<a name='532'>
+       actual_end_fdda_min = end_fdda_hour*60.0<a name='533'>
+     ELSE<a name='534'>
+       actual_end_fdda_min = end_fdda_hour*60.0 + dtramp_min<a name='535'>
+     ENDIF<a name='536'>
+<a name='537'>
+     IF( xtime &lt; actual_end_fdda_min-ABS(dtramp_min) )THEN <a name='538'>
+       tfac = 1.0<a name='539'>
+     ELSEIF( xtime &gt;= actual_end_fdda_min-ABS(dtramp_min) .AND. xtime &lt;= actual_end_fdda_min )THEN<a name='540'>
+       tfac = ( actual_end_fdda_min - xtime ) / ABS(dtramp_min)<a name='541'>
+       <font color=#447700>!BPR BEGIN<a name='542'></font>
+       <font color=#447700>!The original method assumed that to be here in the code with dtramp_min&gt;0<a name='543'></font>
+       <font color=#447700>!meant that we were after the valid time of *_ndg_new and so used the<a name='544'></font>
+       <font color=#447700>!values *_ndg_old and *_ndg_new to extrapolate a current analysis value.<a name='545'></font>
+       <font color=#447700>!HOWEVER, in practice once we get to the valid time of *_ndg_new WRF will<a name='546'></font>
+       <font color=#447700>!read in the next pair of *_ndg_old and *_ndg_new values, even if we are<a name='547'></font>
+       <font color=#447700>!at the beginning of the rampdown period. Since the *_ndg_new values have<a name='548'></font>
+       <font color=#447700>!a valid time after the beginning of the rampdown period we do not want<a name='549'></font>
+       <font color=#447700>!to use them as we would be using analyses valid after the supposed end<a name='550'></font>
+       <font color=#447700>!time of the analysis nudging.<a name='551'></font>
+       <font color=#447700>!IF( dtramp_min &gt; 0.0 ) coef = (xtime-xtime_old+analysis_interval)/(analysis_interval*1.0)<a name='552'></font>
+       <font color=#447700>!Use only the *_ndg_old values<a name='553'></font>
+       IF( dtramp_min &gt; 0.0 ) coef = 0.0 <a name='554'>
+       <font color=#447700>!BPR END<a name='555'></font>
+     ELSE                                                     <a name='556'>
+       tfac = 0.0<a name='557'>
+     ENDIF<a name='558'>
+<a name='559'>
+     <font color=#447700>!BPR BEGIN<a name='560'></font>
+     <font color=#447700>!Now calculate the same quantities for surface analysis nudging<a name='561'></font>
+     <font color=#447700>!Add actual_end_fdda_min_sfc, tfac_sfc<a name='562'></font>
+     IF( dtramp_min &lt;= 0.0 ) THEN<a name='563'>
+       actual_end_fdda_min_sfc = end_fdda_hour_sfc*60.0<a name='564'>
+     ELSE<a name='565'>
+       actual_end_fdda_min_sfc = end_fdda_hour_sfc*60.0 + dtramp_min<a name='566'>
+     ENDIF<a name='567'>
+<a name='568'>
+     IF( xtime &lt; actual_end_fdda_min_sfc-ABS(dtramp_min) )THEN <a name='569'>
+       tfac_sfc = 1.0<a name='570'>
+     ELSEIF( xtime &gt;= actual_end_fdda_min_sfc-ABS(dtramp_min) .AND. xtime &lt;= actual_end_fdda_min_sfc )THEN<a name='571'>
+       tfac_sfc = ( actual_end_fdda_min_sfc - xtime ) / ABS(dtramp_min)<a name='572'>
+     ELSE                                                     <a name='573'>
+       tfac_sfc = 0.0<a name='574'>
+     ENDIF<a name='575'>
+     <font color=#447700>!BPR END<a name='576'></font>
+<a name='577'>
+   ENDIF                                                  <a name='578'>
+<a name='579'>
+<font color=#447700>!<a name='580'></font>
+<font color=#447700>! Surface Analysis Nudging<a name='581'></font>
+<font color=#447700>!<a name='582'></font>
+   IF( grid_sfdda &gt;= 1 ) THEN<a name='583'>
+     CALL <A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD'>SFDDAGD</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SFDDAGD_1">(itimestep,dx,dt,xtime, id, &amp;<a name='584'>
+     analysis_interval_sfc, end_fdda_hour_sfc, guv_sfc, gt_sfc, gq_sfc, &amp;<a name='585'>
+     rinblw, &amp;<a name='586'>
+               u3d,v3d,th3d,t3d,                 &amp;<a name='587'>
+               qv3d,     &amp;<a name='588'>
+               p3d,pi3d,        &amp;<a name='589'>
+     u10_ndg_old, v10_ndg_old, t2_ndg_old, th2_ndg_old, q2_ndg_old, &amp;<a name='590'>
+     rh_ndg_old, psl_ndg_old, ps_ndg_old, tob_ndg_old, odis_ndg_old,  &amp;<a name='591'>
+     u10_ndg_new, v10_ndg_new, t2_ndg_new, th2_ndg_new, q2_ndg_new, &amp;<a name='592'>
+     rh_ndg_new, psl_ndg_new, ps_ndg_new, tob_ndg_new, odis_ndg_new,  &amp;<a name='593'>
+     RUNDGDTEN,RVNDGDTEN,RTHNDGDTEN,RQVNDGDTEN,RMUNDGDTEN,&amp;<a name='594'>
+     pblh, ht, regime, znt, z, z_at_w,                             &amp;<a name='595'>
+     ids,ide, jds,jde, kds,kde,                           &amp;<a name='596'>
+     ims,ime, jms,jme, kms,kme,                           &amp;<a name='597'>
+     its,ite, jts,jte, kts,kte, wpbl, wzfac, if_ramping, dtramp_min, &amp;<a name='598'>
+<font color=#447700>!BPR BEGIN<a name='599'></font>
+<font color=#447700>!    actual_end_fdda_min, tfac &amp;<a name='600'></font>
+     actual_end_fdda_min_sfc, tfac_sfc &amp;<a name='601'>
+<font color=#447700>!BPR END<a name='602'></font>
+<font color=#447700>!<a name='603'></font>
+<font color=#447700>! FASDAS<a name='604'></font>
+<font color=#447700>!<a name='605'></font>
+        ,fasdas, SDA_HFX, SDA_QFX     &amp;<a name='606'>
+<font color=#447700>!<a name='607'></font>
+<font color=#447700>! END FASDAS<a name='608'></font>
+<font color=#447700>!<a name='609'></font>
+                                    )<a name='610'>
+   ENDIF<a name='611'>
+<font color=#447700>!<a name='612'></font>
+<font color=#447700>! Compute 3-D nudging tendencies for u, v, t and q<a name='613'></font>
+<font color=#447700>!<a name='614'></font>
+   DO j=jts,jtf<a name='615'>
+   DO k=kts,ktf<a name='616'>
+   DO i=itsu,itf<a name='617'>
+     val_analysis = u_ndg_old(i,k,j) *( 1.0 - coef ) + u_ndg_new(i,k,j) * coef<a name='618'>
+     RUNDGDTEN(i,k,j) = RUNDGDTEN(i,k,j) + guv * wpbl(i,k,j,1) * wzfac(k,1) * tfac * &amp;<a name='619'>
+                         ( val_analysis - u3d(i,k,j) )<a name='620'>
+   ENDDO<a name='621'>
+   ENDDO<a name='622'>
+   ENDDO<a name='623'>
+<a name='624'>
+   DO j=jtsv,jtf<a name='625'>
+   DO k=kts,ktf<a name='626'>
+   DO i=its,itf<a name='627'>
+     val_analysis = v_ndg_old(i,k,j) *( 1.0 - coef ) + v_ndg_new(i,k,j) * coef<a name='628'>
+     RVNDGDTEN(i,k,j) = RVNDGDTEN(i,k,j) + guv * wpbl(i,k,j,2) * wzfac(k,2) * tfac * &amp;<a name='629'>
+                       ( val_analysis - v3d(i,k,j) )<a name='630'>
+   ENDDO<a name='631'>
+   ENDDO<a name='632'>
+   ENDDO<a name='633'>
+<a name='634'>
+   DO j=jts,jtf<a name='635'>
+   DO k=kts,ktf<a name='636'>
+   DO i=its,itf<a name='637'>
+<a name='638'>
+<a name='639'>
+     val_analysis = t_ndg_old(i,k,j) *( 1.0 - coef ) + t_ndg_new(i,k,j) * coef<a name='640'>
+     RTHNDGDTEN(i,k,j) = RTHNDGDTEN(i,k,j) +   gt * wpbl(i,k,j,3) * wzfac(k,3) * tfac * &amp;<a name='641'>
+                          ( val_analysis - th3d(i,k,j) + 300.0 )<a name='642'>
+<font color=#447700>!<a name='643'></font>
+<font color=#447700>!FASDAS<a name='644'></font>
+<font color=#447700>!<a name='645'></font>
+<font color=#447700>!TWG 2015 Pseudo Radiative Flux<a name='646'></font>
+<a name='647'>
+     rho_air(i,k,j) = p3d(i,k,j)/(287.0*th3d(i,k,j))<a name='648'>
+     HFX_FDDA(i,k,j) = rho_air(i,k,j)*1004.0*RTHNDGDTEN(i,k,j)*dz8w(i,k,j)<a name='649'>
+<a name='650'>
+<font color=#447700>!TWG 2015 END<a name='651'></font>
+<font color=#447700>!<a name='652'></font>
+<font color=#447700>!END FASDAS<a name='653'></font>
+<font color=#447700>!<a name='654'></font>
+     val_analysis = q_ndg_old(i,k,j) *( 1.0 - coef ) + q_ndg_new(i,k,j) * coef<a name='655'>
+     RQVNDGDTEN(i,k,j) = RQVNDGDTEN(i,k,j) + gq * wpbl(i,k,j,4) * wzfac(k,4) * tfac * &amp;<a name='656'>
+                          ( val_analysis - qv3d(i,k,j) )<a name='657'>
+<a name='658'>
+   ENDDO<a name='659'>
+   ENDDO<a name='660'>
+   ENDDO<a name='661'>
+<a name='662'>
+   <font color=#447700>!BPR BEGIN <a name='663'></font>
+   <font color=#447700>!Diagnostic print<a name='664'></font>
+   IF ( wrf_dm_on_monitor()) THEN<a name='665'>
+    IF( dbg_level .GE. 10 ) THEN<a name='666'>
+     i0 = (ite-its)/2+its<a name='667'>
+     j0 = (jte-jts)/2+jts <a name='668'>
+     k0 = (kte-kts)/2+kts<a name='669'>
+     WRITE(message,'(a,i1,a,f7.2,a,i4,a,i4,a,i4,a,f7.2,a,f4.2,a,f7.2,a,f4.2,a,f4.2 )') &amp;<a name='670'>
+      '    D0',id,' At xtime=',xtime,' FDDA sample pot. temp. analysis (i=',i0,', j=',j0,' k=', &amp;<a name='671'>
+      k0,') = (t_ndg_old=', t_ndg_old(i0,k0,j0),') * ',1.0-coef,' + (t_ndg_new=', &amp;<a name='672'>
+      t_ndg_new(i0,k0,j0),') * ',coef, ' where tfac=',tfac<a name='673'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_662">( TRIM(message) )<a name='674'>
+     WRITE(message,'(a,i1,a,f7.2,a,i4,a,f7.2,a,f7.2)') &amp;<a name='675'>
+     '    D0',id,'  xtime_old=',xtime_old,' analysis_interval=',analysis_interval,' actual_end_fdda_min=', &amp;<a name='676'>
+     actual_end_fdda_min,' dtramp_min=',dtramp_min<a name='677'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_663">( TRIM(message) )<a name='678'>
+    END IF<a name='679'>
+   END IF<a name='680'>
+   <font color=#447700>!BPR END <a name='681'></font>
+<a name='682'>
+   END SUBROUTINE fddagd<a name='683'>
+<a name='684'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='685'></font>
+<A NAME='SFDDAGD'><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='686'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>sfddagd</font>(itimestep,dx,dt,xtime,  &amp; <A href='../../call_to/SFDDAGD.html' TARGET='index'>1</A>,<A href='../../call_from/SFDDAGD.html' TARGET='index'>21</A><a name='687'>
+               id, analysis_interval_sfc, end_fdda_hour_sfc, &amp;<a name='688'>
+               guv_sfc, gt_sfc, gq_sfc, rinblw,  &amp;<a name='689'>
+               u3d,v3d,th3d,t3d,                 &amp;<a name='690'>
+               qv3d,     &amp;<a name='691'>
+               p3d,pi3d,                &amp;<a name='692'>
+               u10_ndg_old, v10_ndg_old, t2_ndg_old, th2_ndg_old, q2_ndg_old, &amp;<a name='693'>
+               rh_ndg_old, psl_ndg_old, ps_ndg_old, tob_ndg_old, odis_ndg_old,  &amp;<a name='694'>
+               u10_ndg_new, v10_ndg_new, t2_ndg_new, th2_ndg_new, q2_ndg_new, &amp;<a name='695'>
+               rh_ndg_new, psl_ndg_new, ps_ndg_new, tob_ndg_new, odis_ndg_new,  &amp;<a name='696'>
+               RUNDGDTEN,RVNDGDTEN,RTHNDGDTEN,RQVNDGDTEN,RMUNDGDTEN, &amp;<a name='697'>
+               pblh, ht, regime, znt, z, z_at_w,                             &amp;<a name='698'>
+               ids,ide, jds,jde, kds,kde,                           &amp;<a name='699'>
+               ims,ime, jms,jme, kms,kme,                           &amp;<a name='700'>
+               its,ite, jts,jte, kts,kte, wpbl, wzfac, if_ramping, dtramp_min, &amp;<a name='701'>
+<font color=#447700>!BPR BEGIN<a name='702'></font>
+<font color=#447700>!              actual_end_fdda_min, tfac &amp;<a name='703'></font>
+               actual_end_fdda_min_sfc, tfac_sfc &amp;<a name='704'>
+<font color=#447700>!BPR END<a name='705'></font>
+<font color=#447700>!<a name='706'></font>
+<font color=#447700>! FASDAS<a name='707'></font>
+<font color=#447700>!<a name='708'></font>
+               ,fasdas, SDA_HFX, SDA_QFX   &amp;<a name='709'>
+<font color=#447700>!<a name='710'></font>
+<font color=#447700>! END FASDAS<a name='711'></font>
+<font color=#447700>!<a name='712'></font>
+                                              )<a name='713'>
+<font color=#447700>!-------------------------------------------------------------------<a name='714'></font>
+   USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_61"><a name='715'>
+ <a name='716'>
+   implicit none<a name='717'>
+<a name='718'>
+<font color=#447700>!-------------------------------------------------------------------<a name='719'></font>
+<font color=#447700>!  <a name='720'></font>
+<font color=#447700>!   This code was implemented by Aijun Deng (Penn State).  The 3-D analysis nudging was comleted<a name='721'></font>
+<font color=#447700>!   and released in December 2006.  The surface analysis nudging capability was added and<a name='722'></font>
+<font color=#447700>!   released in March 2009 with WRFV3.1.<a name='723'></font>
+<font color=#447700>!<a name='724'></font>
+<font color=#447700>!-- u3d         3d u-velocity staggered on u points<a name='725'></font>
+<font color=#447700>!-- v3d         3d v-velocity staggered on v points<a name='726'></font>
+<font color=#447700>!-- th3d        3d potential temperature (k)<a name='727'></font>
+<font color=#447700>!-- t3d         temperature (k)<a name='728'></font>
+<font color=#447700>!-- qv3d        3d water vapor mixing ratio (kg/kg)<a name='729'></font>
+<font color=#447700>!-- p3d         3d pressure (pa)<a name='730'></font>
+<font color=#447700>!-- pi3d        3d exner function (dimensionless)<a name='731'></font>
+<font color=#447700>!-- rundgdten   staggered u tendency due to<a name='732'></font>
+<font color=#447700>!               fdda grid nudging (m/s/s)<a name='733'></font>
+<font color=#447700>!-- rvndgdten   staggered v tendency due to<a name='734'></font>
+<font color=#447700>!               fdda grid nudging (m/s/s)<a name='735'></font>
+<font color=#447700>!-- rthndgdten  theta tendency due to<a name='736'></font>
+<font color=#447700>!               fdda grid nudging (K/s)<a name='737'></font>
+<font color=#447700>!-- rqvndgdten  qv tendency due to<a name='738'></font>
+<font color=#447700>!               fdda grid nudging (kg/kg/s)<a name='739'></font>
+<font color=#447700>!-- rmundgdten  mu tendency due to<a name='740'></font>
+<font color=#447700>!               fdda grid nudging (Pa/s)<a name='741'></font>
+<font color=#447700>!-- ids         start index for i in domain<a name='742'></font>
+<font color=#447700>!-- ide         end index for i in domain<a name='743'></font>
+<font color=#447700>!-- jds         start index for j in domain<a name='744'></font>
+<font color=#447700>!-- jde         end index for j in domain<a name='745'></font>
+<font color=#447700>!-- kds         start index for k in domain<a name='746'></font>
+<font color=#447700>!-- kde         end index for k in domain<a name='747'></font>
+<font color=#447700>!-- ims         start index for i in memory<a name='748'></font>
+<font color=#447700>!-- ime         end index for i in memory<a name='749'></font>
+<font color=#447700>!-- jms         start index for j in memory<a name='750'></font>
+<font color=#447700>!-- jme         end index for j in memory<a name='751'></font>
+<font color=#447700>!-- kms         start index for k in memory<a name='752'></font>
+<font color=#447700>!-- kme         end index for k in memory<a name='753'></font>
+<font color=#447700>!-- its         start index for i in tile<a name='754'></font>
+<font color=#447700>!-- ite         end index for i in tile<a name='755'></font>
+<font color=#447700>!-- jts         start index for j in tile<a name='756'></font>
+<font color=#447700>!-- jte         end index for j in tile<a name='757'></font>
+<font color=#447700>!-- kts         start index for k in tile<a name='758'></font>
+<font color=#447700>!-- kte         end index for k in tile<a name='759'></font>
+<font color=#447700>!-------------------------------------------------------------------<a name='760'></font>
+<font color=#447700>!<a name='761'></font>
+   INTEGER,  INTENT(IN)   ::      itimestep, analysis_interval_sfc, end_fdda_hour_sfc<a name='762'>
+<a name='763'>
+   INTEGER , INTENT(IN)   ::      id<a name='764'>
+   REAL,     INTENT(IN)   ::      dx,DT, xtime<a name='765'>
+<a name='766'>
+   INTEGER,  INTENT(IN)   ::      ids,ide, jds,jde, kds,kde, &amp;<a name='767'>
+                                  ims,ime, jms,jme, kms,kme, &amp;<a name='768'>
+                                  its,ite, jts,jte, kts,kte<a name='769'>
+ <a name='770'>
+   REAL,     DIMENSION( ims:ime, kms:kme, jms:jme ), &amp;<a name='771'>
+             INTENT(IN)   ::                   qv3d, &amp;<a name='772'>
+                                               p3d, &amp;<a name='773'>
+                                              pi3d, &amp;<a name='774'>
+                                              th3d, &amp;<a name='775'>
+                                               t3d, &amp;<a name='776'>
+                                                 z, &amp;<a name='777'>
+                                            z_at_w<a name='778'>
+<a name='779'>
+   REAL,     DIMENSION( ims:ime, kms:kme, jms:jme ), &amp;<a name='780'>
+             INTENT(INOUT)   ::           rundgdten, &amp;<a name='781'>
+                                          rvndgdten, &amp;<a name='782'>
+                                         rthndgdten, &amp;<a name='783'>
+                                         rqvndgdten<a name='784'>
+<a name='785'>
+   REAL,     DIMENSION( ims:ime, jms:jme ), &amp;<a name='786'>
+             INTENT(INOUT)   ::          rmundgdten<a name='787'>
+<a name='788'>
+   REAL,       DIMENSION( ims:ime, jms:jme ),            &amp;<a name='789'>
+               INTENT(IN)       ::                       u10_ndg_old,  &amp;<a name='790'>
+                                                         v10_ndg_old,  &amp;<a name='791'>
+                                                         t2_ndg_old,   &amp;<a name='792'>
+                                                         th2_ndg_old,  &amp;<a name='793'>
+                                                         q2_ndg_old,   &amp;<a name='794'>
+                                                         rh_ndg_old,   &amp;<a name='795'>
+                                                         psl_ndg_old,  &amp;<a name='796'>
+                                                         ps_ndg_old,   &amp;<a name='797'>
+                                                         u10_ndg_new,  &amp;<a name='798'>
+                                                         v10_ndg_new,  &amp;<a name='799'>
+                                                         t2_ndg_new,   &amp;<a name='800'>
+                                                         th2_ndg_new,  &amp;<a name='801'>
+                                                         q2_ndg_new,   &amp;<a name='802'>
+                                                         rh_ndg_new,   &amp;<a name='803'>
+                                                         psl_ndg_new,  &amp;<a name='804'>
+                                                         ps_ndg_new<a name='805'>
+<a name='806'>
+   REAL,       DIMENSION( ims:ime, jms:jme ),            &amp;<a name='807'>
+               INTENT(IN)       ::                       tob_ndg_old,  &amp;<a name='808'>
+                                                         tob_ndg_new<a name='809'>
+<a name='810'>
+   REAL,     DIMENSION( ims:ime, kms:kme, jms:jme ), &amp;<a name='811'>
+             INTENT(IN)   ::                    u3d, &amp;<a name='812'>
+                                                v3d<a name='813'>
+<a name='814'>
+   REAL,       DIMENSION( ims:ime, jms:jme ),            &amp;<a name='815'>
+               INTENT(IN)         ::                    odis_ndg_old, odis_ndg_new<a name='816'>
+<a name='817'>
+   REAL,  DIMENSION( ims:ime, jms:jme ), INTENT(IN) :: pblh, &amp;<a name='818'>
+                                                       ht,   &amp;<a name='819'>
+                                                       regime, &amp;<a name='820'>
+                                                       znt<a name='821'>
+<a name='822'>
+   REAL, INTENT(IN)    :: guv_sfc, gt_sfc, gq_sfc, rinblw<a name='823'>
+<a name='824'>
+   INTEGER             :: i, j, k, itsu, jtsv, itf, jtf, ktf, i0, j0<a name='825'>
+   REAL                :: xtime_old_sfc, xtime_new_sfc, coef, val_analysis, es<a name='826'>
+   INTEGER             :: kpbl, dbg_level<a name='827'>
+<a name='828'>
+   REAL                :: zpbl, zagl, zagl_bot, zagl_top, tfac_sfc, actual_end_fdda_min_sfc<a name='829'>
+<a name='830'>
+   REAL, DIMENSION( its:ite, kts:kte, jts:jte, 4 ), &amp;<a name='831'>
+         INTENT(INout)                                   :: wpbl  <font color=#447700>! 1: u, 2: v, 3: t, 4: q<a name='832'></font>
+   REAL, DIMENSION( kts:kte, 4 ),  &amp;<a name='833'>
+         INTENT(IN)                                   :: wzfac <font color=#447700>! 1: u, 2: v, 3: t, 4: q<a name='834'></font>
+   REAL, DIMENSION( its:ite, jts:jte)                 :: wndcor_u, wndcor_v<a name='835'>
+   REAL, DIMENSION( its-2:ite+2, jts-2:jte+2)         :: blw_old, blw_new<a name='836'>
+   REAL, DIMENSION( its:ite, kts:kte, jts:jte)        :: qsat<a name='837'>
+<a name='838'>
+   REAL                                               :: m, b=1.8, blw, rindx, x<a name='839'>
+<a name='840'>
+   REAL :: difz, wr14, wr1z, wr24, wr2z, wndfac, reg, znt0<a name='841'>
+   INTEGER,  INTENT(IN)   :: if_ramping<a name='842'>
+   REAL, INTENT(IN)       :: dtramp_min<a name='843'>
+<a name='844'>
+   LOGICAL , EXTERNAL     :: wrf_dm_on_monitor<a name='845'>
+<a name='846'>
+   CHARACTER (LEN=256)    :: message<a name='847'>
+   INTEGER :: iwinds, idd, iqsat, int4<a name='848'>
+<font color=#447700>!<a name='849'></font>
+<font color=#447700>! FASDAS<a name='850'></font>
+<font color=#447700>!<a name='851'></font>
+   INTEGER,  INTENT(IN)   ::      fasdas<a name='852'>
+   REAL,     DIMENSION( ims:ime, jms:jme ), &amp;<a name='853'>
+             INTENT(  OUT)   ::           SDA_HFX, &amp;<a name='854'>
+                                          SDA_QFX<a name='855'>
+   REAL :: stabFac, exf, DiffTN<a name='856'>
+   REAL, DIMENSION( its:ite, kts:kte, jts:jte ) :: wpblfasdas<a name='857'>
+<font color=#447700>!<a name='858'></font>
+<font color=#447700>! END FASDAS<a name='859'></font>
+<font color=#447700>!<a name='860'></font>
+   iwinds = 1    <font color=#447700>! 1: Scale the surface wind analysis to the lowest model level, <a name='861'></font>
+                 <font color=#447700>! if the first model half-layer is greater than 10 meters <a name='862'></font>
+                 <font color=#447700>! and we are in the free convection regime (REGIME=4.0). else: no<a name='863'></font>
+   idd = 1       <font color=#447700>! 1: Obs data density correction is applied. else: no<a name='864'></font>
+   iqsat = 1     <font color=#447700>! 1: Remove super saturation. eles: no<a name='865'></font>
+   int4 = 1      <font color=#447700>! 1: temporal ionterpolation. else: target nudging toward *_ndg_new values<a name='866'></font>
+<a name='867'>
+   IF( analysis_interval_sfc &lt;= 0 )CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_632">('In grid sfc FDDA, sgfdda_interval_m must be &gt; 0')<a name='868'>
+   xtime_old_sfc = FLOOR(xtime/analysis_interval_sfc) * analysis_interval_sfc * 1.0<a name='869'>
+   xtime_new_sfc = xtime_old_sfc + analysis_interval_sfc<a name='870'>
+   IF( int4 == 1 ) THEN<a name='871'>
+     coef = (xtime-xtime_old_sfc)/(xtime_new_sfc-xtime_old_sfc)  <font color=#447700>! Temporal interpolation<a name='872'></font>
+   ELSE<a name='873'>
+     coef = 1.0          <font color=#447700>! Nudging toward a target value (*_ndg_new values)<a name='874'></font>
+   ENDIF<a name='875'>
+<a name='876'>
+   IF ( wrf_dm_on_monitor()) THEN<a name='877'>
+<a name='878'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#GET_WRF_DEBUG_LEVEL'>get_wrf_debug_level</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_WRF_DEBUG_LEVEL_7">( dbg_level )<a name='879'>
+<a name='880'>
+     IF( xtime-xtime_old_sfc &lt; 0.5*dt/60.0 ) THEN<a name='881'>
+<a name='882'>
+       IF( xtime &lt; end_fdda_hour_sfc*60.0 ) THEN<a name='883'>
+         WRITE(message,'(a,i1,a,f10.3,a)') &amp;<a name='884'>
+          'D0',id,' surface analysis nudging reads new data at time = ', xtime, ' min.'<a name='885'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_664">( TRIM(message) )<a name='886'>
+         WRITE(message,'(a,i1,a,2f8.2,a)') &amp;<a name='887'>
+          'D0',id,' surface analysis nudging bracketing times = ', xtime_old_sfc, xtime_new_sfc, ' min.'<a name='888'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_665">( TRIM(message) )<a name='889'>
+       ENDIF<a name='890'>
+<a name='891'>
+       IF( dbg_level .GE. 10 .AND. xtime &lt;= actual_end_fdda_min_sfc ) THEN<a name='892'>
+<font color=#447700>!        Find the mid point of the tile and print out the sample values<a name='893'></font>
+         i0 = (ite-its)/2+its<a name='894'>
+         j0 = (jte-jts)/2+jts <a name='895'>
+<a name='896'>
+         IF( guv_sfc &gt; 0.0 ) THEN<a name='897'>
+           WRITE(message,'(a,i1,a,2i4,a,f10.4,a,f10.4)') &amp;<a name='898'>
+             '    D0',id,' sample surface analysis values at i,j=', i0, j0, &amp;<a name='899'>
+             ' u10_ndg_old=', u10_ndg_old(i0,j0), ' u10_ndg_new=', u10_ndg_new(i0,j0)<a name='900'>
+           CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_666">( TRIM(message) )<a name='901'>
+           WRITE(message,'(a,i1,a,2i4,a,f10.4,a,f10.4)') &amp;<a name='902'>
+             '    D0',id,' sample surface analysis values at i,j=', i0, j0, &amp;<a name='903'>
+             ' v10_ndg_old=', v10_ndg_old(i0,j0), ' v10_ndg_new=', v10_ndg_new(i0,j0)<a name='904'>
+           CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_667">( TRIM(message) )<a name='905'>
+         ENDIF<a name='906'>
+<a name='907'>
+         IF( gt_sfc &gt; 0.0 ) THEN<a name='908'>
+           WRITE(message,'(a,i1,a,2i4,a,f10.4,a,f10.4)') &amp;<a name='909'>
+             '    D0',id,' sample surface analysis values at i,j=', i0, j0, &amp;<a name='910'>
+             ' th2_ndg_old=', th2_ndg_old(i0,j0), ' th2_ndg_new=', th2_ndg_new(i0,j0)<a name='911'>
+           CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_668">( TRIM(message) )<a name='912'>
+         ENDIF<a name='913'>
+<a name='914'>
+         IF( gq_sfc &gt; 0.0 ) THEN<a name='915'>
+           WRITE(message,'(a,i1,a,2i4,a,f10.4,a,f10.4)') &amp;<a name='916'>
+             '    D0',id,' sample surface analysis values at i,j=', i0, j0, &amp;<a name='917'>
+             ' q2_ndg_old=', q2_ndg_old(i0,j0), ' q2_ndg_new=', q2_ndg_new(i0,j0)<a name='918'>
+           CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_669">( TRIM(message) )<a name='919'>
+         ENDIF<a name='920'>
+<a name='921'>
+         IF( iwinds ==  1 ) &amp;<a name='922'>
+           WRITE(message,'(a,i1,a)') '    D0',id, &amp;<a name='923'>
+              ' surface wind analysis s scaled to the lowest model level, if dz1 &gt; 10m and REGIME=4.'<a name='924'>
+<a name='925'>
+         IF( idd ==  1 ) &amp;<a name='926'>
+           WRITE(message,'(a,i1,a)') '    D0',id, &amp;<a name='927'>
+              ' obs data density is used for additional weighting function'<a name='928'>
+<a name='929'>
+         IF( iqsat ==  1 ) &amp;<a name='930'>
+           WRITE(message,'(a,i1,a)') '    D0',id, &amp;<a name='931'>
+              ' super saturation is not allowed for q analysis'<a name='932'>
+<a name='933'>
+         IF( int4 ==  1 ) then<a name='934'>
+           WRITE(message,'(a,i1,a)') '    D0',id, &amp;<a name='935'>
+              ' surface nudging towards the temporally interpolated analysis'<a name='936'>
+         ELSE<a name='937'>
+           WRITE(message,'(a,i1,a)') '    D0',id, &amp;<a name='938'>
+              ' surface nudging towards the target analysis'<a name='939'>
+         ENDIF<a name='940'>
+<a name='941'>
+       ENDIF<a name='942'>
+     ENDIF<a name='943'>
+   ENDIF<a name='944'>
+<a name='945'>
+<a name='946'>
+   jtsv=MAX0(jts,jds+1)<a name='947'>
+   itsu=MAX0(its,ids+1)<a name='948'>
+<a name='949'>
+   jtf=MIN0(jte,jde-1)<a name='950'>
+   ktf=MIN0(kte,kde-1)<a name='951'>
+   itf=MIN0(ite,ide-1)<a name='952'>
+<a name='953'>
+<font color=#447700>!<a name='954'></font>
+<font color=#447700>! Compute the vertical weighting function to scale the surface wind analysis to <a name='955'></font>
+<font color=#447700>! the lowest model level, if the first model half-layer is greater<a name='956'></font>
+<font color=#447700>! than 10 meters and we are in the free convection regime (REGIME=4.0). <a name='957'></font>
+<font color=#447700>!<a name='958'></font>
+   IF( iwinds == 1 ) THEN<a name='959'>
+     wndcor_u(:,:) = 1.0<a name='960'>
+     DO j=jts,jtf<a name='961'>
+     DO i=itsu,itf<a name='962'>
+       reg =  0.5 * ( regime(i-1,  j) + regime(i,  j) )<a name='963'>
+       difz = 0.5 * ( z(i-1,1,j) - ht(i-1,j)  &amp;<a name='964'>
+                    + z(i,  1,j) - ht(i,  j)    ) <a name='965'>
+       IF( reg &gt; 3.5 .AND. difz &gt; 10.0 ) THEN<a name='966'>
+         znt0 = 0.5 * (    znt(i-1,  j) +    znt(i,  j) )<a name='967'>
+         IF( znt0 &lt;= 0.2) THEN<a name='968'>
+           wndcor_u(i,j) = 1.0+0.320*znt0**0.2<a name='969'>
+         ELSE<a name='970'>
+           wndcor_u(i,j) = 1.169+0.315*znt0<a name='971'>
+         ENDIF<a name='972'>
+<a name='973'>
+         wr14 = log(40.0/0.05)<a name='974'>
+         wr1z = log(difz/0.05)<a name='975'>
+         wr24 = log(40.0/1.0)<a name='976'>
+         wr2z = log(difz/1.0)<a name='977'>
+         wndfac = 0.5*(WR1Z/WR14+WR2Z/WR24) <a name='978'>
+         wndcor_u(i,j) = wndfac*wndcor_u(i,j)<a name='979'>
+       ENDIF<a name='980'>
+     ENDDO<a name='981'>
+     ENDDO<a name='982'>
+<a name='983'>
+     IF ( wrf_dm_on_monitor()) THEN<a name='984'>
+       IF( xtime-xtime_old_sfc &lt; 0.5*dt/60.0 ) THEN<a name='985'>
+         IF( dbg_level .GE. 10 .AND. xtime &lt;= actual_end_fdda_min_sfc ) THEN<a name='986'>
+           i0 = (ite-its)/2+its<a name='987'>
+           j0 = (jte-jts)/2+jts<a name='988'>
+           WRITE(message,'(a,i1,a,2i4,a,f10.4)') &amp;<a name='989'>
+             '    D0',id,' sample wndcor_u values at i,j=', i0, j0, &amp;<a name='990'>
+             ' wndcor_u=', wndcor_u(i0,j0)<a name='991'>
+           CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_670">( TRIM(message) )<a name='992'>
+         ENDIF<a name='993'>
+       ENDIF<a name='994'>
+     ENDIF<a name='995'>
+   ELSE <a name='996'>
+     wndcor_u(:,:) = 1.0<a name='997'>
+   ENDIF<a name='998'>
+<a name='999'>
+   IF( iwinds == 1 ) THEN<a name='1000'>
+     wndcor_v(:,:) = 1.0<a name='1001'>
+     DO j=jtsv,jtf<a name='1002'>
+     DO i=its,itf<a name='1003'>
+       reg =  0.5 * ( regime(i,  j-1) + regime(i,  j) )<a name='1004'>
+       difz = 0.5 * ( z(i,1,j-1) - ht(i,j-1)  &amp;<a name='1005'>
+                  +   z(i,1,j  ) - ht(i,j  )    )<a name='1006'>
+       IF( reg &gt; 3.5 .AND. difz &gt; 10.0 ) THEN <a name='1007'>
+         znt0 = 0.5 * (    znt(i,  j-1) +    znt(i,  j) )<a name='1008'>
+         IF( znt0 &lt;= 0.2) THEN<a name='1009'>
+           wndcor_v(i,j) = 1.0+0.320*znt0**0.2<a name='1010'>
+         ELSE<a name='1011'>
+           wndcor_v(i,j) = 1.169+0.315*znt0<a name='1012'>
+         ENDIF<a name='1013'>
+       <a name='1014'>
+         wr14 = log(40.0/0.05)<a name='1015'>
+         wr1z = log(difz/0.05)<a name='1016'>
+         wr24 = log(40.0/1.0)<a name='1017'>
+         wr2z = log(difz/1.0)<a name='1018'>
+         wndfac = 0.5*(WR1Z/WR14+WR2Z/WR24)<a name='1019'>
+           wndcor_v(i,j) = wndfac*wndcor_v(i,j)<a name='1020'>
+       ENDIF<a name='1021'>
+     ENDDO<a name='1022'>
+     ENDDO<a name='1023'>
+     IF ( wrf_dm_on_monitor()) THEN<a name='1024'>
+       IF( xtime-xtime_old_sfc &lt; 0.5*dt/60.0 ) THEN<a name='1025'>
+         IF( dbg_level .GE. 10 .AND. xtime &lt;= actual_end_fdda_min_sfc ) THEN<a name='1026'>
+           i0 = (ite-its)/2+its<a name='1027'>
+           j0 = (jte-jts)/2+jts<a name='1028'>
+           WRITE(message,'(a,i1,a,2i4,a,f10.4)') &amp;<a name='1029'>
+             '    D0',id,' sample wndcor_v values at i,j=', i0, j0, &amp;<a name='1030'>
+             ' wndcor_v=', wndcor_v(i0,j0)<a name='1031'>
+           CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_671">( TRIM(message) )<a name='1032'>
+         ENDIF<a name='1033'>
+       ENDIF<a name='1034'>
+     ENDIF<a name='1035'>
+   ELSE <a name='1036'>
+     wndcor_v(:,:) = 1.0<a name='1037'>
+   ENDIF<a name='1038'>
+<font color=#447700>!<a name='1039'></font>
+<font color=#447700>! Compute saturation mixing ratio so that nudging to a super-saturated state<a name='1040'></font>
+<font color=#447700>! is not allowed.<a name='1041'></font>
+<font color=#447700>!<a name='1042'></font>
+   IF( iqsat == 1 ) THEN<a name='1043'>
+     DO j=jts,jtf<a name='1044'>
+     DO k=kts,ktf<a name='1045'>
+     DO i=its,itf<a name='1046'>
+       es = SVP1*EXP(SVP2*(t3d(i,k,j)-SVPT0)/(t3d(i,k,j)-SVP3))  * 10.0    <font color=#447700>! mb<a name='1047'></font>
+       qsat(i,k,j) = EP_2*es/(p3d(i,k,j)/100.0-es)<a name='1048'>
+     ENDDO<a name='1049'>
+     ENDDO<a name='1050'>
+     ENDDO<a name='1051'>
+<a name='1052'>
+     IF ( wrf_dm_on_monitor()) THEN<a name='1053'>
+       IF( xtime-xtime_old_sfc &lt; 0.5*dt/60.0 ) THEN<a name='1054'>
+         IF( dbg_level .GE. 10 .AND. xtime &lt;= actual_end_fdda_min_sfc ) THEN<a name='1055'>
+           i0 = (ite-its)/2+its<a name='1056'>
+           j0 = (jte-jts)/2+jts <a name='1057'>
+           DO k = kts, kte<a name='1058'>
+             WRITE(message,'(a,i1,a,3i4,a,f10.4,a,f10.4)') &amp;<a name='1059'>
+               '    D0',id,' sample moisture values (g/kg) at i,k,j=', i0, k, j0, &amp;<a name='1060'>
+               ' qv3d=', qv3d(i0,k,j0)*1000.0, ' qsat=', qsat(i0,k,j0)*1000.0<a name='1061'>
+             CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_672">( TRIM(message) )<a name='1062'>
+           ENDDO<a name='1063'>
+         ENDIF<a name='1064'>
+       ENDIF<a name='1065'>
+     ENDIF<a name='1066'>
+   ENDIF<a name='1067'>
+<font color=#447700>!<a name='1068'></font>
+<font color=#447700>! Obs data density weighting.<a name='1069'></font>
+<font color=#447700>!<a name='1070'></font>
+   IF( idd == 1 ) THEN<a name='1071'>
+<a name='1072'>
+     IF( rinblw &lt; 0.001 ) THEN<a name='1073'>
+       IF ( wrf_dm_on_monitor()) THEN<a name='1074'>
+         WRITE(message,'(a)') 'Error in rinblw, please specify a reasonable value ***'<a name='1075'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_673">( TRIM(message) )<a name='1076'>
+       ENDIF<a name='1077'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_633">('In grid FDDA')<a name='1078'>
+     ENDIF<a name='1079'>
+<a name='1080'>
+     rindx = rinblw*1000.0/dx<a name='1081'>
+     m = -0.8*2.0/rindx<a name='1082'>
+<a name='1083'>
+     DO j=MAX(jts-2,jds),MIN(jte+2,jde-1)<a name='1084'>
+     DO i=MAX(its-2,ids),MIN(ite+2,ide-1)<a name='1085'>
+       IF( odis_ndg_old(i,j) &lt; 0.5*rinblw ) THEN<a name='1086'>
+         blw_old(i,j) = 1.0<a name='1087'>
+       ELSE<a name='1088'>
+         x = min( odis_ndg_old(i,j)*1000./dx, rindx )<a name='1089'>
+         blw_old(i,j) = m * x + b<a name='1090'>
+       ENDIF<a name='1091'>
+<a name='1092'>
+       IF( odis_ndg_new(i,j) &lt; 0.5*rinblw ) THEN<a name='1093'>
+         blw_new(i,j) = 1.0<a name='1094'>
+       ELSE<a name='1095'>
+         x = min( odis_ndg_new(i,j)*1000./dx, rindx )<a name='1096'>
+         blw_new(i,j) = m * x + b<a name='1097'>
+       ENDIF<a name='1098'>
+     ENDDO<a name='1099'>
+     ENDDO<a name='1100'>
+<a name='1101'>
+<font color=#447700>! Smoother applies one point outside the tile, but one point in from boundaries<a name='1102'></font>
+     CALL <A href='../../html_code/phys/module_fdda_psufddagd.F.html#SMTHER'>smther</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SMTHER_1">(blw_old, its-2,ite+2, jts-2,jte+2, 1, &amp;<a name='1103'>
+                 MAX(its-1,ids+1), MIN(ite+1,ide-2), MAX(jts-1,jds+1), MIN(jte+1,jde-2))<a name='1104'>
+     CALL <A href='../../html_code/phys/module_fdda_psufddagd.F.html#SMTHER'>smther</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SMTHER_2">(blw_new, its-2,ite+2, jts-2,jte+2, 1, &amp;<a name='1105'>
+                 MAX(its-1,ids+1), MIN(ite+1,ide-2), MAX(jts-1,jds+1), MIN(jte+1,jde-2))<a name='1106'>
+<a name='1107'>
+     WHERE ( blw_old &gt; 1.0)<a name='1108'>
+        blw_old = 1.0<a name='1109'>
+     END WHERE<a name='1110'>
+     WHERE ( blw_new &gt; 1.0)<a name='1111'>
+        blw_new = 1.0<a name='1112'>
+     END WHERE<a name='1113'>
+     WHERE ( blw_old &lt; 0.0)<a name='1114'>
+        blw_old = 0.0<a name='1115'>
+     END WHERE<a name='1116'>
+     WHERE ( blw_new &lt; 0.0)<a name='1117'>
+        blw_new = 0.0<a name='1118'>
+     END WHERE<a name='1119'>
+<a name='1120'>
+     IF ( wrf_dm_on_monitor()) THEN<a name='1121'>
+       IF( xtime-xtime_old_sfc &lt; 0.5*dt/60.0 ) THEN<a name='1122'>
+         IF( dbg_level .GE. 10 .AND. xtime &lt;= actual_end_fdda_min_sfc ) THEN<a name='1123'>
+           i0 = (ite-its)/2+its<a name='1124'>
+           j0 = (jte-jts)/2+jts<a name='1125'>
+           WRITE(message,'(a,i1,a,2i4,4(a,f10.4))') &amp;<a name='1126'>
+             '    D0',id,' sample blw values at i,j=', i0, j0, &amp;<a name='1127'>
+             ' odis_ndg_old=', odis_ndg_old(i0,j0), ' km odis_ndg_new=', odis_ndg_new(i0,j0), &amp;<a name='1128'>
+             ' km  blw_old=', blw_old(i0,j0), ' blw_new=', blw_new(i0,j0)<a name='1129'>
+           CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_674">( TRIM(message) )<a name='1130'>
+         ENDIF<a name='1131'>
+       ENDIF<a name='1132'>
+     ENDIF<a name='1133'>
+<a name='1134'>
+   ENDIF<a name='1135'>
+<font color=#447700>!<a name='1136'></font>
+<font color=#447700>! tfac_sfc for surface analysis nudging<a name='1137'></font>
+<font color=#447700>!<a name='1138'></font>
+   IF( xtime &gt;= actual_end_fdda_min_sfc-ABS(dtramp_min) .AND. xtime &lt;= actual_end_fdda_min_sfc &amp;<a name='1139'>
+       .AND. dtramp_min &gt; 0.0 .AND. if_ramping == 1 )  &amp;<a name='1140'>
+<a name='1141'>
+    <font color=#447700>!BPR BEGIN<a name='1142'></font>
+    <font color=#447700>!The original method assumed that to be here in the code with dtramp_min&gt;0<a name='1143'></font>
+    <font color=#447700>!meant that we were after the valid time of *_ndg_new and so used the<a name='1144'></font>
+    <font color=#447700>!values *_ndg_old and *_ndg_new to extrapolate a current analysis value.<a name='1145'></font>
+    <font color=#447700>!HOWEVER, in practice once we get to the valid time of *_ndg_new WRF will<a name='1146'></font>
+    <font color=#447700>!read in the next pair of *_ndg_old and *_ndg_new values, even if we are<a name='1147'></font>
+    <font color=#447700>!at the beginning of the rampdown period. Since the *_ndg_new values have<a name='1148'></font>
+    <font color=#447700>!a valid time after the beginning of the rampdown period we do not want<a name='1149'></font>
+    <font color=#447700>!to use them as we would be using analyses valid after the supposed end<a name='1150'></font>
+    <font color=#447700>!time of the analysis nudging.<a name='1151'></font>
+    <font color=#447700>!coef = (xtime-xtime_old_sfc+analysis_interval_sfc)/(analysis_interval_sfc*1.0)<a name='1152'></font>
+    <font color=#447700>!Use only the *_ndg_old values<a name='1153'></font>
+    coef = 0.0 <a name='1154'>
+    <font color=#447700>!BPR END<a name='1155'></font>
+<a name='1156'>
+<font color=#447700>!  print*, 'coef =', xtime_old_sfc, xtime, xtime_new_sfc, coef<a name='1157'></font>
+<font color=#447700>!              <a name='1158'></font>
+<font color=#447700>! Compute surface analysis nudging tendencies for u, v, t and q<a name='1159'></font>
+<font color=#447700>!              <a name='1160'></font>
+<font color=#447700>! FASDAS<a name='1161'></font>
+<font color=#447700>!<a name='1162'></font>
+     IF( fasdas == 1 ) THEN<a name='1163'>
+<a name='1164'>
+      <font color=#447700>!Edit TWG2015 Add new variable wpblfasdas to avoid altering global wpbl<a name='1165'></font>
+      <font color=#447700>!field when using the FASDAS option<a name='1166'></font>
+<a name='1167'>
+       wpblfasdas = 1.0<a name='1168'>
+       DO j=jts,jtf<a name='1169'>
+       DO k=kts,ktf<a name='1170'>
+       DO i=its,itf<a name='1171'>
+          if( k == 1 ) then<a name='1172'>
+            wpblfasdas(i, k, j) = 0.0<a name='1173'>
+          else<a name='1174'>
+            wpblfasdas(i, k, j) = 1.0<a name='1175'>
+          endif<a name='1176'>
+       ENDDO<a name='1177'>
+       ENDDO<a name='1178'>
+       ENDDO<a name='1179'>
+<a name='1180'>
+     ENDIF<a name='1181'>
+<font color=#447700>!<a name='1182'></font>
+<font color=#447700>! END FASDAS<a name='1183'></font>
+<font color=#447700>!<a name='1184'></font>
+   DO j=jts,jtf<a name='1185'>
+   DO k=kts,ktf<a name='1186'>
+   DO i=itsu,itf<a name='1187'>
+     IF( idd == 1 ) THEN<a name='1188'>
+       blw = 0.5* (blw_old(i-1,j)+blw_old(i,j)) * ( 1.0 - coef ) &amp;<a name='1189'>
+           + 0.5* (blw_new(i-1,j)+blw_new(i,j)) * coef<a name='1190'>
+     ELSE<a name='1191'>
+       blw = 1.0<a name='1192'>
+     ENDIF<a name='1193'>
+     val_analysis = u10_ndg_old(i,j) *( 1.0 - coef ) + u10_ndg_new(i,j) * coef<a name='1194'>
+     val_analysis = val_analysis * wndcor_u(i,j)<a name='1195'>
+     RUNDGDTEN(i,k,j) = guv_sfc * (1.0-wpbl(i,k,j,1)) * wzfac(k,1) * tfac_sfc * blw * &amp;<a name='1196'>
+                         ( val_analysis - u3d(i,1,j) )<a name='1197'>
+   ENDDO<a name='1198'>
+   ENDDO<a name='1199'>
+   ENDDO<a name='1200'>
+<a name='1201'>
+   DO j=jtsv,jtf<a name='1202'>
+   DO k=kts,ktf <a name='1203'>
+   DO i=its,itf<a name='1204'>
+<a name='1205'>
+     IF( idd == 1 ) THEN<a name='1206'>
+       blw = 0.5* (blw_old(i,j-1)+blw_old(i,j)) * ( 1.0 - coef ) &amp;<a name='1207'>
+           + 0.5* (blw_new(i,j-1)+blw_new(i,j)) * coef<a name='1208'>
+     ELSE<a name='1209'>
+       blw = 1.0<a name='1210'>
+     ENDIF<a name='1211'>
+     val_analysis = v10_ndg_old(i,j) *( 1.0 - coef ) + v10_ndg_new(i,j) * coef<a name='1212'>
+     val_analysis = val_analysis * wndcor_v(i,j)<a name='1213'>
+     RVNDGDTEN(i,k,j) = guv_sfc * (1.0-wpbl(i,k,j,2)) * wzfac(k,2) * tfac_sfc * blw * &amp;<a name='1214'>
+                       ( val_analysis - v3d(i,1,j) )<a name='1215'>
+   ENDDO<a name='1216'>
+   ENDDO<a name='1217'>
+   ENDDO<a name='1218'>
+<a name='1219'>
+   DO j=jts,jtf<a name='1220'>
+   DO k=kts,ktf<a name='1221'>
+   DO i=its,itf<a name='1222'>
+     IF( idd == 1 ) THEN<a name='1223'>
+       blw = blw_old(i,j) * ( 1.0 - coef ) + blw_new(i,j) * coef<a name='1224'>
+     ELSE<a name='1225'>
+       blw = 1.0<a name='1226'>
+     ENDIF<a name='1227'>
+<a name='1228'>
+<font color=#447700>!ckay2015 and TWG2015 add stability factor for stable regime, ensure<a name='1229'></font>
+<font color=#447700>!consistency between Direct and Indirect nudging, and Convert potential<a name='1230'></font>
+<font color=#447700>!temperature tendency to temperature tendency<a name='1231'></font>
+<font color=#447700>!<a name='1232'></font>
+<font color=#447700>! FASDAS<a name='1233'></font>
+<font color=#447700>!<a name='1234'></font>
+     IF( fasdas == 1 ) THEN<a name='1235'>
+         if(regime(i,j).le.1.1) then<a name='1236'>
+          stabFac = 1.0/3.0<a name='1237'>
+         else<a name='1238'>
+          stabFac = 1.0<a name='1239'>
+         end if<a name='1240'>
+<a name='1241'>
+     val_analysis = th2_ndg_old(i,j) *( 1.0 - coef ) + th2_ndg_new(i,j) * coef<a name='1242'>
+     <font color=#447700>!BPR BEGIN<a name='1243'></font>
+     <font color=#447700>!RTHNDGDTEN(i,k,j) = stabFac*gt_sfc * (1.0-wpblfasdas(i,k,j)) * wzfac(k,3) * tfac * blw * &amp;<a name='1244'></font>
+     RTHNDGDTEN(i,k,j) = stabFac*gt_sfc * (1.0-wpblfasdas(i,k,j)) * wzfac(k,3) * tfac_sfc * blw * &amp;<a name='1245'>
+     <font color=#447700>!BPR END<a name='1246'></font>
+                          ( val_analysis - th3d(i,1,j))<a name='1247'>
+<a name='1248'>
+     DiffTN = val_analysis - th3d(i,1,j)<a name='1249'>
+     if(k.eq.1) then<a name='1250'>
+        exf = (1.0E05/p3d(i,k,j))**(287./1004.)<a name='1251'>
+        SDA_HFX(i,j) = RTHNDGDTEN(i,k,j)/exf <font color=#447700>!TWG 2015<a name='1252'></font>
+     else<a name='1253'>
+        RTHNDGDTEN(i,k,j) = 0.0<a name='1254'>
+     end if<a name='1255'>
+<a name='1256'>
+     val_analysis = q2_ndg_old(i,j) *( 1.0 - coef ) + q2_ndg_new(i,j) * coef<a name='1257'>
+     IF( iqsat ==  1 .AND. val_analysis &gt; qsat(i,k,j) ) val_analysis = <A href='../../html_code/phys/module_mp_milbrandt2mom.F.html#QSAT'>qsat</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="QSAT_6">(i,k,j)<a name='1258'>
+     <font color=#447700>!BPR BEGIN<a name='1259'></font>
+     <font color=#447700>!RQVNDGDTEN(i,k,j) = stabFac*gq_sfc * (1.0-wpblfasdas(i,k,j)) * wzfac(k,4) * tfac * blw * &amp;<a name='1260'></font>
+     RQVNDGDTEN(i,k,j) = stabFac*gq_sfc * (1.0-wpblfasdas(i,k,j)) * wzfac(k,4) * tfac_sfc * blw * &amp;<a name='1261'>
+     <font color=#447700>!BPR END<a name='1262'></font>
+                          ( val_analysis - qv3d(i,k,j) )<a name='1263'>
+     if(k.eq.1) then<a name='1264'>
+         SDA_QFX(i,j) = RQVNDGDTEN(i,k,j)<a name='1265'>
+     else<a name='1266'>
+         RQVNDGDTEN(i,k,j) = 0.0<a name='1267'>
+     end if<a name='1268'>
+<a name='1269'>
+     ELSE<a name='1270'>
+<a name='1271'>
+     val_analysis = th2_ndg_old(i,j) *( 1.0 - coef ) + th2_ndg_new(i,j) * coef<a name='1272'>
+     <font color=#447700>!BPR BEGIN<a name='1273'></font>
+     <font color=#447700>!RTHNDGDTEN(i,k,j) = gt_sfc * (1.0-wpbl(i,k,j,3)) * wzfac(k,3) * tfac * blw * &amp;<a name='1274'></font>
+     RTHNDGDTEN(i,k,j) = gt_sfc * (1.0-wpbl(i,k,j,3)) * wzfac(k,3) * tfac_sfc * blw * &amp;<a name='1275'>
+     <font color=#447700>!BPR END<a name='1276'></font>
+                          ( val_analysis - th3d(i,1,j))<a name='1277'>
+<a name='1278'>
+     val_analysis = q2_ndg_old(i,j) *( 1.0 - coef ) + q2_ndg_new(i,j) * coef<a name='1279'>
+     IF( iqsat ==  1 .AND. val_analysis &gt; qsat(i,k,j) ) val_analysis = <A href='../../html_code/phys/module_mp_milbrandt2mom.F.html#QSAT'>qsat</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="QSAT_7">(i,k,j)<a name='1280'>
+     <font color=#447700>!BPR BEGIN<a name='1281'></font>
+     <font color=#447700>!RQVNDGDTEN(i,k,j) = gq_sfc * (1.0-wpbl(i,k,j,4)) * wzfac(k,4) * tfac * blw * &amp;<a name='1282'></font>
+     RQVNDGDTEN(i,k,j) = gq_sfc * (1.0-wpbl(i,k,j,4)) * wzfac(k,4) * tfac_sfc * blw * &amp;<a name='1283'>
+     <font color=#447700>!BPR END<a name='1284'></font>
+                          ( val_analysis - qv3d(i,k,j) )<a name='1285'>
+<a name='1286'>
+    ENDIF<a name='1287'>
+<font color=#447700>!<a name='1288'></font>
+<font color=#447700>! END FASDAS<a name='1289'></font>
+<font color=#447700>!<a name='1290'></font>
+   ENDDO<a name='1291'>
+   ENDDO<a name='1292'>
+   ENDDO<a name='1293'>
+<a name='1294'>
+   <font color=#447700>!BPR BEGIN <a name='1295'></font>
+   <font color=#447700>!Diagnostic print<a name='1296'></font>
+   IF ( wrf_dm_on_monitor()) THEN<a name='1297'>
+    IF( dbg_level .GE. 10 ) THEN<a name='1298'>
+     i0 = (ite-its)/2+its<a name='1299'>
+     j0 = (jte-jts)/2+jts <a name='1300'>
+     WRITE(message,'(a,i1,a,f7.2,a,i4,a,i4,a,f7.2,a,f4.2,a,f7.2,a,f4.2,a,f4.2 )') &amp;<a name='1301'>
+      '    D0',id,' At xtime=',xtime,' SFC FDDA sample TH2 analysis (i=',i0,', j=',j0,') = (th2_ndg_old=', &amp;<a name='1302'>
+      th2_ndg_old(i0,j0),') * ',1.0-coef,' + (th2_ndg_new=',th2_ndg_new(i0,j0),') * ',coef, &amp;<a name='1303'>
+      ' where tfac_sfc=',tfac_sfc<a name='1304'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_675">( TRIM(message) )<a name='1305'>
+     WRITE(message,'(a,i1,a,f7.2,a,i4,a,f7.2,a,f7.2)') &amp;<a name='1306'>
+      '    D0',id,'  xtime_old_sfc=',xtime_old_sfc,' analysis_interval_sfc=',analysis_interval_sfc, &amp;<a name='1307'>
+      ' actual_end_fdda_min_sfc=', actual_end_fdda_min_sfc,' dtramp_min=',dtramp_min<a name='1308'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SFDDAGD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_676">( TRIM(message) )<a name='1309'>
+    END IF<a name='1310'>
+   END IF<a name='1311'>
+   <font color=#447700>!BPR END <a name='1312'></font>
+<a name='1313'>
+   END SUBROUTINE sfddagd<a name='1314'>
+<a name='1315'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1316'></font>
+<a name='1317'>
+<A NAME='FDDAGDINIT'><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1318'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>fddagdinit</font>(id,rundgdten,rvndgdten,rthndgdten,rqvndgdten,rmundgdten,&amp; <A href='../../call_to/FDDAGDINIT.html' TARGET='index'>1</A>,<A href='../../call_from/FDDAGDINIT.html' TARGET='index'>26</A><a name='1319'>
+               SDA_HFX, SDA_QFX, QNORM, HFX_BOTH, QFX_BOTH, fasdas,&amp; <font color=#447700>!fasdas<a name='1320'></font>
+               HFX_FDDA,                                           &amp; <font color=#447700>!fasdas<a name='1321'></font>
+               run_hours,  &amp;<a name='1322'>
+               if_no_pbl_nudging_uv, if_no_pbl_nudging_t, if_no_pbl_nudging_q, &amp;<a name='1323'>
+               if_zfac_uv, k_zfac_uv, if_zfac_t, k_zfac_t, if_zfac_q, k_zfac_q, &amp;<a name='1324'>
+               guv, gt, gq, if_ramping, dtramp_min, end_fdda_hour, &amp;<a name='1325'>
+               grid_sfdda, guv_sfc, gt_sfc, gq_sfc,                &amp;<a name='1326'>
+                      restart, allowed_to_read,                    &amp;<a name='1327'>
+                      ids, ide, jds, jde, kds, kde,                &amp;<a name='1328'>
+                      ims, ime, jms, jme, kms, kme,                &amp;<a name='1329'>
+                      its, ite, jts, jte, kts, kte                 )<a name='1330'>
+<font color=#447700>!-------------------------------------------------------------------<a name='1331'></font>
+   IMPLICIT NONE<a name='1332'>
+<font color=#447700>!-------------------------------------------------------------------<a name='1333'></font>
+<font color=#447700>!<a name='1334'></font>
+   INTEGER , INTENT(IN)         ::  id<a name='1335'>
+   LOGICAL, INTENT(IN)          ::  restart, allowed_to_read<a name='1336'>
+   INTEGER, INTENT(IN)          ::  ids, ide, jds, jde, kds, kde, &amp;<a name='1337'>
+                                    ims, ime, jms, jme, kms, kme, &amp;<a name='1338'>
+                                    its, ite, jts, jte, kts, kte<a name='1339'>
+   REAL, DIMENSION( ims:ime , kms:kme , jms:jme ), INTENT(OUT) :: &amp;<a name='1340'>
+                                                       rundgdten, &amp;<a name='1341'>
+                                                       rvndgdten, &amp;<a name='1342'>
+                                                      rthndgdten, &amp;<a name='1343'>
+                                                      rqvndgdten<a name='1344'>
+<font color=#447700>!<a name='1345'></font>
+<font color=#447700>! FASDAS<a name='1346'></font>
+<font color=#447700>!<a name='1347'></font>
+   REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: &amp;<a name='1348'>
+                                                       SDA_HFX, &amp;<a name='1349'>
+                                                       SDA_QFX, &amp;<a name='1350'>
+                                                       QNORM, HFX_BOTH, QFX_BOTH<a name='1351'>
+   INTEGER, INTENT(IN   )           ::  fasdas<a name='1352'>
+   REAL, DIMENSION( ims:ime , kms:kme , jms:jme ), INTENT(OUT) :: &amp;<a name='1353'>
+                                                  HFX_FDDA<a name='1354'>
+<font color=#447700>!<a name='1355'></font>
+<font color=#447700>! END FASDAS<a name='1356'></font>
+<font color=#447700>!<a name='1357'></font>
+   INTEGER,  INTENT(IN)   ::      run_hours<a name='1358'>
+   INTEGER,  INTENT(IN)   ::      if_no_pbl_nudging_uv, if_no_pbl_nudging_t, &amp;<a name='1359'>
+                                  if_no_pbl_nudging_q, end_fdda_hour<a name='1360'>
+   INTEGER,  INTENT(IN)   ::      if_zfac_uv, if_zfac_t, if_zfac_q<a name='1361'>
+   INTEGER,  INTENT(IN)   ::      k_zfac_uv,  k_zfac_t,  k_zfac_q<a name='1362'>
+   INTEGER,  INTENT(IN)   ::      if_ramping, grid_sfdda<a name='1363'>
+   REAL,     INTENT(IN)   ::      dtramp_min<a name='1364'>
+   REAL, INTENT(IN)       ::      guv, gt, gq<a name='1365'>
+   REAL, INTENT(IN)       ::      guv_sfc, gt_sfc, gq_sfc<a name='1366'>
+   REAL                   ::      actual_end_fdda_min<a name='1367'>
+<a name='1368'>
+   REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: rmundgdten<a name='1369'>
+   INTEGER :: i, j, k<a name='1370'>
+<a name='1371'>
+   LOGICAL , EXTERNAL     ::      wrf_dm_on_monitor<a name='1372'>
+<a name='1373'>
+   CHARACTER (LEN=256) :: message<a name='1374'>
+<a name='1375'>
+   IF ( wrf_dm_on_monitor() ) THEN  <a name='1376'>
+<a name='1377'>
+     IF( guv &gt; 0.0 ) THEN<a name='1378'>
+       WRITE(message,'(a,i1,a,e12.4)') &amp;<a name='1379'>
+           'D0',id,' 3-D analysis nudging for wind is applied and Guv= ', guv<a name='1380'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_677">(TRIM(message))<a name='1381'>
+     ELSE IF( guv &lt; 0.0 ) THEN<a name='1382'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_634">('In grid FDDA, Guv must be positive.')<a name='1383'>
+     ELSE <a name='1384'>
+       WRITE(message,'(a,i1,a,e12.4)') &amp;<a name='1385'>
+           'D0',id,' 3-D analysis nudging for wind is not applied and Guv= ', guv<a name='1386'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_678">(TRIM(message))<a name='1387'>
+     ENDIF<a name='1388'>
+<a name='1389'>
+     IF( gt &gt; 0.0 ) THEN<a name='1390'>
+       WRITE(message,'(a,i1,a,e12.4)') &amp;<a name='1391'>
+           'D0',id,' 3-D analysis nudging for temperature is applied and Gt= ', gt<a name='1392'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_679">(TRIM(message))<a name='1393'>
+     ELSE IF( gt &lt; 0.0 ) THEN<a name='1394'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_635">('In grid FDDA, Gt must be positive.')<a name='1395'>
+     ELSE <a name='1396'>
+       WRITE(message,'(a,i1,a,e12.4)') &amp;<a name='1397'>
+           'D0',id,' 3-D analysis nudging for temperature is not applied and Gt= ', gt<a name='1398'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_680">(TRIM(message))<a name='1399'>
+     ENDIF<a name='1400'>
+<a name='1401'>
+     IF( gq &gt; 0.0 ) THEN<a name='1402'>
+       WRITE(message,'(a,i1,a,e12.4)') &amp;<a name='1403'>
+         'D0',id,' 3-D analysis nudging for water vapor mixing ratio is applied and Gq= ', gq<a name='1404'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_681">(TRIM(message))<a name='1405'>
+     ELSE IF( gq &lt; 0.0 ) THEN<a name='1406'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_636">('In grid FDDA, Gq must be positive.')<a name='1407'>
+     ELSE<a name='1408'>
+       WRITE(message,'(a,i1,a,e12.4)') &amp;<a name='1409'>
+         'D0',id,' 3-D analysis nudging for water vapor mixing ratio is not applied and Gq= ', gq<a name='1410'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_682">(TRIM(message))<a name='1411'>
+     ENDIF<a name='1412'>
+<a name='1413'>
+     IF( guv &gt; 0.0 .AND. if_no_pbl_nudging_uv == 1 ) THEN<a name='1414'>
+        WRITE(message,'(a,i1,a)') &amp;<a name='1415'>
+           'D0',id,' 3-D analysis nudging for wind is turned off within the PBL.'<a name='1416'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_683">(TRIM(message))<a name='1417'>
+     ENDIF<a name='1418'>
+<a name='1419'>
+     IF( gt &gt; 0.0 .AND. if_no_pbl_nudging_t == 1 ) THEN<a name='1420'>
+        WRITE(message,'(a,i1,a)') &amp;<a name='1421'>
+           'D0',id,' 3-D analysis nudging for temperature is turned off within the PBL.'<a name='1422'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_684">(TRIM(message))<a name='1423'>
+     ENDIF<a name='1424'>
+<a name='1425'>
+     IF( gq &gt; 0.0 .AND. if_no_pbl_nudging_q == 1 ) THEN<a name='1426'>
+        WRITE(message,'(a,i1,a)') &amp;<a name='1427'>
+         'D0',id,' 3-D analysis nudging for water vapor mixing ratio is turned off within the PBL.'<a name='1428'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_685">(TRIM(message))<a name='1429'>
+     ENDIF<a name='1430'>
+<a name='1431'>
+     IF( guv &gt; 0.0 .AND. if_zfac_uv == 1 ) THEN<a name='1432'>
+        WRITE(message,'(a,i1,a,i3)') &amp;<a name='1433'>
+           'D0',id,' 3-D analysis nudging for wind is turned off below layer', k_zfac_uv<a name='1434'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_686">(TRIM(message))<a name='1435'>
+     ENDIF<a name='1436'>
+<a name='1437'>
+     IF( gt &gt; 0.0 .AND. if_zfac_t == 1 ) THEN<a name='1438'>
+        WRITE(message,'(a,i1,a,i3)') &amp;<a name='1439'>
+           'D0',id,' 3-D analysis nudging for temperature is turned off below layer', k_zfac_t<a name='1440'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_687">(TRIM(message))<a name='1441'>
+     ENDIF<a name='1442'>
+<a name='1443'>
+     IF( gq &gt; 0.0 .AND. if_zfac_q == 1 ) THEN<a name='1444'>
+        WRITE(message,'(a,i1,a,i3)') &amp;<a name='1445'>
+          'D0',id,' 3-D analysis nudging for water vapor mixing ratio is turned off below layer', &amp;<a name='1446'>
+           k_zfac_q<a name='1447'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_688">(TRIM(message))<a name='1448'>
+     ENDIF<a name='1449'>
+<a name='1450'>
+     IF( grid_sfdda &gt;=1 ) THEN<a name='1451'>
+       IF( guv_sfc &gt; 0.0 ) THEN<a name='1452'>
+         WRITE(message,'(a,i1,a,e12.4)') &amp;<a name='1453'>
+             'D0',id,' surface analysis nudging for wind is applied and Guv_sfc= ', guv_sfc<a name='1454'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_689">(TRIM(message))<a name='1455'>
+       ELSE IF( guv_sfc &lt; 0.0 ) THEN<a name='1456'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_637">('In grid FDDA, Guv_sfc must be positive.')<a name='1457'>
+       ELSE<a name='1458'>
+         WRITE(message,'(a,i1,a,e12.4)') &amp;<a name='1459'>
+             'D0',id,' surface analysis nudging for wind is not applied and Guv_sfc= ', guv_sfc<a name='1460'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_690">(TRIM(message))<a name='1461'>
+       ENDIF<a name='1462'>
+<a name='1463'>
+       IF( gt_sfc &gt; 0.0 ) THEN<a name='1464'>
+         WRITE(message,'(a,i1,a,e12.4)') &amp;<a name='1465'>
+             'D0',id,' surface analysis nudging for temperature is applied and Gt_sfc= ', gt_sfc<a name='1466'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_691">(TRIM(message))<a name='1467'>
+       ELSE IF( gt_sfc &lt; 0.0 ) THEN<a name='1468'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_638">('In grid FDDA, Gt_sfc must be positive.')<a name='1469'>
+       ELSE<a name='1470'>
+         WRITE(message,'(a,i1,a,e12.4)') &amp;<a name='1471'>
+             'D0',id,' surafce analysis nudging for temperature is not applied and Gt_sfc= ', gt_sfc<a name='1472'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_692">(TRIM(message))<a name='1473'>
+       ENDIF<a name='1474'>
+<a name='1475'>
+       IF( gq_sfc &gt; 0.0 ) THEN<a name='1476'>
+         WRITE(message,'(a,i1,a,e12.4)') &amp;<a name='1477'>
+           'D0',id,' surface analysis nudging for water vapor mixing ratio is applied and Gq_sfc= ', gq_sfc<a name='1478'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_693">(TRIM(message))<a name='1479'>
+       ELSE IF( gq_sfc &lt; 0.0 ) THEN<a name='1480'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_639">('In grid FDDA, Gq_sfc must be positive.')<a name='1481'>
+       ELSE<a name='1482'>
+         WRITE(message,'(a,i1,a,e12.4)') &amp;<a name='1483'>
+           'D0',id,' surface analysis nudging for water vapor mixing ratio is not applied and Gq_sfc= ', gq_sfc<a name='1484'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_694">(TRIM(message))<a name='1485'>
+       ENDIF<a name='1486'>
+<a name='1487'>
+     ENDIF<a name='1488'>
+<a name='1489'>
+     IF( if_ramping == 1 .AND. ABS(dtramp_min) &gt; 0.0 ) THEN<a name='1490'>
+       IF( dtramp_min &lt;= 0.0 ) THEN<a name='1491'>
+         actual_end_fdda_min = end_fdda_hour*60.0<a name='1492'>
+       ELSE<a name='1493'>
+         actual_end_fdda_min = end_fdda_hour*60.0 + ABS(dtramp_min)<a name='1494'>
+       ENDIF<a name='1495'>
+<a name='1496'>
+       IF( actual_end_fdda_min &lt;= run_hours*60. ) THEN<a name='1497'>
+          WRITE(message,'(a,i1,a)') &amp;<a name='1498'>
+            'D0',id,' analysis nudging is ramped down near the end of the nudging period,'<a name='1499'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_695">(TRIM(message))<a name='1500'>
+<a name='1501'>
+          WRITE(message,'(a,f6.2,a,f6.2,a)') &amp;<a name='1502'>
+             '      starting at ', (actual_end_fdda_min - ABS(dtramp_min))/60.0, &amp;<a name='1503'>
+             'h, ending at ', actual_end_fdda_min/60.0,'h.'<a name='1504'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fdda_psufddagd.F.html#FDDAGDINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_696">(TRIM(message))<a name='1505'>
+       ENDIF<a name='1506'>
+     ENDIF<a name='1507'>
+<a name='1508'>
+   ENDIF<a name='1509'>
+<a name='1510'>
+   IF(.not.restart) THEN<a name='1511'>
+     DO j = jts,jte<a name='1512'>
+     DO k = kts,kte<a name='1513'>
+     DO i = its,ite<a name='1514'>
+        rundgdten(i,k,j) = 0.<a name='1515'>
+        rvndgdten(i,k,j) = 0.<a name='1516'>
+        rthndgdten(i,k,j) = 0.<a name='1517'>
+        rqvndgdten(i,k,j) = 0.<a name='1518'>
+<font color=#447700>! TWG 2015 Psuedo radiative flux<a name='1519'></font>
+        HFX_FDDA(i,k,j) = 0.<a name='1520'>
+<font color=#447700>! TWG END<a name='1521'></font>
+        if(k.eq.kts) rmundgdten(i,j) = 0.<a name='1522'>
+     ENDDO<a name='1523'>
+     ENDDO<a name='1524'>
+     ENDDO<a name='1525'>
+<font color=#447700>!<a name='1526'></font>
+<font color=#447700>! FASDAS<a name='1527'></font>
+<font color=#447700>!<a name='1528'></font>
+     IF( fasdas == 1 ) THEN<a name='1529'>
+       DO j = jts,jte<a name='1530'>
+       DO i = its,ite<a name='1531'>
+          SDA_HFX(I,J)  = 0.0<a name='1532'>
+          SDA_QFX(I,J)  = 0.0<a name='1533'>
+          QNORM(I,J)    = 0.0<a name='1534'>
+          HFX_BOTH(I,J) = 0.0<a name='1535'>
+          QFX_BOTH(I,J) = 0.0  <a name='1536'>
+       ENDDO<a name='1537'>
+       ENDDO<a name='1538'>
+     ENDIF<a name='1539'>
+<font color=#447700>!<a name='1540'></font>
+<font color=#447700>! END FASDAS<a name='1541'></font>
+<font color=#447700>!<a name='1542'></font>
+   ENDIF<a name='1543'>
+<a name='1544'>
+   END SUBROUTINE fddagdinit<a name='1545'>
+<a name='1546'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1547'></font>
+<A NAME='SMTHER'><A href='../../html_code/phys/module_fdda_psufddagd.F.html#SMTHER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1548'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>smther</font>(slab, idimst, idimnd, jdimst, jdimnd, npass, ist, ind, jst, jnd) <A href='../../call_to/SMTHER.html' TARGET='index'>2</A><a name='1549'>
+<font color=#447700>!<a name='1550'></font>
+<font color=#447700>!    PURPOSE: SPATIALLY SMOOTH DATA IN SLAB TO DAMPEN SHORT<a name='1551'></font>
+<font color=#447700>!             WAVELENGTH COMPONENTS.<a name='1552'></font>
+<font color=#447700>!<a name='1553'></font>
+<font color=#447700>!    Implemented based on the same smoothing subroutine used in MM5, with modifications to<a name='1554'></font>
+<font color=#447700>!    remove the extra loop that causes unneccessary desmoothing.  Aijun Deng (Penn State),<a name='1555'></font>
+<font color=#447700>!    December 2008 <a name='1556'></font>
+<font color=#447700>!<a name='1557'></font>
+    IMPLICIT NONE<a name='1558'>
+<a name='1559'>
+    INTEGER :: idimst, idimnd, jdimst, jdimnd, npass, ist, ind, jst, jnd<a name='1560'>
+    INTEGER :: i, j, k, kk<a name='1561'>
+    REAL    :: avg<a name='1562'>
+    REAL, DIMENSION(idimst:idimnd, jdimst:jdimnd) :: SLAB<a name='1563'>
+    REAL, DIMENSION(idimst:idimnd, jdimst:jdimnd) :: SLAB_ORIG<a name='1564'>
+    REAL, DIMENSION(2)                            :: XNU<a name='1565'>
+<a name='1566'>
+    IF(NPASS.EQ.0)RETURN<a name='1567'>
+    XNU(1)=0.50<a name='1568'>
+    XNU(2)=-0.52<a name='1569'>
+    DO K=1,NPASS<a name='1570'>
+      KK = 2 - MOD(K,2)<a name='1571'>
+<a name='1572'>
+      DO J=JDIMST,JDIMND<a name='1573'>
+        DO I=IDIMST,IDIMND<a name='1574'>
+           SLAB_ORIG(I,J) = SLAB(I,J)<a name='1575'>
+        END DO<a name='1576'>
+      END DO<a name='1577'>
+<a name='1578'>
+      DO J=JST,JND<a name='1579'>
+        DO I=IST,IND<a name='1580'>
+          AVG = ( SLAB_ORIG(I+1,J  ) + &amp;<a name='1581'>
+                  SLAB_ORIG(I-1,J  ) + &amp;<a name='1582'>
+                  SLAB_ORIG(I  ,J+1) + &amp;<a name='1583'>
+                  SLAB_ORIG(I  ,J-1) ) * 0.25<a name='1584'>
+          SLAB(I,J)=SLAB_ORIG(I,J)+XNU(KK)*(AVG - SLAB_ORIG(I,J))<a name='1585'>
+        ENDDO<a name='1586'>
+      ENDDO<a name='1587'>
+<a name='1588'>
+    ENDDO<a name='1589'>
+<a name='1590'>
+  END SUBROUTINE smther<a name='1591'>
+<a name='1592'>
+<font color=#447700>!-------------------------------------------------------------------<a name='1593'></font>
+END MODULE module_fdda_psufddagd<a name='1594'>
+</pre></body></html>

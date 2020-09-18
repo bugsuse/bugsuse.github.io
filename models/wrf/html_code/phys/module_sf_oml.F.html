@@ -1,0 +1,249 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:MODEL_LAYER:PHYSICS<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<A NAME='MODULE_SF_OML'><A href='../../html_code/phys/module_sf_oml.F.html#MODULE_SF_OML' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='4'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_sf_oml</font> <A href='../../call_to/MODULE_SF_OML.html' TARGET='index'>2</A><a name='5'>
+<a name='6'>
+CONTAINS<a name='7'>
+<a name='8'>
+<font color=#447700>!----------------------------------------------------------------<a name='9'></font>
+<A NAME='OML1D'><A href='../../html_code/phys/module_sf_oml.F.html#OML1D' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='10'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>OML1D</font>(I,J,TML,T0ML,H,H0,HUML,                              &amp; <A href='../../call_to/OML1D.html' TARGET='index'>1</A><a name='11'>
+                    HVML,TSK,HFX,                                        &amp;<a name='12'>
+                    LH,GSW,GLW,TMOML,                                    &amp;<a name='13'>
+                    UAIR,VAIR,UST,F,EMISS,STBOLT,G,DT,OML_GAMMA,         &amp;<a name='14'>
+                    OML_RELAXATION_TIME,                                 &amp;<a name='15'>
+                    ids,ide, jds,jde, kds,kde,                           &amp;<a name='16'>
+                    ims,ime, jms,jme, kms,kme,                           &amp;<a name='17'>
+                    its,ite, jts,jte, kts,kte                            )<a name='18'>
+<a name='19'>
+<font color=#447700>!----------------------------------------------------------------<a name='20'></font>
+   IMPLICIT NONE<a name='21'>
+<font color=#447700>!----------------------------------------------------------------<a name='22'></font>
+<font color=#447700>!<a name='23'></font>
+<font color=#447700>!  SUBROUTINE OCEANML CALCULATES THE SEA SURFACE TEMPERATURE (TSK) <a name='24'></font>
+<font color=#447700>!  FROM A SIMPLE OCEAN MIXED LAYER MODEL BASED ON <a name='25'></font>
+<font color=#447700>!  (Pollard, Rhines and Thompson (1973).<a name='26'></font>
+<font color=#447700>!<a name='27'></font>
+<font color=#447700>!-- TML         ocean mixed layer temperature (K)<a name='28'></font>
+<font color=#447700>!-- T0ML        ocean mixed layer temperature (K) at initial time<a name='29'></font>
+<font color=#447700>!-- TMOML       top 200 m ocean mean temperature (K) at initial time<a name='30'></font>
+<font color=#447700>!-- H           ocean mixed layer depth (m)<a name='31'></font>
+<font color=#447700>!-- H0          ocean mixed layer depth (m) at initial time<a name='32'></font>
+<font color=#447700>!-- HUML        ocean mixed layer u component of wind<a name='33'></font>
+<font color=#447700>!-- HVML        ocean mixed layer v component of wind<a name='34'></font>
+<font color=#447700>!-- OML_GAMMA   deep water lapse rate (K m-1)<a name='35'></font>
+<font color=#447700>!-- SF_OCEAN_PHYSICS     whether to call oml model<a name='36'></font>
+<font color=#447700>!-- UAIR,VAIR   lowest model level wind component<a name='37'></font>
+<font color=#447700>!-- UST         frictional velocity<a name='38'></font>
+<font color=#447700>!-- HFX         upward heat flux at the surface (W/m^2)<a name='39'></font>
+<font color=#447700>!-- LH          latent heat flux at the surface (W/m^2)<a name='40'></font>
+<font color=#447700>!-- TSK         surface temperature (K)<a name='41'></font>
+<font color=#447700>!-- GSW         downward short wave flux at ground surface (W/m^2)<a name='42'></font>
+<font color=#447700>!-- GLW         downward long wave flux at ground surface (W/m^2)<a name='43'></font>
+<font color=#447700>!-- EMISS       emissivity of the surface<a name='44'></font>
+<font color=#447700>!-- STBOLT      Stefan-Boltzmann constant (W/m^2/K^4)<a name='45'></font>
+<font color=#447700>!-- F           Coriolis parameter<a name='46'></font>
+<font color=#447700>!-- DT          time step (second)<a name='47'></font>
+<font color=#447700>!-- G           acceleration due to gravity<a name='48'></font>
+<font color=#447700>!-- OML_RELAXATION_TIME  time scale (s) to relax TML to T0ML, H to H0,<a name='49'></font>
+<font color=#447700>!                        HUML and HVML to 0; value &lt;=0 means no relaxation<a name='50'></font>
+<font color=#447700>!<a name='51'></font>
+<font color=#447700>!----------------------------------------------------------------<a name='52'></font>
+   INTEGER, INTENT(IN   )    ::      I, J<a name='53'>
+   INTEGER, INTENT(IN   )    ::      ids,ide, jds,jde, kds,kde, &amp;<a name='54'>
+                                     ims,ime, jms,jme, kms,kme, &amp;<a name='55'>
+                                     its,ite, jts,jte, kts,kte<a name='56'>
+<a name='57'>
+   REAL,    INTENT(INOUT)    :: TML, H, HUML, HVML, TSK<a name='58'>
+<a name='59'>
+   REAL,    INTENT(IN   )    :: T0ML, H0, HFX, LH, GSW, GLW,        &amp;<a name='60'>
+                                UAIR, VAIR, UST, F, EMISS, TMOML<a name='61'>
+<a name='62'>
+   REAL,    INTENT(IN) :: STBOLT, G, DT, OML_GAMMA, OML_RELAXATION_TIME<a name='63'>
+<a name='64'>
+<font color=#447700>! Local<a name='65'></font>
+   REAL :: rhoair, rhowater, Gam, alp, BV2, A1, A2, B2, u, v, wspd, &amp;<a name='66'>
+           hu1, hv1, hu2, hv2, taux, tauy, tauxair, tauyair, q, hold, &amp;<a name='67'>
+           hsqrd, thp, cwater, ust2<a name='68'>
+   CHARACTER(LEN=120) :: time_series<a name='69'>
+<a name='70'>
+      hu1=huml<a name='71'>
+      hv1=hvml<a name='72'>
+      rhoair=1.<a name='73'>
+      rhowater=1000.<a name='74'>
+      cwater=4200.<a name='75'>
+<font color=#447700>! Deep ocean lapse rate (K/m) - from Rich<a name='76'></font>
+      Gam=oml_gamma<a name='77'>
+<font color=#447700>!     if(i.eq.1 .and. j.eq.1 .or. i.eq.105.and.j.eq.105) print *, 'gamma = ', gam<a name='78'></font>
+<font color=#447700>!     Gam=0.14<a name='79'></font>
+<font color=#447700>!     Gam=5.6/40.<a name='80'></font>
+<font color=#447700>!     Gam=5./100.<a name='81'></font>
+<font color=#447700>! Thermal expansion coeff (/K)<a name='82'></font>
+<font color=#447700>!     alp=.0002<a name='83'></font>
+<font color=#447700>!     temp dependence (/K)<a name='84'></font>
+      alp=max((tml-273.15)*1.e-5, 1.e-6)<a name='85'>
+      BV2=alp*g*Gam<a name='86'>
+      thp=t0ml-Gam*(h-h0)<a name='87'>
+      A1=(tml-thp)*h - 0.5*Gam*h*h<a name='88'>
+      if(h.ne.0.)then<a name='89'>
+        u=hu1/h<a name='90'>
+        v=hv1/h<a name='91'>
+      else<a name='92'>
+        u=0.<a name='93'>
+        v=0.<a name='94'>
+      endif<a name='95'>
+<a name='96'>
+<font color=#447700>!  time step<a name='97'></font>
+<a name='98'>
+        q=(-hfx-lh+gsw+glw*emiss-stbolt*emiss*tml*tml*tml*tml)/(rhowater*cwater)<a name='99'>
+<font color=#447700>!       wspd=max(sqrt(uair*uair+vair*vair),0.1)<a name='100'></font>
+        wspd=sqrt(uair*uair+vair*vair)<a name='101'>
+        if (wspd .lt. 1.e-10 ) then<a name='102'>
+<font color=#447700>!          print *, 'i,j,wspd are ', i,j,wspd<a name='103'></font>
+           wspd = 1.e-10<a name='104'>
+        endif<a name='105'>
+<font color=#447700>! limit ust to 1.6 to give a value of ust for water of 0.05<a name='106'></font>
+<font color=#447700>!       ust2=min(ust, 1.6)<a name='107'></font>
+<font color=#447700>! new limit for ust: reduce atmospheric ust by half for ocean<a name='108'></font>
+        ust2=0.5*ust<a name='109'>
+        tauxair=ust2*ust2*uair/wspd<a name='110'>
+        taux=rhoair/rhowater*tauxair<a name='111'>
+        tauyair=ust2*ust2*vair/wspd<a name='112'>
+        tauy=rhoair/rhowater*tauyair<a name='113'>
+<font color=#447700>! note: forward-backward coriolis force for effective time-centering<a name='114'></font>
+        hu2=hu1+dt*( f*hv1 + taux)<a name='115'>
+        hv2=hv1+dt*(-f*hu2 + tauy)<a name='116'>
+<font color=#447700>! consider the flux effect<a name='117'></font>
+        A2=A1+q*dt<a name='118'>
+<a name='119'>
+        huml=hu2<a name='120'>
+        hvml=hv2<a name='121'>
+<a name='122'>
+        hold=h<a name='123'>
+        B2=hu2*hu2+hv2*hv2<a name='124'>
+        hsqrd=-A2/Gam + sqrt(A2*A2/(Gam*Gam) + 2.*B2/BV2)<a name='125'>
+        h=sqrt(max(hsqrd,0.0))<a name='126'>
+<font color=#447700>! limit to positive h change<a name='127'></font>
+        if(h.lt.hold)h=hold<a name='128'>
+<a name='129'>
+<font color=#447700>! no change unless tml is warmer than layer mean temp tmol or tsk-5 (see omlinit)<a name='130'></font>
+        if(tml.ge.tmoml .and. h.ne.0.)then<a name='131'>
+<a name='132'>
+<font color=#447700>! no change unless tml is warmer than layer mean temp tmoml or tsk-5 (see omlinit)<a name='133'></font>
+          if(tml.ge.tmoml)then<a name='134'>
+            tml=max(t0ml - Gam*(h-h0) + 0.5*Gam*h + A2/h, tmoml)<a name='135'>
+          else <a name='136'>
+            tml=tmoml<a name='137'>
+          endif<a name='138'>
+          u=hu2/h<a name='139'>
+          v=hv2/h<a name='140'>
+        else<a name='141'>
+          tml=t0ml<a name='142'>
+          u=0.<a name='143'>
+          v=0.<a name='144'>
+        endif<a name='145'>
+<a name='146'>
+<font color=#447700>! relax TML T0ML and H to H0, HUML and HVML to 0<a name='147'></font>
+<a name='148'>
+        if (oml_relaxation_time .gt. 0.) then<a name='149'>
+          tml = tml - (tml-t0ml)*dt/oml_relaxation_time<a name='150'>
+          h = h - (h-h0)*dt/oml_relaxation_time<a name='151'>
+          huml = huml - huml*dt/oml_relaxation_time<a name='152'>
+          hvml = hvml - hvml*dt/oml_relaxation_time<a name='153'>
+        end if<a name='154'>
+<a name='155'>
+        tsk=tml<a name='156'>
+<font color=#447700>!        if(h.gt.100.)print *,i,j,h,tml,' h,tml'<a name='157'></font>
+<a name='158'>
+<font color=#447700>! ww: output point data<a name='159'></font>
+<font color=#447700>!     if( (i.eq.190 .and. j.eq.115) .or. (i.eq.170 .and. j.eq.125) ) then<a name='160'></font>
+<font color=#447700>!        write(jtime,fmt='("TS ",f10.0)') float(itimestep)<a name='161'></font>
+<font color=#447700>!        CALL wrf_message ( TRIM(jtime) )<a name='162'></font>
+<font color=#447700>!        write(time_series,fmt='("OML",2I4,2F9.5,2F8.2,2E15.5,F8.3)') &amp;<a name='163'></font>
+<font color=#447700>!              i,j,u,v,tml,h,taux,tauy,a2<a name='164'></font>
+<font color=#447700>!        CALL wrf_message ( TRIM(time_series) )<a name='165'></font>
+<font color=#447700>!     end if<a name='166'></font>
+<a name='167'>
+   END SUBROUTINE OML1D<a name='168'>
+<a name='169'>
+<font color=#447700>!================================================================<a name='170'></font>
+<A NAME='OMLINIT'><A href='../../html_code/phys/module_sf_oml.F.html#OMLINIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='171'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>omlinit</font>(oml_hml0, tsk,                           &amp; <A href='../../call_to/OMLINIT.html' TARGET='index'>1</A>,<A href='../../call_from/OMLINIT.html' TARGET='index'>2</A><a name='172'>
+                      tml,t0ml,hml,h0ml,huml,hvml,tmoml,       &amp;<a name='173'>
+                      allowed_to_read, start_of_simulation,    &amp;<a name='174'>
+                      ids,ide, jds,jde, kds,kde,               &amp;<a name='175'>
+                      ims,ime, jms,jme, kms,kme,               &amp;<a name='176'>
+                      its,ite, jts,jte, kts,kte                )<a name='177'>
+<font color=#447700>!----------------------------------------------------------------<a name='178'></font>
+   IMPLICIT NONE<a name='179'>
+<font color=#447700>!----------------------------------------------------------------<a name='180'></font>
+   LOGICAL , INTENT(IN)      ::      allowed_to_read<a name='181'>
+   LOGICAL , INTENT(IN)      ::      start_of_simulation<a name='182'>
+   INTEGER, INTENT(IN   )    ::      ids,ide, jds,jde, kds,kde, &amp;<a name='183'>
+                                     ims,ime, jms,jme, kms,kme, &amp;<a name='184'>
+                                     its,ite, jts,jte, kts,kte<a name='185'>
+<a name='186'>
+   REAL,    DIMENSION( ims:ime, jms:jme )                     , &amp;<a name='187'>
+            INTENT(IN)    ::                               TSK<a name='188'>
+<a name='189'>
+   REAL,    DIMENSION( ims:ime, jms:jme )                     , &amp;<a name='190'>
+            INTENT(INOUT)    ::     TML, T0ML, HML, H0ML, HUML, HVML, TMOML<a name='191'>
+   REAL   , INTENT(IN   )    ::     oml_hml0<a name='192'>
+<a name='193'>
+<font color=#447700>!  LOCAR VAR<a name='194'></font>
+<a name='195'>
+   INTEGER                   ::      L,J,I,itf,jtf<a name='196'>
+   CHARACTER*1024 message<a name='197'>
+<a name='198'>
+<font color=#447700>!----------------------------------------------------------------<a name='199'></font>
+ <a name='200'>
+   itf=min0(ite,ide-1)<a name='201'>
+   jtf=min0(jte,jde-1)<a name='202'>
+<a name='203'>
+   IF(start_of_simulation) THEN<a name='204'>
+     DO J=jts,jtf<a name='205'>
+     DO I=its,itf<a name='206'>
+       TML(I,J)=TSK(I,J)<a name='207'>
+       T0ML(I,J)=TSK(I,J)<a name='208'>
+     ENDDO<a name='209'>
+     ENDDO<a name='210'>
+     IF (oml_hml0 .gt. 0.) THEN<a name='211'>
+        WRITE(message,*)'Initializing OML with HML0 = ', oml_hml0<a name='212'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_sf_oml.F.html#OMLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_833"> (0, TRIM(message))<a name='213'>
+        DO J=jts,jtf<a name='214'>
+        DO I=its,itf<a name='215'>
+          HML(I,J)=oml_hml0<a name='216'>
+          H0ML(I,J)=HML(I,J)<a name='217'>
+          HUML(I,J)=0.<a name='218'>
+          HVML(I,J)=0.<a name='219'>
+          TMOML(I,J)=TSK(I,J)-5.<a name='220'>
+        ENDDO<a name='221'>
+        ENDDO<a name='222'>
+     ELSE IF (oml_hml0 .eq. 0.) THEN<a name='223'>
+<font color=#447700>! initializing with climatological mixed layer depth only<a name='224'></font>
+        DO J=jts,jtf<a name='225'>
+        DO I=its,itf<a name='226'>
+          HML(I,J)=H0ML(I,J)<a name='227'>
+          HUML(I,J)=0.<a name='228'>
+          HVML(I,J)=0.<a name='229'>
+          TMOML(I,J)=TSK(I,J)-5.<a name='230'>
+        ENDDO<a name='231'>
+        ENDDO<a name='232'>
+     ELSE<a name='233'>
+        WRITE(message,*)'Initializing OML with real HML0, h(1,1) = ', h0ml(1,1)<a name='234'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_sf_oml.F.html#OMLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_834"> (0, TRIM(message))<a name='235'>
+        DO J=jts,jtf<a name='236'>
+        DO I=its,itf<a name='237'>
+          HML(I,J)=H0ML(I,J)<a name='238'>
+<font color=#447700>! fill in near coast area with SST: 200 K was set as missing value in ocean pre-processing code<a name='239'></font>
+          IF(TMOML(I,J).GT.200. .and. TMOML(I,J).LE.201.) TMOML(I,J)=TSK(I,J)<a name='240'>
+        ENDDO<a name='241'>
+        ENDDO<a name='242'>
+     ENDIF<a name='243'>
+   ENDIF<a name='244'>
+<a name='245'>
+   END SUBROUTINE omlinit<a name='246'>
+<a name='247'>
+END MODULE module_sf_oml<a name='248'>
+</pre></body></html>

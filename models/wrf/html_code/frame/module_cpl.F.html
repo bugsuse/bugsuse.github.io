@@ -1,0 +1,545 @@
+<HTML> <BODY BGCOLOR=#eeddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_CPL'><A href='../../html_code/frame/module_cpl.F.html#MODULE_CPL' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_cpl</font> <A href='../../call_to/MODULE_CPL.html' TARGET='index'>9</A><a name='3'>
+<a name='4'>
+   USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/frame/module_cpl.F.html#module_cpl.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_101">          , ONLY : domain, get_ijk_from_grid<a name='5'>
+   USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>module_configure</A><A href='../../html_code/frame/module_cpl.F.html#module_cpl.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_65">       , ONLY : grid_config_rec_type<a name='6'>
+   USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/frame/module_cpl.F.html#module_cpl.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_36"> , ONLY : stbolt<a name='7'>
+   USE <A href='../../html_code/frame/module_driver_constants.F.html#MODULE_DRIVER_CONSTANTS'>module_driver_constants</A><A href='../../html_code/frame/module_cpl.F.html#module_cpl.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DRIVER_CONSTANTS_21">, ONLY : max_domains, max_cplfld, max_extdomains<a name='8'>
+   USE <A href='../../html_code/frame/module_cpl_oasis3.F.html#MODULE_CPL_OASIS3'>module_cpl_oasis3</A><A href='../../html_code/frame/module_cpl.F.html#module_cpl.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CPL_OASIS3_1"> <a name='9'>
+<a name='10'>
+   IMPLICIT NONE<a name='11'>
+   PRIVATE<a name='12'>
+<a name='13'>
+   PUBLIC cpl_init<a name='14'>
+   PUBLIC cpl_set_dm_communicator<a name='15'>
+   PUBLIC cpl_defdomain<a name='16'>
+   PUBLIC cpl_settime<a name='17'>
+   PUBLIC cpl_snd<a name='18'>
+   PUBLIC cpl_rcv<a name='19'>
+   PUBLIC cpl_store_input<a name='20'>
+   PUBLIC cpl_finalize<a name='21'>
+   PUBLIC cpl_abort<a name='22'>
+<a name='23'>
+#ifdef key_cpp_oasis3<a name='24'>
+   LOGICAL     , PARAMETER, PUBLIC :: coupler_on = .TRUE.<a name='25'>
+   CHARACTER(5), PARAMETER         :: coupler_name = 'oasis'<a name='26'>
+#else<a name='27'>
+   LOGICAL     , PARAMETER, PUBLIC :: coupler_on = .FALSE.<a name='28'>
+   CHARACTER(4), PARAMETER         :: coupler_name = 'none'<a name='29'>
+#endif<a name='30'>
+   INTEGER :: nsecrun             <font color=#447700>! current time in seconds since simulation restart<a name='31'></font>
+   INTEGER, PARAMETER :: charlen = 64<a name='32'>
+   CHARACTER(charlen), DIMENSION(max_domains,max_extdomains,max_cplfld) :: rcvname, sndname   <font color=#447700>! coupling fields names for each nest<a name='33'></font>
+<a name='34'>
+   CHARACTER(256) :: cltxt        <font color=#447700>! messages or debug string<a name='35'></font>
+   INTEGER :: nlevdbg  = 1        <font color=#447700>! verbosity level<a name='36'></font>
+   INTEGER :: nlevdbg2 = 10       <font color=#447700>! verbosity level<a name='37'></font>
+<a name='38'>
+#if ( defined( DM_PARALLEL ) &amp;&amp; ( <font color=#447700>! defined( STUBMPI ) ) )<a name='39'></font>
+   INCLUDE 'mpif.h'               <font color=#447700>! only for MPI_COMM_NULL<a name='40'></font>
+#else<a name='41'>
+   INTEGER :: MPI_COMM_NULL = -1  <font color=#447700>! define a fake (and not used) MPI_COMM_NULL, so it is compiling<a name='42'></font>
+#endif<a name='43'>
+<a name='44'>
+CONTAINS<a name='45'>
+<a name='46'>
+<A NAME='CPL_INIT'><A href='../../html_code/frame/module_cpl.F.html#CPL_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='47'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_init</font>( kl_comm )  <A href='../../call_to/CPL_INIT.html' TARGET='index'>2</A>,<A href='../../call_from/CPL_INIT.html' TARGET='index'>1</A><a name='48'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='49'></font>
+      <font color=#447700>!!             ***  ROUTINE cpl_init  ***<a name='50'></font>
+      <font color=#447700>!!<a name='51'></font>
+      <font color=#447700>!! ** Purpose :   initialise coupling field names and WRF-coupler MPI communications<a name='52'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='53'></font>
+      INTEGER, INTENT(OUT) :: kl_comm       <font color=#447700>! local MPI communicator of the model<a name='54'></font>
+      <font color=#447700>!<a name='55'></font>
+      INTEGER       :: jwrf,jext,jfld       <font color=#447700>! local loop indicees<a name='56'></font>
+      CHARACTER( 3) :: clwrfdom, clextdom   <font color=#447700>! d&lt;domain&gt;<a name='57'></font>
+      CHARACTER(16) :: clprefix             <font color=#447700>! 'WRF_d??_EXT_d??_'<a name='58'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='59'></font>
+<a name='60'>
+      <font color=#447700>! coupling field name default definition<a name='61'></font>
+      rcvname(:,:,:) = 'not defined'<a name='62'>
+      sndname(:,:,:) = 'not defined'<a name='63'>
+      <a name='64'>
+      <font color=#447700>! we could imagine to define rcvname and sndname through the namelist...<a name='65'></font>
+      <font color=#447700>! define all possible coupling names with _d&lt;domain&gt; of WRF and the external model(s)<a name='66'></font>
+      DO jext = 1, max_extdomains<a name='67'>
+         <a name='68'>
+         WRITE(clextdom, fmt="('d',i2.2)") jext<a name='69'>
+         <a name='70'>
+         DO jwrf = 1, max_domains<a name='71'>
+            <a name='72'>
+            WRITE(clwrfdom, fmt="('d',i2.2)") jwrf          <a name='73'>
+            <font color=#447700>! do not change following syntaxe as it is used in routines bellow <a name='74'></font>
+            clprefix = 'WRF_'//clwrfdom//'_EXT_'//clextdom//'_' <a name='75'>
+            <a name='76'>
+            <font color=#447700>! Variables that can be received by WRF<a name='77'></font>
+            rcvname(jwrf,jext,1) = clprefix//'SST'                  <font color=#447700>! receive Sea surface temperature<a name='78'></font>
+            rcvname(jwrf,jext,2) = clprefix//'UOCE'                 <font color=#447700>! receive ocean zonal surface current <a name='79'></font>
+            rcvname(jwrf,jext,3) = clprefix//'VOCE'                 <font color=#447700>! receive ocean meridional surface current <a name='80'></font>
+            <a name='81'>
+            <font color=#447700>! Variables that can be sent by WRF<a name='82'></font>
+            sndname(jwrf,jext,1) = clprefix//'EVAP-PRECIP'          <font color=#447700>! send net fresh water budget: evaporation - total precipitation<a name='83'></font>
+            sndname(jwrf,jext,2) = clprefix//'SURF_NET_SOLAR'       <font color=#447700>! send net short wave flux at ground surface<a name='84'></font>
+            sndname(jwrf,jext,3) = clprefix//'SURF_NET_NON-SOLAR'   <font color=#447700>! send net non-solar heat flux at ground surface<a name='85'></font>
+            sndname(jwrf,jext,4) = clprefix//'TAUX'                 <font color=#447700>! send zonal wind tress at atmosphere-ocean interface<a name='86'></font>
+            sndname(jwrf,jext,5) = clprefix//'TAUY'                 <font color=#447700>! send meridional wind tress at atmosphere-ocean interface<a name='87'></font>
+            sndname(jwrf,jext,6) = clprefix//'TAUMOD'               <font color=#447700>! send the wind tress module at atmosphere-ocean interface<a name='88'></font>
+            <a name='89'>
+         END DO<a name='90'>
+      END DO<a name='91'>
+      <a name='92'>
+      IF ( coupler_name == 'oasis' ) CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_INIT'>cpl_oasis_init</A><A href='../../html_code/frame/module_cpl.F.html#CPL_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_INIT_1">( kl_comm ) <a name='93'>
+      <a name='94'>
+   END SUBROUTINE cpl_init<a name='95'>
+   <a name='96'>
+<a name='97'>
+<A NAME='CPL_SET_DM_COMMUNICATOR'><A href='../../html_code/frame/module_cpl.F.html#CPL_SET_DM_COMMUNICATOR' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='98'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_set_dm_communicator</font>( kdm_comm ) <A href='../../call_to/CPL_SET_DM_COMMUNICATOR.html' TARGET='index'>4</A>,<A href='../../call_from/CPL_SET_DM_COMMUNICATOR.html' TARGET='index'>2</A><a name='99'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='100'></font>
+      <font color=#447700>!!             ***  SUBROUTINE cpl_initquilt  ***<a name='101'></font>
+      <font color=#447700>!!<a name='102'></font>
+      <font color=#447700>!! ** Purpose : provide the computing nodes communicator to the coupler<a name='103'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='104'></font>
+      INTEGER, INTENT(IN) :: kdm_comm       <font color=#447700>! MPI communicator between the computing nodes<a name='105'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='106'></font>
+<a name='107'>
+      IF ( coupler_name == 'oasis' ) THEN <a name='108'>
+         IF ( kdm_comm == MPI_COMM_NULL ) THEN<a name='109'>
+            CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE'>cpl_oasis_define</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SET_DM_COMMUNICATOR' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_DEFINE_1">( sndname, rcvname )   <font color=#447700>! define io_quilting to OASIS<a name='110'></font>
+         ELSE<a name='111'>
+            CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEF_DMCOMM'>cpl_oasis_def_dmcomm</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SET_DM_COMMUNICATOR' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_DEF_DMCOMM_1">( kdm_comm )       <font color=#447700>! send the computing nodes communicator to OASIS<a name='112'></font>
+         END IF<a name='113'>
+      END IF<a name='114'>
+<a name='115'>
+   END SUBROUTINE cpl_set_dm_communicator<a name='116'>
+<a name='117'>
+<a name='118'>
+<A NAME='CPL_DEFDOMAIN'><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='119'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_defdomain</font>( grid ) <A href='../../call_to/CPL_DEFDOMAIN.html' TARGET='index'>2</A>,<A href='../../call_from/CPL_DEFDOMAIN.html' TARGET='index'>13</A><a name='120'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='121'></font>
+      <font color=#447700>!!             ***  SUBROUTINE cpl_defdomain  ***<a name='122'></font>
+      <font color=#447700>!!<a name='123'></font>
+      <font color=#447700>!! ** Purpose : define each variable involved in the coupling and the grid partitioning<a name='124'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='125'></font>
+      TYPE(domain), INTENT(IN), POINTER ::   grid<a name='126'>
+      <font color=#447700>!<a name='127'></font>
+      INTEGER :: jwrf,jext,jfld          <font color=#447700>! local loop indicees<a name='128'></font>
+      REAL    :: zmin,zmax               <font color=#447700>! min/max of grid*cplmask<a name='129'></font>
+      INTEGER :: ips,ipe,jps,jpe,kps,kpe <font color=#447700>! domain dimension on 1 processor<a name='130'></font>
+      INTEGER :: ims,ime,jms,jme,kms,kme <font color=#447700>! memory domain dimension on 1 processor <a name='131'></font>
+      INTEGER :: ids,ide,jds,jde,kds,kde <font color=#447700>! domain dimension<a name='132'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='133'></font>
+#if (EM_CORE == 1)<a name='134'>
+<a name='135'>
+      CALL <A href='../../html_code/frame/module_domain.F.html#GET_IJK_FROM_GRID'>get_ijk_from_grid</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_IJK_FROM_GRID_30">( grid, ids, ide, jds, jde, kds, kde, &amp;<a name='136'>
+         &amp;                          ims, ime, jms, jme, kms, kme, &amp;<a name='137'>
+         &amp;                          ips, ipe, jps, jpe, kps, kpe  )<a name='138'>
+<a name='139'>
+      <font color=#447700>! first do some checks and prints. note that this could not be done in cpl_init<a name='140'></font>
+      <font color=#447700>! which is called too early in the code<a name='141'></font>
+<a name='142'>
+      <font color=#447700>! some control prints on potential sent/received fields...<a name='143'></font>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_169">(nlevdbg, 'cpl_init: defined variables to be potentially received' )<a name='144'>
+      DO jfld = 1, max_cplfld<a name='145'>
+         DO jext = 1, grid%num_ext_model_couple_dom<a name='146'>
+            DO jwrf = 1, grid%max_dom<a name='147'>
+               IF( TRIM(sndname(jwrf,jext,jfld)) /= 'not defined' ) THEN<a name='148'>
+                  WRITE(cltxt,*) '   jwrf, jext, jfld: ', jwrf, jext, jfld ,' name: ', TRIM(sndname(jwrf,jext,jfld))<a name='149'>
+                  CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_170">(nlevdbg2, cltxt)<a name='150'>
+               END IF<a name='151'>
+            END DO<a name='152'>
+         END DO<a name='153'>
+      END DO<a name='154'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_171">(nlevdbg, 'cpl_init: defined variables to be potentially sent' )<a name='155'>
+      DO jfld = 1, max_cplfld<a name='156'>
+         DO jext = 1, grid%num_ext_model_couple_dom<a name='157'>
+            DO jwrf = 1, grid%max_dom<a name='158'>
+               IF( TRIM(rcvname(jwrf,jext,jfld)) /= 'not defined' ) THEN<a name='159'>
+                  WRITE(cltxt,*) '   jwrf, jext, jfld: ', jwrf, jext, jfld ,' name: ', TRIM(rcvname(jwrf,jext,jfld))<a name='160'>
+                  CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_172">(nlevdbg2, cltxt)<a name='161'>
+               END IF<a name='162'>
+            END DO<a name='163'>
+         END DO<a name='164'>
+      END DO<a name='165'>
+      <a name='166'>
+      <font color=#447700>! some checks on grid%cplmask...<a name='167'></font>
+      DO jext = 1, grid%num_ext_model_couple_dom<a name='168'>
+<a name='169'>
+         WRITE(cltxt,*) 'checks on cplmask of external model domain: ', jext               ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_173">(nlevdbg, cltxt)<a name='170'>
+<a name='171'>
+         zmin = MINVAL(grid%cplmask(ips:ipe,jext,jps:jpe))<a name='172'>
+         IF( zmin &lt; 0. ) THEN<a name='173'>
+            WRITE(cltxt,*) 'min of external model domain cplmask: ',jext,' &lt; 0. : ',zmin   ;   CALL <A href='../../html_code/frame/module_cpl.F.html#CPL_ABORT'>cpl_abort</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_ABORT_1">('cpl_defdomain',cltxt)<a name='174'>
+         END IF<a name='175'>
+         WRITE(cltxt,*) '   minval(grid%cplmask(ips:ipe,jext,jps:jpe)): ', zmin            ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_174">(nlevdbg, cltxt)<a name='176'>
+<a name='177'>
+         zmax = MAXVAL(grid%cplmask(ips:ipe,jext,jps:jpe))<a name='178'>
+         IF( zmax &gt; 1. ) THEN<a name='179'>
+            WRITE(cltxt,*) 'max of external model domain cplmask: ',jext,' &gt; 1. : ',zmax   ;   CALL <A href='../../html_code/frame/module_cpl.F.html#CPL_ABORT'>cpl_abort</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_ABORT_2">('cpl_defdomain',cltxt)<a name='180'>
+         END IF<a name='181'>
+         IF( zmax == 0. ) THEN<a name='182'>
+            WRITE(cltxt,*) 'max of external model domain cplmask: ',jext,' = 0 '           ;   CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_287">(cltxt)<a name='183'>
+            WRITE(cltxt,*) '  =&gt; no coupling between this external model domain and this WRF patch'   ;   CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_288">(cltxt)<a name='184'>
+         END IF<a name='185'>
+         WRITE(cltxt,*) '   maxval(grid%cplmask(ips:ipe,jext,jps:jpe)): ', zmax            ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_175">(nlevdbg, cltxt)<a name='186'>
+<a name='187'>
+      END DO<a name='188'>
+#endif       <a name='189'>
+      <a name='190'>
+      IF ( coupler_name == 'oasis' ) CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_DEFINE'>cpl_oasis_define</A><A href='../../html_code/frame/module_cpl.F.html#CPL_DEFDOMAIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_DEFINE_2">( sndname, rcvname, grid )<a name='191'>
+<a name='192'>
+   END SUBROUTINE cpl_defdomain<a name='193'>
+<a name='194'>
+<a name='195'>
+<A NAME='CPL_SETTIME'><A href='../../html_code/frame/module_cpl.F.html#CPL_SETTIME' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='196'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_settime</font>( psec ) <A href='../../call_to/CPL_SETTIME.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_SETTIME.html' TARGET='index'>1</A><a name='197'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='198'></font>
+      <font color=#447700>!!             ***  SUBROUTINE cpl_settime  ***<a name='199'></font>
+      <font color=#447700>!!<a name='200'></font>
+      <font color=#447700>!! ** Purpose :   update and store the number of second since the beginning of the job.  <a name='201'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='202'></font>
+      REAL, INTENT(in) :: psec<a name='203'>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='204'></font>
+<a name='205'>
+      nsecrun = NINT( psec )<a name='206'>
+      WRITE(cltxt,*) 'store number of second since the beginning of the job: ', nsecrun   ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SETTIME' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_176">(nlevdbg2, cltxt)<a name='207'>
+<a name='208'>
+   END SUBROUTINE cpl_settime<a name='209'>
+<a name='210'>
+<a name='211'>
+<A NAME='CPL_TORECEIVE'><A href='../../html_code/frame/module_cpl.F.html#CPL_TORECEIVE' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='212'>
+   <font color=#993300>FUNCTION </font><font color=#cc0000>cpl_toreceive</font>( kdomwrf, kdomext, kfldid ),<A href='../../call_from/CPL_TORECEIVE.html' TARGET='index'>1</A><a name='213'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='214'></font>
+      <font color=#447700>!!             ***  FUNCTION cpl_toreceive  ***<a name='215'></font>
+      <font color=#447700>!!<a name='216'></font>
+      <font color=#447700>!! ** Purpose :   send back a logical to tell if a variable must be received or not<a name='217'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='218'></font>
+      INTEGER, INTENT(IN) :: kdomwrf   <font color=#447700>! wrf domain index<a name='219'></font>
+      INTEGER, INTENT(IN) :: kdomext   <font color=#447700>! external model domain index<a name='220'></font>
+      INTEGER, INTENT(IN) :: kfldid    <font color=#447700>! field index<a name='221'></font>
+      <font color=#447700>!<a name='222'></font>
+      LOGICAL :: cpl_toreceive<a name='223'>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='224'></font>
+<a name='225'>
+      IF ( coupler_name == 'oasis' ) cpl_toreceive = <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_TORECEIVE'>cpl_oasis_toreceive</A><A href='../../html_code/frame/module_cpl.F.html#CPL_TORECEIVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_TORECEIVE_1">( kdomwrf, kdomext, kfldid ) <a name='226'>
+<a name='227'>
+   END FUNCTION cpl_toreceive<a name='228'>
+<a name='229'>
+<a name='230'>
+<A NAME='CPL_TOSEND'><A href='../../html_code/frame/module_cpl.F.html#CPL_TOSEND' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='231'>
+   <font color=#993300>FUNCTION </font><font color=#cc0000>cpl_tosend</font>( kdomwrf, kfldid, max_edom ) <A href='../../call_to/CPL_TOSEND.html' TARGET='index'>6</A>,<A href='../../call_from/CPL_TOSEND.html' TARGET='index'>1</A><a name='232'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='233'></font>
+      <font color=#447700>!!             ***  FUNCTION cpl_tosend  ***<a name='234'></font>
+      <font color=#447700>!!<a name='235'></font>
+      <font color=#447700>!! ** Purpose :   send back a logical array to tell if a variable must be<a name='236'></font>
+      <font color=#447700>!!                sent or not to each of the external model domains<a name='237'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='238'></font>
+      INTEGER, INTENT(IN) :: kdomwrf   <font color=#447700>! wrf domain index<a name='239'></font>
+      INTEGER, INTENT(IN) :: kfldid    <font color=#447700>! variable index<a name='240'></font>
+      INTEGER, INTENT(IN) :: max_edom  <font color=#447700>! max number of external model domains<a name='241'></font>
+      <font color=#447700>!<a name='242'></font>
+      LOGICAL,DIMENSION(max_edom) :: cpl_tosend<a name='243'>
+      INTEGER                     :: jext          <font color=#447700>! local loop indicees<a name='244'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='245'></font>
+<a name='246'>
+      DO jext = 1, max_edom<a name='247'>
+         IF ( coupler_name == 'oasis' )   cpl_tosend(jext) = <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_TOSEND'>cpl_oasis_tosend</A><A href='../../html_code/frame/module_cpl.F.html#CPL_TOSEND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_TOSEND_1">( kdomwrf, jext, kfldid ) <a name='248'>
+      END DO<a name='249'>
+      <a name='250'>
+   END FUNCTION cpl_tosend<a name='251'>
+<a name='252'>
+<a name='253'>
+<A NAME='CPL_GET_FLDID'><A href='../../html_code/frame/module_cpl.F.html#CPL_GET_FLDID' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='254'>
+   <font color=#993300>FUNCTION </font><font color=#cc0000>cpl_get_fldid</font>( cdsuffix ) <A href='../../call_to/CPL_GET_FLDID.html' TARGET='index'>7</A>,<A href='../../call_from/CPL_GET_FLDID.html' TARGET='index'>2</A><a name='255'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='256'></font>
+      <font color=#447700>!!             ***  SUBROUTINE cpl_get_fldid  ***<a name='257'></font>
+      <font color=#447700>!!<a name='258'></font>
+      <font color=#447700>!! ** Purpose : send back the field id corresponding to the suffix of a coupling variable name<a name='259'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='260'></font>
+      CHARACTER(*), INTENT(IN) :: cdsuffix   <font color=#447700>! field name suffix<a name='261'></font>
+      <font color=#447700>!<a name='262'></font>
+      INTEGER       :: cpl_get_fldid     <font color=#447700>! field index<a name='263'></font>
+      INTEGER       :: jfld              <font color=#447700>! local loop indicees<a name='264'></font>
+      CHARACTER(16) :: clprefix          <font color=#447700>! 'WRF_d01_EXT_d01_'<a name='265'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='266'></font>
+      cpl_get_fldid = -1   <font color=#447700>! default value<a name='267'></font>
+         <a name='268'>
+      clprefix = 'WRF_d01_EXT_d01_' <a name='269'>
+      DO jfld = 1, max_cplfld<a name='270'>
+         IF( clprefix//TRIM(cdsuffix) == TRIM(sndname(1,1,jfld)) )   cpl_get_fldid = jfld<a name='271'>
+         IF( clprefix//TRIM(cdsuffix) == TRIM(rcvname(1,1,jfld)) )   cpl_get_fldid = jfld<a name='272'>
+      END DO<a name='273'>
+          <a name='274'>
+      IF( cpl_get_fldid == -1 )   CALL <A href='../../html_code/frame/module_cpl.F.html#CPL_ABORT'>cpl_abort</A><A href='../../html_code/frame/module_cpl.F.html#CPL_GET_FLDID' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_ABORT_3">( 'cpl_get_fldid', 'variable suffix not found '//TRIM(cdsuffix) )<a name='275'>
+      WRITE(cltxt,*) 'The id of variable'//TRIM(cdsuffix)//' is: ', cpl_get_fldid   ;   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/frame/module_cpl.F.html#CPL_GET_FLDID' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_177">(nlevdbg2, cltxt)<a name='276'>
+<a name='277'>
+   END FUNCTION cpl_get_fldid<a name='278'>
+<a name='279'>
+   <a name='280'>
+<A NAME='CPL_SND'><A href='../../html_code/frame/module_cpl.F.html#CPL_SND' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='281'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_snd</font>( grid ) <A href='../../call_to/CPL_SND.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_SND.html' TARGET='index'>2</A><a name='282'>
+         <font color=#447700>!!-------------------------------------------------------------------<a name='283'></font>
+      <font color=#447700>!!             ***  SUBROUTINE cpl_snd  ***<a name='284'></font>
+      <font color=#447700>!!<a name='285'></font>
+      <font color=#447700>!! ** Purpose : compute coupling data to be sent and call cpl_sndfield<a name='286'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='287'></font>
+      TYPE(domain), INTENT(IN), POINTER :: grid<a name='288'>
+      <font color=#447700>!<a name='289'></font>
+      INTEGER :: ips,ipe,jps,jpe,kps,kpe <font color=#447700>! domain dimension on 1 processor<a name='290'></font>
+      INTEGER :: ims,ime,jms,jme,kms,kme <font color=#447700>! memory domain dimension on 1 processor <a name='291'></font>
+      INTEGER :: ids,ide,jds,jde,kds,kde <font color=#447700>! domain dimension<a name='292'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='293'></font>
+      CALL <A href='../../html_code/frame/module_domain.F.html#GET_IJK_FROM_GRID'>get_ijk_from_grid</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_IJK_FROM_GRID_31">( grid, ids, ide, jds, jde, kds, kde, &amp;<a name='294'>
+         &amp;                          ims, ime, jms, jme, kms, kme, &amp;<a name='295'>
+         &amp;                          ips, ipe, jps, jpe, kps, kpe  )<a name='296'>
+<a name='297'>
+#if (EM_CORE == 1)<a name='298'>
+      CALL <A href='../../html_code/frame/module_cpl.F.html#CPL_SND2'>cpl_snd2</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_SND2_1">( grid, grid%num_ext_model_couple_dom,   &amp;<a name='299'>
+         &amp;                 ids, ide, jds, jde, kds, kde,    &amp;<a name='300'>
+         &amp;                 ims, ime, jms, jme, kms, kme,    &amp;<a name='301'>
+         &amp;                 ips, ipe, jps, jpe, kps, kpe )<a name='302'>
+#endif<a name='303'>
+<a name='304'>
+   END SUBROUTINE cpl_snd<a name='305'>
+<a name='306'>
+<a name='307'>
+<A NAME='CPL_SND2'><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='308'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_snd2</font>( grid, max_edom                &amp; <A href='../../call_to/CPL_SND2.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_SND2.html' TARGET='index'>18</A><a name='309'>
+      &amp;                     , ids,ide,jds,jde,kds,kde &amp;<a name='310'>
+      &amp;                     , ims,ime,jms,jme,kms,kme &amp;<a name='311'>
+      &amp;                     , ips,ipe,jps,jpe,kps,kpe )<a name='312'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='313'></font>
+      <font color=#447700>!!             ***  SUBROUTINE cpl_snd2  ***<a name='314'></font>
+      <font color=#447700>!!<a name='315'></font>
+      <font color=#447700>!! ** Purpose : compute coupling data to be sent and call cpl_sndfield<a name='316'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='317'></font>
+      TYPE(domain), INTENT(IN), POINTER :: grid<a name='318'>
+      INTEGER,      INTENT(IN)          :: max_edom    <font color=#447700>! max number of external model domains<a name='319'></font>
+      INTEGER,      INTENT(IN)          :: ids,ide,jds,jde,kds,kde<a name='320'>
+      INTEGER,      INTENT(IN)          :: ims,ime,jms,jme,kms,kme<a name='321'>
+      INTEGER,      INTENT(IN)          :: ips,ipe,jps,jpe,kps,kpe<a name='322'>
+      <font color=#447700>!<a name='323'></font>
+      REAL, DIMENSION( ips:ipe, jps:jpe ) :: cplsnd<a name='324'>
+      REAL, DIMENSION( ips:ipe, jps:jpe ) :: u_uo<a name='325'>
+      REAL, DIMENSION( ips:ipe, jps:jpe ) :: v_vo<a name='326'>
+      REAL, DIMENSION( ips:ipe, jps:jpe ) :: wspd<a name='327'>
+      REAL, DIMENSION( ips:ipe, jps:jpe ) :: taut<a name='328'>
+      INTEGER :: icnt<a name='329'>
+      INTEGER :: ifldid<a name='330'>
+      LOGICAL,DIMENSION(max_edom) :: lltosend<a name='331'>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='332'></font>
+<a name='333'>
+#if (EM_CORE == 1)<a name='334'>
+<a name='335'>
+      <font color=#447700>! we use ipe and not min(ipe, ide-1) the variable we are using are coming from grid and are therefore initialized to 0  <a name='336'></font>
+      <a name='337'>
+      ifldid      = <A href='../../html_code/frame/module_cpl.F.html#CPL_GET_FLDID'>cpl_get_fldid</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_GET_FLDID_1">( 'EVAP-PRECIP' )<a name='338'>
+      lltosend(:) = <A href='../../html_code/frame/module_cpl.F.html#CPL_TOSEND'>cpl_tosend</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_TOSEND_1">( grid%id, ifldid, max_edom )<a name='339'>
+      IF ( COUNT(lltosend) &gt; 0 ) THEN <a name='340'>
+         cplsnd(ips:ipe,jps:jpe) = grid%QFX(ips:ipe,jps:jpe) &amp;<a name='341'>
+            &amp;                  - ( grid%RAINCV(ips:ipe,jps:jpe)+grid%RAINNCV(ips:ipe,jps:jpe) ) / grid%DT<a name='342'>
+         CALL <A href='../../html_code/frame/module_cpl.F.html#CPL_SNDFIELD'>cpl_sndfield</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_SNDFIELD_1">( grid%id, lltosend, ifldid, cplsnd )<a name='343'>
+      END IF<a name='344'>
+      <a name='345'>
+      ifldid      = <A href='../../html_code/frame/module_cpl.F.html#CPL_GET_FLDID'>cpl_get_fldid</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_GET_FLDID_2">( 'SURF_NET_SOLAR' )<a name='346'>
+      lltosend(:) = <A href='../../html_code/frame/module_cpl.F.html#CPL_TOSEND'>cpl_tosend</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_TOSEND_2">( grid%id, ifldid, max_edom )<a name='347'>
+      IF ( COUNT(lltosend) &gt; 0 ) THEN <a name='348'>
+         CALL <A href='../../html_code/frame/module_cpl.F.html#CPL_SNDFIELD'>cpl_sndfield</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_SNDFIELD_2">( grid%id, lltosend, ifldid, grid%GSW(ips:ipe,jps:jpe) )<a name='349'>
+      END IF<a name='350'>
+      <a name='351'>
+      ifldid      = <A href='../../html_code/frame/module_cpl.F.html#CPL_GET_FLDID'>cpl_get_fldid</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_GET_FLDID_3">( 'SURF_NET_NON-SOLAR' )<a name='352'>
+      lltosend(:) = <A href='../../html_code/frame/module_cpl.F.html#CPL_TOSEND'>cpl_tosend</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_TOSEND_3">( grid%id, ifldid, max_edom )<a name='353'>
+      IF ( COUNT(lltosend) &gt; 0 ) THEN <a name='354'>
+         cplsnd(ips:ipe,jps:jpe) = grid%GLW(ips:ipe,jps:jpe) &amp;<a name='355'>
+            &amp;                      - STBOLT * grid%EMISS(ips:ipe,jps:jpe) * grid%SST(ips:ipe,jps:jpe)**4 &amp;<a name='356'>
+            &amp;                      - grid%LH(ips:ipe,jps:jpe) - grid%HFX(ips:ipe,jps:jpe) <a name='357'>
+         CALL <A href='../../html_code/frame/module_cpl.F.html#CPL_SNDFIELD'>cpl_sndfield</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_SNDFIELD_3">( grid%id, lltosend, ifldid, cplsnd )<a name='358'>
+      END IF<a name='359'>
+      <a name='360'>
+      <font color=#447700>! test if we need to compute the module of the wind speed and stres<a name='361'></font>
+      icnt   =        COUNT( cpl_tosend( grid%id, cpl_get_fldid( 'TAUMOD' ), max_edom ) )<a name='362'>
+      icnt   = icnt + COUNT( cpl_tosend( grid%id, cpl_get_fldid( 'TAUX'   ), max_edom ) )<a name='363'>
+      icnt   = icnt + count( cpl_tosend( grid%id, cpl_get_fldid( 'TAUY'   ), max_edom ) )<a name='364'>
+      IF ( icnt &gt; 0 ) THEN <a name='365'>
+         u_uo(ips:ipe,jps:jpe) = grid%u_phy(ips:ipe,kps,jps:jpe) - grid%uoce(ips:ipe,jps:jpe)<a name='366'>
+         v_vo(ips:ipe,jps:jpe) = grid%v_phy(ips:ipe,kps,jps:jpe) - grid%voce(ips:ipe,jps:jpe)<a name='367'>
+         wspd(ips:ipe,jps:jpe) = MAX( SQRT( u_uo(ips:ipe,jps:jpe)**2 + v_vo(ips:ipe,jps:jpe)**2 ), 1.e-7 )<a name='368'>
+         taut(ips:ipe,jps:jpe) = grid%rho(ips:ipe,kps,jps:jpe) * grid%ust(ips:ipe,jps:jpe)**2<a name='369'>
+      END IF<a name='370'>
+      <a name='371'>
+      ifldid      = <A href='../../html_code/frame/module_cpl.F.html#CPL_GET_FLDID'>cpl_get_fldid</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_GET_FLDID_4">( 'TAUX' )<a name='372'>
+      lltosend(:) = <A href='../../html_code/frame/module_cpl.F.html#CPL_TOSEND'>cpl_tosend</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_TOSEND_4">( grid%id, ifldid, max_edom )<a name='373'>
+      IF ( COUNT(lltosend) &gt; 0 ) THEN <a name='374'>
+         cplsnd(ips:ipe,jps:jpe) = taut(ips:ipe,jps:jpe) * u_uo(ips:ipe,jps:jpe) / wspd(ips:ipe,jps:jpe)<a name='375'>
+         CALL <A href='../../html_code/frame/module_cpl.F.html#CPL_SNDFIELD'>cpl_sndfield</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_SNDFIELD_4">( grid%id, lltosend, ifldid, cplsnd )<a name='376'>
+      END IF<a name='377'>
+      <a name='378'>
+      ifldid      = <A href='../../html_code/frame/module_cpl.F.html#CPL_GET_FLDID'>cpl_get_fldid</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_GET_FLDID_5">( 'TAUY' )<a name='379'>
+      lltosend(:) = <A href='../../html_code/frame/module_cpl.F.html#CPL_TOSEND'>cpl_tosend</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_TOSEND_5">( grid%id, ifldid, max_edom )<a name='380'>
+      IF ( COUNT(lltosend) &gt; 0 ) THEN <a name='381'>
+         cplsnd(ips:ipe,jps:jpe) = taut(ips:ipe,jps:jpe) * v_vo(ips:ipe,jps:jpe) / wspd(ips:ipe,jps:jpe)<a name='382'>
+         CALL <A href='../../html_code/frame/module_cpl.F.html#CPL_SNDFIELD'>cpl_sndfield</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_SNDFIELD_5">( grid%id, lltosend, ifldid, cplsnd )<a name='383'>
+      END IF<a name='384'>
+      <a name='385'>
+      ifldid      = <A href='../../html_code/frame/module_cpl.F.html#CPL_GET_FLDID'>cpl_get_fldid</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_GET_FLDID_6">( 'TAUMOD' )<a name='386'>
+      lltosend(:) = <A href='../../html_code/frame/module_cpl.F.html#CPL_TOSEND'>cpl_tosend</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_TOSEND_6">( grid%id, ifldid, max_edom )<a name='387'>
+      IF ( COUNT(lltosend) &gt; 0 ) THEN <a name='388'>
+         CALL <A href='../../html_code/frame/module_cpl.F.html#CPL_SNDFIELD'>cpl_sndfield</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SND2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_SNDFIELD_6">( grid%id, lltosend, ifldid, taut )<a name='389'>
+      END IF<a name='390'>
+      <a name='391'>
+#endif       <a name='392'>
+   END SUBROUTINE cpl_snd2<a name='393'>
+<a name='394'>
+<a name='395'>
+<A NAME='CPL_SNDFIELD'><A href='../../html_code/frame/module_cpl.F.html#CPL_SNDFIELD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='396'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_sndfield</font>( kdomwrf, ldtosend, kfldid, pdata ) <A href='../../call_to/CPL_SNDFIELD.html' TARGET='index'>6</A>,<A href='../../call_from/CPL_SNDFIELD.html' TARGET='index'>1</A><a name='397'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='398'></font>
+      <font color=#447700>!!             ***  SUBROUTINE cpl_rcv  ***<a name='399'></font>
+      <font color=#447700>!!<a name='400'></font>
+      <font color=#447700>!! ** Purpose :   send coupling data<a name='401'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='402'></font>
+      INTEGER,              INTENT(IN) :: kdomwrf   <font color=#447700>! wrf domain index<a name='403'></font>
+      LOGICAL,DIMENSION(:), INTENT(IN) :: ldtosend<a name='404'>
+      INTEGER,              INTENT(IN) :: kfldid    <font color=#447700>! field index<a name='405'></font>
+      REAL, DIMENSION(:,:), INTENT(IN) :: pdata     <font color=#447700>! data to be sent<a name='406'></font>
+      <font color=#447700>!<a name='407'></font>
+      INTEGER :: jext          <font color=#447700>! local loop indicees<a name='408'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='409'></font>
+<a name='410'>
+      DO jext = 1, SIZE(ldtosend)<a name='411'>
+         IF( ldtosend(jext) ) THEN<a name='412'>
+            IF ( coupler_name == 'oasis' ) CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_SND'>cpl_oasis_snd</A><A href='../../html_code/frame/module_cpl.F.html#CPL_SNDFIELD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_SND_1">( kdomwrf, jext, kfldid, nsecrun, pdata )<a name='413'>
+         END IF<a name='414'>
+      END DO<a name='415'>
+<a name='416'>
+   END SUBROUTINE cpl_sndfield<a name='417'>
+<a name='418'>
+<a name='419'>
+<A NAME='CPL_RCV'><A href='../../html_code/frame/module_cpl.F.html#CPL_RCV' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='420'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_rcv</font>( kdomwrf, cdsuffix,            &amp; <A href='../../call_to/CPL_RCV.html' TARGET='index'>3</A>,<A href='../../call_from/CPL_RCV.html' TARGET='index'>2</A><a name='421'>
+      &amp;                ids, ide, jds, jde, kds, kde, &amp;<a name='422'>
+      &amp;                ims, ime, jms, jme, kms, kme, &amp;<a name='423'>
+      &amp;                ips, ipe, jps, jpe, kps, kpe, &amp;<a name='424'>
+      &amp;                max_edom, pcplmask, pdatacpl, pdataobs )<a name='425'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='426'></font>
+      <font color=#447700>!!             ***  SUBROUTINE cpl_rcv  ***<a name='427'></font>
+      <font color=#447700>!!<a name='428'></font>
+      <font color=#447700>!! ** Purpose :   receive coupling data<a name='429'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='430'></font>
+      INTEGER,                                                   INTENT(IN   ) :: kdomwrf     <font color=#447700>! wrf domain index<a name='431'></font>
+      CHARACTER(*),                                              INTENT(IN   ) :: cdsuffix    <font color=#447700>! field name suffix<a name='432'></font>
+      INTEGER,                                                   INTENT(IN   ) :: ids,ide,jds,jde,kds,kde<a name='433'>
+      INTEGER,                                                   INTENT(IN   ) :: ims,ime,jms,jme,kms,kme<a name='434'>
+      INTEGER,                                                   INTENT(IN   ) :: ips,ipe,jps,jpe,kps,kpe<a name='435'>
+      INTEGER,                                                   INTENT(IN   ) :: max_edom    <font color=#447700>! max number of external model domains<a name='436'></font>
+      REAL, DIMENSION( ims:ime, 1:max_edom, jms:jme ),           INTENT(IN   ) :: pcplmask    <font color=#447700>! coupling mask<a name='437'></font>
+      REAL, DIMENSION( ims:ime,             jms:jme ),           INTENT(  OUT) :: pdatacpl    <font color=#447700>! coupling data<a name='438'></font>
+      REAL, DIMENSION( ims:ime,             jms:jme ), OPTIONAL, INTENT(IN   ) :: pdataobs    <font color=#447700>! observed data to be merged<a name='439'></font>
+      <font color=#447700>!<a name='440'></font>
+      INTEGER :: jext                                <font color=#447700>! external domain index<a name='441'></font>
+      INTEGER :: ifldid                              <font color=#447700>! field index<a name='442'></font>
+      REAL, DIMENSION( ips:ipe, jps:jpe ) :: zdata   <font color=#447700>! data received from the coupler<a name='443'></font>
+      LOGICAL :: lltorcv<a name='444'>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='445'></font>
+<a name='446'>
+      ifldid = <A href='../../html_code/frame/module_cpl.F.html#CPL_GET_FLDID'>cpl_get_fldid</A><A href='../../html_code/frame/module_cpl.F.html#CPL_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_GET_FLDID_7">( cdsuffix )<a name='447'>
+<a name='448'>
+      lltorcv = .false.<a name='449'>
+      DO jext = 1, max_edom<a name='450'>
+         lltorcv = lltorcv .OR. cpl_toreceive( kdomwrf, jext, ifldid )<a name='451'>
+      END DO<a name='452'>
+      IF( .not.lltorcv ) return<a name='453'>
+         <a name='454'>
+      IF( PRESENT(pdataobs) ) THEN<a name='455'>
+         pdatacpl(ips:ipe,jps:jpe) = pdataobs(ips:ipe,jps:jpe) * ( 1.0 - SUM( pcplmask(ips:ipe,1:max_edom,jps:jpe), dim = 2 ) )<a name='456'>
+      ELSE <a name='457'>
+         pdatacpl(ips:ipe,jps:jpe) = 0.0<a name='458'>
+      END IF<a name='459'>
+<a name='460'>
+      DO jext = 1, max_edom<a name='461'>
+         IF( cpl_toreceive( kdomwrf, jext, ifldid ) ) THEN<a name='462'>
+            IF( coupler_name == 'oasis' )   CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_RCV'>cpl_oasis_rcv</A><A href='../../html_code/frame/module_cpl.F.html#CPL_RCV' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_RCV_1">( kdomwrf, jext, ifldid, nsecrun, zdata )<a name='463'>
+            pdatacpl(ips:ipe,jps:jpe) = pdatacpl(ips:ipe,jps:jpe) + zdata(ips:ipe,jps:jpe) * pcplmask(ips:ipe,jext,jps:jpe)<a name='464'>
+         END IF<a name='465'>
+      END DO<a name='466'>
+<a name='467'>
+   END SUBROUTINE cpl_rcv<a name='468'>
+<a name='469'>
+<a name='470'>
+<A NAME='CPL_STORE_INPUT'><A href='../../html_code/frame/module_cpl.F.html#CPL_STORE_INPUT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='471'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_store_input</font>( grid, config_flags ) <A href='../../call_to/CPL_STORE_INPUT.html' TARGET='index'>1</A>,<A href='../../call_from/CPL_STORE_INPUT.html' TARGET='index'>1</A><a name='472'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='473'></font>
+      <font color=#447700>!!             ***  SUBROUTINE cpl_store_input  ***<a name='474'></font>
+      <font color=#447700>!!<a name='475'></font>
+      <font color=#447700>!! ** Purpose : Store input data that will be merged later with data received from the coupler<a name='476'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='477'></font>
+      TYPE(domain)                , INTENT(INOUT) :: grid<a name='478'>
+      TYPE (grid_config_rec_type) , INTENT(IN   ) :: config_flags<a name='479'>
+      <font color=#447700>!<a name='480'></font>
+      INTEGER :: ips,ipe,jps,jpe,kps,kpe <font color=#447700>! domain dimension on 1 processor<a name='481'></font>
+      INTEGER :: ims,ime,jms,jme,kms,kme <font color=#447700>! memory domain dimension on 1 processor <a name='482'></font>
+      INTEGER :: ids,ide,jds,jde,kds,kde <font color=#447700>! domain dimension<a name='483'></font>
+      LOGICAL :: llmust_store<a name='484'>
+      INTEGER :: jext          <font color=#447700>! local loop indicees     <a name='485'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='486'></font>
+<a name='487'>
+#if (EM_CORE == 1)<a name='488'>
+      CALL <A href='../../html_code/frame/module_domain.F.html#GET_IJK_FROM_GRID'>get_ijk_from_grid</A><A href='../../html_code/frame/module_cpl.F.html#CPL_STORE_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_IJK_FROM_GRID_32">( grid, ids, ide, jds, jde, kds, kde, &amp;<a name='489'>
+         &amp;                          ims, ime, jms, jme, kms, kme, &amp;<a name='490'>
+         &amp;                          ips, ipe, jps, jpe, kps, kpe  )<a name='491'>
+      <a name='492'>
+      <font color=#447700>! take care of variables read in AUXINPUT4... <a name='493'></font>
+      <font color=#447700>! AUXINPUT4 was just read if:<a name='494'></font>
+      <font color=#447700>! 1) We asked (legally) for an AUXINPUT4 input AND this is the first time step AFTER an auxinput4_alarm was ringing<a name='495'></font>
+      <font color=#447700>! OR<a name='496'></font>
+      <font color=#447700>! 2) This is the first time step<a name='497'></font>
+      IF( ( config_flags%auxinput4_interval .NE. 0 .AND. config_flags%io_form_auxinput4 .NE. 0 .AND. grid%just_read_auxinput4 ) &amp;<a name='498'>
+         .OR. grid%itimestep .EQ. 1 ) THEN<a name='499'>
+         <a name='500'>
+         <font color=#447700>! if we receive the SST, we need to store it in SST_INPUT<a name='501'></font>
+         llmust_store = .FALSE.<a name='502'>
+         DO jext = 1, grid%num_ext_model_couple_dom<a name='503'>
+            llmust_store = llmust_store .OR. cpl_toreceive( grid%id, jext, cpl_get_fldid( 'SST' ) )<a name='504'>
+         END DO<a name='505'>
+         IF( llmust_store )   grid%sst_input(ips:ipe,jps:jpe) = grid%sst(ips:ipe,jps:jpe)   <font color=#447700>! store SST into SST_INPUT <a name='506'></font>
+         <a name='507'>
+         grid%just_read_auxinput4 = .FALSE.  <font color=#447700>! the work as been done and not me done again until we reread data from AUXINPUT4<a name='508'></font>
+      <a name='509'>
+      END IF<a name='510'>
+#endif      <a name='511'>
+ <a name='512'>
+   END SUBROUTINE cpl_store_input<a name='513'>
+<a name='514'>
+<a name='515'>
+<A NAME='CPL_FINALIZE'><A href='../../html_code/frame/module_cpl.F.html#CPL_FINALIZE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='516'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_finalize</font>() <A href='../../call_to/CPL_FINALIZE.html' TARGET='index'>4</A>,<A href='../../call_from/CPL_FINALIZE.html' TARGET='index'>1</A><a name='517'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='518'></font>
+      <font color=#447700>!!             ***  SUBROUTINE cpl_finalize  ***<a name='519'></font>
+      <font color=#447700>!!<a name='520'></font>
+      <font color=#447700>!! ** Purpose :   cpl_finalize MPI communications with the coupler<a name='521'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='522'></font>
+      IF ( coupler_name == 'oasis' ) CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_FINALIZE'>cpl_oasis_finalize</A><A href='../../html_code/frame/module_cpl.F.html#CPL_FINALIZE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_FINALIZE_1">()<a name='523'>
+<a name='524'>
+   END SUBROUTINE cpl_finalize<a name='525'>
+<a name='526'>
+<a name='527'>
+<A NAME='CPL_ABORT'><A href='../../html_code/frame/module_cpl.F.html#CPL_ABORT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='528'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>cpl_abort</font>( cdroutine, cdtxt ) <A href='../../call_to/CPL_ABORT.html' TARGET='index'>4</A>,<A href='../../call_from/CPL_ABORT.html' TARGET='index'>1</A><a name='529'>
+      <font color=#447700>!!-------------------------------------------------------------------<a name='530'></font>
+      <font color=#447700>!!             ***  SUBROUTINE cpl_abort  ***<a name='531'></font>
+      <font color=#447700>!!<a name='532'></font>
+      <font color=#447700>!! ** Purpose :   abort coupling simulation<a name='533'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='534'></font>
+      CHARACTER(*), INTENT(IN) :: cdroutine   <font color=#447700>! name of the subroutine calling cpl_oasis_abort<a name='535'></font>
+      CHARACTER(*), INTENT(IN) :: cdtxt       <font color=#447700>! aborting text<a name='536'></font>
+      <font color=#447700>!!--------------------------------------------------------------------<a name='537'></font>
+<a name='538'>
+      IF ( coupler_name == 'oasis' ) CALL <A href='../../html_code/frame/module_cpl_oasis3.F.html#CPL_OASIS_ABORT'>cpl_oasis_abort</A><A href='../../html_code/frame/module_cpl.F.html#CPL_ABORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CPL_OASIS_ABORT_1">( cdroutine, cdtxt )<a name='539'>
+<a name='540'>
+   END SUBROUTINE cpl_abort<a name='541'>
+<a name='542'>
+<a name='543'>
+END MODULE module_cpl<a name='544'>
+</pre></body></html>

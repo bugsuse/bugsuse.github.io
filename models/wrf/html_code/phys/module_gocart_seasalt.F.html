@@ -1,0 +1,266 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='GOCART_SEASALT'><A href='../../html_code/phys/module_gocart_seasalt.F.html#GOCART_SEASALT' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>MODULE </font><font color=#cc0000>GOCART_SEASALT</font><a name='3'>
+<a name='4'>
+CONTAINS<a name='5'>
+<A NAME='GOCART_SEASALT_DRIVER'><A href='../../html_code/phys/module_gocart_seasalt.F.html#GOCART_SEASALT_DRIVER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='6'>
+  <font color=#993300>subroutine </font><font color=#cc0000>gocart_seasalt_driver</font>(ktau,dt,config_flags,julday,alt,t_phy,moist,u_phy,  &amp;,<A href='../../call_from/GOCART_SEASALT_DRIVER.html' TARGET='index'>4</A><a name='7'>
+         v_phy,chem,rho_phy,dz8w,u10,v10,p8w,                  &amp;<a name='8'>
+         xland,xlat,xlong,dx,g,emis_seas, &amp;<a name='9'>
+         ids,ide, jds,jde, kds,kde,                                        &amp;<a name='10'>
+         ims,ime, jms,jme, kms,kme,                                        &amp;<a name='11'>
+         its,ite, jts,jte, kts,kte                                         )<a name='12'>
+  USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>module_configure</A><A href='../../html_code/phys/module_gocart_seasalt.F.html#GOCART_SEASALT_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_153"><a name='13'>
+  USE <A href='../../html_code/frame/module_state_description.F.html#MODULE_STATE_DESCRIPTION'>module_state_description</A><A href='../../html_code/phys/module_gocart_seasalt.F.html#GOCART_SEASALT_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STATE_DESCRIPTION_122"><a name='14'>
+  USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_gocart_seasalt.F.html#GOCART_SEASALT_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_70">, ONLY: mwdry<a name='15'>
+  IMPLICIT NONE<a name='16'>
+   TYPE(grid_config_rec_type),  INTENT(IN   )    :: config_flags<a name='17'>
+<a name='18'>
+   INTEGER,      INTENT(IN   ) :: julday, ktau,                     &amp;<a name='19'>
+                                  ids,ide, jds,jde, kds,kde,               &amp;<a name='20'>
+                                  ims,ime, jms,jme, kms,kme,               &amp;<a name='21'>
+                                  its,ite, jts,jte, kts,kte<a name='22'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme, num_moist ),                &amp;<a name='23'>
+         INTENT(IN ) ::                                   moist<a name='24'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme, num_chem ),                 &amp;<a name='25'>
+         INTENT(INOUT ) ::                                   chem<a name='26'>
+   REAL, DIMENSION( ims:ime, 1, jms:jme,num_emis_seas),OPTIONAL,&amp;<a name='27'>
+         INTENT(INOUT ) ::                                                 &amp;<a name='28'>
+         emis_seas<a name='29'>
+   REAL,  DIMENSION( ims:ime , jms:jme )                   ,               &amp;<a name='30'>
+          INTENT(IN   ) ::                                                 &amp;<a name='31'>
+                                                     u10,                  &amp;<a name='32'>
+                                                     v10,                  &amp;<a name='33'>
+                                                     xland,                &amp;<a name='34'>
+                                                     xlat,                 &amp;<a name='35'>
+                                                     xlong<a name='36'>
+   REAL,  DIMENSION( ims:ime , kms:kme , jms:jme ),                        &amp;<a name='37'>
+          INTENT(IN   ) ::                                                 &amp;<a name='38'>
+                                                        alt,               &amp;<a name='39'>
+                                                      t_phy,               &amp;<a name='40'>
+                                                     dz8w,p8w,             &amp;<a name='41'>
+                                              u_phy,v_phy,rho_phy<a name='42'>
+<a name='43'>
+  REAL, INTENT(IN   ) :: dt,dx,g<a name='44'>
+<font color=#447700>!<a name='45'></font>
+<font color=#447700>! local variables<a name='46'></font>
+<font color=#447700>!<a name='47'></font>
+  integer :: ipr,nmx,i,j,k,ndt,imx,jmx,lmx<a name='48'>
+  integer,dimension (1,1) :: ilwi<a name='49'>
+  real*8, DIMENSION (4) :: tc,bems<a name='50'>
+  real*8, dimension (1,1) :: w10m,gwet,airden,airmas<a name='51'>
+  real*8, dimension (1) :: dxy<a name='52'>
+  real*8 conver,converi<a name='53'>
+  conver=1.d-9<a name='54'>
+  converi=1.d9<a name='55'>
+<font color=#447700>!<a name='56'></font>
+<font color=#447700>! number of dust bins<a name='57'></font>
+<font color=#447700>!<a name='58'></font>
+  imx=1<a name='59'>
+  jmx=1<a name='60'>
+  lmx=1<a name='61'>
+  nmx=4<a name='62'>
+  k=kts<a name='63'>
+  do j=jts,jte<a name='64'>
+  do i=its,ite<a name='65'>
+<font color=#447700>!<a name='66'></font>
+<font color=#447700>! don't do dust over water!!!<a name='67'></font>
+<font color=#447700>!<a name='68'></font>
+     if(xland(i,j).gt.1.5)then<a name='69'>
+     ilwi(1,1)=0<a name='70'>
+     tc(1)=chem(i,kts,j,p_seas_1)*conver<a name='71'>
+     tc(2)=chem(i,kts,j,p_seas_2)*conver<a name='72'>
+     tc(3)=chem(i,kts,j,p_seas_3)*conver<a name='73'>
+     tc(4)=chem(i,kts,j,p_seas_4)*conver<a name='74'>
+     w10m(1,1)=sqrt(u10(i,j)*u10(i,j)+v10(i,j)*v10(i,j))<a name='75'>
+     airmas(1,1)=-(p8w(i,kts+1,j)-p8w(i,kts,j))*dx*dx/g<a name='76'>
+<font color=#447700>!<a name='77'></font>
+<font color=#447700>! we don't trust the u10,v10 values, is model layers are very thin near surface<a name='78'></font>
+<font color=#447700>!<a name='79'></font>
+     if(dz8w(i,kts,j).lt.12.)w10m=sqrt(u_phy(i,kts,j)*u_phy(i,kts,j)+v_phy(i,kts,j)*v_phy(i,kts,j))<a name='80'>
+<font color=#447700>!<a name='81'></font>
+     dxy(1)=dx*dx<a name='82'>
+       ipr=0<a name='83'>
+<a name='84'>
+    call <A href='../../html_code/phys/module_gocart_seasalt.F.html#SOURCE_SS'>source_ss</A><A href='../../html_code/phys/module_gocart_seasalt.F.html#GOCART_SEASALT_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SOURCE_SS_1">( imx,jmx,lmx,nmx, dt, tc,ilwi, dxy, w10m, airmas, bems,ipr)<a name='85'>
+     chem(i,kts,j,p_seas_1)=tc(1)*converi<a name='86'>
+     chem(i,kts,j,p_seas_2)=tc(2)*converi<a name='87'>
+     chem(i,kts,j,p_seas_3)=tc(3)*converi<a name='88'>
+     chem(i,kts,j,p_seas_4)=tc(4)*converi<a name='89'>
+<font color=#447700>! for output diagnostics<a name='90'></font>
+     emis_seas(i,1,j,p_edust1)=bems(1)<a name='91'>
+     emis_seas(i,1,j,p_edust2)=bems(2)<a name='92'>
+     emis_seas(i,1,j,p_edust3)=bems(3)<a name='93'>
+     emis_seas(i,1,j,p_edust4)=bems(4)<a name='94'>
+     endif<a name='95'>
+  enddo<a name='96'>
+  enddo<a name='97'>
+<font color=#447700>!<a name='98'></font>
+<a name='99'>
+end subroutine gocart_seasalt_driver<a name='100'>
+<font color=#447700>!<a name='101'></font>
+<A NAME='SOURCE_SS'><A href='../../html_code/phys/module_gocart_seasalt.F.html#SOURCE_SS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='102'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>source_ss</font>(imx,jmx,lmx,nmx, dt1, tc, &amp; <A href='../../call_to/SOURCE_SS.html' TARGET='index'>1</A><a name='103'>
+                     ilwi, dxy, w10m, airmas, &amp;<a name='104'>
+                     bems,ipr)<a name='105'>
+<a name='106'>
+<font color=#447700>! ****************************************************************************<a name='107'></font>
+<font color=#447700>! *  Evaluate the source of each seasalt particles size classes  (kg/m3) <a name='108'></font>
+<font color=#447700>! *  by soil emission.<a name='109'></font>
+<font color=#447700>! *  Input:<a name='110'></font>
+<font color=#447700>! *         SSALTDEN  Sea salt density                               (kg/m3)<a name='111'></font>
+<font color=#447700>! *         DXY       Surface of each grid cell                     (m2)<a name='112'></font>
+<font color=#447700>! *         NDT1      Time step                                     (s)<a name='113'></font>
+<font color=#447700>! *         W10m      Velocity at the anemometer level (10meters)   (m/s)<a name='114'></font>
+<font color=#447700>! *      <a name='115'></font>
+<font color=#447700>! *  Output:<a name='116'></font>
+<font color=#447700>! *         DSRC      Source of each sea salt bins       (kg/timestep/cell) <a name='117'></font>
+<font color=#447700>! *<a name='118'></font>
+<font color=#447700>! *<a name='119'></font>
+<font color=#447700>! * Number flux density: Original formula by Monahan et al. (1986) adapted<a name='120'></font>
+<font color=#447700>! * by Sunling Gong (JGR 1997 (old) and GBC 2003 (new)).  The new version is<a name='121'></font>
+<font color=#447700>! * to better represent emission of sub-micron sea salt particles.<a name='122'></font>
+<font color=#447700>!<a name='123'></font>
+<font color=#447700>! * dFn/dr = c1*u10**c2/(r**A) * (1+c3*r**c4)*10**(c5*exp(-B**2))<a name='124'></font>
+<font color=#447700>! * where B = (b1 -log(r))/b2<a name='125'></font>
+<font color=#447700>! * see c_old, c_new, b_old, b_new below for the constants.<a name='126'></font>
+<font color=#447700>! * number fluxes are at 80% RH.<a name='127'></font>
+<font color=#447700>! *<a name='128'></font>
+<font color=#447700>! * To calculate the flux:<a name='129'></font>
+<font color=#447700>! * 1) Calculate dFn based on Monahan et al. (1986) and Gong (2003)<a name='130'></font>
+<font color=#447700>! * 2) Assume that wet radius r at 80% RH = dry radius r_d *frh<a name='131'></font>
+<font color=#447700>! * 3) Convert particles flux to mass flux :<a name='132'></font>
+<font color=#447700>! *    dFM/dr_d = 4/3*pi*rho_d*r_d^3 *(dr/dr_d) * dFn/dr<a name='133'></font>
+<font color=#447700>! *             = 4/3*pi*rho_d*r_d^3 * frh * dFn/dr<a name='134'></font>
+<font color=#447700>! *               where rho_p is particle density [kg/m3]<a name='135'></font>
+<font color=#447700>! *    The factor 1.e-18 is to convert in micro-meter r_d^3<a name='136'></font>
+<font color=#447700>! ****************************************************************************<a name='137'></font>
+ <a name='138'>
+<a name='139'>
+  USE module_data_gocart_seas<a name='140'>
+<a name='141'>
+  IMPLICIT NONE<a name='142'>
+<a name='143'>
+  INTEGER, INTENT(IN)    :: nmx,imx,jmx,lmx,ipr<a name='144'>
+  INTEGER, INTENT(IN)    :: ilwi(imx,jmx)<a name='145'>
+  REAL*8,    INTENT(IN)    :: dxy(jmx), w10m(imx,jmx)<a name='146'>
+  REAL*8,    INTENT(IN)    :: airmas(imx,jmx,lmx)<a name='147'>
+  REAL*8,    INTENT(INOUT) :: tc(imx,jmx,lmx,nmx)<a name='148'>
+  REAL*8,    INTENT(OUT)   :: bems(imx,jmx,nmx)<a name='149'>
+<a name='150'>
+  REAL*8 :: c0(5), b0(2)<a name='151'>
+<font color=#447700>!  REAL*8, PARAMETER :: c_old(5)=(/1.373, 3.41, 0.057, 1.05, 1.190/) <a name='152'></font>
+<font color=#447700>!  REAL*8, PARAMETER :: c_new(5)=(/1.373, 3.41, 0.057, 3.45, 1.607/)<a name='153'></font>
+  <font color=#447700>! Change suggested by MC<a name='154'></font>
+  REAL*8, PARAMETER :: c_old(5)=(/1.373, 3.2, 0.057, 1.05, 1.190/) <a name='155'>
+  REAL*8, PARAMETER :: c_new(5)=(/1.373, 3.2, 0.057, 3.45, 1.607/)<a name='156'>
+  REAL*8, PARAMETER :: b_old(2)=(/0.380, 0.650/)<a name='157'>
+  REAL*8, PARAMETER :: b_new(2)=(/0.433, 0.433/)<a name='158'>
+  REAL*8, PARAMETER :: dr=5.0D-2 <font color=#447700>! um   <a name='159'></font>
+  REAL*8, PARAMETER :: theta=30.0<a name='160'>
+  <font color=#447700>! Swelling coefficient frh (d rwet / d rd)<a name='161'></font>
+<font color=#447700>!!!  REAL*8,    PARAMETER :: frh = 1.65<a name='162'></font>
+  REAL*8,    PARAMETER :: frh = 2.d0<a name='163'>
+  LOGICAL, PARAMETER :: old=.TRUE., new=.FALSE.<a name='164'>
+  REAL*8 :: rho_d, r0, r1, r, r_w, a, b, dfn, r_d, dfm, src<a name='165'>
+  INTEGER :: i, j, n, nr, ir<a name='166'>
+  REAL :: dt1<a name='167'>
+<a name='168'>
+<a name='169'>
+  REAL*8                  :: tcmw(nmx), ar(nmx), tcvv(nmx)<a name='170'>
+  REAL*8                  :: ar_wetdep(nmx), kc(nmx)<a name='171'>
+  CHARACTER(LEN=20)     :: tcname(nmx), tcunits(nmx)<a name='172'>
+  LOGICAL               :: aerosol(nmx)<a name='173'>
+<a name='174'>
+<a name='175'>
+  REAL*8 :: tc1(imx,jmx,lmx,nmx)<a name='176'>
+  REAL*8, TARGET :: tcms(imx,jmx,lmx,nmx) <font color=#447700>! tracer mass (kg; kgS for sulfur case)<a name='177'></font>
+  REAL*8, TARGET :: tcgm(imx,jmx,lmx,nmx) <font color=#447700>! g/m3<a name='178'></font>
+<a name='179'>
+  <font color=#447700>!-----------------------------------------------------------------------  <a name='180'></font>
+  <font color=#447700>! sea salt specific<a name='181'></font>
+  <font color=#447700>!-----------------------------------------------------------------------  <a name='182'></font>
+<font color=#447700>! REAL*8, DIMENSION(nmx) :: ra, rb<a name='183'></font>
+<font color=#447700>! REAL*8 :: ch_ss(nmx,12)<a name='184'></font>
+<a name='185'>
+  <font color=#447700>!-----------------------------------------------------------------------  <a name='186'></font>
+  <font color=#447700>! emissions (input)<a name='187'></font>
+  <font color=#447700>!-----------------------------------------------------------------------  <a name='188'></font>
+  REAL*8 :: e_an(imx,jmx,2,nmx), e_bb(imx,jmx,nmx), &amp;<a name='189'>
+          e_ac(imx,jmx,lmx,nmx)<a name='190'>
+<a name='191'>
+  <font color=#447700>!-----------------------------------------------------------------------  <a name='192'></font>
+  <font color=#447700>! diagnostics (budget)<a name='193'></font>
+  <font color=#447700>!-----------------------------------------------------------------------<a name='194'></font>
+<font color=#447700>!  ! tendencies per time step and process<a name='195'></font>
+<font color=#447700>!  REAL*8, TARGET :: bems(imx,jmx,nmx), bdry(imx,jmx,nmx), bstl(imx,jmx,nmx)<a name='196'></font>
+<font color=#447700>!  REAL*8, TARGET :: bwet(imx,jmx,nmx), bcnv(imx,jmx,nmx)!<a name='197'></font>
+<a name='198'>
+<font color=#447700>!  ! integrated tendencies per process<a name='199'></font>
+<font color=#447700>!  REAL*8, TARGET :: tems(imx,jmx,nmx), tstl(imx,jmx,nmx)<a name='200'></font>
+<font color=#447700>!  REAL*8, TARGET :: tdry(imx,jmx,nmx), twet(imx,jmx,nmx), tcnv(imx,jmx,nmx)<a name='201'></font>
+<a name='202'>
+  <font color=#447700>! global mass balance per time step <a name='203'></font>
+  REAL*8 :: tmas0(nmx), tmas1(nmx)<a name='204'>
+  REAL*8 :: dtems(nmx), dttrp(nmx), dtdif(nmx), dtcnv(nmx)<a name='205'>
+  REAL*8 :: dtwet(nmx), dtdry(nmx), dtstl(nmx)<a name='206'>
+  REAL*8 :: dtems2(nmx), dttrp2(nmx), dtdif2(nmx), dtcnv2(nmx)<a name='207'>
+  REAL*8 :: dtwet2(nmx), dtdry2(nmx), dtstl2(nmx)<a name='208'>
+<a name='209'>
+  <font color=#447700>! detailed integrated budgets for individual emissions<a name='210'></font>
+  REAL*8, TARGET :: ems_an(imx,jmx,nmx),    ems_bb(imx,jmx,nmx), ems_tp(imx,jmx)<a name='211'>
+  REAL*8, TARGET :: ems_ac(imx,jmx,lmx,nmx)<a name='212'>
+  REAL*8, TARGET :: ems_co(imx,jmx,nmx)<a name='213'>
+<a name='214'>
+<a name='215'>
+  <font color=#447700>! executable statements<a name='216'></font>
+<a name='217'>
+  DO n = 1,nmx<a name='218'>
+<font color=#447700>!    if(ipr.eq.1)write(0,*)'in seasalt',n,ipr,ilwi<a name='219'></font>
+     bems(:,:,n) = 0.0<a name='220'>
+     rho_d = den_seas(n)<a name='221'>
+     r0 = ra(n)*frh<a name='222'>
+     r1 = rb(n)*frh<a name='223'>
+     r = r0<a name='224'>
+     nr = INT((r1-r0)/dr+.001)<a name='225'>
+<font color=#447700>!    if(ipr.eq.1.and.n.eq.1)write(0,*)'in seasalt',nr,r1,r0,dr,rho_d<a name='226'></font>
+     DO ir = 1,nr<a name='227'>
+        r_w = r + dr*0.5<a name='228'>
+        r = r + dr<a name='229'>
+        IF (new) THEN<a name='230'>
+           a = 4.7*(1.0 + theta*r_w)**(-0.017*r_w**(-1.44))<a name='231'>
+           c0 = c_new<a name='232'>
+           b0 = b_new<a name='233'>
+        ELSE<a name='234'>
+           a = 3.0<a name='235'>
+           c0 = c_old<a name='236'>
+           b0 = b_old<a name='237'>
+        END IF<a name='238'>
+        <font color=#447700>!<a name='239'></font>
+        b = (b0(1) - LOG10(r_w))/b0(2)<a name='240'>
+        dfn = (c0(1)/r_w**a)*(1.0 + c0(3)*r_w**c0(4))* &amp;<a name='241'>
+             10**(c0(5)*EXP(-(b**2)))<a name='242'>
+        <a name='243'>
+        r_d = r_w/frh*1.0D-6  <font color=#447700>! um -&gt; m<a name='244'></font>
+        dfm = 4.0/3.0*pi*r_d**3*rho_d*frh*dfn*dr*dt1<a name='245'>
+        DO i = 1,imx<a name='246'>
+           DO j = 1,jmx<a name='247'>
+<font color=#447700>!              IF (water(i,j) &gt; 0.0) THEN<a name='248'></font>
+              IF (ilwi(i,j) == 0) THEN<a name='249'>
+<font color=#447700>!                 src = dfm*dxy(j)*water(i,j)*w10m(i,j)**c0(2)<a name='250'></font>
+                 src = dfm*dxy(j)*w10m(i,j)**c0(2)<a name='251'>
+<font color=#447700>!                 src = ch_ss(n,dt(1)%mn)*dfm*dxy(j)*w10m(i,j)**c0(2)<a name='252'></font>
+                 tc(i,j,1,n) = tc(i,j,1,n) + src/airmas(i,j,1)<a name='253'>
+<font color=#447700>!                if(ipr.eq.1)write(0,*)n,dfm,c0(2),dxy(j),w10m(i,j),src,airmas(i,j,1)<a name='254'></font>
+              ELSE<a name='255'>
+                 src = 0.0<a name='256'>
+              END IF<a name='257'>
+              bems(i,j,n) = bems(i,j,n) + src<a name='258'>
+           END DO  <font color=#447700>! i<a name='259'></font>
+        END DO <font color=#447700>! j<a name='260'></font>
+     END DO <font color=#447700>! ir<a name='261'></font>
+  END DO <font color=#447700>! n<a name='262'></font>
+<a name='263'>
+END SUBROUTINE source_ss<a name='264'>
+END MODULE GOCART_SEASALT<a name='265'>
+</pre></body></html>

@@ -1,0 +1,1825 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#undef DEBUG<a name='2'>
+#define WRF_PORT<a name='3'>
+#define MODAL_AERO<a name='4'>
+<font color=#447700>! Updated to CESM1.0.3 (CAM5.1.01) by Balwinder.Singh@pnnl.gov<a name='5'></font>
+<A NAME='CLDWAT'><A href='../../html_code/phys/module_cam_cldwat.F.html#CLDWAT' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='6'>
+<font color=#993300>module </font><font color=#cc0000>cldwat</font> <A href='../../call_to/CLDWAT.html' TARGET='index'>2</A>,<A href='../../call_from/CLDWAT.html' TARGET='index'>3</A><a name='7'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='8'></font>
+<font color=#447700>! <a name='9'></font>
+<font color=#447700>! Purpose: Prognostic cloud water data and methods.<a name='10'></font>
+<font color=#447700>! <a name='11'></font>
+<font color=#447700>! Public interfaces:<a name='12'></font>
+<font color=#447700>!<a name='13'></font>
+<font color=#447700>! inimc -- Initialize constants<a name='14'></font>
+<font color=#447700>! pcond -- Calculate prognostic condensate<a name='15'></font>
+<font color=#447700>!<a name='16'></font>
+<font color=#447700>! cldwat_fice   -- calculate fraction of condensate in ice phase (radiation partitioning)<a name='17'></font>
+<font color=#447700>!<a name='18'></font>
+<font color=#447700>! Author: P. Rasch, with Modifications by Minghua Zhang<a name='19'></font>
+<font color=#447700>! January 2010, modified by J. Kay to add precip fluxes for COSP simulator<a name='20'></font>
+<font color=#447700>! Ported to WRF by William.Gustafson@pnl.gov, Nov. 2009<a name='21'></font>
+<font color=#447700>!    updated to CESM1_0_1, Nov. 2010<a name='22'></font>
+<font color=#447700>!<a name='23'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='24'></font>
+   use <A href='../../html_code/phys/module_cam_shr_kind_mod.F.html#SHR_KIND_MOD'>shr_kind_mod</A><A href='../../html_code/phys/module_cam_cldwat.F.html#CLDWAT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_KIND_MOD_2">,  only: r8 =&gt; shr_kind_r8<a name='25'>
+#ifndef WRF_PORT<a name='26'>
+   use spmd_utils,    only: masterproc<a name='27'>
+   use ppgrid,        only: pcols, pver, pverp<a name='28'>
+#endif<a name='29'>
+   use <A href='../../html_code/phys/module_cam_wv_saturation.F.html#WV_SATURATION'>wv_saturation</A><A href='../../html_code/phys/module_cam_cldwat.F.html#CLDWAT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WV_SATURATION_2">, only: estblf, hlatv, tmin, hlatf, rgasv, pcf, &amp;<a name='30'>
+                            cp, epsqs, ttrice<a name='31'>
+#ifndef WRF_PORT<a name='32'>
+   use abortutils,    only: endrun<a name='33'>
+   use cam_logfile,   only: iulog<a name='34'>
+#else<a name='35'>
+   use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_cldwat.F.html#CLDWAT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_8">, only: masterproc, &amp;<a name='36'>
+        pcols, pver, pverp, &amp;<a name='37'>
+        endrun, &amp;<a name='38'>
+        iulog<a name='39'>
+#endif<a name='40'>
+<a name='41'>
+   implicit none<a name='42'>
+<a name='43'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='44'></font>
+<font color=#447700>! PUBLIC: Make default data and interfaces private<a name='45'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='46'></font>
+   private<a name='47'>
+   save<a name='48'>
+#ifndef WRF_PORT<a name='49'>
+   public inimc, pcond          <font color=#447700>! Public interfaces<a name='50'></font>
+#endif<a name='51'>
+   public cldwat_fice          <font color=#447700>! Public interfaces<a name='52'></font>
+   public cldwat_readnl<a name='53'>
+   integer, public::  ktop      <font color=#447700>! Level above 10 hPa<a name='54'></font>
+#ifndef WRF_PORT<a name='55'>
+   real(r8),public ::  icritc               <font color=#447700>! threshold for autoconversion of cold ice<a name='56'></font>
+   real(r8),public ::  icritw               <font color=#447700>! threshold for autoconversion of warm ice<a name='57'></font>
+<font color=#447700>!!$   real(r8),public,parameter::  conke  = 1.e-6    ! tunable constant for evaporation of precip<a name='58'></font>
+<font color=#447700>!!$   real(r8),public,parameter::  conke  =  2.e-6    ! tunable constant for evaporation of precip<a name='59'></font>
+   real(r8),public ::  conke                <font color=#447700>! tunable constant for evaporation of precip<a name='60'></font>
+   real(r8),public ::  r3lcrit              <font color=#447700>! critical radius where liq conversion begins<a name='61'></font>
+#else<a name='62'>
+<font color=#447700>! Currently, the WRF_PORT bipasses the namelist initialization of these<a name='63'></font>
+<font color=#447700>! tunable parameters. We are hard-coding them to the default values for<a name='64'></font>
+<font color=#447700>! the fv 0.23x0.31 grid. One might choose to implement an option to set<a name='65'></font>
+<font color=#447700>! these via the WRF Registry in the future.<a name='66'></font>
+   real(r8),public :: icritw = 2.0e-4<a name='67'>
+   real(r8),public :: icritc = 45.0e-6<a name='68'>
+   real(r8),public :: conke  = 5.0e-6<a name='69'>
+<a name='70'>
+#endif<a name='71'>
+<a name='72'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='73'></font>
+<font color=#447700>! PRIVATE: Everything else is private to this module<a name='74'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='75'></font>
+   real(r8), private:: tmax_fice<font color=#447700>! max temperature for cloud ice formation<a name='76'></font>
+   real(r8), private:: tmin_fice<font color=#447700>! min temperature for cloud ice formation<a name='77'></font>
+   real(r8), private:: tmax_fsnow <font color=#447700>! max temperature for transition to convective snow<a name='78'></font>
+   real(r8), private:: tmin_fsnow <font color=#447700>! min temperature for transition to convective snow<a name='79'></font>
+   real(r8), private:: rhonot   <font color=#447700>! air density at surface<a name='80'></font>
+   real(r8), private:: t0       <font color=#447700>! Freezing temperature<a name='81'></font>
+   real(r8), private:: cldmin   <font color=#447700>! assumed minimum cloud amount<a name='82'></font>
+   real(r8), private:: small    <font color=#447700>! small number compared to unity<a name='83'></font>
+   real(r8), private:: c        <font color=#447700>! constant for graupel like snow cm**(1-d)/s<a name='84'></font>
+   real(r8), private:: d        <font color=#447700>! constant for graupel like snow<a name='85'></font>
+   real(r8), private:: esi      <font color=#447700>! collection efficient for ice by snow<a name='86'></font>
+   real(r8), private:: esw      <font color=#447700>! collection efficient for water by snow<a name='87'></font>
+   real(r8), private:: nos      <font color=#447700>! particles snow / cm**4<a name='88'></font>
+   real(r8), private:: pi       <font color=#447700>! Mathematical constant<a name='89'></font>
+   real(r8), private:: gravit   <font color=#447700>! Gravitational acceleration at surface<a name='90'></font>
+   real(r8), private:: rh2o<a name='91'>
+   real(r8), private:: prhonos<a name='92'>
+   real(r8), private:: thrpd    <font color=#447700>! numerical three added to d<a name='93'></font>
+   real(r8), private:: gam3pd   <font color=#447700>! gamma function on (3+d)<a name='94'></font>
+   real(r8), private:: gam4pd   <font color=#447700>! gamma function on (4+d)<a name='95'></font>
+   real(r8), private:: rhoi     <font color=#447700>! ice density<a name='96'></font>
+   real(r8), private:: rhos     <font color=#447700>! snow density<a name='97'></font>
+   real(r8), private:: rhow     <font color=#447700>! water density<a name='98'></font>
+   real(r8), private:: mcon01   <font color=#447700>! constants used in cloud microphysics<a name='99'></font>
+   real(r8), private:: mcon02   <font color=#447700>! constants used in cloud microphysics<a name='100'></font>
+   real(r8), private:: mcon03   <font color=#447700>! constants used in cloud microphysics<a name='101'></font>
+   real(r8), private:: mcon04   <font color=#447700>! constants used in cloud microphysics<a name='102'></font>
+   real(r8), private:: mcon05   <font color=#447700>! constants used in cloud microphysics<a name='103'></font>
+   real(r8), private:: mcon06   <font color=#447700>! constants used in cloud microphysics<a name='104'></font>
+   real(r8), private:: mcon07   <font color=#447700>! constants used in cloud microphysics<a name='105'></font>
+   real(r8), private:: mcon08   <font color=#447700>! constants used in cloud microphysics<a name='106'></font>
+<a name='107'>
+   integer, private ::  k1mb    <font color=#447700>! index of the eta level near 1 mb<a name='108'></font>
+<a name='109'>
+<font color=#447700>! Parameters used in findmcnew<a name='110'></font>
+   real(r8) :: capnsi               <font color=#447700>! sea ice cloud particles / cm3<a name='111'></font>
+   real(r8) :: capnc                <font color=#447700>! cold and oceanic cloud particles / cm3<a name='112'></font>
+   real(r8) :: capnw                <font color=#447700>! warm continental cloud particles / cm3<a name='113'></font>
+   real(r8) :: kconst               <font color=#447700>! const for terminal velocity (stokes regime)<a name='114'></font>
+   real(r8) :: effc                 <font color=#447700>! collection efficiency<a name='115'></font>
+   real(r8) :: alpha                <font color=#447700>! ratio of 3rd moment radius to 2nd<a name='116'></font>
+   real(r8) :: capc                 <font color=#447700>! constant for autoconversion<a name='117'></font>
+   real(r8) :: convfw               <font color=#447700>! constant used for fall velocity calculation<a name='118'></font>
+   real(r8) :: cracw                <font color=#447700>! constant used for rain accreting water<a name='119'></font>
+   real(r8) :: critpr               <font color=#447700>! critical precip rate collection efficiency changes<a name='120'></font>
+   real(r8) :: ciautb               <font color=#447700>! coefficient of autoconversion of ice (1/s)<a name='121'></font>
+<a name='122'>
+#ifdef DEBUG<a name='123'>
+   integer, private,parameter ::  nlook = 1  <font color=#447700>! Number of points to examine<a name='124'></font>
+   integer, private ::  ilook(nlook)         <font color=#447700>! Longitude index to examine<a name='125'></font>
+   integer, private ::  latlook(nlook)       <font color=#447700>! Latitude index to examine<a name='126'></font>
+   integer, private ::  lchnklook(nlook)     <font color=#447700>! Chunk index to examine<a name='127'></font>
+   integer, private ::  icollook(nlook)      <font color=#447700>! Column index to examine<a name='128'></font>
+#endif<a name='129'>
+  <font color=#447700>! Private data<a name='130'></font>
+  real(r8), parameter :: unset_r8 = huge(1.0_r8)<a name='131'>
+<a name='132'>
+contains<a name='133'>
+<font color=#447700>!===============================================================================<a name='134'></font>
+<A NAME='CLDWAT_READNL'><A href='../../html_code/phys/module_cam_cldwat.F.html#CLDWAT_READNL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='135'>
+  <font color=#993300>subroutine </font><font color=#cc0000>cldwat_readnl</font>(nlfile),<A href='../../call_from/CLDWAT_READNL.html' TARGET='index'>1</A><a name='136'>
+#ifndef WRF_PORT<a name='137'>
+   use namelist_utils,  only: find_group_name<a name='138'>
+   use units,           only: getunit, freeunit<a name='139'>
+   use mpishorthand<a name='140'>
+#endif<a name='141'>
+<a name='142'>
+   character(len=*), intent(in) :: nlfile  <font color=#447700>! filepath for file containing namelist input<a name='143'></font>
+#ifndef WRF_PORT<a name='144'>
+   <font color=#447700>! Namelist variables<a name='145'></font>
+   real(r8) :: cldwat_icritw  = unset_r8    <font color=#447700>!   icritw  = threshold for autoconversion of warm ice  <a name='146'></font>
+   real(r8) :: cldwat_icritc  = unset_r8    <font color=#447700>!   icritc  = threshold for autoconversion of cold ice  <a name='147'></font>
+   real(r8) :: cldwat_conke   = unset_r8    <font color=#447700>!   conke   = tunable constant for evaporation of precip<a name='148'></font>
+   real(r8) :: cldwat_r3lcrit = unset_r8    <font color=#447700>!   r3lcrit = critical radius where liq conversion begins<a name='149'></font>
+<a name='150'>
+   <font color=#447700>! Local variables<a name='151'></font>
+   integer :: unitn, ierr<a name='152'>
+   character(len=*), parameter :: subname = 'cldwat_readnl'<a name='153'>
+<a name='154'>
+   namelist /cldwat_nl/ cldwat_icritw, cldwat_icritc, cldwat_conke, cldwat_r3lcrit<a name='155'>
+<a name='156'>
+   <font color=#447700>!-----------------------------------------------------------------------------<a name='157'></font>
+<a name='158'>
+   if (masterproc) then<a name='159'>
+      unitn = getunit()<a name='160'>
+      open( unitn, file=trim(nlfile), status='old' )<a name='161'>
+      call find_group_name(unitn, 'cldwat_nl', status=ierr)<a name='162'>
+      if (ierr == 0) then<a name='163'>
+         read(unitn, cldwat_nl, iostat=ierr)<a name='164'>
+         if (ierr /= 0) then<a name='165'>
+            call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_cldwat.F.html#CLDWAT_READNL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_1">(subname // ':: ERROR reading namelist')<a name='166'>
+         end if<a name='167'>
+      end if<a name='168'>
+      close(unitn)<a name='169'>
+      call freeunit(unitn)<a name='170'>
+<a name='171'>
+      <font color=#447700>! set local variables<a name='172'></font>
+      icritw  = cldwat_icritw <a name='173'>
+      icritc  = cldwat_icritc<a name='174'>
+      conke   = cldwat_conke<a name='175'>
+      r3lcrit = cldwat_r3lcrit<a name='176'>
+<a name='177'>
+   end if<a name='178'>
+<a name='179'>
+<a name='180'>
+<a name='181'>
+#ifdef SPMD<a name='182'>
+   <font color=#447700>! Broadcast namelist variables<a name='183'></font>
+   call mpibcast(icritw,            1, mpir8,  0, mpicom)<a name='184'>
+   call mpibcast(icritc,            1, mpir8,  0, mpicom)<a name='185'>
+   call mpibcast(conke,             1, mpir8,  0, mpicom)<a name='186'>
+   call mpibcast(r3lcrit,           1, mpir8,  0, mpicom)<a name='187'>
+#endif<a name='188'>
+#endif<a name='189'>
+end subroutine cldwat_readnl<a name='190'>
+<a name='191'>
+<font color=#447700>!================================================================================================<a name='192'></font>
+<A NAME='CLDWAT_FICE'><A href='../../html_code/phys/module_cam_cldwat.F.html#CLDWAT_FICE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='193'>
+  <font color=#993300>subroutine </font><font color=#cc0000>cldwat_fice</font>(ncol, t, fice, fsnow) <A href='../../call_to/CLDWAT_FICE.html' TARGET='index'>2</A>,<A href='../../call_from/CLDWAT_FICE.html' TARGET='index'>1</A><a name='194'>
+<font color=#447700>!<a name='195'></font>
+<font color=#447700>! Compute the fraction of the total cloud water which is in ice phase.<a name='196'></font>
+<font color=#447700>! The fraction depends on temperature only. <a name='197'></font>
+<font color=#447700>! This is the form that was used for radiation, the code came from cldefr originally<a name='198'></font>
+<font color=#447700>! <a name='199'></font>
+<font color=#447700>! Author: B. A. Boville Sept 10, 2002<a name='200'></font>
+<font color=#447700>!  modified: PJR 3/13/03 (added fsnow to ascribe snow production for convection )<a name='201'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='202'></font>
+    use <A href='../../html_code/phys/module_cam_physconst.F.html#PHYSCONST'>physconst</A><A href='../../html_code/phys/module_cam_cldwat.F.html#CLDWAT_FICE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHYSCONST_2">,          only: tmelt<a name='203'>
+    implicit none<a name='204'>
+<a name='205'>
+<font color=#447700>! Arguments<a name='206'></font>
+    integer,  intent(in)  :: ncol                 <font color=#447700>! number of active columns<a name='207'></font>
+    real(r8), intent(in)  :: t(pcols,pver)        <font color=#447700>! temperature<a name='208'></font>
+<a name='209'>
+    real(r8), intent(out) :: fice(pcols,pver)     <font color=#447700>! Fractional ice content within cloud<a name='210'></font>
+    real(r8), intent(out) :: fsnow(pcols,pver)    <font color=#447700>! Fractional snow content for convection<a name='211'></font>
+<a name='212'>
+<font color=#447700>! Local variables<a name='213'></font>
+    integer :: i,k                                   <font color=#447700>! loop indexes<a name='214'></font>
+<a name='215'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='216'></font>
+<a name='217'>
+    <font color=#447700>!BSINGH - This is a temporary fix for uninitialized tmax_* and tmin_* variables<a name='218'></font>
+    <font color=#447700>!This can be fixed by calling the inimc subroutine in physics init calls<a name='219'></font>
+    tmax_fice = tmelt    - 10._r8<a name='220'>
+    tmin_fice = tmax_fice - 30._r8<a name='221'>
+    tmax_fsnow = tmelt<a name='222'>
+    tmin_fsnow = tmelt   - 5._r8<a name='223'>
+<a name='224'>
+    <a name='225'>
+<font color=#447700>! Define fractional amount of cloud that is ice<a name='226'></font>
+    do k=1,pver<a name='227'>
+       do i=1,ncol<a name='228'>
+<a name='229'>
+<font color=#447700>! If warmer than tmax then water phase<a name='230'></font>
+          if (t(i,k) &gt; tmax_fice) then<a name='231'>
+             fice(i,k) = 0.0_r8<a name='232'>
+<a name='233'>
+<font color=#447700>! If colder than tmin then ice phase<a name='234'></font>
+          else if (t(i,k) &lt; tmin_fice) then<a name='235'>
+             fice(i,k) = 1.0_r8<a name='236'>
+<a name='237'>
+<font color=#447700>! Otherwise mixed phase, with ice fraction decreasing linearly from tmin to tmax<a name='238'></font>
+          else <a name='239'>
+             fice(i,k) =(tmax_fice - t(i,k)) / (tmax_fice - tmin_fice)<a name='240'>
+          end if<a name='241'>
+<a name='242'>
+<font color=#447700>! snow fraction partitioning<a name='243'></font>
+<a name='244'>
+<font color=#447700>! If warmer than tmax then water phase<a name='245'></font>
+          if (t(i,k) &gt; tmax_fsnow) then<a name='246'>
+             fsnow(i,k) = 0.0_r8<a name='247'>
+<a name='248'>
+<font color=#447700>! If colder than tmin then ice phase<a name='249'></font>
+          else if (t(i,k) &lt; tmin_fsnow) then<a name='250'>
+             fsnow(i,k) = 1.0_r8<a name='251'>
+<a name='252'>
+<font color=#447700>! Otherwise mixed phase, with ice fraction decreasing linearly from tmin to tmax<a name='253'></font>
+          else <a name='254'>
+             fsnow(i,k) =(tmax_fsnow - t(i,k)) / (tmax_fsnow - tmin_fsnow)<a name='255'>
+          end if<a name='256'>
+<a name='257'>
+       end do<a name='258'>
+    end do<a name='259'>
+<a name='260'>
+    return<a name='261'>
+  end subroutine cldwat_fice<a name='262'>
+#ifndef WRF_PORT<a name='263'>
+<A NAME='INIMC'><A href='../../html_code/phys/module_cam_cldwat.F.html#INIMC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='264'>
+<font color=#993300>subroutine </font><font color=#cc0000>inimc</font>( tmeltx, rhonotx, gravitx, rh2ox),<A href='../../call_from/INIMC.html' TARGET='index'>11</A><a name='265'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='266'></font>
+<font color=#447700>! <a name='267'></font>
+<font color=#447700>! Purpose: <a name='268'></font>
+<font color=#447700>! initialize constants for the prognostic condensate<a name='269'></font>
+<font color=#447700>! <a name='270'></font>
+<font color=#447700>! Author: P. Rasch, April 1997<a name='271'></font>
+<font color=#447700>! <a name='272'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='273'></font>
+   use pmgrid,       only: plev, plevp<a name='274'>
+   use dycore,       only: dycore_is, get_resolution<a name='275'>
+   use hycoef,       only: hypm<a name='276'>
+   use phys_control, only: phys_getopts<a name='277'>
+<a name='278'>
+   integer k<a name='279'>
+   real(r8), intent(in) :: tmeltx<a name='280'>
+   real(r8), intent(in) :: rhonotx<a name='281'>
+   real(r8), intent(in) :: gravitx<a name='282'>
+   real(r8), intent(in) :: rh2ox<a name='283'>
+<a name='284'>
+#ifdef UNICOSMP<a name='285'>
+   real(r8) signgam              <font color=#447700>! variable required by cray gamma function<a name='286'></font>
+   external gamma<a name='287'>
+#endif<a name='288'>
+   character(len=16)    :: microp_scheme <a name='289'>
+<a name='290'>
+<font color=#447700>! Get microphysics option<a name='291'></font>
+<a name='292'>
+   call phys_getopts( microp_scheme_out = microp_scheme )<a name='293'>
+<a name='294'>
+<font color=#447700>! Set following for all physics packages<a name='295'></font>
+<a name='296'>
+   tmax_fice = tmeltx    - 10._r8<a name='297'>
+<font color=#447700>!! tmax_fice = tmeltx<a name='298'></font>
+<font color=#447700>!! tmin_fice = tmax_fice - 20.<a name='299'></font>
+   tmin_fice = tmax_fice - 30._r8<a name='300'>
+   tmax_fsnow = tmeltx<a name='301'>
+   tmin_fsnow = tmeltx   - 5._r8<a name='302'>
+<a name='303'>
+<font color=#447700>! Set remaining for RK microphysics<a name='304'></font>
+<a name='305'>
+   if( microp_scheme .eq. 'RK' ) then<a name='306'>
+      rhonot = rhonotx             <font color=#447700>! air density at surface (gm/cm3)<a name='307'></font>
+      gravit = gravitx<a name='308'>
+      rh2o   = rh2ox<a name='309'>
+      rhos = .1_r8                 <font color=#447700>! assumed snow density (gm/cm3)<a name='310'></font>
+      rhow = 1._r8                 <font color=#447700>! water density<a name='311'></font>
+      rhoi = 1._r8                 <font color=#447700>! ice density<a name='312'></font>
+      esi = 1.0_r8                 <font color=#447700>! collection efficient for ice by snow<a name='313'></font>
+      esw = 0.1_r8                 <font color=#447700>! collection efficient for water by snow<a name='314'></font>
+      t0 = tmeltx                  <font color=#447700>! approximate freezing temp<a name='315'></font>
+      cldmin = 0.02_r8             <font color=#447700>! assumed minimum cloud amount<a name='316'></font>
+      small = 1.e-22_r8            <font color=#447700>! a small number compared to unity<a name='317'></font>
+      c = 152.93_r8                <font color=#447700>! constant for graupel like snow cm**(1-d)/s<a name='318'></font>
+      d = 0.25_r8                  <font color=#447700>! constant for graupel like snow<a name='319'></font>
+      nos = 3.e-2_r8               <font color=#447700>! particles snow / cm**4<a name='320'></font>
+      pi = 4._r8*atan(1.0_r8)<a name='321'>
+      prhonos = pi*rhos*nos<a name='322'>
+      thrpd = 3._r8 + d<a name='323'>
+      if (d==0.25_r8) then<a name='324'>
+         gam3pd = 2.549256966718531_r8 <font color=#447700>! only right for d = 0.25<a name='325'></font>
+         gam4pd = 8.285085141835282_r8<a name='326'>
+      else<a name='327'>
+#ifdef UNICOSMP<a name='328'>
+         call <A href='../../html_code/phys/module_mp_p3.F.html#GAMMA'>gamma</A><A href='../../html_code/phys/module_cam_cldwat.F.html#INIMC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GAMMA_1">(3._r8+d, signgam, gam3pd)<a name='329'>
+         gam3pd = sign(exp(gam3pd),signgam)<a name='330'>
+         call <A href='../../html_code/phys/module_mp_p3.F.html#GAMMA'>gamma</A><A href='../../html_code/phys/module_cam_cldwat.F.html#INIMC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GAMMA_2">(4._r8+d, signgam, gam4pd)<a name='331'>
+         gam4pd = sign(exp(gam4pd),signgam)<a name='332'>
+         write(iulog,*) ' d, gamma(3+d), gamma(4+d) =', gam3pd, gam4pd<a name='333'>
+#ifdef WRF_PORT<a name='334'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#INIMC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_553">(iulog)<a name='335'>
+#endif<a name='336'>
+#else<a name='337'>
+         write(iulog,*) ' can only use d ne 0.25 on a cray '<a name='338'>
+#ifdef WRF_PORT<a name='339'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#INIMC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_554">(iulog)<a name='340'>
+#endif<a name='341'>
+         stop<a name='342'>
+#endif<a name='343'>
+      endif<a name='344'>
+      mcon01 = pi*nos*c*gam3pd/4._r8<a name='345'>
+      mcon02 = 1._r8/(c*gam4pd*sqrt(rhonot)/(6*prhonos**(d/4._r8)))<a name='346'>
+      mcon03 = -(0.5_r8+d/4._r8)<a name='347'>
+      mcon04 = 4._r8/(4._r8+d)<a name='348'>
+      mcon05 = (3+d)/(4+d)<a name='349'>
+      mcon06 = (3+d)/4._r8<a name='350'>
+      mcon07 = mcon01*sqrt(rhonot)*mcon02**mcon05/prhonos**mcon06<a name='351'>
+      mcon08 = -0.5_r8/(4._r8+d)<a name='352'>
+<a name='353'>
+<font color=#447700>!  find the level about 1mb, we wont do the microphysics above this level<a name='354'></font>
+      k1mb = 1<a name='355'>
+      do k=1,pver-1<a name='356'>
+         if (hypm(k) &lt; 1.e2_r8 .and. hypm(k+1) &gt;= 1.e2_r8) then<a name='357'>
+            if (1.e2_r8-hypm(k) &lt; hypm(k+1)-1.e2_r8) then<a name='358'>
+               k1mb = k<a name='359'>
+            else<a name='360'>
+               k1mb = k + 1<a name='361'>
+            end if<a name='362'>
+            goto 20<a name='363'>
+         end if<a name='364'>
+      end do<a name='365'>
+      if (masterproc) then<a name='366'>
+         write(iulog,*)'inimc: model levels bracketing 1 mb not found'<a name='367'>
+#ifdef WRF_PORT<a name='368'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#INIMC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_555">(iulog)<a name='369'>
+#endif<a name='370'>
+      end if<a name='371'>
+<font color=#447700>!     call endrun<a name='372'></font>
+      k1mb = 1<a name='373'>
+20    if( masterproc ) write(iulog,*)'inimc: model level nearest 1 mb is',k1mb,'which is',hypm(k1mb),'pascals'<a name='374'>
+#ifdef WRF_PORT<a name='375'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#INIMC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_556">(iulog)<a name='376'>
+#endif<a name='377'>
+<a name='378'>
+      if( masterproc ) write(iulog,*) 'cloud water initialization by inimc complete '<a name='379'>
+#ifdef WRF_PORT<a name='380'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#INIMC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_557">(iulog)<a name='381'>
+#endif<a name='382'>
+<a name='383'>
+<font color=#447700>! Initialize parameters used by findmcnew<a name='384'></font>
+      capnw = 400._r8              <font color=#447700>! warm continental cloud particles / cm3<a name='385'></font>
+      capnc = 150._r8              <font color=#447700>! cold and oceanic cloud particles / cm3<a name='386'></font>
+<font color=#447700>!     capnsi = 40._r8              ! sea ice cloud particles density  / cm3<a name='387'></font>
+      capnsi = 75._r8              <font color=#447700>! sea ice cloud particles density  / cm3<a name='388'></font>
+<a name='389'>
+      kconst = 1.18e6_r8           <font color=#447700>! const for terminal velocity<a name='390'></font>
+<a name='391'>
+<font color=#447700>!     effc = 1._r8                 ! autoconv collection efficiency following boucher 96<a name='392'></font>
+<font color=#447700>!     effc = .55*0.05_r8           ! autoconv collection efficiency following baker 93<a name='393'></font>
+      effc = 0.55_r8               <font color=#447700>! autoconv collection efficiency following tripoli and cotton<a name='394'></font>
+<font color=#447700>!     effc = 0._r8    ! turn off warm-cloud autoconv<a name='395'></font>
+      alpha = 1.1_r8**4<a name='396'>
+      capc = pi**(-.333_r8)*kconst*effc *(0.75_r8)**(1.333_r8)*alpha  <font color=#447700>! constant for autoconversion<a name='397'></font>
+<a name='398'>
+<font color=#447700>! critical precip rate at which we assume the collector drops can change the<a name='399'></font>
+<font color=#447700>! drop size enough to enhance the auto-conversion process (mm/day)<a name='400'></font>
+      critpr = 0.5_r8<a name='401'>
+      convfw = 1.94_r8*2.13_r8*sqrt(rhow*1000._r8*9.81_r8*2.7e-4_r8)<a name='402'>
+<a name='403'>
+<font color=#447700>! liquid microphysics<a name='404'></font>
+<font color=#447700>!     cracw = 6_r8                 ! beheng<a name='405'></font>
+      cracw = .884_r8*sqrt(9.81_r8/(rhow*1000._r8*2.7e-4_r8)) <font color=#447700>! tripoli and cotton<a name='406'></font>
+<a name='407'>
+<font color=#447700>! ice microphysics<a name='408'></font>
+      ciautb = 5.e-4_r8<a name='409'>
+      <a name='410'>
+      if ( masterproc ) then<a name='411'>
+         write(iulog,*)'tuning parameters cldwat: icritw',icritw,'icritc',icritc,'conke',conke,'r3lcrit',r3lcrit<a name='412'>
+#ifdef WRF_PORT<a name='413'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#INIMC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_558">(iulog)<a name='414'>
+#endif<a name='415'>
+         write(iulog,*)'tuning parameters cldwat: capnw',capnw,'capnc',capnc,'capnsi',capnsi,'kconst',kconst<a name='416'>
+#ifdef WRF_PORT<a name='417'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#INIMC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_559">(iulog)<a name='418'>
+#endif<a name='419'>
+         write(iulog,*)'tuning parameters cldwat: effc',effc,'alpha',alpha,'capc',capc<a name='420'>
+#ifdef WRF_PORT<a name='421'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#INIMC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_560">(iulog)<a name='422'>
+#endif<a name='423'>
+         write(iulog,*)'tuning parameters cldwat: critpr',critpr,'convfw',convfw,'cracw',cracw,'ciautb',ciautb<a name='424'>
+#ifdef WRF_PORT<a name='425'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#INIMC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_561">(iulog)<a name='426'>
+#endif<a name='427'>
+      endif<a name='428'>
+   endif<a name='429'>
+<a name='430'>
+   return<a name='431'>
+end subroutine inimc<a name='432'>
+<a name='433'>
+<A NAME='PCOND'><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='434'>
+<font color=#993300>subroutine </font><font color=#cc0000>pcond</font> (lchnk   ,ncol    , &amp;,<A href='../../call_from/PCOND.html' TARGET='index'>16</A><a name='435'>
+                  tn      ,ttend   ,qn      ,qtend   ,omega   , &amp;<a name='436'>
+                  cwat    ,p       ,pdel    ,cldn    ,fice    , fsnow, &amp;<a name='437'>
+                  cme     ,prodprec,prodsnow,evapprec,evapsnow,evapheat, prfzheat, &amp;     <a name='438'>
+                  meltheat,precip  ,snowab  ,deltat  ,fwaut   , &amp;<a name='439'>
+                  fsaut   ,fracw   ,fsacw   ,fsaci   ,lctend  , &amp;<a name='440'>
+                  rhdfda  ,rhu00   ,seaicef, zi      ,ice2pr, liq2pr, &amp;<a name='441'>
+                  liq2snow, snowh, rkflxprc, rkflxsnw, pracwo, psacwo, psacio)<a name='442'>
+<a name='443'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='444'></font>
+<font color=#447700>! <a name='445'></font>
+<font color=#447700>! Purpose: <a name='446'></font>
+<font color=#447700>! The public interface to the cloud water parameterization<a name='447'></font>
+<font color=#447700>! returns tendencies to water vapor, temperature and cloud water variables<a name='448'></font>
+<font color=#447700>! <a name='449'></font>
+<font color=#447700>! For basic method <a name='450'></font>
+<font color=#447700>!  See: Rasch, P. J, and J. E. Kristjansson, A Comparison of the CCM3<a name='451'></font>
+<font color=#447700>!  model climate using diagnosed and <a name='452'></font>
+<font color=#447700>!  predicted condensate parameterizations, 1998, J. Clim., 11,<a name='453'></font>
+<font color=#447700>!  pp1587---1614.<a name='454'></font>
+<font color=#447700>! <a name='455'></font>
+<font color=#447700>! For important modifications to improve the method of determining<a name='456'></font>
+<font color=#447700>! condensation/evaporation see Zhang et al (2001, in preparation)<a name='457'></font>
+<font color=#447700>!<a name='458'></font>
+<font color=#447700>! Authors: M. Zhang, W. Lin, P. Rasch and J.E. Kristjansson<a name='459'></font>
+<font color=#447700>!          B. A. Boville (latent heat of fusion)<a name='460'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='461'></font>
+   use <A href='../../html_code/phys/module_cam_wv_saturation.F.html#WV_SATURATION'>wv_saturation</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WV_SATURATION_3">, only: vqsatd<a name='462'>
+   use cam_control_mod, only: nlvdry<a name='463'>
+<font color=#447700>!<a name='464'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='465'></font>
+<font color=#447700>!<a name='466'></font>
+<font color=#447700>! Input Arguments<a name='467'></font>
+<font color=#447700>!<a name='468'></font>
+   integer, intent(in) :: lchnk                 <font color=#447700>! chunk identifier<a name='469'></font>
+   integer, intent(in) :: ncol                  <font color=#447700>! number of atmospheric columns<a name='470'></font>
+<a name='471'>
+   real(r8), intent(in) :: fice(pcols,pver)     <font color=#447700>! fraction of cwat that is ice<a name='472'></font>
+   real(r8), intent(in) :: fsnow(pcols,pver)    <font color=#447700>! fraction of rain that freezes to snow<a name='473'></font>
+   real(r8), intent(in) :: cldn(pcols,pver)     <font color=#447700>! new value of cloud fraction    (fraction)<a name='474'></font>
+   real(r8), intent(in) :: cwat(pcols,pver)     <font color=#447700>! cloud water (kg/kg)<a name='475'></font>
+   real(r8), intent(in) :: omega(pcols,pver)    <font color=#447700>! vert pressure vel (Pa/s)<a name='476'></font>
+   real(r8), intent(in) :: p(pcols,pver)        <font color=#447700>! pressure          (K)<a name='477'></font>
+   real(r8), intent(in) :: pdel(pcols,pver)     <font color=#447700>! pressure thickness (Pa)<a name='478'></font>
+   real(r8), intent(in) :: qn(pcols,pver)       <font color=#447700>! new water vapor    (kg/kg)<a name='479'></font>
+   real(r8), intent(in) :: qtend(pcols,pver)    <font color=#447700>! mixing ratio tend  (kg/kg/s)<a name='480'></font>
+   real(r8), intent(in) :: tn(pcols,pver)       <font color=#447700>! new temperature    (K)<a name='481'></font>
+   real(r8), intent(in) :: ttend(pcols,pver)    <font color=#447700>! temp tendencies    (K/s)<a name='482'></font>
+   real(r8), intent(in) :: deltat               <font color=#447700>! time step to advance solution over<a name='483'></font>
+   real(r8), intent(in) :: lctend(pcols,pver)   <font color=#447700>! cloud liquid water tendencies   ====wlin<a name='484'></font>
+   real(r8), intent(in) :: rhdfda(pcols,pver)   <font color=#447700>! dG(a)/da, rh=G(a), when rh&gt;u00  ====wlin<a name='485'></font>
+   real(r8), intent(in) :: rhu00 (pcols,pver)   <font color=#447700>! Rhlim for cloud                 ====wlin<a name='486'></font>
+   real(r8), intent(in) :: seaicef(pcols)       <font color=#447700>! sea ice fraction  (fraction)<a name='487'></font>
+   real(r8), intent(in) :: zi(pcols,pverp)      <font color=#447700>! layer interfaces (m)<a name='488'></font>
+    real(r8), intent(in) :: snowh(pcols)         <font color=#447700>! Snow depth over land, water equivalent (m)<a name='489'></font>
+<font color=#447700>!<a name='490'></font>
+<font color=#447700>! Output Arguments<a name='491'></font>
+<font color=#447700>!<a name='492'></font>
+   real(r8), intent(out) :: cme     (pcols,pver) <font color=#447700>! rate of cond-evap of condensate (1/s)<a name='493'></font>
+   real(r8), intent(out) :: prodprec(pcols,pver) <font color=#447700>! rate of conversion of condensate to precip (1/s)<a name='494'></font>
+   real(r8), intent(out) :: evapprec(pcols,pver) <font color=#447700>! rate of evaporation of falling precip (1/s)<a name='495'></font>
+   real(r8), intent(out) :: evapsnow(pcols,pver) <font color=#447700>! rate of evaporation of falling snow (1/s)<a name='496'></font>
+   real(r8), intent(out) :: evapheat(pcols,pver) <font color=#447700>! heating rate due to evaporation of precip (W/kg)<a name='497'></font>
+   real(r8), intent(out) :: prfzheat(pcols,pver) <font color=#447700>! heating rate due to freezing of precip (W/kg)<a name='498'></font>
+   real(r8), intent(out) :: meltheat(pcols,pver) <font color=#447700>! heating rate due to snow melt (W/kg)<a name='499'></font>
+   real(r8), intent(out) :: precip(pcols)        <font color=#447700>! rate of precipitation (kg / (m**2 * s))<a name='500'></font>
+   real(r8), intent(out) :: snowab(pcols)        <font color=#447700>! rate of snow (kg / (m**2 * s))<a name='501'></font>
+   real(r8), intent(out) :: ice2pr(pcols,pver)   <font color=#447700>! rate of conversion of ice to precip<a name='502'></font>
+   real(r8), intent(out) :: liq2pr(pcols,pver)   <font color=#447700>! rate of conversion of liquid to precip<a name='503'></font>
+   real(r8), intent(out) :: liq2snow(pcols,pver) <font color=#447700>! rate of conversion of liquid to snow<a name='504'></font>
+   real(r8), intent(out) :: rkflxprc(pcols,pverp)   <font color=#447700>! grid-box mean RK flux_large_scale_cloud_rain+snow at interfaces (kg m^-2 s^-1)<a name='505'></font>
+   real(r8), intent(out) :: rkflxsnw(pcols,pverp)   <font color=#447700>! grid-box mean RK flux_large_scale_cloud_snow at interfaces (kg m^-2 s^-1)<a name='506'></font>
+<font color=#447700>! intent(out)s here for pcond to pass to stratiform.F90 to be addflded/outflded<a name='507'></font>
+   real(r8), intent(out) :: pracwo(pcols,pver)      <font color=#447700>! accretion of cloud water by rain (1/s)<a name='508'></font>
+   real(r8), intent(out) :: psacwo(pcols,pver)      <font color=#447700>! accretion of cloud water by snow (1/s)<a name='509'></font>
+   real(r8), intent(out) :: psacio(pcols,pver)      <font color=#447700>! accretion of cloud ice by snow (1/s)<a name='510'></font>
+<a name='511'>
+   real(r8) nice2pr     <font color=#447700>! rate of conversion of ice to snow<a name='512'></font>
+   real(r8) nliq2pr     <font color=#447700>! rate of conversion of liquid to precip<a name='513'></font>
+   real(r8) nliq2snow   <font color=#447700>! rate of conversion of liquid to snow<a name='514'></font>
+   real(r8) prodsnow(pcols,pver) <font color=#447700>! rate of production of snow<a name='515'></font>
+<a name='516'>
+<font color=#447700>!<a name='517'></font>
+<font color=#447700>! Local workspace<a name='518'></font>
+<font color=#447700>!<a name='519'></font>
+   real(r8) :: precab(pcols)        <font color=#447700>! rate of precipitation (kg / (m**2 * s))<a name='520'></font>
+   integer i                 <font color=#447700>! work variable<a name='521'></font>
+   integer iter              <font color=#447700>! #iterations for precipitation calculation<a name='522'></font>
+   integer k                 <font color=#447700>! work variable<a name='523'></font>
+   integer l                 <font color=#447700>! work variable<a name='524'></font>
+<a name='525'>
+   real(r8) cldm(pcols)          <font color=#447700>! mean cloud fraction over the time step<a name='526'></font>
+   real(r8) cldmax(pcols)        <font color=#447700>! max cloud fraction above<a name='527'></font>
+   real(r8) coef(pcols)          <font color=#447700>! conversion time scale for condensate to rain<a name='528'></font>
+   real(r8) cwm(pcols)           <font color=#447700>! cwat mixing ratio at midpoint of time step<a name='529'></font>
+   real(r8) cwn(pcols)           <font color=#447700>! cwat mixing ratio at end<a name='530'></font>
+   real(r8) denom                <font color=#447700>! work variable<a name='531'></font>
+   real(r8) dqsdt                <font color=#447700>! change in sat spec. hum. wrt temperature<a name='532'></font>
+   real(r8) es(pcols)            <font color=#447700>! sat. vapor pressure<a name='533'></font>
+   real(r8) fracw(pcols,pver)    <font color=#447700>! relative importance of collection of liquid by rain<a name='534'></font>
+   real(r8) fsaci(pcols,pver)    <font color=#447700>! relative importance of collection of ice by snow<a name='535'></font>
+   real(r8) fsacw(pcols,pver)    <font color=#447700>! relative importance of collection of liquid by snow<a name='536'></font>
+   real(r8) fsaut(pcols,pver)    <font color=#447700>! relative importance of ice auto conversion<a name='537'></font>
+   real(r8) fwaut(pcols,pver)    <font color=#447700>! relative importance of warm cloud autoconversion<a name='538'></font>
+   real(r8) gamma(pcols)         <font color=#447700>! d qs / dT<a name='539'></font>
+   real(r8) icwc(pcols)          <font color=#447700>! in-cloud water content (kg/kg)<a name='540'></font>
+   real(r8) mincld               <font color=#447700>! a small cloud fraction to avoid / zero<a name='541'></font>
+   real(r8) omeps                <font color=#447700>! 1 minus epsilon<a name='542'></font>
+   real(r8),parameter ::omsm=0.99999_r8                 <font color=#447700>! a number just less than unity (for rounding)<a name='543'></font>
+   real(r8) prprov(pcols)        <font color=#447700>! provisional value of precip at btm of layer<a name='544'></font>
+   real(r8) prtmp                <font color=#447700>! work variable<a name='545'></font>
+   real(r8) q(pcols,pver)        <font color=#447700>! mixing ratio before time step ignoring condensate<a name='546'></font>
+   real(r8) qs(pcols)            <font color=#447700>! spec. hum. of water vapor<a name='547'></font>
+   real(r8) qsn, esn             <font color=#447700>! work variable<a name='548'></font>
+   real(r8) qsp(pcols,pver)      <font color=#447700>! sat pt mixing ratio<a name='549'></font>
+   real(r8) qtl(pcols)           <font color=#447700>! tendency which would saturate the grid box in deltat<a name='550'></font>
+   real(r8) qtmp, ttmp           <font color=#447700>! work variable<a name='551'></font>
+   real(r8) relhum1(pcols)        <font color=#447700>! relative humidity<a name='552'></font>
+   real(r8) relhum(pcols)        <font color=#447700>! relative humidity<a name='553'></font>
+<font color=#447700>!!$   real(r8) tc                   ! crit temp of transition to ice<a name='554'></font>
+   real(r8) t(pcols,pver)        <font color=#447700>! temp before time step ignoring condensate<a name='555'></font>
+   real(r8) tsp(pcols,pver)      <font color=#447700>! sat pt temperature<a name='556'></font>
+   real(r8) pol                  <font color=#447700>! work variable<a name='557'></font>
+   real(r8) cdt                  <font color=#447700>! work variable<a name='558'></font>
+   real(r8) wtthick              <font color=#447700>! work variable<a name='559'></font>
+<a name='560'>
+<font color=#447700>! Extra local work space for cloud scheme modification       <a name='561'></font>
+<a name='562'>
+   real(r8) cpohl                <font color=#447700>!Cp/Hlatv<a name='563'></font>
+   real(r8) hlocp                <font color=#447700>!Hlatv/Cp<a name='564'></font>
+   real(r8) dto2                 <font color=#447700>!0.5*deltat (delta=2.0*dt)<a name='565'></font>
+   real(r8) calpha(pcols)        <font color=#447700>!alpha of new C - E scheme formulation<a name='566'></font>
+   real(r8) cbeta (pcols)        <font color=#447700>!beta  of new C - E scheme formulation<a name='567'></font>
+   real(r8) cbetah(pcols)        <font color=#447700>!beta_hat at saturation portion <a name='568'></font>
+   real(r8) cgamma(pcols)        <font color=#447700>!gamma of new C - E scheme formulation<a name='569'></font>
+   real(r8) cgamah(pcols)        <font color=#447700>!gamma_hat at saturation portion<a name='570'></font>
+   real(r8) rcgama(pcols)        <font color=#447700>!gamma/gamma_hat<a name='571'></font>
+   real(r8) csigma(pcols)        <font color=#447700>!sigma of new C - E scheme formulation<a name='572'></font>
+   real(r8) cmec1 (pcols)        <font color=#447700>!c1    of new C - E scheme formulation<a name='573'></font>
+   real(r8) cmec2 (pcols)        <font color=#447700>!c2    of new C - E scheme formulation<a name='574'></font>
+   real(r8) cmec3 (pcols)        <font color=#447700>!c3    of new C - E scheme formulation<a name='575'></font>
+   real(r8) cmec4 (pcols)        <font color=#447700>!c4    of new C - E scheme formulation<a name='576'></font>
+   real(r8) cmeres(pcols)        <font color=#447700>!residual cond of over-sat after cme and evapprec<a name='577'></font>
+   real(r8) ctmp                 <font color=#447700>!a scalar representation of cmeres<a name='578'></font>
+   real(r8) clrh2o               <font color=#447700>! Ratio of latvap to water vapor gas const<a name='579'></font>
+   real(r8) ice(pcols,pver)    <font color=#447700>! ice mixing ratio<a name='580'></font>
+   real(r8) liq(pcols,pver)    <font color=#447700>! liquid mixing ratio<a name='581'></font>
+   real(r8) rcwn(pcols,2,pver), rliq(pcols,2,pver), rice(pcols,2,pver)<a name='582'>
+   real(r8) cwnsave(pcols,2,pver), cmesave(pcols,2,pver)<a name='583'>
+   real(r8) prodprecsave(pcols,2,pver)<a name='584'>
+   logical error_found<a name='585'>
+<font color=#447700>!<a name='586'></font>
+<font color=#447700>!------------------------------------------------------------<a name='587'></font>
+<font color=#447700>!<a name='588'></font>
+   clrh2o = hlatv/rh2o   <font color=#447700>! Ratio of latvap to water vapor gas const<a name='589'></font>
+   omeps = 1.0_r8 - epsqs<a name='590'>
+#ifdef PERGRO<a name='591'>
+   mincld = 1.e-4_r8<a name='592'>
+   iter = 1   <font color=#447700>! number of times to iterate the precipitation calculation<a name='593'></font>
+#else<a name='594'>
+   mincld = 1.e-4_r8<a name='595'>
+   iter = 2<a name='596'>
+#endif<a name='597'>
+<font color=#447700>!   omsm = 0.99999<a name='598'></font>
+   cpohl = cp/hlatv<a name='599'>
+   hlocp = hlatv/cp<a name='600'>
+   dto2=0.5_r8*deltat<a name='601'>
+<font color=#447700>!<a name='602'></font>
+<font color=#447700>! Constant for computing rate of evaporation of precipitation:<a name='603'></font>
+<font color=#447700>!<a name='604'></font>
+<font color=#447700>!!$   conke = 1.e-5<a name='605'></font>
+<font color=#447700>!!$   conke = 1.e-6<a name='606'></font>
+<font color=#447700>!<a name='607'></font>
+<font color=#447700>! initialize a few single level fields<a name='608'></font>
+<font color=#447700>!<a name='609'></font>
+   do i = 1,ncol<a name='610'>
+      precip(i) = 0.0_r8<a name='611'>
+      precab(i) = 0.0_r8<a name='612'>
+      snowab(i) = 0.0_r8<a name='613'>
+      cldmax(i) = 0.0_r8<a name='614'>
+   end do<a name='615'>
+<font color=#447700>!<a name='616'></font>
+<font color=#447700>! initialize multi-level fields <a name='617'></font>
+<font color=#447700>!<a name='618'></font>
+   do k = 1,pver<a name='619'>
+      do i = 1,ncol<a name='620'>
+         q(i,k) = qn(i,k) <a name='621'>
+         t(i,k) = tn(i,k)<a name='622'>
+<font color=#447700>!         q(i,k)=qn(i,k)-qtend(i,k)*deltat<a name='623'></font>
+<font color=#447700>!         t(i,k)=tn(i,k)-ttend(i,k)*deltat<a name='624'></font>
+    end do<a name='625'>
+   end do<a name='626'>
+   cme     (:ncol,:) = 0._r8<a name='627'>
+   evapprec(:ncol,:) = 0._r8<a name='628'>
+   prodprec(:ncol,:) = 0._r8<a name='629'>
+   evapsnow(:ncol,:) = 0._r8<a name='630'>
+   prodsnow(:ncol,:) = 0._r8<a name='631'>
+   evapheat(:ncol,:) = 0._r8<a name='632'>
+   meltheat(:ncol,:) = 0._r8<a name='633'>
+   prfzheat(:ncol,:) = 0._r8<a name='634'>
+   ice2pr(:ncol,:)   = 0._r8<a name='635'>
+   liq2pr(:ncol,:)   = 0._r8<a name='636'>
+   liq2snow(:ncol,:) = 0._r8<a name='637'>
+   fwaut(:ncol,:) = 0._r8<a name='638'>
+   fsaut(:ncol,:) = 0._r8<a name='639'>
+   fracw(:ncol,:) = 0._r8<a name='640'>
+   fsacw(:ncol,:) = 0._r8<a name='641'>
+   fsaci(:ncol,:) = 0._r8<a name='642'>
+   rkflxprc(:ncol,:) = 0._r8<a name='643'>
+   rkflxsnw(:ncol,:) = 0._r8<a name='644'>
+<a name='645'>
+   pracwo(:ncol,:) = 0._r8<a name='646'>
+   psacwo(:ncol,:) = 0._r8<a name='647'>
+   psacio(:ncol,:) = 0._r8<a name='648'>
+<font color=#447700>!<a name='649'></font>
+<font color=#447700>! find the wet bulb temp and saturation value<a name='650'></font>
+<font color=#447700>! for the provisional t and q without condensation<a name='651'></font>
+<font color=#447700>!<a name='652'></font>
+   call <A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP'>findsp</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FINDSP_1"> (lchnk, ncol, qn, tn, p, tsp, qsp)<a name='653'>
+   do 800 k = k1mb,pver<a name='654'>
+      call <A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD'>vqsatd</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VQSATD_1"> (t(1,k), p(1,k), es, qs, gamma, ncol)<a name='655'>
+      do i = 1,ncol<a name='656'>
+         relhum(i) = q(i,k)/qs(i)<a name='657'>
+<font color=#447700>!<a name='658'></font>
+         cldm(i) = max(cldn(i,k),mincld)<a name='659'>
+<font color=#447700>!<a name='660'></font>
+<font color=#447700>! the max cloud fraction above this level<a name='661'></font>
+<font color=#447700>!<a name='662'></font>
+         cldmax(i) = max(cldmax(i), cldm(i))<a name='663'>
+<a name='664'>
+<font color=#447700>! define the coefficients for C - E calculation<a name='665'></font>
+<a name='666'>
+         calpha(i) = 1.0_r8/qs(i)<a name='667'>
+         cbeta (i) = q(i,k)/qs(i)**2*gamma(i)*cpohl<a name='668'>
+         cbetah(i) = 1.0_r8/qs(i)*gamma(i)*cpohl<a name='669'>
+         cgamma(i) = calpha(i)+hlatv*cbeta(i)/cp<a name='670'>
+         cgamah(i) = calpha(i)+hlatv*cbetah(i)/cp<a name='671'>
+         rcgama(i) = cgamma(i)/cgamah(i)<a name='672'>
+<a name='673'>
+         if(cldm(i) &gt; mincld) then<a name='674'>
+            icwc(i) = max(0._r8,cwat(i,k)/cldm(i))<a name='675'>
+         else<a name='676'>
+            icwc(i) = 0.0_r8<a name='677'>
+         endif<a name='678'>
+<font color=#447700>!PJR the above logic give zero icwc with nonzero cwat, dont like it!<a name='679'></font>
+<font color=#447700>!PJR generates problems with csigma<a name='680'></font>
+<font color=#447700>!PJR set the icwc to a very small number, so we can start from zero cloud cover and make some clouds<a name='681'></font>
+<font color=#447700>!         icwc(i) = max(1.e-8_r8,cwat(i,k)/cldm(i))<a name='682'></font>
+<a name='683'>
+<font color=#447700>!<a name='684'></font>
+<font color=#447700>! initial guess of evaporation, will be updated within iteration<a name='685'></font>
+<font color=#447700>!<a name='686'></font>
+         evapprec(i,k) = conke*(1._r8 - cldm(i))*sqrt(precab(i)) &amp;<a name='687'>
+                        *(1._r8 - min(relhum(i),1._r8))<a name='688'>
+<a name='689'>
+<font color=#447700>!<a name='690'></font>
+<font color=#447700>! zero cmeres before iteration for each level<a name='691'></font>
+<font color=#447700>!<a name='692'></font>
+         cmeres(i)=0.0_r8<a name='693'>
+<a name='694'>
+      end do<a name='695'>
+      do i = 1,ncol<a name='696'>
+<font color=#447700>!<a name='697'></font>
+<font color=#447700>! fractions of ice at this level<a name='698'></font>
+<font color=#447700>!<a name='699'></font>
+<font color=#447700>!!$         tc = t(i,k) - t0<a name='700'></font>
+<font color=#447700>!!$         fice(i,k) = max(0._r8,min(-tc*0.05,1.0_r8))<a name='701'></font>
+<font color=#447700>!<a name='702'></font>
+<font color=#447700>! calculate the cooling due to a phase change of the rainwater<a name='703'></font>
+<font color=#447700>! from above<a name='704'></font>
+<font color=#447700>!<a name='705'></font>
+         if (t(i,k) &gt;= t0) then<a name='706'>
+            meltheat(i,k) =  -hlatf * snowab(i) * gravit/pdel(i,k)<a name='707'>
+            snowab(i) = 0._r8<a name='708'>
+         else<a name='709'>
+            meltheat(i,k) = 0._r8<a name='710'>
+         endif<a name='711'>
+      end do<a name='712'>
+<a name='713'>
+<font color=#447700>!<a name='714'></font>
+<font color=#447700>! calculate cme and formation of precip. <a name='715'></font>
+<font color=#447700>!<a name='716'></font>
+<font color=#447700>! The cloud microphysics is highly nonlinear and coupled with cme<a name='717'></font>
+<font color=#447700>! Both rain processes and cme are calculated iteratively.<a name='718'></font>
+<font color=#447700>! <a name='719'></font>
+      do 100 l = 1,iter<a name='720'>
+<a name='721'>
+        do i = 1,ncol<a name='722'>
+<a name='723'>
+<font color=#447700>!<a name='724'></font>
+<font color=#447700>! calculation of cme has 4 scenarios<a name='725'></font>
+<font color=#447700>! ==================================<a name='726'></font>
+<font color=#447700>!<a name='727'></font>
+           if(relhum(i) &gt; rhu00(i,k)) then<a name='728'>
+    <a name='729'>
+           <font color=#447700>! 1. whole grid saturation<a name='730'></font>
+           <font color=#447700>! ========================<a name='731'></font>
+              if(relhum(i) &gt;= 0.999_r8 .or. cldm(i) &gt;= 0.999_r8 ) then<a name='732'>
+                 cme(i,k)=(calpha(i)*qtend(i,k)-cbetah(i)*ttend(i,k))/cgamah(i)<a name='733'>
+<a name='734'>
+           <font color=#447700>! 2. fractional saturation<a name='735'></font>
+           <font color=#447700>! ========================<a name='736'></font>
+              else<a name='737'>
+                 if (rhdfda(i,k) .eq. 0. .and. icwc(i).eq.0.) then<a name='738'>
+                    write (iulog,*) ' cldwat.F90:  empty rh cloud ', i, k, lchnk<a name='739'>
+#ifdef WRF_PORT<a name='740'>
+                    call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_562">(iulog)<a name='741'>
+#endif<a name='742'>
+                    write (iulog,*) ' relhum, iter ', relhum(i), l, rhu00(i,k), cldm(i), cldn(i,k)<a name='743'>
+#ifdef WRF_PORT<a name='744'>
+                    call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_563">(iulog)<a name='745'>
+#endif<a name='746'>
+                    call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_2"> ()<a name='747'>
+                 endif<a name='748'>
+                  csigma(i) = 1.0_r8/(rhdfda(i,k)+cgamma(i)*icwc(i))<a name='749'>
+                  cmec1(i) = (1.0_r8-cldm(i))*csigma(i)*rhdfda(i,k)<a name='750'>
+                  cmec2(i) = cldm(i)*calpha(i)/cgamah(i)+(1.0_r8-rcgama(i)*cldm(i))*   &amp;<a name='751'>
+                             csigma(i)*calpha(i)*icwc(i)<a name='752'>
+                  cmec3(i) = cldm(i)*cbetah(i)/cgamah(i) +  &amp;<a name='753'>
+                           (cbeta(i)-rcgama(i)*cldm(i)*cbetah(i))*csigma(i)*icwc(i)<a name='754'>
+                  cmec4(i) = csigma(i)*cgamma(i)*icwc(i)<a name='755'>
+<a name='756'>
+                  <font color=#447700>! Q=C-E=-C1*Al + C2*Aq - C3* At + C4*Er<a name='757'></font>
+  <a name='758'>
+                  cme(i,k) = -cmec1(i)*lctend(i,k) + cmec2(i)*qtend(i,k)  &amp;<a name='759'>
+                             -cmec3(i)*ttend(i,k) + cmec4(i)*evapprec(i,k)<a name='760'>
+               endif<a name='761'>
+<a name='762'>
+           <font color=#447700>! 3. when rh &lt; rhu00, evaporate existing cloud water<a name='763'></font>
+           <font color=#447700>! ================================================== <a name='764'></font>
+           else if(cwat(i,k) &gt; 0.0_r8)then<a name='765'>
+              <font color=#447700>! liquid water should be evaporated but not to exceed <a name='766'></font>
+              <font color=#447700>! saturation point. if qn &gt; qsp, not to evaporate cwat<a name='767'></font>
+              cme(i,k)=-min(max(0._r8,qsp(i,k)-qn(i,k)),cwat(i,k))/deltat <a name='768'>
+<a name='769'>
+           <font color=#447700>! 4. no condensation nor evaporation<a name='770'></font>
+           <font color=#447700>! ==================================<a name='771'></font>
+           else<a name='772'>
+              cme(i,k)=0.0_r8<a name='773'>
+           endif<a name='774'>
+<a name='775'>
+  <a name='776'>
+        end do    <font color=#447700>!end loop for cme update<a name='777'></font>
+<a name='778'>
+<font color=#447700>! Because of the finite time step, <a name='779'></font>
+<font color=#447700>! place a bound here not to exceed wet bulb point<a name='780'></font>
+<font color=#447700>! and not to evaporate more than available water<a name='781'></font>
+<font color=#447700>!<a name='782'></font>
+         do i = 1, ncol<a name='783'>
+            qtmp = qn(i,k) - cme(i,k)*deltat<a name='784'>
+<a name='785'>
+<font color=#447700>! possibilities to have qtmp &gt; qsp<a name='786'></font>
+<font color=#447700>!<a name='787'></font>
+<font color=#447700>!   1. if qn &gt; qs(tn), it condenses; <a name='788'></font>
+<font color=#447700>!      if after applying cme,  qtmp &gt; qsp,  more condensation is applied. <a name='789'></font>
+<font color=#447700>!      <a name='790'></font>
+<font color=#447700>!   2. if qn &lt; qs, evaporation should not exceed qsp,<a name='791'></font>
+    <a name='792'>
+            if(qtmp &gt; qsp(i,k)) then<a name='793'>
+              cme(i,k) = cme(i,k) + (qtmp-qsp(i,k))/deltat<a name='794'>
+            endif<a name='795'>
+<a name='796'>
+<font color=#447700>!<a name='797'></font>
+<font color=#447700>! if net evaporation, it should not exceed available cwat<a name='798'></font>
+<font color=#447700>!<a name='799'></font>
+            if(cme(i,k) &lt; -cwat(i,k)/deltat)  &amp;<a name='800'>
+               cme(i,k) = -cwat(i,k)/deltat<a name='801'>
+<font color=#447700>!<a name='802'></font>
+<font color=#447700>! addition of residual condensation from previous step of iteration<a name='803'></font>
+<font color=#447700>!<a name='804'></font>
+            cme(i,k) = cme(i,k) + cmeres(i)<a name='805'>
+<a name='806'>
+         end do<a name='807'>
+<a name='808'>
+         <font color=#447700>!      limit cme for roundoff errors<a name='809'></font>
+         do i = 1, ncol<a name='810'>
+            cme(i,k) = cme(i,k)*omsm<a name='811'>
+         end do<a name='812'>
+<a name='813'>
+         do i = 1,ncol<a name='814'>
+<font color=#447700>!<a name='815'></font>
+<font color=#447700>! as a safe limit, condensation should not reduce grid mean rh below rhu00<a name='816'></font>
+<font color=#447700>! <a name='817'></font>
+           if(cme(i,k) &gt; 0.0_r8 .and. relhum(i) &gt; rhu00(i,k) )  &amp;<a name='818'>
+              cme(i,k) = min(cme(i,k), (qn(i,k)-qs(i)*rhu00(i,k))/deltat)<a name='819'>
+<font color=#447700>!<a name='820'></font>
+<font color=#447700>! initial guess for cwm (mean cloud water over time step) if 1st iteration<a name='821'></font>
+<font color=#447700>!<a name='822'></font>
+           if(l &lt; 2) then<a name='823'>
+             cwm(i) = max(cwat(i,k)+cme(i,k)*dto2,  0._r8)<a name='824'>
+           endif<a name='825'>
+<a name='826'>
+         enddo<a name='827'>
+<a name='828'>
+<font color=#447700>! provisional precipitation falling through model layer<a name='829'></font>
+         do i = 1,ncol<a name='830'>
+<font color=#447700>!!$            prprov(i) =  precab(i) + prodprec(i,k)*pdel(i,k)/gravit<a name='831'></font>
+<font color=#447700>! rain produced in this layer not too effective in collection process<a name='832'></font>
+            wtthick = max(0._r8,min(0.5_r8,((zi(i,k)-zi(i,k+1))/1000._r8)**2))<a name='833'>
+            prprov(i) =  precab(i) + wtthick*prodprec(i,k)*pdel(i,k)/gravit<a name='834'>
+         end do<a name='835'>
+<a name='836'>
+<font color=#447700>! calculate conversion of condensate to precipitation by cloud microphysics <a name='837'></font>
+         call <A href='../../html_code/phys/module_cam_cldwat.F.html#FINDMCNEW'>findmcnew</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FINDMCNEW_1"> (lchnk   ,ncol    , &amp;<a name='838'>
+                         k       ,prprov  ,snowab,  t       ,p        , &amp;<a name='839'>
+                         cwm     ,cldm    ,cldmax  ,fice(1,k),coef    , &amp;<a name='840'>
+                         fwaut(1,k),fsaut(1,k),fracw(1,k),fsacw(1,k),fsaci(1,k), &amp;<a name='841'>
+                         seaicef, snowh, pracwo(1,k), psacwo(1,k), psacio(1,k))<a name='842'>
+<a name='843'>
+<font color=#447700>!<a name='844'></font>
+<font color=#447700>! calculate the precip rate<a name='845'></font>
+<font color=#447700>!<a name='846'></font>
+         error_found = .false.<a name='847'>
+         do i = 1,ncol<a name='848'>
+            if (cldm(i) &gt; 0) then  <a name='849'>
+<font color=#447700>!<a name='850'></font>
+<font color=#447700>! first predict the cloud water<a name='851'></font>
+<font color=#447700>!<a name='852'></font>
+               cdt = coef(i)*deltat<a name='853'>
+               if (cdt &gt; 0.01_r8) then<a name='854'>
+                  pol = cme(i,k)/coef(i) <font color=#447700>! production over loss<a name='855'></font>
+                  cwn(i) = max(0._r8,(cwat(i,k)-pol)*exp(-cdt)+ pol)<a name='856'>
+               else<a name='857'>
+                  cwn(i) = max(0._r8,(cwat(i,k) + cme(i,k)*deltat)/(1+cdt))<a name='858'>
+               endif<a name='859'>
+<font color=#447700>!<a name='860'></font>
+<font color=#447700>! now back out the tendency of net rain production<a name='861'></font>
+<font color=#447700>!<a name='862'></font>
+               prodprec(i,k) =  max(0._r8,cme(i,k)-(cwn(i)-cwat(i,k))/deltat)<a name='863'>
+            else<a name='864'>
+               prodprec(i,k) = 0.0_r8<a name='865'>
+               cwn(i) = 0._r8<a name='866'>
+            endif<a name='867'>
+<a name='868'>
+            <font color=#447700>! provisional calculation of conversion terms<a name='869'></font>
+            ice2pr(i,k) = prodprec(i,k)*(fsaut(i,k)+fsaci(i,k))<a name='870'>
+            liq2pr(i,k) = prodprec(i,k)*(fwaut(i,k)+fsacw(i,k)+fracw(i,k))<a name='871'>
+<font color=#447700>!old        liq2snow(i,k) = prodprec(i,k)*fsacw(i,k)<a name='872'></font>
+<a name='873'>
+<font color=#447700>!           revision suggested by Jim McCaa<a name='874'></font>
+<font color=#447700>!           it controls the amount of snow hitting the sfc <a name='875'></font>
+<font color=#447700>!           by forcing a lot of conversion of cloud liquid to snow phase<a name='876'></font>
+<font color=#447700>!           it might be better done later by an explicit representation of <a name='877'></font>
+<font color=#447700>!           rain accreting ice (and freezing), or by an explicit freezing of raindrops<a name='878'></font>
+            liq2snow(i,k) = max(prodprec(i,k)*fsacw(i,k), fsnow(i,k)*liq2pr(i,k))<a name='879'>
+<a name='880'>
+            <font color=#447700>! bounds<a name='881'></font>
+            nice2pr = min(ice2pr(i,k),(cwat(i,k)+cme(i,k)*deltat)*fice(i,k)/deltat)<a name='882'>
+            nliq2pr = min(liq2pr(i,k),(cwat(i,k)+cme(i,k)*deltat)*(1._r8-fice(i,k))/deltat)<a name='883'>
+<font color=#447700>!            write(iulog,*) ' prodprec ', i, k, prodprec(i,k)<a name='884'></font>
+<font color=#447700>!            write(iulog,*) ' nliq2pr, nice2pr ', nliq2pr, nice2pr<a name='885'></font>
+            if (liq2pr(i,k).ne.0._r8) then<a name='886'>
+               nliq2snow = liq2snow(i,k)*nliq2pr/liq2pr(i,k)   <font color=#447700>! correction<a name='887'></font>
+            else<a name='888'>
+               nliq2snow = liq2snow(i,k)<a name='889'>
+            endif<a name='890'>
+<a name='891'>
+<font color=#447700>!           avoid roundoff problems generating negatives<a name='892'></font>
+            nliq2snow = nliq2snow*omsm<a name='893'>
+            nliq2pr = nliq2pr*omsm<a name='894'>
+            nice2pr = nice2pr*omsm<a name='895'>
+            <a name='896'>
+<font color=#447700>!           final estimates of conversion to precip and snow<a name='897'></font>
+            prodprec(i,k) = (nliq2pr + nice2pr)<a name='898'>
+            prodsnow(i,k) = (nice2pr + nliq2snow)<a name='899'>
+<a name='900'>
+            rcwn(i,l,k) =  cwat(i,k) + (cme(i,k)-   prodprec(i,k))*deltat<a name='901'>
+            rliq(i,l,k) = (cwat(i,k) + cme(i,k)*deltat)*(1._r8-fice(i,k)) - nliq2pr * deltat<a name='902'>
+            rice(i,l,k) = (cwat(i,k) + cme(i,k)*deltat)* fice(i,k)      -    nice2pr                     *deltat<a name='903'>
+<a name='904'>
+<font color=#447700>!           Save for sanity check later...  <a name='905'></font>
+<font color=#447700>!           Putting sanity checks inside loops 100 and 800 screws up the <a name='906'></font>
+<font color=#447700>!           IBM compiler for reasons as yet unknown.  TBH<a name='907'></font>
+            cwnsave(i,l,k)      = cwn(i)<a name='908'>
+            cmesave(i,l,k)      = cme(i,k)<a name='909'>
+            prodprecsave(i,l,k) = prodprec(i,k)<a name='910'>
+<font color=#447700>!           End of save for sanity check later...  <a name='911'></font>
+<a name='912'>
+<font color=#447700>!           final version of condensate to precip terms<a name='913'></font>
+            liq2pr(i,k) = nliq2pr<a name='914'>
+            liq2snow(i,k) = nliq2snow<a name='915'>
+            ice2pr(i,k) = nice2pr<a name='916'>
+<a name='917'>
+            cwn(i) = rcwn(i,l,k)<a name='918'>
+<font color=#447700>!<a name='919'></font>
+<font color=#447700>! update any remaining  provisional values<a name='920'></font>
+<font color=#447700>!<a name='921'></font>
+            cwm(i) = (cwn(i) + cwat(i,k))*0.5_r8<a name='922'>
+<font color=#447700>!<a name='923'></font>
+<font color=#447700>! update in cloud water<a name='924'></font>
+<font color=#447700>!<a name='925'></font>
+            if(cldm(i) &gt; mincld) then<a name='926'>
+               icwc(i) = cwm(i)/cldm(i)<a name='927'>
+            else<a name='928'>
+               icwc(i) = 0.0_r8<a name='929'>
+            endif<a name='930'>
+<font color=#447700>!PJR the above logic give zero icwc with nonzero cwat, dont like it!<a name='931'></font>
+<font color=#447700>!PJR generates problems with csigma<a name='932'></font>
+<font color=#447700>!PJR set the icwc to a very small number, so we can start from zero cloud cover and make some clouds<a name='933'></font>
+<font color=#447700>!         icwc(i) = max(1.e-8_r8,cwm(i)/cldm(i))<a name='934'></font>
+<a name='935'>
+         end do              <font color=#447700>! end of do i = 1,ncol<a name='936'></font>
+<a name='937'>
+<font color=#447700>!<a name='938'></font>
+<font color=#447700>! calculate provisional value of cloud water for<a name='939'></font>
+<font color=#447700>! evaporation of precipitate (evapprec) calculation<a name='940'></font>
+<font color=#447700>!<a name='941'></font>
+      do i = 1,ncol<a name='942'>
+         qtmp = qn(i,k) - cme(i,k)*deltat<a name='943'>
+         ttmp = tn(i,k) + deltat/cp * ( meltheat(i,k)       &amp;<a name='944'>
+              + (hlatv + hlatf*fice(i,k)) * cme(i,k) )<a name='945'>
+         esn = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_1">(ttmp)<a name='946'>
+         qsn = min(epsqs*esn/(p(i,k) - omeps*esn),1._r8)<a name='947'>
+         qtl(i) = max((qsn - qtmp)/deltat,0._r8)<a name='948'>
+         relhum1(i) = qtmp/qsn<a name='949'>
+      end do<a name='950'>
+<font color=#447700>!<a name='951'></font>
+      do i = 1,ncol<a name='952'>
+#ifdef PERGRO<a name='953'>
+         evapprec(i,k) = conke*(1._r8 - max(cldm(i),mincld))* &amp;<a name='954'>
+                         sqrt(precab(i))*(1._r8 - min(relhum1(i),1._r8))<a name='955'>
+#else<a name='956'>
+         evapprec(i,k) = conke*(1._r8 - cldm(i))*sqrt(precab(i)) &amp;<a name='957'>
+                         *(1._r8 - min(relhum1(i),1._r8))<a name='958'>
+#endif<a name='959'>
+<font color=#447700>!<a name='960'></font>
+<font color=#447700>! limit the evaporation to the amount which is entering the box<a name='961'></font>
+<font color=#447700>! or saturates the box<a name='962'></font>
+<font color=#447700>!<a name='963'></font>
+         prtmp = precab(i)*gravit/pdel(i,k)<a name='964'>
+         evapprec(i,k) = min(evapprec(i,k), prtmp, qtl(i))*omsm<a name='965'>
+#ifdef PERGRO<a name='966'>
+<font color=#447700>!           zeroing needed for pert growth<a name='967'></font>
+         evapprec(i,k) = 0._r8<a name='968'>
+#endif<a name='969'>
+<font color=#447700>!<a name='970'></font>
+<font color=#447700>! Partition evaporation of precipitate between rain and snow using<a name='971'></font>
+<font color=#447700>! the fraction of snow falling into the box. Determine the heating<a name='972'></font>
+<font color=#447700>! due to evaporation. Note that evaporation is positive (loss of precip,<a name='973'></font>
+<font color=#447700>! gain of vapor) and that heating is negative.<a name='974'></font>
+         if (evapprec(i,k) &gt; 0._r8) then<a name='975'>
+            evapsnow(i,k) = evapprec(i,k) * snowab(i) / precab(i)<a name='976'>
+            evapheat(i,k) = -hlatv * evapprec(i,k) - hlatf * evapsnow(i,k)<a name='977'>
+         else <a name='978'>
+            evapsnow(i,k) = 0._r8<a name='979'>
+            evapheat(i,k) = 0._r8<a name='980'>
+         end if<a name='981'>
+<font color=#447700>! Account for the latent heat of fusion for liquid drops collected by falling snow<a name='982'></font>
+         prfzheat(i,k) = hlatf * liq2snow(i,k)<a name='983'>
+      end do<a name='984'>
+<a name='985'>
+<font color=#447700>! now remove the residual of any over-saturation. Normally,<a name='986'></font>
+<font color=#447700>! the oversaturated water vapor should have been removed by <a name='987'></font>
+<font color=#447700>! cme formulation plus constraints by wet bulb tsp/qsp<a name='988'></font>
+<font color=#447700>! as computed above. However, because of non-linearity,<a name='989'></font>
+<font color=#447700>! addition of (cme-evapprec) to update t and q may still cause<a name='990'></font>
+<font color=#447700>! a very small amount of over saturation. It is called a<a name='991'></font>
+<font color=#447700>! residual of over-saturation because theoretically, cme<a name='992'></font>
+<font color=#447700>! should have taken care of all of large scale condensation.<a name='993'></font>
+<font color=#447700>! <a name='994'></font>
+<a name='995'>
+       do i = 1,ncol<a name='996'>
+          qtmp = qn(i,k)-(cme(i,k)-evapprec(i,k))*deltat<a name='997'>
+          ttmp = tn(i,k) + deltat/cp * ( meltheat(i,k) + evapheat(i,k) + prfzheat(i,k)      &amp;<a name='998'>
+              + (hlatv + hlatf*fice(i,k)) * cme(i,k) )<a name='999'>
+          esn = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_2">(ttmp)<a name='1000'>
+          qsn = min(epsqs*esn/(p(i,k) - omeps*esn),1._r8)<a name='1001'>
+          <font color=#447700>!<a name='1002'></font>
+          <font color=#447700>!Upper stratosphere and mesosphere, qsn calculated<a name='1003'></font>
+          <font color=#447700>!above may be negative. Here just to skip it instead<a name='1004'></font>
+          <font color=#447700>!of resetting it to 1 as in aqsat<a name='1005'></font>
+          <font color=#447700>!<a name='1006'></font>
+          if(qtmp &gt; qsn .and. qsn &gt; 0) then<a name='1007'>
+             <font color=#447700>!calculate dqsdt, a more precise calculation<a name='1008'></font>
+             <font color=#447700>!which taking into account different range of T <a name='1009'></font>
+             <font color=#447700>!can be found in aqsatd.F. Here follows<a name='1010'></font>
+             <font color=#447700>!cond.F to calculate it.<a name='1011'></font>
+             <font color=#447700>!<a name='1012'></font>
+             denom = (p(i,k)-omeps*esn)*ttmp*ttmp<a name='1013'>
+             dqsdt = clrh2o*qsn*p(i,k)/denom<a name='1014'>
+             <font color=#447700>!<a name='1015'></font>
+             <font color=#447700>!now extra condensation to bring air to just saturation<a name='1016'></font>
+             <font color=#447700>!<a name='1017'></font>
+             ctmp = (qtmp-qsn)/(1._r8+hlocp*dqsdt)/deltat<a name='1018'>
+             cme(i,k) = cme(i,k)+ctmp<a name='1019'>
+<font color=#447700>!<a name='1020'></font>
+<font color=#447700>! save residual on cmeres to addtion to cme on entering next iteration<a name='1021'></font>
+<font color=#447700>! cme exit here contain the residual but overrided if back to iteration<a name='1022'></font>
+<font color=#447700>!<a name='1023'></font>
+             cmeres(i) = ctmp<a name='1024'>
+          else<a name='1025'>
+             cmeres(i) = 0.0_r8<a name='1026'>
+          endif<a name='1027'>
+       end do<a name='1028'>
+              <a name='1029'>
+ 100 continue              <font color=#447700>! end of do l = 1,iter<a name='1030'></font>
+<a name='1031'>
+<font color=#447700>!<a name='1032'></font>
+<font color=#447700>! precipitation<a name='1033'></font>
+<font color=#447700>!<a name='1034'></font>
+      do i = 1,ncol<a name='1035'>
+         precip(i) = precip(i) + pdel(i,k)/gravit * (prodprec(i,k) - evapprec(i,k))<a name='1036'>
+         precab(i) = precab(i) + pdel(i,k)/gravit * (prodprec(i,k) - evapprec(i,k))<a name='1037'>
+         if(precab(i).lt.0._r8) precab(i)=0._r8<a name='1038'>
+<font color=#447700>!         snowab(i) = snowab(i) + pdel(i,k)/gravit * (prodprec(i,k)*fice(i,k) - evapsnow(i,k))<a name='1039'></font>
+         snowab(i) = snowab(i) + pdel(i,k)/gravit * (prodsnow(i,k) - evapsnow(i,k))<a name='1040'>
+<a name='1041'>
+         <font color=#447700>! If temperature above freezing, all precip is rain flux.  if temperature below freezing, all precip is snow flux.<a name='1042'></font>
+         rkflxprc(i,k+1) = precab(i)   <font color=#447700>!! making this consistent with other precip fluxes.  prc = rain + snow<a name='1043'></font>
+         <font color=#447700>!!rkflxprc(i,k+1) = precab(i) - snowab(i)<a name='1044'></font>
+         rkflxsnw(i,k+1) = snowab(i)<a name='1045'>
+<a name='1046'>
+<font color=#447700>!!$         if ((precab(i)) &lt; 1.e-10) then      <a name='1047'></font>
+<font color=#447700>!!$            precab(i) = 0.<a name='1048'></font>
+<font color=#447700>!!$            snowab(i) = 0.<a name='1049'></font>
+<font color=#447700>!!$         endif<a name='1050'></font>
+      end do<a name='1051'>
+ 800 continue                <font color=#447700>! level loop (k=1,pver)<a name='1052'></font>
+<a name='1053'>
+<font color=#447700>! begin sanity checks<a name='1054'></font>
+   error_found = .false.<a name='1055'>
+   do k = k1mb,pver<a name='1056'>
+      do l = 1,iter<a name='1057'>
+         do i = 1,ncol<a name='1058'>
+	    if (abs(rcwn(i,l,k)).lt.1.e-300_r8) rcwn(i,l,k) = 0._r8<a name='1059'>
+	    if (abs(rliq(i,l,k)).lt.1.e-300_r8) rliq(i,l,k) = 0._r8<a name='1060'>
+	    if (abs(rice(i,l,k)).lt.1.e-300_r8) rice(i,l,k) = 0._r8<a name='1061'>
+            if (rcwn(i,l,k).lt.0._r8) error_found = .true.<a name='1062'>
+            if (rliq(i,l,k).lt.0._r8) error_found = .true.<a name='1063'>
+            if (rice(i,l,k).lt.0._r8) error_found = .true.<a name='1064'>
+         enddo<a name='1065'>
+      enddo<a name='1066'>
+   enddo<a name='1067'>
+   if (error_found) then<a name='1068'>
+      do k = k1mb,pver<a name='1069'>
+         do l = 1,iter<a name='1070'>
+            do i = 1,ncol<a name='1071'>
+               if (rcwn(i,l,k).lt.0._r8) then<a name='1072'>
+                  write(iulog,*) ' prob with neg rcwn1 ', rcwn(i,l,k),  &amp;<a name='1073'>
+                     cwnsave(i,l,k)<a name='1074'>
+#ifdef WRF_PORT<a name='1075'>
+                  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_564">(iulog)<a name='1076'>
+#endif<a name='1077'>
+                  write(iulog,*) ' cwat, cme*deltat, prodprec*deltat ', &amp;<a name='1078'>
+                     cwat(i,k), cmesave(i,l,k)*deltat,               &amp;<a name='1079'>
+                     prodprecsave(i,l,k)*deltat,                     &amp;<a name='1080'>
+                     (cmesave(i,l,k)-prodprecsave(i,l,k))*deltat<a name='1081'>
+#ifdef WRF_PORT<a name='1082'>
+                  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_565">(iulog)<a name='1083'>
+#endif                  <a name='1084'>
+                  call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_3">('PCOND')<a name='1085'>
+               endif<a name='1086'>
+               if (rliq(i,l,k).lt.0._r8) then<a name='1087'>
+                  write(iulog,*) ' prob with neg rliq1 ', rliq(i,l,k)<a name='1088'>
+#ifdef WRF_PORT<a name='1089'>
+                  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_566">(iulog)<a name='1090'>
+#endif<a name='1091'>
+                  call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_4">('PCOND')<a name='1092'>
+               endif<a name='1093'>
+               if (rice(i,l,k).lt.0._r8) then<a name='1094'>
+                  write(iulog,*) ' prob with neg rice ', rice(i,l,k)<a name='1095'>
+#ifdef WRF_PORT<a name='1096'>
+                  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_567">(iulog)<a name='1097'>
+#endif<a name='1098'>
+                  call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_cldwat.F.html#PCOND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_5">('PCOND')<a name='1099'>
+               endif<a name='1100'>
+            enddo<a name='1101'>
+         enddo<a name='1102'>
+      enddo<a name='1103'>
+   end if<a name='1104'>
+<font color=#447700>! end sanity checks<a name='1105'></font>
+<a name='1106'>
+   return<a name='1107'>
+end subroutine pcond<a name='1108'>
+<a name='1109'>
+<font color=#447700>!##############################################################################<a name='1110'></font>
+<a name='1111'>
+<A NAME='FINDMCNEW'><A href='../../html_code/phys/module_cam_cldwat.F.html#FINDMCNEW' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1112'>
+<font color=#993300>subroutine </font><font color=#cc0000>findmcnew</font> (lchnk   ,ncol    , &amp; <A href='../../call_to/FINDMCNEW.html' TARGET='index'>1</A>,<A href='../../call_from/FINDMCNEW.html' TARGET='index'>1</A><a name='1113'>
+                      k       ,precab  ,snowab,  t       ,p       , &amp;<a name='1114'>
+                      cwm     ,cldm    ,cldmax  ,fice    ,coef    , &amp;<a name='1115'>
+                      fwaut   ,fsaut   ,fracw   ,fsacw   ,fsaci   , &amp;<a name='1116'>
+                      seaicef ,snowh,  pracwo, psacwo, psacio )<a name='1117'>
+ <a name='1118'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='1119'></font>
+<font color=#447700>! <a name='1120'></font>
+<font color=#447700>! Purpose: <a name='1121'></font>
+<font color=#447700>! calculate the conversion of condensate to precipitate<a name='1122'></font>
+<font color=#447700>! <a name='1123'></font>
+<font color=#447700>! Method: <a name='1124'></font>
+<font color=#447700>! See: Rasch, P. J, and J. E. Kristjansson, A Comparison of the CCM3<a name='1125'></font>
+<font color=#447700>!  model climate using diagnosed and <a name='1126'></font>
+<font color=#447700>!  predicted condensate parameterizations, 1998, J. Clim., 11,<a name='1127'></font>
+<font color=#447700>!  pp1587---1614.<a name='1128'></font>
+<font color=#447700>! <a name='1129'></font>
+<font color=#447700>! Author: P. Rasch<a name='1130'></font>
+<font color=#447700>! <a name='1131'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1132'></font>
+   use phys_grid, only: get_rlat_all_p<a name='1133'>
+   use comsrf,        only: landm<a name='1134'>
+<font color=#447700>!<a name='1135'></font>
+<font color=#447700>! input args<a name='1136'></font>
+<font color=#447700>!<a name='1137'></font>
+   integer, intent(in) :: lchnk                 <font color=#447700>! chunk identifier<a name='1138'></font>
+   integer, intent(in) :: ncol                  <font color=#447700>! number of atmospheric columns<a name='1139'></font>
+   integer, intent(in) :: k                     <font color=#447700>! level index<a name='1140'></font>
+<a name='1141'>
+   real(r8), intent(in) :: precab(pcols)        <font color=#447700>! rate of precipitation from above (kg / (m**2 * s))<a name='1142'></font>
+   real(r8), intent(in) :: t(pcols,pver)        <font color=#447700>! temperature       (K)<a name='1143'></font>
+   real(r8), intent(in) :: p(pcols,pver)        <font color=#447700>! pressure          (Pa)<a name='1144'></font>
+   real(r8), intent(in) :: cldm(pcols)          <font color=#447700>! cloud fraction<a name='1145'></font>
+   real(r8), intent(in) :: cldmax(pcols)        <font color=#447700>! max cloud fraction above this level<a name='1146'></font>
+   real(r8), intent(in) :: cwm(pcols)           <font color=#447700>! condensate mixing ratio (kg/kg)<a name='1147'></font>
+   real(r8), intent(in) :: fice(pcols)          <font color=#447700>! fraction of cwat that is ice<a name='1148'></font>
+   real(r8), intent(in) :: seaicef(pcols)       <font color=#447700>! sea ice fraction <a name='1149'></font>
+   real(r8), intent(in) :: snowab(pcols)        <font color=#447700>! rate of snow from above (kg / (m**2 * s))<a name='1150'></font>
+    real(r8), intent(in) :: snowh(pcols)         <font color=#447700>! Snow depth over land, water equivalent (m)<a name='1151'></font>
+<a name='1152'>
+<font color=#447700>! output arguments<a name='1153'></font>
+   real(r8), intent(out) :: coef(pcols)          <font color=#447700>! conversion rate (1/s)<a name='1154'></font>
+   real(r8), intent(out) :: fwaut(pcols)         <font color=#447700>! relative importance of liquid autoconversion (a diagnostic)<a name='1155'></font>
+   real(r8), intent(out) :: fsaut(pcols)         <font color=#447700>! relative importance of ice autoconversion    (a diagnostic)<a name='1156'></font>
+   real(r8), intent(out) :: fracw(pcols)         <font color=#447700>! relative importance of rain accreting liquid (a diagnostic)<a name='1157'></font>
+   real(r8), intent(out) :: fsacw(pcols)         <font color=#447700>! relative importance of snow accreting liquid (a diagnostic)<a name='1158'></font>
+   real(r8), intent(out) :: fsaci(pcols)         <font color=#447700>! relative importance of snow accreting ice    (a diagnostic)<a name='1159'></font>
+   real(r8), intent(out) :: pracwo(pcols)        <font color=#447700>! accretion of cloud water by rain (1/s)<a name='1160'></font>
+   real(r8), intent(out) :: psacwo(pcols)        <font color=#447700>! accretion of cloud water by snow (1/s)<a name='1161'></font>
+   real(r8), intent(out) :: psacio(pcols)        <font color=#447700>! accretion of cloud ice by snow (1/s)<a name='1162'></font>
+<a name='1163'>
+<a name='1164'>
+<font color=#447700>! work variables<a name='1165'></font>
+<a name='1166'>
+   integer i<a name='1167'>
+   integer ii<a name='1168'>
+   integer ind(pcols)<a name='1169'>
+   integer ncols<a name='1170'>
+<a name='1171'>
+   real(r8), parameter :: degrad = 57.296_r8 <font color=#447700>! divide by this to convert degrees to radians<a name='1172'></font>
+   real(r8) capn                 <font color=#447700>! local cloud particles / cm3<a name='1173'></font>
+   real(r8) capnoice             <font color=#447700>! local cloud particles when not over sea ice / cm3<a name='1174'></font>
+   real(r8) ciaut                <font color=#447700>! coefficient of autoconversion of ice (1/s)<a name='1175'></font>
+   real(r8) cldloc(pcols)        <font color=#447700>! non-zero amount of cloud<a name='1176'></font>
+   real(r8) cldpr(pcols)         <font color=#447700>! assumed cloudy volume occupied by rain and cloud<a name='1177'></font>
+   real(r8) con1                 <font color=#447700>! work constant<a name='1178'></font>
+   real(r8) con2                 <font color=#447700>! work constant<a name='1179'></font>
+   real(r8) csacx                <font color=#447700>! constant used for snow accreting liquid or ice<a name='1180'></font>
+<font color=#447700>!!$   real(r8) dtice                ! interval for transition from liquid to ice<a name='1181'></font>
+   real(r8) icemr(pcols)         <font color=#447700>! in-cloud ice mixing ratio<a name='1182'></font>
+   real(r8) icrit                <font color=#447700>! threshold for autoconversion of ice<a name='1183'></font>
+   real(r8) liqmr(pcols)         <font color=#447700>! in-cloud liquid water mixing ratio<a name='1184'></font>
+   real(r8) pracw                <font color=#447700>! rate of rain accreting water<a name='1185'></font>
+   real(r8) prlloc(pcols)        <font color=#447700>! local rain flux in mm/day<a name='1186'></font>
+   real(r8) prscgs(pcols)        <font color=#447700>! local snow amount in cgs units<a name='1187'></font>
+   real(r8) psaci                <font color=#447700>! rate of collection of ice by snow (lin et al 1983)<a name='1188'></font>
+   real(r8) psacw                <font color=#447700>! rate of collection of liquid by snow (lin et al 1983)<a name='1189'></font>
+   real(r8) psaut                <font color=#447700>! rate of autoconversion of ice condensate<a name='1190'></font>
+   real(r8) ptot                 <font color=#447700>! total rate of conversion<a name='1191'></font>
+   real(r8) pwaut                <font color=#447700>! rate of autoconversion of liquid condensate<a name='1192'></font>
+   real(r8) r3l                  <font color=#447700>! volume radius<a name='1193'></font>
+   real(r8) rainmr(pcols)        <font color=#447700>! in-cloud rain mixing ratio<a name='1194'></font>
+   real(r8) rat1                 <font color=#447700>! work constant<a name='1195'></font>
+   real(r8) rat2                 <font color=#447700>! work constant<a name='1196'></font>
+<font color=#447700>!!$   real(r8) rdtice               ! recipricol of dtice<a name='1197'></font>
+   real(r8) rho(pcols)           <font color=#447700>! density (mks units)<a name='1198'></font>
+   real(r8) rhocgs               <font color=#447700>! density (cgs units)<a name='1199'></font>
+   real(r8) rlat(pcols)          <font color=#447700>! latitude (radians)<a name='1200'></font>
+   real(r8) snowfr               <font color=#447700>! fraction of precipate existing as snow<a name='1201'></font>
+   real(r8) totmr(pcols)         <font color=#447700>! in-cloud total condensate mixing ratio<a name='1202'></font>
+   real(r8) vfallw               <font color=#447700>! fall speed of precipitate as liquid<a name='1203'></font>
+   real(r8) wp                   <font color=#447700>! weight factor used in calculating pressure dep of autoconversion<a name='1204'></font>
+   real(r8) wsi                  <font color=#447700>! weight factor for sea ice<a name='1205'></font>
+   real(r8) wt                   <font color=#447700>! fraction of ice<a name='1206'></font>
+   real(r8) wland                <font color=#447700>! fraction of land<a name='1207'></font>
+<a name='1208'>
+<font color=#447700>!      real(r8) csaci<a name='1209'></font>
+<font color=#447700>!      real(r8) csacw<a name='1210'></font>
+<font color=#447700>!      real(r8) cwaut<a name='1211'></font>
+<font color=#447700>!      real(r8) efact<a name='1212'></font>
+<font color=#447700>!      real(r8) lamdas<a name='1213'></font>
+<font color=#447700>!      real(r8) lcrit<a name='1214'></font>
+<font color=#447700>!      real(r8) rcwm<a name='1215'></font>
+<font color=#447700>!      real(r8) r3lc2<a name='1216'></font>
+<font color=#447700>!      real(r8) snowmr(pcols)<a name='1217'></font>
+<font color=#447700>!      real(r8) vfalls<a name='1218'></font>
+<a name='1219'>
+   real(8) ftot<a name='1220'>
+<a name='1221'>
+<font color=#447700>!     inline statement functions<a name='1222'></font>
+   real(r8) heavy, heavym, a1, a2, heavyp, heavymp<a name='1223'>
+   heavy(a1,a2) = max(0._r8,sign(1._r8,a1-a2))  <font color=#447700>! heavyside function<a name='1224'></font>
+   heavym(a1,a2) = max(0.01_r8,sign(1._r8,a1-a2))  <font color=#447700>! modified heavyside function<a name='1225'></font>
+<font color=#447700>!<a name='1226'></font>
+<font color=#447700>! New heavyside functions to perhaps address error growth problems<a name='1227'></font>
+<font color=#447700>!<a name='1228'></font>
+   heavyp(a1,a2) = a1/(a2+a1+1.e-36_r8)<a name='1229'>
+   heavymp(a1,a2) = (a1+0.01_r8*a2)/(a2+a1+1.e-36_r8)<a name='1230'>
+<a name='1231'>
+<font color=#447700>!<a name='1232'></font>
+<font color=#447700>! find all the points where we need to do the microphysics<a name='1233'></font>
+<font color=#447700>! and set the output variables to zero<a name='1234'></font>
+<font color=#447700>!<a name='1235'></font>
+   ncols = 0<a name='1236'>
+   do i = 1,ncol<a name='1237'>
+      coef(i) = 0._r8<a name='1238'>
+      fwaut(i) = 0._r8<a name='1239'>
+      fsaut(i) = 0._r8<a name='1240'>
+      fracw(i) = 0._r8<a name='1241'>
+      fsacw(i) = 0._r8<a name='1242'>
+      fsaci(i) = 0._r8<a name='1243'>
+      liqmr(i) = 0._r8<a name='1244'>
+      rainmr(i) = 0._r8<a name='1245'>
+      if (cwm(i) &gt; 1.e-20_r8) then<a name='1246'>
+         ncols = ncols + 1<a name='1247'>
+         ind(ncols) = i<a name='1248'>
+      endif<a name='1249'>
+   end do<a name='1250'>
+<a name='1251'>
+<font color=#447700>!cdir nodep<a name='1252'></font>
+<font color=#447700>!DIR$ CONCURRENT<a name='1253'></font>
+   do ii = 1,ncols<a name='1254'>
+      i = ind(ii)<a name='1255'>
+<font color=#447700>!<a name='1256'></font>
+<font color=#447700>! the local cloudiness at this level<a name='1257'></font>
+<font color=#447700>!<a name='1258'></font>
+      cldloc(i) = max(cldmin,cldm(i))<a name='1259'>
+<font color=#447700>!<a name='1260'></font>
+<font color=#447700>! a weighted mean between max cloudiness above, and this layer<a name='1261'></font>
+<font color=#447700>!<a name='1262'></font>
+      cldpr(i) = max(cldmin,(cldmax(i)+cldm(i))*0.5_r8)<a name='1263'>
+<font color=#447700>!<a name='1264'></font>
+<font color=#447700>! decompose the suspended condensate into<a name='1265'></font>
+<font color=#447700>! an incloud liquid and ice phase component<a name='1266'></font>
+<font color=#447700>!<a name='1267'></font>
+      totmr(i) = cwm(i)/cldloc(i)<a name='1268'>
+      icemr(i) = totmr(i)*fice(i)<a name='1269'>
+      liqmr(i) = totmr(i)*(1._r8-fice(i))<a name='1270'>
+<font color=#447700>!<a name='1271'></font>
+<font color=#447700>! density<a name='1272'></font>
+<font color=#447700>!<a name='1273'></font>
+      rho(i) = p(i,k)/(287._r8*t(i,k))<a name='1274'>
+      rhocgs = rho(i)*1.e-3_r8     <font color=#447700>! density in cgs units<a name='1275'></font>
+<font color=#447700>!<a name='1276'></font>
+<font color=#447700>! decompose the precipitate into a liquid and ice phase<a name='1277'></font>
+<font color=#447700>!<a name='1278'></font>
+      if (t(i,k) &gt; t0) then<a name='1279'>
+         vfallw = convfw/sqrt(rho(i))<a name='1280'>
+         rainmr(i) = precab(i)/(rho(i)*vfallw*cldpr(i))<a name='1281'>
+         snowfr = 0<a name='1282'>
+<font color=#447700>!        snowmr(i)<a name='1283'></font>
+      else<a name='1284'>
+         snowfr = 1<a name='1285'>
+         rainmr(i) = 0._r8<a name='1286'>
+      endif<a name='1287'>
+<font color=#447700>!     rainmr(i) = (precab(i)-snowab(i))/(rho(i)*vfallw*cldpr(i))<a name='1288'></font>
+<font color=#447700>!<a name='1289'></font>
+<font color=#447700>! local snow amount in cgs units<a name='1290'></font>
+<font color=#447700>!<a name='1291'></font>
+      prscgs(i) = precab(i)/cldpr(i)*0.1_r8*snowfr<a name='1292'>
+<font color=#447700>!     prscgs(i) = snowab(i)/cldpr(i)*0.1<a name='1293'></font>
+<font color=#447700>!<a name='1294'></font>
+<font color=#447700>! local rain amount in mm/day<a name='1295'></font>
+<font color=#447700>!<a name='1296'></font>
+      prlloc(i) = precab(i)*86400._r8/cldpr(i)<a name='1297'>
+   end do<a name='1298'>
+<a name='1299'>
+   con1 = 1._r8/(1.333_r8*pi)**0.333_r8 * 0.01_r8 <font color=#447700>! meters<a name='1300'></font>
+<font color=#447700>!<a name='1301'></font>
+<font color=#447700>! calculate the conversion terms<a name='1302'></font>
+<font color=#447700>!<a name='1303'></font>
+   call get_rlat_all_p(lchnk, ncol, rlat)<a name='1304'>
+<a name='1305'>
+<font color=#447700>!cdir nodep<a name='1306'></font>
+<font color=#447700>!DIR$ CONCURRENT<a name='1307'></font>
+   do ii = 1,ncols<a name='1308'>
+      i = ind(ii)<a name='1309'>
+      rhocgs = rho(i)*1.e-3_r8     <font color=#447700>! density in cgs units<a name='1310'></font>
+<font color=#447700>!<a name='1311'></font>
+<font color=#447700>! exponential temperature factor<a name='1312'></font>
+<font color=#447700>!<a name='1313'></font>
+<font color=#447700>!        efact = exp(0.025*(t(i,k)-t0))<a name='1314'></font>
+<font color=#447700>!<a name='1315'></font>
+<font color=#447700>! some temperature dependent constants<a name='1316'></font>
+<font color=#447700>!<a name='1317'></font>
+<font color=#447700>!!$      wt = min(1._r8,max(0._r8,(t0-t(i,k))*rdtice))<a name='1318'></font>
+      wt = fice(i)<a name='1319'>
+      icrit = icritc*wt + icritw*(1-wt)<a name='1320'>
+<font color=#447700>!<a name='1321'></font>
+<font color=#447700>! jrm Reworked droplet number concentration algorithm<a name='1322'></font>
+      <font color=#447700>! Start with pressure-dependent value appropriate for continental air<a name='1323'></font>
+      <font color=#447700>! Note: reltab has a temperature dependence here<a name='1324'></font>
+      capn = capnw + (capnc-capnw) * min(1._r8,max(0._r8,1.0_r8-(p(i,k)-0.8_r8*p(i,pver))/(0.2_r8*p(i,pver))))<a name='1325'>
+      <font color=#447700>! Modify for snow depth over land<a name='1326'></font>
+      capn = capn + (capnc-capn) * min(1.0_r8,max(0.0_r8,snowh(i)*10._r8))<a name='1327'>
+      <font color=#447700>! Ramp between polluted value over land to clean value over ocean.<a name='1328'></font>
+      capn = capn + (capnc-capn) * min(1.0_r8,max(0.0_r8,1.0_r8-landm(i,lchnk)))<a name='1329'>
+      <font color=#447700>! Ramp between the resultant value and a sea ice value in the presence of ice.<a name='1330'></font>
+      capn = capn + (capnsi-capn) * min(1.0_r8,max(0.0_r8,seaicef(i)))<a name='1331'>
+<font color=#447700>! end jrm<a name='1332'></font>
+<font color=#447700>!      <a name='1333'></font>
+#ifdef DEBUG2<a name='1334'>
+      if ( (lat(i) == latlook(1)) .or. (lat(i) == latlook(2)) ) then<a name='1335'>
+         if (i == ilook(1)) then<a name='1336'>
+            write(iulog,*) ' findmcnew: lat, k, seaicef, landm, wp, capnoice, capn ', &amp;<a name='1337'>
+                 lat(i), k, seaicef(i), landm(i,lat(i)), wp, capnoice, capn<a name='1338'>
+#ifdef WRF_PORT<a name='1339'>
+            call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_cldwat.F.html#FINDMCNEW' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_568">(iulog)<a name='1340'>
+#endif<a name='1341'>
+         endif<a name='1342'>
+      endif<a name='1343'>
+#endif<a name='1344'>
+<a name='1345'>
+<font color=#447700>!<a name='1346'></font>
+<font color=#447700>! useful terms in following calculations<a name='1347'></font>
+<font color=#447700>!<a name='1348'></font>
+      rat1 = rhocgs/rhow<a name='1349'>
+      rat2 = liqmr(i)/capn<a name='1350'>
+      con2 = (rat1*rat2)**0.333_r8<a name='1351'>
+<font color=#447700>!<a name='1352'></font>
+<font color=#447700>! volume radius<a name='1353'></font>
+<font color=#447700>!<a name='1354'></font>
+<font color=#447700>!        r3l = (rhocgs*liqmr(i)/(1.333*pi*capn*rhow))**0.333 * 0.01 ! meters<a name='1355'></font>
+      r3l = con1*con2<a name='1356'>
+<font color=#447700>!<a name='1357'></font>
+<font color=#447700>! critical threshold for autoconversion if modified for mixed phase<a name='1358'></font>
+<font color=#447700>! clouds to mimic a bergeron findeisen process<a name='1359'></font>
+<font color=#447700>! r3lc2 = r3lcrit*(1.-0.5*fice(i)*(1-fice(i)))<a name='1360'></font>
+<font color=#447700>!<a name='1361'></font>
+<font color=#447700>! autoconversion of liquid<a name='1362'></font>
+<font color=#447700>!<a name='1363'></font>
+<font color=#447700>!        cwaut = 2.e-4<a name='1364'></font>
+<font color=#447700>!        cwaut = 1.e-3<a name='1365'></font>
+<font color=#447700>!        lcrit = 2.e-4<a name='1366'></font>
+<font color=#447700>!        lcrit = 5.e-4<a name='1367'></font>
+<font color=#447700>!        pwaut = max(0._r8,liqmr(i)-lcrit)*cwaut<a name='1368'></font>
+<font color=#447700>!<a name='1369'></font>
+<font color=#447700>! pwaut is following tripoli and cotton (and many others)<a name='1370'></font>
+<font color=#447700>! we reduce the autoconversion below critpr, because these are regions where<a name='1371'></font>
+<font color=#447700>! the drop size distribution is likely to imply much smaller collector drops than<a name='1372'></font>
+<font color=#447700>! those relevant for a cloud distribution corresponding to the value of effc = 0.55<a name='1373'></font>
+<font color=#447700>! suggested by cotton (see austin 1995 JAS, baker 1993)<a name='1374'></font>
+<a name='1375'>
+<font color=#447700>! easy to follow form<a name='1376'></font>
+<font color=#447700>!        pwaut = capc*liqmr(i)**2*rhocgs/rhow<a name='1377'></font>
+<font color=#447700>!    $           *(liqmr(i)*rhocgs/(rhow*capn))**(.333)<a name='1378'></font>
+<font color=#447700>!    $           *heavy(r3l,r3lcrit)<a name='1379'></font>
+<font color=#447700>!    $           *max(0.10_r8,min(1._r8,prlloc(i)/critpr))<a name='1380'></font>
+<font color=#447700>! somewhat faster form<a name='1381'></font>
+#define HEAVYNEW<a name='1382'>
+#ifdef HEAVYNEW<a name='1383'>
+<font color=#447700>!#ifdef PERGRO<a name='1384'></font>
+      pwaut = capc*liqmr(i)**2*rat1*con2*heavymp(r3l,r3lcrit) * &amp;<a name='1385'>
+              max(0.10_r8,min(1._r8,prlloc(i)/critpr))<a name='1386'>
+#else<a name='1387'>
+      pwaut = capc*liqmr(i)**2*rat1*con2*heavym(r3l,r3lcrit)* &amp;<a name='1388'>
+              max(0.10_r8,min(1._r8,prlloc(i)/critpr))<a name='1389'>
+#endif<a name='1390'>
+<font color=#447700>!<a name='1391'></font>
+<font color=#447700>! autoconversion of ice<a name='1392'></font>
+<font color=#447700>!<a name='1393'></font>
+<font color=#447700>!        ciaut = ciautb*efact<a name='1394'></font>
+      ciaut = ciautb<a name='1395'>
+<font color=#447700>!        psaut = capc*totmr(i)**2*rhocgs/rhoi<a name='1396'></font>
+<font color=#447700>!     $           *(totmr(i)*rhocgs/(rhoi*capn))**(.333)<a name='1397'></font>
+<font color=#447700>!<a name='1398'></font>
+<font color=#447700>! autoconversion of ice condensate<a name='1399'></font>
+<font color=#447700>!<a name='1400'></font>
+#ifdef PERGRO<a name='1401'>
+      psaut = heavyp(icemr(i),icrit)*icemr(i)*ciaut<a name='1402'>
+#else<a name='1403'>
+      psaut = max(0._r8,icemr(i)-icrit)*ciaut<a name='1404'>
+#endif<a name='1405'>
+<font color=#447700>!<a name='1406'></font>
+<font color=#447700>! collection of liquid by rain<a name='1407'></font>
+<font color=#447700>!<a name='1408'></font>
+<font color=#447700>!        pracw = cracw*rho(i)*liqmr(i)*rainmr(i) !(beheng 1994)<a name='1409'></font>
+      pracw = cracw*rho(i)*sqrt(rho(i))*liqmr(i)*rainmr(i) <font color=#447700>!(tripoli and cotton)<a name='1410'></font>
+<a name='1411'>
+      pracwo(i)=pracw<a name='1412'>
+<a name='1413'>
+<font color=#447700>!!      pracw = 0.<a name='1414'></font>
+<font color=#447700>!<a name='1415'></font>
+<font color=#447700>! the following lines calculate the slope parameter and snow mixing ratio<a name='1416'></font>
+<font color=#447700>! from the precip rate using the equations found in lin et al 83<a name='1417'></font>
+<font color=#447700>! in the most natural form, but it is expensive, so after some tedious<a name='1418'></font>
+<font color=#447700>! algebraic manipulation you can use the cheaper form found below<a name='1419'></font>
+<font color=#447700>!            vfalls = c*gam4pd/(6*lamdas**d)*sqrt(rhonot/rhocgs)<a name='1420'></font>
+<font color=#447700>!     $               *0.01   ! convert from cm/s to m/s<a name='1421'></font>
+<font color=#447700>!            snowmr(i) = snowfr*precab(i)/(rho(i)*vfalls*cldpr(i))<a name='1422'></font>
+<font color=#447700>!            snowmr(i) = ( prscgs(i)*mcon02 * (rhocgs**mcon03) )**mcon04<a name='1423'></font>
+<font color=#447700>!            lamdas = (prhonos/max(rhocgs*snowmr(i),small))**0.25<a name='1424'></font>
+<font color=#447700>!            csacw = mcon01*sqrt(rhonot/rhocgs)/(lamdas**thrpd)<a name='1425'></font>
+<font color=#447700>!<a name='1426'></font>
+<font color=#447700>! coefficient for collection by snow independent of phase<a name='1427'></font>
+<font color=#447700>!<a name='1428'></font>
+      csacx = mcon07*rhocgs**mcon08*prscgs(i)**mcon05<a name='1429'>
+<a name='1430'>
+<font color=#447700>!<a name='1431'></font>
+<font color=#447700>! collection of liquid by snow (lin et al 1983)<a name='1432'></font>
+<font color=#447700>!<a name='1433'></font>
+      psacw = csacx*liqmr(i)*esw<a name='1434'>
+#ifdef PERGRO<a name='1435'>
+<font color=#447700>! this is necessary for pergro<a name='1436'></font>
+      psacw = 0._r8<a name='1437'>
+#endif<a name='1438'>
+<a name='1439'>
+      psacwo(i)=psacw<a name='1440'>
+<a name='1441'>
+<font color=#447700>!<a name='1442'></font>
+<font color=#447700>! collection of ice by snow (lin et al 1983)<a name='1443'></font>
+<font color=#447700>!<a name='1444'></font>
+      psaci = csacx*icemr(i)*esi<a name='1445'>
+<font color=#447700>!<a name='1446'></font>
+      psacio(i)=psaci<a name='1447'>
+<a name='1448'>
+<font color=#447700>! total conversion of condensate to precipitate<a name='1449'></font>
+<font color=#447700>!<a name='1450'></font>
+      ptot = pwaut + psaut + pracw + psacw + psaci<a name='1451'>
+<font color=#447700>!<a name='1452'></font>
+<font color=#447700>! the recipricol of cloud water amnt (or zero if no cloud water)<a name='1453'></font>
+<font color=#447700>!<a name='1454'></font>
+<font color=#447700>!         rcwm =  totmr(i)/(max(totmr(i),small)**2)<a name='1455'></font>
+<font color=#447700>!<a name='1456'></font>
+<font color=#447700>! turn the tendency back into a loss rate (1/seconds)<a name='1457'></font>
+<font color=#447700>!<a name='1458'></font>
+      if (totmr(i) &gt; 0._r8) then<a name='1459'>
+         coef(i) = ptot/totmr(i)<a name='1460'>
+      else<a name='1461'>
+         coef(i) = 0._r8<a name='1462'>
+      endif<a name='1463'>
+<a name='1464'>
+      if (ptot.gt.0._r8) then<a name='1465'>
+         fwaut(i) = pwaut/ptot<a name='1466'>
+         fsaut(i) = psaut/ptot<a name='1467'>
+         fracw(i) = pracw/ptot<a name='1468'>
+         fsacw(i) = psacw/ptot<a name='1469'>
+         fsaci(i) = psaci/ptot<a name='1470'>
+      else<a name='1471'>
+         fwaut(i) = 0._r8<a name='1472'>
+         fsaut(i) = 0._r8<a name='1473'>
+         fracw(i) = 0._r8<a name='1474'>
+         fsacw(i) = 0._r8<a name='1475'>
+         fsaci(i) = 0._r8<a name='1476'>
+      endif<a name='1477'>
+<a name='1478'>
+      ftot = fwaut(i)+fsaut(i)+fracw(i)+fsacw(i)+fsaci(i)<a name='1479'>
+<font color=#447700>!      if (abs(ftot-1._r8).gt.1.e-14_r8.and.ftot.ne.0._r8) then<a name='1480'></font>
+<font color=#447700>!         write(iulog,*) ' something is wrong in findmcnew ', ftot, &amp;<a name='1481'></font>
+<font color=#447700>!              fwaut(i),fsaut(i),fracw(i),fsacw(i),fsaci(i)<a name='1482'></font>
+<font color=#447700>!         write(iulog,*) ' unscaled ', ptot, &amp;<a name='1483'></font>
+<font color=#447700>!              pwaut,psaut,pracw,psacw,psaci<a name='1484'></font>
+<font color=#447700>!         write(iulog,*) ' totmr, liqmr, icemr ', totmr(i), liqmr(i), icemr(i)<a name='1485'></font>
+<font color=#447700>!         call endrun()<a name='1486'></font>
+<font color=#447700>!      endif<a name='1487'></font>
+   end do<a name='1488'>
+#ifdef DEBUG<a name='1489'>
+   i = icollook(nlook)<a name='1490'>
+   if (lchnk == lchnklook(nlook) ) then<a name='1491'>
+      write(iulog,*)<a name='1492'>
+      write(iulog,*) '------', k, i, lchnk<a name='1493'>
+      write(iulog,*) ' liqmr, rainmr,precab ', liqmr(i), rainmr(i), precab(i)*8.64e4_r8<a name='1494'>
+      write(iulog,*) ' frac: waut,saut,racw,sacw,saci ', &amp;<a name='1495'>
+           fwaut(i), fsaut(i), fracw(i), fsacw(i), fsaci(i)<a name='1496'>
+   endif<a name='1497'>
+#endif<a name='1498'>
+<a name='1499'>
+   return<a name='1500'>
+end subroutine findmcnew<a name='1501'>
+<a name='1502'>
+<font color=#447700>!##############################################################################<a name='1503'></font>
+<a name='1504'>
+<A NAME='FINDSP'><A href='../../html_code/phys/module_cam_cldwat.F.html#FINDSP' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1505'>
+<font color=#993300>subroutine </font><font color=#cc0000>findsp</font> (lchnk, ncol, q, t, p, tsp, qsp) <A href='../../call_to/FINDSP.html' TARGET='index'>2</A>,<A href='../../call_from/FINDSP.html' TARGET='index'>35</A><a name='1506'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='1507'></font>
+<font color=#447700>! <a name='1508'></font>
+<font color=#447700>! Purpose: <a name='1509'></font>
+<font color=#447700>!     find the wet bulb temperature for a given t and q<a name='1510'></font>
+<font color=#447700>!     in a longitude height section<a name='1511'></font>
+<font color=#447700>!     wet bulb temp is the temperature and spec humidity that is <a name='1512'></font>
+<font color=#447700>!     just saturated and has the same enthalpy<a name='1513'></font>
+<font color=#447700>!     if q &gt; qs(t) then tsp &gt; t and qsp = qs(tsp) &lt; q<a name='1514'></font>
+<font color=#447700>!     if q &lt; qs(t) then tsp &lt; t and qsp = qs(tsp) &gt; q<a name='1515'></font>
+<font color=#447700>!<a name='1516'></font>
+<font color=#447700>! Method: <a name='1517'></font>
+<font color=#447700>! a Newton method is used<a name='1518'></font>
+<font color=#447700>! first guess uses an algorithm provided by John Petch from the UKMO<a name='1519'></font>
+<font color=#447700>! we exclude points where the physical situation is unrealistic<a name='1520'></font>
+<font color=#447700>! e.g. where the temperature is outside the range of validity for the<a name='1521'></font>
+<font color=#447700>!      saturation vapor pressure, or where the water vapor pressure<a name='1522'></font>
+<font color=#447700>!      exceeds the ambient pressure, or the saturation specific humidity is <a name='1523'></font>
+<font color=#447700>!      unrealistic<a name='1524'></font>
+<font color=#447700>! <a name='1525'></font>
+<font color=#447700>! Author: P. Rasch<a name='1526'></font>
+<font color=#447700>! <a name='1527'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1528'></font>
+<font color=#447700>!<a name='1529'></font>
+<font color=#447700>!     input arguments<a name='1530'></font>
+<font color=#447700>!<a name='1531'></font>
+   integer, intent(in) :: lchnk                 <font color=#447700>! chunk identifier<a name='1532'></font>
+   integer, intent(in) :: ncol                  <font color=#447700>! number of atmospheric columns<a name='1533'></font>
+<a name='1534'>
+   real(r8), intent(in) :: q(pcols,pver)        <font color=#447700>! water vapor (kg/kg)<a name='1535'></font>
+   real(r8), intent(in) :: t(pcols,pver)        <font color=#447700>! temperature (K)<a name='1536'></font>
+   real(r8), intent(in) :: p(pcols,pver)        <font color=#447700>! pressure    (Pa)<a name='1537'></font>
+<font color=#447700>!<a name='1538'></font>
+<font color=#447700>! output arguments<a name='1539'></font>
+<font color=#447700>!<a name='1540'></font>
+   real(r8), intent(out) :: tsp(pcols,pver)      <font color=#447700>! saturation temp (K)<a name='1541'></font>
+   real(r8), intent(out) :: qsp(pcols,pver)      <font color=#447700>! saturation mixing ratio (kg/kg)<a name='1542'></font>
+<font color=#447700>!<a name='1543'></font>
+<font color=#447700>! local variables<a name='1544'></font>
+<font color=#447700>!<a name='1545'></font>
+   integer i                 <font color=#447700>! work variable<a name='1546'></font>
+   integer k                 <font color=#447700>! work variable<a name='1547'></font>
+   logical lflg              <font color=#447700>! work variable<a name='1548'></font>
+   integer iter              <font color=#447700>! work variable<a name='1549'></font>
+   integer l                 <font color=#447700>! work variable<a name='1550'></font>
+   logical :: error_found<a name='1551'>
+<a name='1552'>
+   real(r8) omeps                <font color=#447700>! 1 minus epsilon<a name='1553'></font>
+   real(r8) trinv                <font color=#447700>! work variable<a name='1554'></font>
+   real(r8) es                   <font color=#447700>! sat. vapor pressure<a name='1555'></font>
+   real(r8) desdt                <font color=#447700>! change in sat vap pressure wrt temperature<a name='1556'></font>
+<font color=#447700>!     real(r8) desdp                ! change in sat vap pressure wrt pressure<a name='1557'></font>
+   real(r8) dqsdt                <font color=#447700>! change in sat spec. hum. wrt temperature<a name='1558'></font>
+   real(r8) dgdt                 <font color=#447700>! work variable<a name='1559'></font>
+   real(r8) g                    <font color=#447700>! work variable<a name='1560'></font>
+   real(r8) weight(pcols)        <font color=#447700>! work variable<a name='1561'></font>
+   real(r8) hlatsb               <font color=#447700>! (sublimation)<a name='1562'></font>
+   real(r8) hlatvp               <font color=#447700>! (vaporization)<a name='1563'></font>
+   real(r8) hltalt(pcols,pver)   <font color=#447700>! lat. heat. of vap.<a name='1564'></font>
+   real(r8) tterm                <font color=#447700>! work var.<a name='1565'></font>
+   real(r8) qs                   <font color=#447700>! spec. hum. of water vapor<a name='1566'></font>
+   real(r8) tc                   <font color=#447700>! crit temp of transition to ice<a name='1567'></font>
+<a name='1568'>
+<font color=#447700>! work variables<a name='1569'></font>
+   real(r8) t1, q1, dt, dq<a name='1570'>
+   real(r8) dtm, dqm<a name='1571'>
+   real(r8) qvd, a1, tmp<a name='1572'>
+   real(r8) rair<a name='1573'>
+   real(r8) r1b, c1, c2, c3<a name='1574'>
+   real(r8) denom<a name='1575'>
+   real(r8) dttol<a name='1576'>
+   real(r8) dqtol<a name='1577'>
+   integer doit(pcols) <a name='1578'>
+   real(r8) enin(pcols), enout(pcols)<a name='1579'>
+   real(r8) tlim(pcols)<a name='1580'>
+<a name='1581'>
+   omeps = 1.0_r8 - epsqs<a name='1582'>
+   trinv = 1.0_r8/ttrice<a name='1583'>
+   a1 = 7.5_r8*log(10._r8)<a name='1584'>
+   rair =  287.04_r8<a name='1585'>
+   c3 = rair*a1/cp<a name='1586'>
+   dtm = 0._r8    <font color=#447700>! needed for iter=0 blowup with f90 -ei<a name='1587'></font>
+   dqm = 0._r8    <font color=#447700>! needed for iter=0 blowup with f90 -ei<a name='1588'></font>
+   dttol = 1.e-4_r8 <font color=#447700>! the relative temp error tolerance required to quit the iteration<a name='1589'></font>
+   dqtol = 1.e-4_r8 <font color=#447700>! the relative moisture error tolerance required to quit the iteration<a name='1590'></font>
+<font color=#447700>!  tmin = 173.16 ! the coldest temperature we can deal with<a name='1591'></font>
+<font color=#447700>!<a name='1592'></font>
+<font color=#447700>! max number of times to iterate the calculation<a name='1593'></font>
+   iter = 8<a name='1594'>
+<font color=#447700>!<a name='1595'></font>
+   do k = k1mb,pver<a name='1596'>
+<a name='1597'>
+<font color=#447700>!<a name='1598'></font>
+<font color=#447700>! first guess on the wet bulb temperature<a name='1599'></font>
+<font color=#447700>!<a name='1600'></font>
+      do i = 1,ncol<a name='1601'>
+<a name='1602'>
+#ifdef DEBUG<a name='1603'>
+         if ( (lchnk == lchnklook(nlook) ) .and. (i == icollook(nlook) ) ) then<a name='1604'>
+            write(iulog,*) ' '<a name='1605'>
+#ifdef WRF_PORT<a name='1606'>
+            call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_569">(iulog)<a name='1607'>
+#endif            <a name='1608'>
+            write(iulog,*) ' level, t, q, p', k, t(i,k), q(i,k), p(i,k)<a name='1609'>
+#ifdef WRF_PORT<a name='1610'>
+            call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_570">(iulog)<a name='1611'>
+#endif<a name='1612'>
+         endif<a name='1613'>
+#endif<a name='1614'>
+<font color=#447700>! limit the temperature range to that relevant to the sat vap pres tables<a name='1615'></font>
+#if ( <font color=#447700>! defined WACCM_PHYS )<a name='1616'></font>
+         tlim(i) = min(max(t(i,k),173._r8),373._r8)<a name='1617'>
+#else<a name='1618'>
+         tlim(i) = min(max(t(i,k),128._r8),373._r8)<a name='1619'>
+#endif<a name='1620'>
+         es = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_3">(tlim(i))<a name='1621'>
+         denom = p(i,k) - omeps*es<a name='1622'>
+         qs = epsqs*es/denom<a name='1623'>
+         doit(i) = 0<a name='1624'>
+         enout(i) = 1._r8<a name='1625'>
+<font color=#447700>! make sure a meaningful calculation is possible<a name='1626'></font>
+         if (p(i,k) &gt; 5._r8*es .and. qs &gt; 0._r8 .and. qs &lt; 0.5_r8) then<a name='1627'>
+<font color=#447700>!<a name='1628'></font>
+<font color=#447700>! Saturation specific humidity<a name='1629'></font>
+<font color=#447700>!<a name='1630'></font>
+             qs = min(epsqs*es/denom,1._r8)<a name='1631'>
+<font color=#447700>!<a name='1632'></font>
+<font color=#447700>! "generalized" analytic expression for t derivative of es<a name='1633'></font>
+<font color=#447700>!  accurate to within 1 percent for 173.16 &lt; t &lt; 373.16<a name='1634'></font>
+<font color=#447700>!<a name='1635'></font>
+<font color=#447700>! Weighting of hlat accounts for transition from water to ice<a name='1636'></font>
+<font color=#447700>! polynomial expression approximates difference between es over<a name='1637'></font>
+<font color=#447700>! water and es over ice from 0 to -ttrice (C) (min of ttrice is<a name='1638'></font>
+<font color=#447700>! -40): required for accurate estimate of es derivative in transition<a name='1639'></font>
+<font color=#447700>! range from ice to water also accounting for change of hlatv with t<a name='1640'></font>
+<font color=#447700>! above freezing where const slope is given by -2369 j/(kg c) = cpv - cw<a name='1641'></font>
+<font color=#447700>!<a name='1642'></font>
+             tc     = tlim(i) - t0<a name='1643'>
+             lflg   = (tc &gt;= -ttrice .and. tc &lt; 0.0_r8)<a name='1644'>
+             weight(i) = min(-tc*trinv,1.0_r8)<a name='1645'>
+             hlatsb = hlatv + weight(i)*hlatf<a name='1646'>
+             hlatvp = hlatv - 2369.0_r8*tc<a name='1647'>
+             if (tlim(i) &lt; t0) then<a name='1648'>
+                hltalt(i,k) = hlatsb<a name='1649'>
+             else<a name='1650'>
+                hltalt(i,k) = hlatvp<a name='1651'>
+             end if<a name='1652'>
+             enin(i) = cp*tlim(i) + hltalt(i,k)*q(i,k)<a name='1653'>
+<a name='1654'>
+<font color=#447700>! make a guess at the wet bulb temp using a UKMO algorithm (from J. Petch)<a name='1655'></font>
+             tmp =  q(i,k) - qs<a name='1656'>
+             c1 = hltalt(i,k)*c3<a name='1657'>
+             c2 = (tlim(i) + 36._r8)**2<a name='1658'>
+             r1b    = c2/(c2 + c1*qs)<a name='1659'>
+             qvd   = r1b*tmp<a name='1660'>
+             tsp(i,k) = tlim(i) + ((hltalt(i,k)/cp)*qvd)<a name='1661'>
+#ifdef DEBUG<a name='1662'>
+             if ( (lchnk == lchnklook(nlook) ) .and. (i == icollook(nlook) ) ) then<a name='1663'>
+                write(iulog,*) ' relative humidity ', q(i,k)/qs<a name='1664'>
+#ifdef WRF_PORT<a name='1665'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_571">(iulog)<a name='1666'>
+#endif<a name='1667'>
+                write(iulog,*) ' first guess ', tsp(i,k)<a name='1668'>
+#ifdef WRF_PORT<a name='1669'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_572">(iulog)<a name='1670'>
+#endif<a name='1671'>
+             endif<a name='1672'>
+#endif<a name='1673'>
+             es = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_4">(tsp(i,k))<a name='1674'>
+             qsp(i,k) = min(epsqs*es/(p(i,k) - omeps*es),1._r8)<a name='1675'>
+          else<a name='1676'>
+             doit(i) = 1<a name='1677'>
+             tsp(i,k) = tlim(i)<a name='1678'>
+             qsp(i,k) = q(i,k)<a name='1679'>
+             enin(i) = 1._r8<a name='1680'>
+          endif<a name='1681'>
+       end do   <font color=#447700>! end do i<a name='1682'></font>
+<font color=#447700>!<a name='1683'></font>
+<font color=#447700>! now iterate on first guess<a name='1684'></font>
+<font color=#447700>!<a name='1685'></font>
+      do l = 1, iter<a name='1686'>
+         dtm = 0<a name='1687'>
+         dqm = 0<a name='1688'>
+         do i = 1,ncol<a name='1689'>
+            if (doit(i) == 0) then<a name='1690'>
+               es = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_5">(tsp(i,k))<a name='1691'>
+<font color=#447700>!<a name='1692'></font>
+<font color=#447700>! Saturation specific humidity<a name='1693'></font>
+<font color=#447700>!<a name='1694'></font>
+               qs = min(epsqs*es/(p(i,k) - omeps*es),1._r8)<a name='1695'>
+<font color=#447700>!<a name='1696'></font>
+<font color=#447700>! "generalized" analytic expression for t derivative of es<a name='1697'></font>
+<font color=#447700>! accurate to within 1 percent for 173.16 &lt; t &lt; 373.16<a name='1698'></font>
+<font color=#447700>!<a name='1699'></font>
+<font color=#447700>! Weighting of hlat accounts for transition from water to ice<a name='1700'></font>
+<font color=#447700>! polynomial expression approximates difference between es over<a name='1701'></font>
+<font color=#447700>! water and es over ice from 0 to -ttrice (C) (min of ttrice is<a name='1702'></font>
+<font color=#447700>! -40): required for accurate estimate of es derivative in transition<a name='1703'></font>
+<font color=#447700>! range from ice to water also accounting for change of hlatv with t<a name='1704'></font>
+<font color=#447700>! above freezing where const slope is given by -2369 j/(kg c) = cpv - cw<a name='1705'></font>
+<font color=#447700>!<a name='1706'></font>
+               tc     = tsp(i,k) - t0<a name='1707'>
+               lflg   = (tc &gt;= -ttrice .and. tc &lt; 0.0_r8)<a name='1708'>
+               weight(i) = min(-tc*trinv,1.0_r8)<a name='1709'>
+               hlatsb = hlatv + weight(i)*hlatf<a name='1710'>
+               hlatvp = hlatv - 2369.0_r8*tc<a name='1711'>
+               if (tsp(i,k) &lt; t0) then<a name='1712'>
+                  hltalt(i,k) = hlatsb<a name='1713'>
+               else<a name='1714'>
+                  hltalt(i,k) = hlatvp<a name='1715'>
+               end if<a name='1716'>
+               if (lflg) then<a name='1717'>
+                  tterm = pcf(1) + tc*(pcf(2) + tc*(pcf(3)+tc*(pcf(4) + tc*pcf(5))))<a name='1718'>
+               else<a name='1719'>
+                  tterm = 0.0_r8<a name='1720'>
+               end if<a name='1721'>
+               desdt = hltalt(i,k)*es/(rgasv*tsp(i,k)*tsp(i,k)) + tterm*trinv<a name='1722'>
+               dqsdt = (epsqs + omeps*qs)/(p(i,k) - omeps*es)*desdt<a name='1723'>
+<font color=#447700>!              g = cp*(tlim(i)-tsp(i,k)) + hltalt(i,k)*q(i,k)- hltalt(i,k)*qsp(i,k)<a name='1724'></font>
+               g = enin(i) - (cp*tsp(i,k) + hltalt(i,k)*qsp(i,k))<a name='1725'>
+               dgdt = -(cp + hltalt(i,k)*dqsdt)<a name='1726'>
+               t1 = tsp(i,k) - g/dgdt<a name='1727'>
+               dt = abs(t1 - tsp(i,k))/t1<a name='1728'>
+               tsp(i,k) = max(t1,tmin)<a name='1729'>
+               es = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_6">(tsp(i,k))<a name='1730'>
+               q1 = min(epsqs*es/(p(i,k) - omeps*es),1._r8)<a name='1731'>
+               dq = abs(q1 - qsp(i,k))/max(q1,1.e-12_r8)<a name='1732'>
+               qsp(i,k) = q1<a name='1733'>
+#ifdef DEBUG<a name='1734'>
+               if ( (lchnk == lchnklook(nlook) ) .and. (i == icollook(nlook) ) ) then<a name='1735'>
+                  write(iulog,*) ' rel chg lev, iter, t, q ', k, l, dt, dq, g<a name='1736'>
+#ifdef WRF_PORT<a name='1737'>
+                  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_573">(iulog)<a name='1738'>
+#endif                  <a name='1739'>
+               endif<a name='1740'>
+#endif<a name='1741'>
+               dtm = max(dtm,dt)<a name='1742'>
+               dqm = max(dqm,dq)<a name='1743'>
+<font color=#447700>! if converged at this point, exclude it from more iterations<a name='1744'></font>
+               if (dt &lt; dttol .and. dq &lt; dqtol) then<a name='1745'>
+                  doit(i) = 2<a name='1746'>
+               endif<a name='1747'>
+               enout(i) = cp*tsp(i,k) + hltalt(i,k)*qsp(i,k)<a name='1748'>
+<font color=#447700>! bail out if we are too near the end of temp range<a name='1749'></font>
+#if ( <font color=#447700>! defined WACCM_PHYS )<a name='1750'></font>
+               if (tsp(i,k) &lt; 174.16_r8) then<a name='1751'>
+#else<a name='1752'>
+               if (tsp(i,k) &lt; 130.16_r8) then<a name='1753'>
+#endif<a name='1754'>
+                  doit(i) = 4<a name='1755'>
+               endif<a name='1756'>
+            else<a name='1757'>
+            endif<a name='1758'>
+         end do              <font color=#447700>! do i = 1,ncol<a name='1759'></font>
+<a name='1760'>
+         if (dtm &lt; dttol .and. dqm &lt; dqtol) then<a name='1761'>
+            go to 10<a name='1762'>
+         endif<a name='1763'>
+<a name='1764'>
+      end do                 <font color=#447700>! do l = 1,iter<a name='1765'></font>
+10    continue<a name='1766'>
+<a name='1767'>
+      error_found = .false.<a name='1768'>
+      if (dtm &gt; dttol .or. dqm &gt; dqtol) then<a name='1769'>
+         do i = 1,ncol<a name='1770'>
+            if (doit(i) == 0) error_found = .true.<a name='1771'>
+         end do<a name='1772'>
+         if (error_found) then<a name='1773'>
+            do i = 1,ncol<a name='1774'>
+               if (doit(i) == 0) then<a name='1775'>
+                  write(iulog,*) ' findsp not converging at point i, k ', i, k<a name='1776'>
+#ifdef WRF_PORT<a name='1777'>
+                  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_574">(iulog)<a name='1778'>
+#endif<a name='1779'>
+                  write(iulog,*) ' t, q, p, enin ', t(i,k), q(i,k), p(i,k), enin(i)<a name='1780'>
+#ifdef WRF_PORT<a name='1781'>
+                  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_575">(iulog)<a name='1782'>
+#endif<a name='1783'>
+                  write(iulog,*) ' tsp, qsp, enout ', tsp(i,k), qsp(i,k), enout(i)<a name='1784'>
+#ifdef WRF_PORT<a name='1785'>
+                  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_576">(iulog)<a name='1786'>
+#endif<a name='1787'>
+                  call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_6"> ('FINDSP')<a name='1788'>
+               endif<a name='1789'>
+            end do<a name='1790'>
+         endif<a name='1791'>
+      endif<a name='1792'>
+      do i = 1,ncol<a name='1793'>
+         if (doit(i) == 2 .and. abs((enin(i)-enout(i))/(enin(i)+enout(i))) &gt; 1.e-4_r8) then<a name='1794'>
+            error_found = .true.<a name='1795'>
+         endif<a name='1796'>
+      end do<a name='1797'>
+      if (error_found) then<a name='1798'>
+         do i = 1,ncol<a name='1799'>
+            if (doit(i) == 2 .and. abs((enin(i)-enout(i))/(enin(i)+enout(i))) &gt; 1.e-4_r8) then<a name='1800'>
+               write(iulog,*) ' the enthalpy is not conserved for point ', &amp;<a name='1801'>
+                  i, k, enin(i), enout(i)<a name='1802'>
+#ifdef WRF_PORT<a name='1803'>
+               call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_577">(iulog)<a name='1804'>
+#endif<a name='1805'>
+               write(iulog,*) ' t, q, p, enin ', t(i,k), q(i,k), p(i,k), enin(i)<a name='1806'>
+#ifdef WRF_PORT<a name='1807'>
+               call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_578">(iulog)<a name='1808'>
+#endif<a name='1809'>
+               write(iulog,*) ' tsp, qsp, enout ', tsp(i,k), qsp(i,k), enout(i)<a name='1810'>
+#ifdef WRF_PORT<a name='1811'>
+               call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_579">(iulog)<a name='1812'>
+#endif<a name='1813'>
+               call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_shcu_camuwshcu.F.html#FINDSP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_7"> ('FINDSP')<a name='1814'>
+            endif<a name='1815'>
+         end do<a name='1816'>
+      endif<a name='1817'>
+      <a name='1818'>
+   end do                    <font color=#447700>! level loop (k=1,pver)<a name='1819'></font>
+<a name='1820'>
+   return<a name='1821'>
+end subroutine findsp<a name='1822'>
+#endif<a name='1823'>
+end module cldwat<a name='1824'>
+</pre></body></html>

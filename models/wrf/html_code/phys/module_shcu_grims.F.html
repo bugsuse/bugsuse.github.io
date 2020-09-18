@@ -1,0 +1,1239 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:model_layer:physics<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<font color=#447700>!<a name='4'></font>
+<font color=#447700>!<a name='5'></font>
+<font color=#447700>!<a name='6'></font>
+<A NAME='MODULE_SHCU_GRIMS'><A href='../../html_code/phys/module_shcu_grims.F.html#MODULE_SHCU_GRIMS' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='7'>
+<font color=#993300>module </font><font color=#cc0000>module_shcu_grims</font> <A href='../../call_to/MODULE_SHCU_GRIMS.html' TARGET='index'>2</A><a name='8'>
+<font color=#447700>!<a name='9'></font>
+   integer,parameter :: nxtdp = 5001<a name='10'>
+   integer,parameter :: nxthe = 241,nythe = 151<a name='11'>
+   integer,parameter :: nxma = 151,nyma = 121<a name='12'>
+   integer,parameter :: nxsvp = 7501<a name='13'>
+<font color=#447700>!<a name='14'></font>
+   real,parameter    :: t0c = 2.7315e+2<a name='15'>
+   real,parameter    :: psat = 6.1078e+2<a name='16'>
+   real,parameter    :: rd = 2.8705e+2<a name='17'>
+   real,parameter    :: rv = 4.6150e+2<a name='18'>
+   real,parameter    :: cp = 1.0046e+3<a name='19'>
+   real,parameter    :: hvap = 2.5000e+6<a name='20'>
+   real,parameter    :: cvap = 1.8460e+3<a name='21'>
+   real,parameter    :: cliq = 4.1855e+3<a name='22'>
+   real,parameter    :: cice = 2.1060E+3<a name='23'>
+   real,parameter    :: hsub = 2.8340E+6<a name='24'>
+   real,parameter    :: terrm = 1.e-4<a name='25'>
+<font color=#447700>!<a name='26'></font>
+   real,parameter    :: rocp=rd/cp<a name='27'>
+   real,parameter    :: cpor=cp/rd<a name='28'>
+   real,parameter    :: eps=rd/rv<a name='29'>
+   real,parameter    :: ttp=t0c+0.01<a name='30'>
+   real,parameter    :: psatk=psat*1.e-3<a name='31'>
+   real,parameter    :: psatb=psatk*1.e-2<a name='32'>
+   real,parameter    :: dldt=cvap-cliq,xa=-dldt/rv,xb=xa+hvap/(rv*ttp)<a name='33'>
+   real,parameter    :: dldti=cvap-cice,xai=-dldti/rv,xbi=xai+hsub/(rv*ttp)<a name='34'>
+<font color=#447700>!<a name='35'></font>
+   real,save         :: c1xma,c2xma,c1yma,c2yma,c1xpvs,c2xpvs<a name='36'>
+   real,save         :: c1xtdp,c2xtdp,c1xthe,c2xthe,c1ythe,c2ythe<a name='37'>
+   real,save         :: tbtdp(nxtdp)<a name='38'>
+   real,save         :: tbthe(nxthe,nythe)<a name='39'>
+   real,save         :: tbtma(nxma,nyma), tbqma(nxma,nyma)<a name='40'>
+   real,save         :: tbpvs(nxsvp)<a name='41'>
+contains<a name='42'>
+<font color=#447700>!<a name='43'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='44'></font>
+<A NAME='GRIMS'><A href='../../html_code/phys/module_shcu_grims.F.html#GRIMS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='45'>
+   <font color=#993300>subroutine </font><font color=#cc0000>grims</font>(qv3d,t3d,p3di,p3d,pi3d,z3di,                               &amp; <A href='../../call_to/GRIMS.html' TARGET='index'>1</A>,<A href='../../call_from/GRIMS.html' TARGET='index'>1</A><a name='46'>
+                    wstar,hpbl,delta,                                          &amp;<a name='47'>
+                    rthshten,rqvshten,                                         &amp;<a name='48'>
+                    dt,g,xlv,rd,rv,rcp,p1000mb,                                &amp;<a name='49'>
+                    kpbl2d,znu,raincv,                                         &amp;<a name='50'>
+                    ids,ide, jds,jde, kds,kde,                                 &amp;<a name='51'>
+                    ims,ime, jms,jme, kms,kme,                                 &amp;<a name='52'>
+                    its,ite, jts,jte, kts,kte)<a name='53'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='54'></font>
+   implicit none<a name='55'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='56'></font>
+<font color=#447700>!<a name='57'></font>
+<font color=#447700>! input argument<a name='58'></font>
+<font color=#447700>!<a name='59'></font>
+<font color=#447700>!-- qv3d        3d specific humidity (kgkg-1)<a name='60'></font>
+<font color=#447700>!-- t3d         3d temperature (k)<a name='61'></font>
+<font color=#447700>!-- p3di        3d pressure (pa) at interface level<a name='62'></font>
+<font color=#447700>!-- p3d         3d pressure (pa)<a name='63'></font>
+<font color=#447700>!-- pi3d        3d exner function (dimensionless)<a name='64'></font>
+<font color=#447700>!-- z3di        3d z at interface level (m)<a name='65'></font>
+<font color=#447700>!-- wstar       convective velocity scale (ms-1) from pbl<a name='66'></font>
+<font color=#447700>!-- hpbl        pbl height (m)<a name='67'></font>
+<font color=#447700>!-- delta       entrainment layer depth (m)<a name='68'></font>
+<font color=#447700>!-- rthshten    computed theta tendency due to shallow convection scheme<a name='69'></font>
+<font color=#447700>!-- rqvshten    computed q_v tendency due to shallow convection scheme<a name='70'></font>
+<font color=#447700>!-- dt          time step (s)<a name='71'></font>
+<font color=#447700>!-- g           acceleration due to gravity (m/s^2)<a name='72'></font>
+<font color=#447700>!-- xlv         latent heat of vaporization (j/kg)<a name='73'></font>
+<font color=#447700>!-- rd          gas constant for dry air (j/kg/k)<a name='74'></font>
+<font color=#447700>!-- rv          gas constant for water vapor (j/kg/k)<a name='75'></font>
+<font color=#447700>!-- kpbl2d      k-index for pbl top<a name='76'></font>
+<font color=#447700>!-- raincv      time-step precipitation from cumulus convection scheme<a name='77'></font>
+<font color=#447700>!-- znu         eta values (sigma values)<a name='78'></font>
+<font color=#447700>!-- ids         start index for i in domain<a name='79'></font>
+<font color=#447700>!-- ide         end index for i in domain<a name='80'></font>
+<font color=#447700>!-- jds         start index for j in domain<a name='81'></font>
+<font color=#447700>!-- jde         end index for j in domain<a name='82'></font>
+<font color=#447700>!-- kds         start index for k in domain<a name='83'></font>
+<font color=#447700>!-- kde         end index for k in domain<a name='84'></font>
+<font color=#447700>!-- ims         start index for i in memory<a name='85'></font>
+<font color=#447700>!-- ime         end index for i in memory<a name='86'></font>
+<font color=#447700>!-- jms         start index for j in memory<a name='87'></font>
+<font color=#447700>!-- jme         end index for j in memory<a name='88'></font>
+<font color=#447700>!-- kms         start index for k in memory<a name='89'></font>
+<font color=#447700>!-- kme         end index for k in memory<a name='90'></font>
+<font color=#447700>!-- its         start index for i in tile<a name='91'></font>
+<font color=#447700>!-- ite         end index for i in tile<a name='92'></font>
+<font color=#447700>!-- jts         start index for j in tile<a name='93'></font>
+<font color=#447700>!-- jte         end index for j in tile<a name='94'></font>
+<font color=#447700>!-- kts         start index for k in tile<a name='95'></font>
+<font color=#447700>!-- kte         end index for k in tile<a name='96'></font>
+<font color=#447700>!<a name='97'></font>
+<font color=#447700>! output argument<a name='98'></font>
+<font color=#447700>!-- rthshten    computed theta tendency due to shallow convection scheme<a name='99'></font>
+<font color=#447700>!-- rqvshten    computed q_v tendency due to shallow convection scheme<a name='100'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='101'></font>
+<font color=#447700>!<a name='102'></font>
+<font color=#447700>! local <a name='103'></font>
+<font color=#447700>!<a name='104'></font>
+<font color=#447700>!-- icps        cps index, =1 for deep convection<a name='105'></font>
+<font color=#447700>!-- pi2di       2d exner function at interface level (dimensionless)<a name='106'></font>
+<font color=#447700>!-- delp2di     2d pressuer depth (pa) between interface levels<a name='107'></font>
+<font color=#447700>!-- zl          2d z (m)<a name='108'></font>
+<font color=#447700>!-- t1          2d temperature (k) will be changed by shallow convection<a name='109'></font>
+<font color=#447700>!-- q1          2d specific humidity (kgkg-1) will be changed by shallow convection<a name='110'></font>
+<font color=#447700>!-- levshc      maximum k-level for shallow convection<a name='111'></font>
+<font color=#447700>!<a name='112'></font>
+   integer,  intent(in   )   ::      ids,ide, jds,jde, kds,kde,                &amp;<a name='113'>
+                                     ims,ime, jms,jme, kms,kme,                &amp;<a name='114'>
+                                     its,ite, jts,jte, kts,kte<a name='115'>
+<font color=#447700>!<a name='116'></font>
+   real,     intent(in   )   ::      dt,g,xlv,rd,rv,rcp,p1000mb<a name='117'>
+<font color=#447700>!<a name='118'></font>
+   integer,  dimension( ims:ime, jms:jme )                                   , &amp;<a name='119'>
+             intent(in   )   ::                                        kpbl2d<a name='120'>
+<font color=#447700>!<a name='121'></font>
+   real,     dimension( ims:ime, kms:kme, jms:jme )                          , &amp;<a name='122'>
+             intent(in   )   ::                                          qv3d, &amp;<a name='123'>
+                                                                          t3d, &amp;<a name='124'>
+                                                                         p3di, &amp;<a name='125'>
+                                                                          p3d, &amp;<a name='126'>
+                                                                         pi3d, &amp;<a name='127'>
+                                                                         z3di<a name='128'>
+<font color=#447700>!<a name='129'></font>
+   real,     dimension( ims:ime, jms:jme )                                   , &amp;<a name='130'>
+             intent(in   )   ::                                          hpbl, &amp;<a name='131'>
+                                                                        wstar, &amp;<a name='132'>
+                                                                        delta, &amp;<a name='133'>
+                                                                       raincv<a name='134'>
+<font color=#447700>!<a name='135'></font>
+   real,     dimension( kms:kme )                                            , &amp;<a name='136'>
+             intent(in   )   ::                                           znu<a name='137'>
+<font color=#447700>!<a name='138'></font>
+   real,     dimension( ims:ime, kms:kme, jms:jme )                          , &amp;<a name='139'>
+             optional                                                        , &amp;<a name='140'>
+             intent(inout)   ::                                      rthshten, &amp;<a name='141'>
+                                                                     rqvshten<a name='142'>
+<font color=#447700>!<a name='143'></font>
+<font color=#447700>!  local variables<a name='144'></font>
+<font color=#447700>!<a name='145'></font>
+   integer         ::  i,j,k,levshc<a name='146'>
+   real            ::  sigshc,rdelt<a name='147'>
+<font color=#447700>!<a name='148'></font>
+   integer,  dimension( its:ite )            ::                          icps<a name='149'>
+   real,     dimension( its:ite, kts:kte+1 ) ::                         pi2di<a name='150'>
+   real,     dimension( its:ite, kts:kte )   ::                       delp2di, &amp;<a name='151'>
+                                                                           zl, &amp;<a name='152'>
+                                                                           t1, &amp;<a name='153'>
+                                                                           q1<a name='154'>
+<font color=#447700>!<a name='155'></font>
+   rdelt = 1.0/dt<a name='156'>
+   sigshc = 0.6<a name='157'>
+   levshc = 0<a name='158'>
+<font color=#447700>!<a name='159'></font>
+   do k = kts,kte<a name='160'>
+     if(znu(k).gt.sigshc) levshc = k + 1<a name='161'>
+   enddo<a name='162'>
+<font color=#447700>!<a name='163'></font>
+   pi2di(:,:) = 0.0<a name='164'>
+   delp2di(:,:) = 0.0<a name='165'>
+   zl(:,:) = 0.0<a name='166'>
+   t1(:,:) = 0.0<a name='167'>
+   q1(:,:) = 0.0<a name='168'>
+<font color=#447700>!<a name='169'></font>
+   do j = jts,jte <font color=#447700>! outmost j loop<a name='170'></font>
+     icps(:) = 0<a name='171'>
+     do k = kts,kte<a name='172'>
+       do i = its,ite<a name='173'>
+         pi2di(i,k) = (p3di(i,k,j)/p1000mb)**rcp<a name='174'>
+       enddo<a name='175'>
+     enddo<a name='176'>
+     do i = its,ite<a name='177'>
+       pi2di(i,kte+1) = (p3di(i,kte+1,j)/p1000mb)**rcp<a name='178'>
+     enddo<a name='179'>
+<font color=#447700>!<a name='180'></font>
+     do k = kts,kte<a name='181'>
+       do i = its,ite<a name='182'>
+         delp2di(i,k) = p3di(i,k,j)-p3di(i,k+1,j)<a name='183'>
+         zl(i,k) = 0.5*(z3di(i,k,j)+z3di(i,k+1,j))<a name='184'>
+         t1(i,k) = t3d(i,k,j)<a name='185'>
+         q1(i,k) = qv3d(i,k,j)<a name='186'>
+       enddo<a name='187'>
+     enddo<a name='188'>
+<font color=#447700>!<a name='189'></font>
+     do i = its,ite<a name='190'>
+       if(raincv(i,j) .gt. 1.e-30) icps(i)=1<a name='191'>
+     enddo<a name='192'>
+<font color=#447700>!<a name='193'></font>
+     call <A href='../../html_code/phys/module_shcu_grims.F.html#GRIMS2D'>grims2d</A><A href='../../html_code/phys/module_shcu_grims.F.html#GRIMS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GRIMS2D_1">(q=q1(its,kts),t=t1(its,kts),prsi=p3di(ims,kms,j),            &amp;<a name='194'>
+              prsik=pi2di(its,kts),delprsi=delp2di(its,kts),                   &amp;<a name='195'>
+              prsl=p3d(ims,kms,j),prslk=pi3d(ims,kms,j),zl=zl(its,kts),        &amp;<a name='196'>
+              wstar=wstar(ims,j),hpbl=hpbl(ims,j),delta=delta(ims,j),          &amp;<a name='197'>
+              dt=dt,cp=cp,g=g,xlv=xlv,rd=rd,rv=rv,                             &amp;<a name='198'>
+              icps=icps(its),kpbl=kpbl2d(ims,j),levshc=levshc,                 &amp;<a name='199'>
+              ids=ids,ide=ide, jds=jds,jde=jde, kds=kds,kde=kde,               &amp;<a name='200'>
+              ims=ims,ime=ime, jms=jms,jme=jme, kms=kms,kme=kme,               &amp;<a name='201'>
+              its=its,ite=ite, jts=jts,jte=jte, kts=kts,kte=kte   )<a name='202'>
+<font color=#447700>!<a name='203'></font>
+     if(present(rthshten).and.present(rqvshten)) then<a name='204'>
+       do k = kts,kte<a name='205'>
+         do i = its,ite<a name='206'>
+           rthshten(i,k,j)=(t1(i,k)-t3d(i,k,j))/pi3d(i,k,j)*rdelt<a name='207'>
+           rqvshten(i,k,j)=(q1(i,k)-qv3d(i,k,j))*rdelt<a name='208'>
+         enddo<a name='209'>
+       enddo<a name='210'>
+     endif<a name='211'>
+<font color=#447700>!<a name='212'></font>
+   enddo <font color=#447700>! end outmost j loop<a name='213'></font>
+<font color=#447700>!<a name='214'></font>
+   end subroutine grims<a name='215'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='216'></font>
+<font color=#447700>!<a name='217'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='218'></font>
+<A NAME='GRIMS2D'><A href='../../html_code/phys/module_shcu_grims.F.html#GRIMS2D' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='219'>
+   <font color=#993300>subroutine </font><font color=#cc0000>grims2d</font>(q,t,prsi,prsik,delprsi,prsl,prslk,zl,                    &amp; <A href='../../call_to/GRIMS2D.html' TARGET='index'>1</A>,<A href='../../call_from/GRIMS2D.html' TARGET='index'>3</A><a name='220'>
+                       wstar,hpbl,delta,                                       &amp;<a name='221'>
+                       dt,cp,g,xlv,rd,rv,                                      &amp;<a name='222'>
+                       icps,kpbl,levshc,                                       &amp;<a name='223'>
+                       ids,ide, jds,jde, kds,kde,                              &amp;<a name='224'>
+                       ims,ime, jms,jme, kms,kme,                              &amp;<a name='225'>
+                       its,ite, jts,jte, kts,kte)<a name='226'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='227'></font>
+   implicit none<a name='228'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='229'></font>
+<font color=#447700>!<a name='230'></font>
+<font color=#447700>!<a name='231'></font>
+<font color=#447700>!   this scheme applies an eddy-diffusion approach within the shallow convective <a name='232'></font>
+<font color=#447700>!   layer defined by the moist static energy profile and is coupled to the <a name='233'></font>
+<font color=#447700>!   ysu pbl properties. this scheme names after the grims<a name='234'></font>
+<font color=#447700>!   shallow convection scheme since it was developed/evaluated in grims.<a name='235'></font>
+<font color=#447700>!<a name='236'></font>
+<font color=#447700>!   coded by song-you hong (yonsei university; ysu) and<a name='237'></font>
+<font color=#447700>!   implemented into wrf by jihyeon jang, hyeyum hailey shin, junhong lee (ysu), <a name='238'></font>
+<font color=#447700>!       and wei wang (ncar) winter 2012<a name='239'></font>
+<font color=#447700>!<a name='240'></font>
+<font color=#447700>! references:<a name='241'></font>
+<font color=#447700>!   hong et al. (2013, manuscript in preparation)<a name='242'></font>
+<font color=#447700>!   hong et al. (2013, asia-pacific j. atmos. sci.) the global/regional <a name='243'></font>
+<font color=#447700>!       integrated model system (grims) <a name='244'></font>
+<font color=#447700>!<a name='245'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='246'></font>
+<font color=#447700>!<a name='247'></font>
+   integer,  intent(in   ) ::     levshc,                                      &amp;<a name='248'>
+                                  ids,ide, jds,jde, kds,kde,                   &amp;<a name='249'>
+                                  ims,ime, jms,jme, kms,kme,                   &amp;<a name='250'>
+                                  its,ite, jts,jte, kts,kte<a name='251'>
+<font color=#447700>!<a name='252'></font>
+   real,     intent(in   ) ::     dt,cp,g,xlv,rd,rv<a name='253'>
+<font color=#447700>!<a name='254'></font>
+   integer,  dimension( ims:ime )                                            , &amp;<a name='255'>
+             intent(in   ) ::                                            kpbl<a name='256'>
+<font color=#447700>!<a name='257'></font>
+   real,     dimension( ims:ime, kms:kme )                                   , &amp;<a name='258'>
+             intent(in   ) ::                                            prsi<a name='259'>
+<font color=#447700>!<a name='260'></font>
+   real,     dimension( its:ite, kts:kte+1 )                                 , &amp;<a name='261'>
+             intent(in   ) ::                                           prsik <a name='262'>
+<font color=#447700>!<a name='263'></font>
+   real,     dimension( its:ite, kts:kte )                                   , &amp;<a name='264'>
+             intent(in   ) ::                                         delprsi, &amp;<a name='265'>
+                                                                           zl<a name='266'>
+<font color=#447700>!<a name='267'></font>
+   real,     dimension( ims:ime, kms:kme )                                   , &amp;<a name='268'>
+             intent(in   ) ::                                            prsl, &amp;<a name='269'>
+                                                                        prslk<a name='270'>
+<font color=#447700>!<a name='271'></font>
+   integer,     dimension( its:ite )                                         , &amp;<a name='272'>
+             intent(in   ) ::                                            icps<a name='273'>
+<font color=#447700>!<a name='274'></font>
+   real,     dimension( its:ite, kts:kte )                                   , &amp;<a name='275'>
+             intent(inout) ::                                               q, &amp;<a name='276'>
+                                                                            t<a name='277'>
+<font color=#447700>!<a name='278'></font>
+   real,     dimension( ims:ime )                                            , &amp;<a name='279'>
+             intent(in   ) ::                                            hpbl, &amp;<a name='280'>
+                                                                        wstar, &amp;<a name='281'>
+                                                                        delta<a name='282'>
+<font color=#447700>!<a name='283'></font>
+<font color=#447700>!  profile shape parameter<a name='284'></font>
+<font color=#447700>!<a name='285'></font>
+   real,parameter    ::  pfac = 3.<a name='286'>
+<font color=#447700>!<a name='287'></font>
+<font color=#447700>!  maximum and minimum diffusivity <a name='288'></font>
+<font color=#447700>!<a name='289'></font>
+   real,parameter    ::  xkzmax = 50., xkzmin = 0.001<a name='290'>
+<font color=#447700>!<a name='291'></font>
+<font color=#447700>!  maxium distance of a parcel to lcl (m)<a name='292'></font>
+<font color=#447700>!<a name='293'></font>
+   real,parameter    ::  zdiffcr1 = 1000., zdiffcr2 = 1000.<a name='294'>
+<font color=#447700>!<a name='295'></font>
+<font color=#447700>!  bounds of parcel origin<a name='296'></font>
+<font color=#447700>!<a name='297'></font>
+   integer,parameter    ::  kliftl=2,kliftu=2<a name='298'>
+<font color=#447700>!<a name='299'></font>
+<font color=#447700>!  scale factor for wstar<a name='300'></font>
+<font color=#447700>!<a name='301'></font>
+   real,parameter       ::  wsfac = 1.47<a name='302'>
+<font color=#447700>!<a name='303'></font>
+<font color=#447700>!  local variables and arrays<a name='304'></font>
+<font color=#447700>!<a name='305'></font>
+   logical              ::  lshc(its:ite),flg(ite-its+1)<a name='306'>
+   integer              ::  i,ik,ik1,iku,k,k1,k2,kt,n2<a name='307'>
+   integer              ::  index2(ite-its+1)<a name='308'>
+   integer              ::  klcl(ite-its+1),kbot(ite-its+1)<a name='309'>
+   integer              ::  ktop(ite-its+1)<a name='310'>
+   integer              ::  lmin(ite-its+1)<a name='311'>
+   integer              ::  kb(ite-its+1),kbcon(ite-its+1)<a name='312'>
+   real                 ::  eps,epsm1<a name='313'>
+   real                 ::  eldq,xkzh,cpdt,rtdls<a name='314'>
+   real                 ::  dmse,dtodsu,dtodsl,dsig,dsdz1,dsdz2<a name='315'>
+   real                 ::  q2((ite-its+1)*kte)<a name='316'>
+   real                 ::  t2((ite-its+1)*kte)<a name='317'>
+   real                 ::  al((ite-its+1)*(kte-1))<a name='318'>
+   real                 ::  ad((ite-its+1)*kte)<a name='319'>
+   real                 ::  au((ite-its+1)*(kte-1))<a name='320'>
+   real                 ::  delprsi2((ite-its+1)*kte)<a name='321'>
+   real                 ::  prsi2((ite-its+1)*kte),prsik2((ite-its+1)*kte)<a name='322'>
+   real                 ::  prsl2((ite-its+1)*kte),prslk2((ite-its+1)*kte)<a name='323'>
+   real                 ::  qeso2((ite-its+1)*kte),rh2(ite-its+1)<a name='324'>
+   real                 ::  depth(ite-its+1),zdiff1(ite-its+1),zdiff2(ite-its+1)<a name='325'>
+   real                 ::  hmin(ite-its+1),hmax(ite-its+1)<a name='326'>
+   real                 ::  z(1:(ite-its+1),kts:kte)<a name='327'>
+   real                 ::  heo(1:(ite-its+1),kts:kte)<a name='328'>
+   real                 ::  heso(1:(ite-its+1),kts:kte)<a name='329'>
+   real                 ::  pik,height,xkzfac<a name='330'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='331'></font>
+<font color=#447700>!<a name='332'></font>
+   eps   = rd/rv<a name='333'>
+   epsm1 = eps-1<a name='334'>
+<font color=#447700>!<a name='335'></font>
+   do i = its,ite<a name='336'>
+     lshc(i)=.false.<a name='337'>
+   enddo<a name='338'>
+<font color=#447700>!<a name='339'></font>
+<font color=#447700>!  check for moist static instability to trigger convection<a name='340'></font>
+<font color=#447700>!<a name='341'></font>
+   do k = kts,levshc-1<a name='342'>
+     do i = its,ite<a name='343'>
+       if(icps(i).eq.0.and.kpbl(i).ge.2) then<a name='344'>
+         eldq = xlv*(q(i,k)-q(i,k+1))<a name='345'>
+         cpdt = cp*(t(i,k)-t(i,k+1))<a name='346'>
+         rtdls = (prsl(i,k)-prsl(i,k+1))/prsi(i,k+1)*rd*0.5*(t(i,k)+t(i,k+1))<a name='347'>
+         dmse = eldq+cpdt-rtdls<a name='348'>
+         lshc(i) = lshc(i).or.dmse.gt.0.<a name='349'>
+       endif<a name='350'>
+     enddo<a name='351'>
+   enddo<a name='352'>
+   do i = its,ite<a name='353'>
+     if(wstar(i).lt.0.001) lshc(i)=.false.<a name='354'>
+   enddo<a name='355'>
+<font color=#447700>!<a name='356'></font>
+<font color=#447700>!  reset i-dimension for active clouds<a name='357'></font>
+<font color=#447700>!<a name='358'></font>
+   n2 = 0<a name='359'>
+   do i = its,ite<a name='360'>
+     if(lshc(i)) then<a name='361'>
+       n2 = n2+1<a name='362'>
+       index2(n2) = i<a name='363'>
+     endif<a name='364'>
+   enddo<a name='365'>
+<font color=#447700>!<a name='366'></font>
+   if(n2.eq.0) return<a name='367'>
+<font color=#447700>!<a name='368'></font>
+<font color=#447700>!  prepare the variables <a name='369'></font>
+<font color=#447700>!<a name='370'></font>
+   do k = kts,levshc<a name='371'>
+     do i = 1,n2<a name='372'>
+       if(lshc(index2(i))) then<a name='373'>
+         ik = (k-1)*n2+i<a name='374'>
+         pik = prsl(index2(i),k) <a name='375'>
+         q2(ik) = q(index2(i),k)<a name='376'>
+         t2(ik) = t(index2(i),k)<a name='377'>
+         delprsi2(ik) = delprsi(index2(i),k)<a name='378'>
+         prsi2(ik) = prsi(index2(i),k)<a name='379'>
+         prsl2(ik) = prsl(index2(i),k)<a name='380'>
+         prsik2(ik)= prsik(index2(i),k)<a name='381'>
+         prslk2(ik)= prslk(index2(i),k)<a name='382'>
+         z(i,k) = zl(index2(i),k)<a name='383'>
+         qeso2(ik) = <A href='../../html_code/phys/module_shcu_grims.F.html#FPVS_PA'>fpvs_pa</A><A href='../../html_code/phys/module_shcu_grims.F.html#GRIMS2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPVS_PA_1">(t2(ik)) <a name='384'>
+         qeso2(ik) = eps * qeso2(ik) / (pik + epsm1 * qeso2(ik))<a name='385'>
+         qeso2(ik) = max(qeso2(ik),1.E-8)<a name='386'>
+         heo(i,k)  = g * z(i,k) + cp* t2(ik) + xlv * q2(ik)<a name='387'>
+         heso(i,k) = g * z(i,k) + cp* t2(ik) + xlv * qeso2(ik)<a name='388'>
+       endif<a name='389'>
+     enddo<a name='390'>
+   enddo<a name='391'>
+<font color=#447700>!<a name='392'></font>
+<font color=#447700>! determine largest moist static energy for updraft originating level<a name='393'></font>
+<font color=#447700>!<a name='394'></font>
+   do i = 1,n2<a name='395'>
+     if(lshc(index2(i))) then<a name='396'>
+       hmax(i) = heo(i,1)<a name='397'>
+       kb(i) = 1<a name='398'>
+       kbcon(i) = levshc<a name='399'>
+       flg(i) = .true.<a name='400'>
+       zdiff1(i) = -1.0<a name='401'>
+       zdiff2(i) = -1.0<a name='402'>
+     endif<a name='403'>
+   enddo<a name='404'>
+<font color=#447700>!<a name='405'></font>
+   do k = kts+1,levshc-1<a name='406'>
+     do i = 1,n2<a name='407'>
+       if(lshc(index2(i))) then<a name='408'>
+         if(heo(i,k).gt.hmax(i).and.k.le.kpbl(index2(i))) then<a name='409'>
+           kb(i) = k<a name='410'>
+           hmax(i) = heo(i,k)<a name='411'>
+         endif<a name='412'>
+       endif<a name='413'>
+     enddo<a name='414'>
+   enddo<a name='415'>
+<font color=#447700>!<a name='416'></font>
+<font color=#447700>! check the buoyancy of a parcel by the distance to lcl and lfc<a name='417'></font>
+<font color=#447700>!<a name='418'></font>
+   do k = kts+1,levshc-1<a name='419'>
+     do i = 1,n2<a name='420'>
+       if(lshc(index2(i)).and.flg(i)) then<a name='421'>
+         if(k.gt.kb(i).and.heo(i,kb(i)).gt.heso(i,k)) then<a name='422'>
+           flg(i) = .false.<a name='423'>
+           kbcon(i) = k<a name='424'>
+         endif<a name='425'>
+       endif<a name='426'>
+     enddo<a name='427'>
+   enddo<a name='428'>
+<font color=#447700>!<a name='429'></font>
+   do i = 1,n2<a name='430'>
+     if(lshc(index2(i))) then<a name='431'>
+       zdiff1(i) = z(i,kpbl(index2(i)))-z(i,kb(i))<a name='432'>
+       zdiff2(i) = z(i,kbcon(i))-z(i,kb(I))<a name='433'>
+       if(zdiff1(i).gt.zdiffcr1.or.zdiff1(i).lt.0.) lshc(index2(i)) = .false.<a name='434'>
+       if(zdiff2(i).gt.zdiffcr2) lshc(index2(i)) = .false.<a name='435'>
+     endif<a name='436'>
+   enddo<a name='437'>
+<font color=#447700>!<a name='438'></font>
+<font color=#447700>!  compute moist adiabat and determine cloud top<a name='439'></font>
+<font color=#447700>!<a name='440'></font>
+   call <A href='../../html_code/phys/module_shcu_grims.F.html#PHYS_MOIST_ADIABAT_PA'>phys_moist_adiabat_pa</A><A href='../../html_code/phys/module_shcu_grims.F.html#GRIMS2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHYS_MOIST_ADIABAT_PA_1">(n2,levshc-1,kliftl,kliftu,                       &amp;<a name='441'>
+                           prsl2,prsik2,prslk2,t2,q2,                          &amp;<a name='442'>
+                           klcl,kbot,ktop,al,au,rd,rv,                         &amp;<a name='443'>
+                            ids,ide, jds,jde, kds,kde,                         &amp;<a name='444'>
+                            ims,ime, jms,jme, kms,kme,                         &amp;<a name='445'>
+                            its,ite, jts,jte, kts,kte)<a name='446'>
+<font color=#447700>!<a name='447'></font>
+   do i = 1,n2<a name='448'>
+     if(lshc(index2(i))) then<a name='449'>
+       kbot(i) = max(kpbl(index2(i)),2)<a name='450'>
+       kbot(i) = min(kbot(i),levshc)<a name='451'>
+       ktop(i) = ktop(i)+1<a name='452'>
+     endif<a name='453'>
+   enddo<a name='454'>
+<font color=#447700>!<a name='455'></font>
+<font color=#447700>!  revise the cloud top below minimum moist static energy<a name='456'></font>
+<font color=#447700>!<a name='457'></font>
+   do i = 1,n2<a name='458'>
+     if(lshc(index2(i))) then<a name='459'>
+       hmin(i) = heo(i,kbot(i))<a name='460'>
+       lmin(i) = levshc<a name='461'>
+     endif<a name='462'>
+   enddo<a name='463'>
+<font color=#447700>!<a name='464'></font>
+   do k = kts,levshc<a name='465'>
+     do i = 1,n2<a name='466'>
+       if(lshc(index2(i))) then<a name='467'>
+         if(heo(i,k).lt.hmin(i).and.k.ge.kbot(i).and.k.le.ktop(i)) then<a name='468'>
+           lmin(i) = k + 1<a name='469'>
+           hmin(i) = heo(i,k)<a name='470'>
+         endif<a name='471'>
+       endif<a name='472'>
+     enddo<a name='473'>
+   enddo<a name='474'>
+<font color=#447700>!<a name='475'></font>
+   do i = 1,n2<a name='476'>
+     if(lshc(index2(i))) then<a name='477'>
+       ktop(i) = min(ktop(i),lmin(i))<a name='478'>
+     endif<a name='479'>
+   enddo<a name='480'>
+<font color=#447700>!<a name='481'></font>
+   do i = 1,n2<a name='482'>
+     if(lshc(index2(i))) then<a name='483'>
+       if((ktop(i)-kbot(i)).le.1) then<a name='484'>
+         lshc(index2(i)) = .false.<a name='485'>
+       endif<a name='486'>
+     endif<a name='487'>
+   enddo<a name='488'>
+<font color=#447700>!<a name='489'></font>
+<font color=#447700>!  compute diffusion properties<a name='490'></font>
+<font color=#447700>!<a name='491'></font>
+   do i = 1,n2<a name='492'>
+     if(lshc(index2(i))) then<a name='493'>
+       k = kbot(i)-1<a name='494'>
+       ik=(k-1)*n2+i<a name='495'>
+       rh2(i) = q2(ik)/qeso2(ik)<a name='496'>
+     endif<a name='497'>
+   enddo<a name='498'>
+<font color=#447700>!<a name='499'></font>
+   k1 = levshc+1<a name='500'>
+   k2 = 0<a name='501'>
+   do i = 1,n2<a name='502'>
+     if(.not.lshc(index2(i))) then<a name='503'>
+       kbot(i) = levshc+1<a name='504'>
+       ktop(i) = 0<a name='505'>
+     else<a name='506'>
+       depth(i) = z(i,ktop(i))-z(i,kbot(i))<a name='507'>
+     endif<a name='508'>
+     k1 = min(k1,kbot(i))<a name='509'>
+     k2 = max(k2,ktop(i))<a name='510'>
+   enddo<a name='511'>
+   kt = k2-k1+1<a name='512'>
+   if(kt.lt.2) return<a name='513'>
+<font color=#447700>!<a name='514'></font>
+<font color=#447700>!  set eddy viscosity coefficient xkzh at sigma interfaces<a name='515'></font>
+<font color=#447700>!<a name='516'></font>
+   do i = 1,n2<a name='517'>
+     ik = (k1-1)*n2+i<a name='518'>
+     ad(ik) = 1.<a name='519'>
+   enddo<a name='520'>
+<font color=#447700>!<a name='521'></font>
+   do k = kts,levshc-1<a name='522'>
+     do i = 1,n2<a name='523'>
+       if(k.ge.kbot(i).and.k.lt.ktop(i)) then<a name='524'>
+         ik = (k-1)*n2+i<a name='525'>
+         iku = k*n2+i<a name='526'>
+         rtdls = (prsl2(ik)-prsl2(iku))/prsi2(iku)*rd*0.5*(t2(ik)+t2(iku))<a name='527'>
+         au(ik) = g/rtdls<a name='528'>
+       endif<a name='529'>
+     enddo<a name='530'>
+   enddo<a name='531'>
+<font color=#447700>!<a name='532'></font>
+   do k = k1,k2-1<a name='533'>
+     do i = 1,n2<a name='534'>
+       ik = (k-1)*n2+i<a name='535'>
+       iku = k*n2+i<a name='536'>
+       dtodsl = 2.*dt/delprsi2(ik)<a name='537'>
+       dtodsu = 2.*dt/delprsi2(iku)<a name='538'>
+       dsig = prsl2(ik)-prsl2(iku)<a name='539'>
+       if(k.ge.kbot(i).and.k.lt.ktop(i)) then<a name='540'>
+         height = z(i,k)-z(i,kbot(i))<a name='541'>
+         xkzfac = rh2(i)*wsfac*wstar(index2(i))*delta(index2(i))<a name='542'>
+         xkzh = min(max(xkzfac*(1.-(height+hpbl(index2(i)))                    &amp;<a name='543'>
+                /(depth(i)+hpbl(index2(i))))**pfac,xkzmin),xkzmax)<a name='544'>
+       else<a name='545'>
+         xkzh = 0.<a name='546'>
+       endif<a name='547'>
+       dsdz1 = xkzh*dsig*au(ik)*g/cp<a name='548'>
+       dsdz2 = xkzh*dsig*au(ik)*au(ik)<a name='549'>
+       au(ik) = -dtodsl*dsdz2<a name='550'>
+       al(ik) = -dtodsu*dsdz2<a name='551'>
+       ad(ik) = ad(ik)-au(ik)<a name='552'>
+       ad(iku) = 1.-al(ik)<a name='553'>
+       t2(ik) = t2(ik)+dtodsl*dsdz1<a name='554'>
+       t2(iku) = t2(iku)-dtodsu*dsdz1<a name='555'>
+     enddo<a name='556'>
+   enddo<a name='557'>
+<font color=#447700>!<a name='558'></font>
+<font color=#447700>!  solve tri-diagonal matrix<a name='559'></font>
+<font color=#447700>!<a name='560'></font>
+   ik1 = (k1-1)*n2+1<a name='561'>
+   call <A href='../../html_code/phys/module_shcu_grims.F.html#SCV_TRI_DIAGONAL_GRIMS'>scv_tri_diagonal_grims</A><A href='../../html_code/phys/module_shcu_grims.F.html#GRIMS2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SCV_TRI_DIAGONAL_GRIMS_1">(n2,n2,kt,al(ik1),ad(ik1),au(ik1),               &amp;<a name='562'>
+                                q2(ik1),t2(ik1),au(ik1),q2(ik1),t2(ik1))<a name='563'>
+<font color=#447700>!<a name='564'></font>
+<font color=#447700>!  feedback to large-scale variables  <a name='565'></font>
+<font color=#447700>!<a name='566'></font>
+   do k = k1,k2<a name='567'>
+     do i = 1,n2<a name='568'>
+       if(lshc(index2(i))) then<a name='569'>
+         ik = (k-1)*n2+i<a name='570'>
+         q(index2(i),k) = q2(ik)<a name='571'>
+         t(index2(i),k) = t2(ik)<a name='572'>
+       endif<a name='573'>
+     enddo<a name='574'>
+   enddo<a name='575'>
+<font color=#447700>!<a name='576'></font>
+   return<a name='577'>
+   end subroutine grims2d<a name='578'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='579'></font>
+<font color=#447700>!<a name='580'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='581'></font>
+<A NAME='SCV_TRI_DIAGONAL_GRIMS'><A href='../../html_code/phys/module_shcu_grims.F.html#SCV_TRI_DIAGONAL_GRIMS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='582'>
+   <font color=#993300>subroutine </font><font color=#cc0000>scv_tri_diagonal_grims</font>(lons2,l,n,cl,cm,cu,r1,r2,au,a1,a2) <A href='../../call_to/SCV_TRI_DIAGONAL_GRIMS.html' TARGET='index'>1</A><a name='583'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='584'></font>
+<font color=#447700>!<a name='585'></font>
+<font color=#447700>! subprogram:  scv_tri_diagonal    <a name='586'></font>
+<font color=#447700>!                                                                               <a name='587'></font>
+<font color=#447700>! abstract: this routine solves multiple tridiagonal matrix problems            <a name='588'></font>
+<font color=#447700>!   with 2 right-hand-side and solution vectors for every matrix.               <a name='589'></font>
+<font color=#447700>!   the solutions are found by eliminating off-diagonal coefficients,           <a name='590'></font>
+<font color=#447700>!   marching first foreward then backward along the matrix diagonal.            <a name='591'></font>
+<font color=#447700>!   the computations are vectorized around the number of matrices.              <a name='592'></font>
+<font color=#447700>!   no checks are made for zeroes on the diagonal or singularity.               <a name='593'></font>
+<font color=#447700>!                                                                               <a name='594'></font>
+<font color=#447700>! program history log:                                                          <a name='595'></font>
+<font color=#447700>!   1991-05-07  iredell                                                           <a name='596'></font>
+<font color=#447700>!   2009-03-01  jung-eun kim         fortran 90 and modules<a name='597'></font>
+<font color=#447700>!                                                                               <a name='598'></font>
+<font color=#447700>! usage:    call scv_tri_diagonal(l,n,cl,cm,cu,r1,r2,au,a1,a2)      <a name='599'></font>
+<font color=#447700>!                                                                               <a name='600'></font>
+<font color=#447700>!   input argument list:                                                        <a name='601'></font>
+<font color=#447700>!     l        - integer number of tridiagonal matrices                         <a name='602'></font>
+<font color=#447700>!     n        - integer order of the matrices                                  <a name='603'></font>
+<font color=#447700>!     cl       - real (l,2:n) lower diagonal matrix elements                    <a name='604'></font>
+<font color=#447700>!     cm       - real (l,n) main diagonal matrix elements                       <a name='605'></font>
+<font color=#447700>!     cu       - real (l,n-1) upper diagonal matrix elements                    <a name='606'></font>
+<font color=#447700>!                (may be equivalent to au if no longer needed)                  <a name='607'></font>
+<font color=#447700>!     r1       - real (l,n) 1st right-hand-side vector elements                 <a name='608'></font>
+<font color=#447700>!                (may be equivalent to a1 if no longer needed)                  <a name='609'></font>
+<font color=#447700>!     r2       - real (l,n) 2nd right-hand-side vector elements                 <a name='610'></font>
+<font color=#447700>!                (may be equivalent to a2 if no longer needed)                  <a name='611'></font>
+<font color=#447700>!                                                                               <a name='612'></font>
+<font color=#447700>!   output argument list:                                                       <a name='613'></font>
+<font color=#447700>!     au       - real (l,n-1) work array                                        <a name='614'></font>
+<font color=#447700>!     a1       - real (l,n) 1st solution vector elements                        <a name='615'></font>
+<font color=#447700>!     a2       - real (l,n) 2nd solution vector elements                        <a name='616'></font>
+<font color=#447700>!                                                                               <a name='617'></font>
+<font color=#447700>! remarks: this routine can be easily modified to solve a different             <a name='618'></font>
+<font color=#447700>!   number of right-hand-sides and solutions per matrix besides 2.              <a name='619'></font>
+<font color=#447700>!                                                                               <a name='620'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='621'></font>
+   implicit none<a name='622'>
+   integer              ::  lons2,l,n,i,k<a name='623'>
+   real                 ::  fk<a name='624'>
+   real                 ::  cl(l,2:n),cm(l,n),cu(l,n-1),r1(l,n),r2(l,n),       &amp;<a name='625'>
+                            au(l,n-1),a1(l,n),a2(l,n)<a name='626'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='627'></font>
+   do i = 1,lons2<a name='628'>
+     fk = 1./cm(i,1)                                                           <a name='629'>
+     au(i,1)= fk*cu(i,1)                                                      <a name='630'>
+     a1(i,1)= fk*r1(i,1)                                                      <a name='631'>
+     a2(i,1)= fk*r2(i,1)                                                      <a name='632'>
+   enddo                                                                     <a name='633'>
+<font color=#447700>!<a name='634'></font>
+   do k = 2,n-1                                                                <a name='635'>
+     do i = 1,lons2<a name='636'>
+       fk = 1./(cm(i,k)-cl(i,k)*au(i,k-1))                                     <a name='637'>
+       au(i,k) = fk*cu(i,k)                                                    <a name='638'>
+       a1(i,k) = fk*(r1(i,k)-cl(i,k)*a1(i,k-1))                                <a name='639'>
+       a2(i,k) = fk*(r2(i,k)-cl(i,k)*a2(i,k-1))                                <a name='640'>
+     enddo                                                                   <a name='641'>
+   enddo                                                                     <a name='642'>
+<font color=#447700>!<a name='643'></font>
+   do i = 1,lons2<a name='644'>
+     fk = 1./(cm(i,n)-cl(i,n)*au(i,n-1))                                       <a name='645'>
+     a1(i,n) = fk*(r1(i,n)-cl(i,n)*a1(i,n-1))                                  <a name='646'>
+     a2(i,n) = fk*(r2(i,n)-cl(i,n)*a2(i,n-1))                                  <a name='647'>
+   enddo                                                                     <a name='648'>
+   do k = n-1,1,-1                                                             <a name='649'>
+     do i = 1,lons2<a name='650'>
+       a1(i,k) = a1(i,k)-au(i,k)*a1(i,k+1)                                     <a name='651'>
+       a2(i,k) = a2(i,k)-au(i,k)*a2(i,k+1)                                     <a name='652'>
+     enddo                                                                   <a name='653'>
+   enddo                                                                     <a name='654'>
+<font color=#447700>!<a name='655'></font>
+   return                                                                    <a name='656'>
+   end subroutine scv_tri_diagonal_grims<a name='657'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='658'></font>
+<font color=#447700>!<a name='659'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='660'></font>
+<A NAME='PHYS_MOIST_ADIABAT_PA'><A href='../../html_code/phys/module_shcu_grims.F.html#PHYS_MOIST_ADIABAT_PA' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='661'>
+   <font color=#993300>subroutine </font><font color=#cc0000>phys_moist_adiabat_pa</font>(ilev,klev,k1,k2,                           &amp; <A href='../../call_to/PHYS_MOIST_ADIABAT_PA.html' TARGET='index'>1</A>,<A href='../../call_from/PHYS_MOIST_ADIABAT_PA.html' TARGET='index'>2</A><a name='662'>
+                                 prsl,prsik,prslk,tenv,qenv,                   &amp;<a name='663'>
+                                 klcl,kbot,ktop,tcld,qcld,rd,rv,               &amp;<a name='664'>
+                                      ids,ide, jds,jde, kds,kde,               &amp;<a name='665'>
+                                      ims,ime, jms,jme, kms,kme,               &amp;<a name='666'>
+                                      its,ite, jts,jte, kts,kte)<a name='667'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='668'></font>
+<font color=#447700>!<a name='669'></font>
+<font color=#447700>! subprogram: phys_moist_adiabat_pa<a name='670'></font>
+<font color=#447700>!<a name='671'></font>
+<font color=#447700>! abstract: <a name='672'></font>
+<font color=#447700>! - compute moist adiabatic cloud soundings<a name='673'></font>
+<font color=#447700>! - atmospheric columns of temperature and specific humidity<a name='674'></font>
+<font color=#447700>!   are examined by this routine for conditional instability.<a name='675'></font>
+<font color=#447700>!   the test parcel is chosen from the layer between layers k1 and k2<a name='676'></font>
+<font color=#447700>!   that has the warmest potential wet-bulb temperature.<a name='677'></font>
+<font color=#447700>!   excess cloud temperatures and specific humidities are returned<a name='678'></font>
+<font color=#447700>!   where the lifted parcel is found to be buoyant.<a name='679'></font>
+<font color=#447700>!   fast inlinable functions are invoked to compute<a name='680'></font>
+<font color=#447700>!   dewpoint and lifting condensation level temperatures,<a name='681'></font>
+<font color=#447700>!   equivalent potential temperature at the lcl, and<a name='682'></font>
+<font color=#447700>!   temperature and specific humidity of the ascending parcel.<a name='683'></font>
+<font color=#447700>!<a name='684'></font>
+<font color=#447700>! program history log:<a name='685'></font>
+<font color=#447700>!   1983-11-01  phillips<a name='686'></font>
+<font color=#447700>!   1991-05-07  iredell                arguments changed, code tidied<a name='687'></font>
+<font color=#447700>!   2000-01-01  song-you hong          physcis options<a name='688'></font>
+<font color=#447700>!   2009-10-01  jung-eun kim           f90 format with standard physics modules<a name='689'></font>
+<font color=#447700>!   2010-07-01  myung-seo koo          dimension allocatable with namelist input<a name='690'></font>
+<font color=#447700>!<a name='691'></font>
+<font color=#447700>! usage:  call phys_moist_adiabat_pa(ilev,klev,k1,k2,                          &amp;<a name='692'></font>
+<font color=#447700>!                                 prsl,prslk,prsik,tenv,qenv,                  &amp;<a name='693'></font>
+<font color=#447700>!                                 klcl,kbot,ktop,tcld,qcld,rd,rv,              &amp;<a name='694'></font>
+<font color=#447700>!                                      ids,ide, jds,jde, kds,kde,              &amp;<a name='695'></font>
+<font color=#447700>!                                      ims,ime, jms,jme, kms,kme,              &amp;<a name='696'></font>
+<font color=#447700>!                                      its,ite, jts,jte, kts,kte)<a name='697'></font>
+<font color=#447700>!<a name='698'></font>
+<font color=#447700>!   input argument list:<a name='699'></font>
+<font color=#447700>!     ilev         - integer number of atmospheric columns<a name='700'></font>
+<font color=#447700>!     klev         - integer number of sigma levels in a column<a name='701'></font>
+<font color=#447700>!     k1           - integer lowest level from which a parcel can originate<a name='702'></font>
+<font color=#447700>!     k2           - integer highest level from which a parcel can originate<a name='703'></font>
+<font color=#447700>!     prsl         - real (ilev,klev) pressure values<a name='704'></font>
+<font color=#447700>!     prslk,prsik  - real (ilev,klev) pressure values to the kappa<a name='705'></font>
+<font color=#447700>!     tenv         - real (ilev,klev) environment temperatures<a name='706'></font>
+<font color=#447700>!     qenv         - real (ilev,klev) environment specific humidities<a name='707'></font>
+<font color=#447700>!<a name='708'></font>
+<font color=#447700>!   output argument list:<a name='709'></font>
+<font color=#447700>!     klcl     - integer (ilev) level just above lcl (klev+1 if no lcl)<a name='710'></font>
+<font color=#447700>!     kbot     - integer (ilev) level just above cloud bottom<a name='711'></font>
+<font color=#447700>!     ktop     - integer (ilev) level just below cloud top<a name='712'></font>
+<font color=#447700>!              - note that kbot(i) gt ktop(i) if no cloud.<a name='713'></font>
+<font color=#447700>!     tcld     - real (ilev,klev) of excess cloud temperatures.<a name='714'></font>
+<font color=#447700>!                (parcel t minus environ t, or 0. where no cloud)<a name='715'></font>
+<font color=#447700>!     qcld     - real (ilev,klev) of excess cloud specific humidities.<a name='716'></font>
+<font color=#447700>!                (parcel q minus environ q, or 0. where no cloud)<a name='717'></font>
+<font color=#447700>!<a name='718'></font>
+<font color=#447700>! subprograms called:<a name='719'></font>
+<font color=#447700>!     ftdp     - function to compute dewpoint temperature<a name='720'></font>
+<font color=#447700>!     ftlcl    - function to compute lcl temperature<a name='721'></font>
+<font color=#447700>!     fthe     - function to compute equivalent potential temperature<a name='722'></font>
+<font color=#447700>!     ftma     - function to compute parcel temperature and humidity<a name='723'></font>
+<font color=#447700>!<a name='724'></font>
+<font color=#447700>! remarks: all functions are inlined by fpp.<a name='725'></font>
+<font color=#447700>!          nonstandard automatic arrays are used.<a name='726'></font>
+<font color=#447700>!<a name='727'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='728'></font>
+   implicit none<a name='729'>
+<font color=#447700>!<a name='730'></font>
+   integer,parameter    ::  nx=151,ny=121<a name='731'>
+   integer              ::  ilev,klev,k1,k2<a name='732'>
+   real                 ::  prsl(ilev,klev),prslk(ilev,klev),prsik(ilev,klev)<a name='733'>
+   real                 ::  tenv(ilev,klev),qenv(ilev,klev)<a name='734'>
+   integer              ::  klcl(ilev),kbot(ilev),ktop(ilev)<a name='735'>
+   real                 ::  tcld(ilev,klev),qcld(ilev,klev)<a name='736'>
+   real                 ::  rd,rv<a name='737'>
+   integer              ::  ids,ide, jds,jde, kds,kde,                         &amp;<a name='738'>
+                            ims,ime, jms,jme, kms,kme,                         &amp;<a name='739'>
+                            its,ite, jts,jte, kts,kte<a name='740'>
+<font color=#447700>!<a name='741'></font>
+<font color=#447700>!  local arrays<a name='742'></font>
+<font color=#447700>!<a name='743'></font>
+   real                 ::  slkma(ilev)<a name='744'>
+   real                 ::  thema(ilev)<a name='745'>
+   real                 ::  pv,tdpd<a name='746'>
+   real                 ::  slklcl,thelcl,tlcl<a name='747'>
+   real                 ::  xj,yj<a name='748'>
+   real                 ::  ftx1,ftx2,ftma1,qx1,qx2,qma,tma,tvcld,tvenv<a name='749'>
+   real                 ::  eps,epsm1,ftv<a name='750'>
+   integer              ::  i,k,jx,jy<a name='751'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='752'></font>
+<font color=#447700>!<a name='753'></font>
+<font color=#447700>!  compute parameters<a name='754'></font>
+<font color=#447700>!   <a name='755'></font>
+   eps=rd/rv<a name='756'>
+   epsm1=rd/rv-1.<a name='757'>
+   ftv=rv/rd-1.<a name='758'>
+<font color=#447700>!<a name='759'></font>
+<font color=#447700>!  determine warmest potential wet-bulb temperature between k1 and k2.<a name='760'></font>
+<font color=#447700>!  compute its lifting condensation level.<a name='761'></font>
+<font color=#447700>!  <a name='762'></font>
+   do i = 1,ilev<a name='763'>
+     slkma(i)=0.<a name='764'>
+     thema(i)=0.<a name='765'>
+   enddo<a name='766'>
+<font color=#447700>!<a name='767'></font>
+   do k = k1,k2<a name='768'>
+     do i = 1,ilev<a name='769'>
+       pv=prsl(i,k)*1.e-3*qenv(i,k)/(eps-epsm1*qenv(i,k))<a name='770'>
+       tdpd=tenv(i,k)-ftdp(pv)<a name='771'>
+       if(tdpd.gt.0.) then<a name='772'>
+         tlcl=<A href='../../html_code/phys/module_shcu_grims.F.html#FTLCL'>ftlcl</A><A href='../../html_code/phys/module_shcu_grims.F.html#PHYS_MOIST_ADIABAT_PA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FTLCL_3">(tenv(i,k),tdpd)<a name='773'>
+         slklcl=prslk(i,k)/prsik(i,1)*tlcl/tenv(i,k)<a name='774'>
+       else<a name='775'>
+         tlcl=tenv(i,k)<a name='776'>
+         slklcl=prslk(i,k)/prsik(i,1)<a name='777'>
+       endif<a name='778'>
+       thelcl=<A href='../../html_code/phys/module_shcu_grims.F.html#FTHE'>fthe</A><A href='../../html_code/phys/module_shcu_grims.F.html#PHYS_MOIST_ADIABAT_PA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FTHE_3">(tlcl,slklcl*prsik(i,1))<a name='779'>
+       if(thelcl.gt.thema(i)) then<a name='780'>
+         slkma(i)=slklcl<a name='781'>
+         thema(i)=thelcl<a name='782'>
+       endif<a name='783'>
+     enddo<a name='784'>
+   enddo<a name='785'>
+<font color=#447700>!<a name='786'></font>
+<font color=#447700>!  set cloud temperatures and humidities wherever the parcel lifted up<a name='787'></font>
+<font color=#447700>!  the moist adiabat is buoyant with respect to the environment.<a name='788'></font>
+<font color=#447700>!  <a name='789'></font>
+   do i = 1,ilev<a name='790'>
+     klcl(i)=klev+1<a name='791'>
+     kbot(i)=klev+1<a name='792'>
+     ktop(i)=0<a name='793'>
+   enddo<a name='794'>
+<font color=#447700>!<a name='795'></font>
+   do k = kts,klev<a name='796'>
+     do i = 1,ilev<a name='797'>
+       tcld(i,k)=0.<a name='798'>
+       qcld(i,k)=0.<a name='799'>
+     enddo<a name='800'>
+   enddo<a name='801'>
+<font color=#447700>!<a name='802'></font>
+   do k = k1,klev<a name='803'>
+     do i = 1,ilev<a name='804'>
+       if(prslk(i,k)/prsik(i,1).le.slkma(i)) then<a name='805'>
+         klcl(i)=min(klcl(i),k)<a name='806'>
+<font color=#447700>!<a name='807'></font>
+<font color=#447700>! insert ftma   tma=ftma(thema(i),prslk(i,k),qma)<a name='808'></font>
+<font color=#447700>!<a name='809'></font>
+         xj=min(max(c1xma+c2xma*thema(i),1.),float(nx))<a name='810'>
+         yj=min(max(c1yma+c2yma*prslk(i,k),1.),float(ny))<a name='811'>
+         jx=min(xj,nx-1.)<a name='812'>
+         jy=min(yj,ny-1.)<a name='813'>
+         ftx1=tbtma(jx,jy)+(xj-jx)*(tbtma(jx+1,jy)-tbtma(jx,jy))<a name='814'>
+         ftx2=tbtma(jx,jy+1)+(xj-jx)*(tbtma(jx+1,jy+1)-tbtma(jx,jy+1))<a name='815'>
+         ftma1=ftx1+(yj-jy)*(ftx2-ftx1)<a name='816'>
+         qx1=tbqma(jx,jy)+(xj-jx)*(tbqma(jx+1,jy)-tbqma(jx,jy))<a name='817'>
+         qx2=tbqma(jx,jy+1)+(xj-jx)*(tbqma(jx+1,jy+1)-tbqma(jx,jy+1))<a name='818'>
+         qma=qx1+(yj-jy)*(qx2-qx1)<a name='819'>
+         tma=ftma1<a name='820'>
+<font color=#447700>!<a name='821'></font>
+         tvcld=tma*(1.+ftv*qma)<a name='822'>
+         tvenv=tenv(i,k)*(1.+ftv*qenv(i,k))<a name='823'>
+         if(tvcld.gt.tvenv) then<a name='824'>
+           kbot(i)=min(kbot(i),k)<a name='825'>
+           ktop(i)=max(ktop(i),k)<a name='826'>
+           tcld(i,k)=tma-tenv(i,k)<a name='827'>
+           qcld(i,k)=qma-qenv(i,k)<a name='828'>
+         endif<a name='829'>
+       endif<a name='830'>
+     enddo<a name='831'>
+   enddo<a name='832'>
+<font color=#447700>!<a name='833'></font>
+   return<a name='834'>
+   end subroutine phys_moist_adiabat_pa<a name='835'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='836'></font>
+<font color=#447700>!<a name='837'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='838'></font>
+<A NAME='FTDP'><A href='../../html_code/phys/module_shcu_grims.F.html#FTDP' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='839'>
+   <font color=#993300>function </font><font color=#cc0000>ftdp</font>(pv) <A href='../../call_to/FTDP.html' TARGET='index'>1</A>,<A href='../../call_from/FTDP.html' TARGET='index'>1</A><a name='840'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='841'></font>
+   implicit none<a name='842'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='843'></font>
+   real             :: ftdp<a name='844'>
+<font color=#447700>!<a name='845'></font>
+   integer          :: jx<a name='846'>
+   real             :: xj<a name='847'>
+   real             :: xmax,xmin,xinc<a name='848'>
+   real             :: pv<a name='849'>
+<font color=#447700>!<a name='850'></font>
+   xmin= 0.001<a name='851'>
+   xmax=10.001<a name='852'>
+   xinc=(xmax-xmin)/(nxtdp-1)<a name='853'>
+   c1xtdp=1.-xmin/xinc<a name='854'>
+   c2xtdp=1./xinc<a name='855'>
+<font color=#447700>!<a name='856'></font>
+   xj=min(max(c1xtdp+c2xtdp*pv,1.),float(nxtdp))<a name='857'>
+   jx=min(xj,nxtdp-1.)<a name='858'>
+   ftdp=tbtdp(jx)+(xj-jx)*(tbtdp(jx+1)-tbtdp(jx))<a name='859'>
+<font color=#447700>!<a name='860'></font>
+   return<a name='861'>
+   end function<a name='862'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='863'></font>
+<font color=#447700>!<a name='864'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='865'></font>
+<A NAME='FTLCL'><A href='../../html_code/phys/module_shcu_grims.F.html#FTLCL' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='866'>
+   <font color=#993300>function </font><font color=#cc0000>ftlcl</font>(t,tdpd) <A href='../../call_to/FTLCL.html' TARGET='index'>3</A>,<A href='../../call_from/FTLCL.html' TARGET='index'>1</A><a name='867'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='868'></font>
+   implicit none<a name='869'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='870'></font>
+   real             :: ftlcl<a name='871'>
+<font color=#447700>!<a name='872'></font>
+   real,parameter   :: clcl1=0.954442e+0, clcl2=0.967772e-3,           &amp;<a name='873'>
+                       clcl3=-0.710321e-3,clcl4=-0.270742e-5<a name='874'>
+   real             ::  t,tdpd<a name='875'>
+<font color=#447700>!<a name='876'></font>
+   ftlcl=t-tdpd*(clcl1+clcl2*t+tdpd*(clcl3+clcl4*t))<a name='877'>
+<font color=#447700>!<a name='878'></font>
+   return<a name='879'>
+   end function<a name='880'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='881'></font>
+<font color=#447700>!<a name='882'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='883'></font>
+<A NAME='FTHE'><A href='../../html_code/phys/module_shcu_grims.F.html#FTHE' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='884'>
+   <font color=#993300>function </font><font color=#cc0000>fthe</font>(t,pk) <A href='../../call_to/FTHE.html' TARGET='index'>3</A>,<A href='../../call_from/FTHE.html' TARGET='index'>1</A><a name='885'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='886'></font>
+   implicit none<a name='887'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='888'></font>
+   real             :: fthe<a name='889'>
+<font color=#447700>!<a name='890'></font>
+   integer          :: jx,jy<a name='891'>
+   real             :: xmin,xmax,xinc,ymin,ymax,yinc<a name='892'>
+   real             :: xj,yj<a name='893'>
+   real             :: ftx1,ftx2<a name='894'>
+   real             :: t,pk<a name='895'>
+<font color=#447700>!<a name='896'></font>
+   xmin=ttp-90.<a name='897'>
+   xmax=ttp+30.<a name='898'>
+   xinc=(xmax-xmin)/(nxthe-1)<a name='899'>
+   c1xthe=1.-xmin/xinc<a name='900'>
+   c2xthe=1./xinc<a name='901'>
+   ymin=0.04**rocp<a name='902'>
+   ymax=1.10**rocp<a name='903'>
+   yinc=(ymax-ymin)/(nythe-1)<a name='904'>
+   c1ythe=1.-ymin/yinc<a name='905'>
+   c2ythe=1./yinc<a name='906'>
+<font color=#447700>!<a name='907'></font>
+   xj=min(c1xthe+c2xthe*t,float(nxthe))<a name='908'>
+   yj=min(c1ythe+c2ythe*pk,float(nythe))<a name='909'>
+   if(xj.ge.1..and.yj.ge.1.) then<a name='910'>
+     jx=min(xj,nxthe-1.)<a name='911'>
+     jy=min(yj,nythe-1.)<a name='912'>
+     ftx1=tbthe(jx,jy)+(xj-jx)*(tbthe(jx+1,jy)-tbthe(jx,jy))<a name='913'>
+     ftx2=tbthe(jx,jy+1)+(xj-jx)*(tbthe(jx+1,jy+1)-tbthe(jx,jy+1))<a name='914'>
+     fthe=ftx1+(yj-jy)*(ftx2-ftx1)<a name='915'>
+   else<a name='916'>
+     fthe=0.<a name='917'>
+   endif<a name='918'>
+<font color=#447700>!<a name='919'></font>
+   return<a name='920'>
+   end function<a name='921'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='922'></font>
+<font color=#447700>!<a name='923'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='924'></font>
+<A NAME='FPVS_PA'><A href='../../html_code/phys/module_shcu_grims.F.html#FPVS_PA' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='925'>
+   <font color=#993300>function </font><font color=#cc0000>fpvs_pa</font>(t) <A href='../../call_to/FPVS_PA.html' TARGET='index'>1</A><a name='926'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='927'></font>
+   implicit none<a name='928'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='929'></font>
+   real                 :: fpvs_pa<a name='930'>
+<font color=#447700>!<a name='931'></font>
+   integer              :: jx<a name='932'>
+   real                 :: xmax,xmin,xinc<a name='933'>
+   real                 :: xj<a name='934'>
+   real                 :: t<a name='935'>
+<font color=#447700>!<a name='936'></font>
+   xmin=180.0<a name='937'>
+   xmax=330.0<a name='938'>
+<font color=#447700>!<a name='939'></font>
+   xj=min(max(c1xpvs+c2xpvs*t,1.),float(nxsvp))<a name='940'>
+   jx=min(xj,nxsvp-1.)<a name='941'>
+   fpvs_pa=tbpvs(jx)+(xj-jx)*(tbpvs(jx+1)-tbpvs(jx))<a name='942'>
+   fpvs_pa=fpvs_pa * 1.e3<a name='943'>
+<font color=#447700>!<a name='944'></font>
+   return<a name='945'>
+   end function<a name='946'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='947'></font>
+<font color=#447700>!<a name='948'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='949'></font>
+<A NAME='GRIMSINIT'><A href='../../html_code/phys/module_shcu_grims.F.html#GRIMSINIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='950'>
+   <font color=#993300>subroutine </font><font color=#cc0000>grimsinit</font>(rthshten,rqvshten,                                     &amp; <A href='../../call_to/GRIMSINIT.html' TARGET='index'>1</A>,<A href='../../call_from/GRIMSINIT.html' TARGET='index'>4</A><a name='951'>
+                        restart,                                               &amp;<a name='952'>
+                        ids,ide, jds,jde, kds,kde,                             &amp;<a name='953'>
+                        ims,ime, jms,jme, kms,kme,                             &amp;<a name='954'>
+                        its,ite, jts,jte, kts,kte                  )<a name='955'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='956'></font>
+   implicit none<a name='957'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='958'></font>
+   logical , intent(in)           ::  restart<a name='959'>
+   integer , intent(in)           ::  ids, ide, jds, jde, kds, kde,            &amp;<a name='960'>
+                                      ims, ime, jms, jme, kms, kme,            &amp;<a name='961'>
+                                      its, ite, jts, jte, kts, kte<a name='962'>
+   real,     dimension( ims:ime , kms:kme , jms:jme ) , intent(out) ::         &amp;<a name='963'>
+                                                                     rthshten, &amp;<a name='964'>
+                                                                     rqvshten<a name='965'>
+   integer :: i, j, k, itf, jtf, ktf<a name='966'>
+<font color=#447700>!<a name='967'></font>
+   jtf=min0(jte,jde-1)<a name='968'>
+   ktf=min0(kte,kde-1)<a name='969'>
+   itf=min0(ite,ide-1)<a name='970'>
+   if(.not.restart)then<a name='971'>
+     do j = jts,jtf<a name='972'>
+       do k = kts,ktf<a name='973'>
+         do i = its,itf<a name='974'>
+           rthshten(i,k,j)=0.<a name='975'>
+           rqvshten(i,k,j)=0.<a name='976'>
+         enddo<a name='977'>
+       enddo<a name='978'>
+     enddo<a name='979'>
+   endif<a name='980'>
+<font color=#447700>!<a name='981'></font>
+   call <A href='../../html_code/phys/module_shcu_grims.F.html#FUNCT_DEW_POINT_TEMP_INIT'>funct_dew_point_temp_init</A><A href='../../html_code/phys/module_shcu_grims.F.html#GRIMSINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FUNCT_DEW_POINT_TEMP_INIT_1"><a name='982'>
+   call <A href='../../html_code/phys/module_shcu_grims.F.html#FUNCT_POT_TEMP_INIT'>funct_pot_temp_init</A><A href='../../html_code/phys/module_shcu_grims.F.html#GRIMSINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FUNCT_POT_TEMP_INIT_1"><a name='983'>
+   call <A href='../../html_code/phys/module_shcu_grims.F.html#FUNCT_MOIST_ADIABAT_INIT'>funct_moist_adiabat_init</A><A href='../../html_code/phys/module_shcu_grims.F.html#GRIMSINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FUNCT_MOIST_ADIABAT_INIT_1"><a name='984'>
+   call <A href='../../html_code/phys/module_shcu_grims.F.html#FUNCT_SVP_INIT'>funct_svp_init</A><A href='../../html_code/phys/module_shcu_grims.F.html#GRIMSINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FUNCT_SVP_INIT_1"><a name='985'>
+<font color=#447700>!<a name='986'></font>
+   end subroutine grimsinit<a name='987'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='988'></font>
+<font color=#447700>!<a name='989'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='990'></font>
+<A NAME='FUNCT_DEW_POINT_TEMP_INIT'><A href='../../html_code/phys/module_shcu_grims.F.html#FUNCT_DEW_POINT_TEMP_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='991'>
+   <font color=#993300>subroutine </font><font color=#cc0000>funct_dew_point_temp_init</font> <A href='../../call_to/FUNCT_DEW_POINT_TEMP_INIT.html' TARGET='index'>1</A>,<A href='../../call_from/FUNCT_DEW_POINT_TEMP_INIT.html' TARGET='index'>1</A><a name='992'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='993'></font>
+   implicit none<a name='994'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='995'></font>
+   integer          :: jx<a name='996'>
+   real             :: xmax,xmin,xinc,pv,x,t<a name='997'>
+<font color=#447700>!<a name='998'></font>
+   xmin= 0.001<a name='999'>
+   xmax=10.001<a name='1000'>
+   xinc=(xmax-xmin)/(nxtdp-1)<a name='1001'>
+   c1xtdp=1.-xmin/xinc<a name='1002'>
+   c2xtdp=1./xinc<a name='1003'>
+   t=208.0<a name='1004'>
+   do jx=1,nxtdp<a name='1005'>
+     x=xmin+(jx-1)*xinc<a name='1006'>
+     pv=x<a name='1007'>
+     t=<A href='../../html_code/phys/module_shcu_grims.F.html#FTDPXG'>ftdpxg</A><A href='../../html_code/phys/module_shcu_grims.F.html#FUNCT_DEW_POINT_TEMP_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FTDPXG_3">(t,pv)<a name='1008'>
+     tbtdp(jx)=t<a name='1009'>
+   enddo<a name='1010'>
+<font color=#447700>!<a name='1011'></font>
+   return<a name='1012'>
+   end subroutine funct_dew_point_temp_init<a name='1013'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1014'></font>
+<font color=#447700>!<a name='1015'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1016'></font>
+<A NAME='FUNCT_POT_TEMP_INIT'><A href='../../html_code/phys/module_shcu_grims.F.html#FUNCT_POT_TEMP_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1017'>
+   <font color=#993300>subroutine </font><font color=#cc0000>funct_pot_temp_init</font> <A href='../../call_to/FUNCT_POT_TEMP_INIT.html' TARGET='index'>1</A>,<A href='../../call_from/FUNCT_POT_TEMP_INIT.html' TARGET='index'>1</A><a name='1018'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1019'></font>
+   implicit none<a name='1020'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1021'></font>
+   integer          :: jx,jy<a name='1022'>
+   real             :: xmin,xmax,xinc,ymin,ymax,yinc<a name='1023'>
+   real             :: x,y,t,pk<a name='1024'>
+<font color=#447700>!<a name='1025'></font>
+   xmin=ttp-90.<a name='1026'>
+   xmax=ttp+30.<a name='1027'>
+   xinc=(xmax-xmin)/(nxthe-1)<a name='1028'>
+   c1xthe=1.-xmin/xinc<a name='1029'>
+   c2xthe=1./xinc<a name='1030'>
+   ymin=0.04**rocp<a name='1031'>
+   ymax=1.10**rocp<a name='1032'>
+   yinc=(ymax-ymin)/(nythe-1)<a name='1033'>
+   c1ythe=1.-ymin/yinc<a name='1034'>
+   c2ythe=1./yinc<a name='1035'>
+<font color=#447700>!<a name='1036'></font>
+   do jy = 1,nythe<a name='1037'>
+     y=ymin+(jy-1)*yinc<a name='1038'>
+     pk=y<a name='1039'>
+     do jx = 1,nxthe<a name='1040'>
+       x=xmin+(jx-1)*xinc<a name='1041'>
+       t=x<a name='1042'>
+       tbthe(jx,jy)=<A href='../../html_code/phys/module_shcu_grims.F.html#FTHEX'>fthex</A><A href='../../html_code/phys/module_shcu_grims.F.html#FUNCT_POT_TEMP_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FTHEX_2">(t,pk)<a name='1043'>
+     enddo<a name='1044'>
+   enddo<a name='1045'>
+<font color=#447700>!<a name='1046'></font>
+   return<a name='1047'>
+   end subroutine funct_pot_temp_init<a name='1048'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1049'></font>
+<font color=#447700>!<a name='1050'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1051'></font>
+<A NAME='FUNCT_MOIST_ADIABAT_INIT'><A href='../../html_code/phys/module_shcu_grims.F.html#FUNCT_MOIST_ADIABAT_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1052'>
+   <font color=#993300>subroutine </font><font color=#cc0000>funct_moist_adiabat_init</font> <A href='../../call_to/FUNCT_MOIST_ADIABAT_INIT.html' TARGET='index'>1</A>,<A href='../../call_from/FUNCT_MOIST_ADIABAT_INIT.html' TARGET='index'>1</A><a name='1053'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1054'></font>
+   implicit none<a name='1055'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1056'></font>
+   integer          :: jx,jy<a name='1057'>
+   real             :: xmin,xmax,xinc,ymin,ymax,yinc<a name='1058'>
+   real             :: y,pk,t,x,the,q<a name='1059'>
+<font color=#447700>!<a name='1060'></font>
+   xmin=200.<a name='1061'>
+   xmax=500.<a name='1062'>
+   xinc=(xmax-xmin)/(nxma-1)<a name='1063'>
+   c1xma=1.-xmin/xinc<a name='1064'>
+   c2xma=1./xinc<a name='1065'>
+   ymin=0.01**rocp<a name='1066'>
+   ymax=1.10**rocp<a name='1067'>
+   yinc=(ymax-ymin)/(nyma-1)<a name='1068'>
+   c1yma=1.-ymin/yinc<a name='1069'>
+   c2yma=1./yinc<a name='1070'>
+<font color=#447700>!<a name='1071'></font>
+   do jy = 1,nyma<a name='1072'>
+     y=ymin+(jy-1)*yinc<a name='1073'>
+     pk=y<a name='1074'>
+     t=xmin*y<a name='1075'>
+     do jx = 1,nxma<a name='1076'>
+       x=xmin+(jx-1)*xinc<a name='1077'>
+       the=x<a name='1078'>
+       t=<A href='../../html_code/phys/module_shcu_grims.F.html#FTMAXG'>ftmaxg</A><A href='../../html_code/phys/module_shcu_grims.F.html#FUNCT_MOIST_ADIABAT_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FTMAXG_1">(t,the,pk,q)<a name='1079'>
+       tbtma(jx,jy)=t<a name='1080'>
+       tbqma(jx,jy)=q<a name='1081'>
+     enddo<a name='1082'>
+   enddo<a name='1083'>
+<font color=#447700>!<a name='1084'></font>
+   return<a name='1085'>
+   end subroutine funct_moist_adiabat_init<a name='1086'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1087'></font>
+<font color=#447700>!<a name='1088'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1089'></font>
+<A NAME='FUNCT_SVP_INIT'><A href='../../html_code/phys/module_shcu_grims.F.html#FUNCT_SVP_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1090'>
+   <font color=#993300>subroutine </font><font color=#cc0000>funct_svp_init</font> <A href='../../call_to/FUNCT_SVP_INIT.html' TARGET='index'>1</A>,<A href='../../call_from/FUNCT_SVP_INIT.html' TARGET='index'>1</A><a name='1091'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1092'></font>
+   implicit none<a name='1093'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1094'></font>
+   integer          :: jx<a name='1095'>
+   real             :: xmin,xmax,xinc<a name='1096'>
+   real             :: t,x<a name='1097'>
+<font color=#447700>!<a name='1098'></font>
+   xmin=180.0<a name='1099'>
+   xmax=330.0<a name='1100'>
+   xinc=(xmax-xmin)/(nxsvp-1)<a name='1101'>
+   c1xpvs=1.-xmin/xinc<a name='1102'>
+   c2xpvs=1./xinc<a name='1103'>
+   do jx = 1,nxsvp<a name='1104'>
+     x=xmin+(jx-1)*xinc<a name='1105'>
+     t=x<a name='1106'>
+     tbpvs(jx)=<A href='../../html_code/phys/module_shcu_grims.F.html#FPVSX'>fpvsx</A><A href='../../html_code/phys/module_shcu_grims.F.html#FUNCT_SVP_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPVSX_5">(t)<a name='1107'>
+   enddo<a name='1108'>
+<font color=#447700>!<a name='1109'></font>
+   return<a name='1110'>
+   end subroutine funct_svp_init<a name='1111'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1112'></font>
+<font color=#447700>!<a name='1113'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1114'></font>
+<A NAME='FTDPXG'><A href='../../html_code/phys/module_shcu_grims.F.html#FTDPXG' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1115'>
+   <font color=#993300>function </font><font color=#cc0000>ftdpxg</font>(tg,pv) <A href='../../call_to/FTDPXG.html' TARGET='index'>3</A>,<A href='../../call_from/FTDPXG.html' TARGET='index'>1</A><a name='1116'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1117'></font>
+   implicit none<a name='1118'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1119'></font>
+   real             :: ftdpxg<a name='1120'>
+<font color=#447700>!<a name='1121'></font>
+   real             :: tg,pv<a name='1122'>
+   real             :: t,tr,pvt,el,dpvt,terr<a name='1123'>
+<font color=#447700>!<a name='1124'></font>
+   t=tg<a name='1125'>
+   tr=ttp/t<a name='1126'>
+   pvt=psatk*(tr**xa)*exp(xb*(1.-tr))<a name='1127'>
+   el=hvap+dldt*(t-ttp)<a name='1128'>
+   dpvt=el*pvt/(rv*t**2)<a name='1129'>
+   terr=(pvt-pv)/dpvt<a name='1130'>
+   t=t-terr<a name='1131'>
+<font color=#447700>!<a name='1132'></font>
+   do while(abs(terr).gt.terrm)<a name='1133'>
+     tr=ttp/t<a name='1134'>
+     pvt=psatk*(tr**xa)*exp(xb*(1.-tr))<a name='1135'>
+     el=hvap+dldt*(t-ttp)<a name='1136'>
+     dpvt=el*pvt/(rv*t**2)<a name='1137'>
+     terr=(pvt-pv)/dpvt<a name='1138'>
+     t=t-terr<a name='1139'>
+   enddo<a name='1140'>
+   ftdpxg=t<a name='1141'>
+<font color=#447700>!<a name='1142'></font>
+   return<a name='1143'>
+   end function<a name='1144'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1145'></font>
+<font color=#447700>!<a name='1146'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1147'></font>
+<A NAME='FTHEX'><A href='../../html_code/phys/module_shcu_grims.F.html#FTHEX' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1148'>
+   <font color=#993300>function </font><font color=#cc0000>fthex</font>(t,pk) <A href='../../call_to/FTHEX.html' TARGET='index'>2</A>,<A href='../../call_from/FTHEX.html' TARGET='index'>1</A><a name='1149'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1150'></font>
+   implicit none<a name='1151'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1152'></font>
+   real             :: fthex<a name='1153'>
+<font color=#447700>!<a name='1154'></font>
+   real             :: t,pk,p<a name='1155'>
+   real             :: tr, pv, pd, el, expo<a name='1156'>
+<font color=#447700>!<a name='1157'></font>
+   p=pk**cpor<a name='1158'>
+   tr=ttp/t<a name='1159'>
+   pv=psatb*(tr**xa)*exp(xb*(1.-tr))<a name='1160'>
+   pd=p-pv<a name='1161'>
+   if(pd.gt.0.) then<a name='1162'>
+     el=hvap+dldt*(t-ttp)<a name='1163'>
+     expo=el*eps*pv/(cp*t*pd)<a name='1164'>
+     expo = min(expo,100.0)<a name='1165'>
+     fthex=t*pd**(-rocp)*exp(expo)<a name='1166'>
+   else<a name='1167'>
+     fthex=0.<a name='1168'>
+   endif<a name='1169'>
+<font color=#447700>!<a name='1170'></font>
+   return<a name='1171'>
+   end function<a name='1172'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1173'></font>
+<font color=#447700>!<a name='1174'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1175'></font>
+<A NAME='FTMAXG'><A href='../../html_code/phys/module_shcu_grims.F.html#FTMAXG' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1176'>
+   <font color=#993300>function </font><font color=#cc0000>ftmaxg</font>(tg,the,pk,qma) <A href='../../call_to/FTMAXG.html' TARGET='index'>1</A><a name='1177'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1178'></font>
+   implicit none<a name='1179'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1180'></font>
+   real             :: ftmaxg<a name='1181'>
+   real             :: tg,the,pk,t,p,tr,pv,pd,el,expo,thet,dthet,terr,qma<a name='1182'>
+<font color=#447700>!<a name='1183'></font>
+   t=tg<a name='1184'>
+   p=pk**cpor<a name='1185'>
+   tr=ttp/t<a name='1186'>
+   pv=psatb*(tr**xa)*exp(xb*(1.-tr))<a name='1187'>
+   pd=p-pv<a name='1188'>
+   el=hvap+dldt*(t-ttp)<a name='1189'>
+   expo=el*eps*pv/(cp*t*pd)<a name='1190'>
+   thet=t*pd**(-rocp)*exp(expo)<a name='1191'>
+   dthet=thet/t*(1.+expo*(dldt*t/el+el*p/(rv*t*pd)))<a name='1192'>
+   terr=(thet-the)/dthet<a name='1193'>
+   t=t-terr<a name='1194'>
+<font color=#447700>!<a name='1195'></font>
+   do while(abs(terr).gt.terrm)<a name='1196'>
+     tr=ttp/t<a name='1197'>
+     pv=psatb*(tr**xa)*exp(xb*(1.-tr))<a name='1198'>
+     pd=p-pv<a name='1199'>
+     el=hvap+dldt*(t-ttp)<a name='1200'>
+     expo=el*eps*pv/(cp*t*pd)<a name='1201'>
+     thet=t*pd**(-rocp)*exp(expo)<a name='1202'>
+     dthet=thet/t*(1.+expo*(dldt*t/el+el*p/(rv*t*pd)))<a name='1203'>
+     terr=(thet-the)/dthet<a name='1204'>
+     t=t-terr<a name='1205'>
+   enddo<a name='1206'>
+   ftmaxg=t<a name='1207'>
+   tr=ttp/t<a name='1208'>
+   pv=psatb*(tr**xa)*exp(xb*(1.-tr))<a name='1209'>
+   pd=p-pv<a name='1210'>
+   qma=eps*pv/(pd+eps*pv)<a name='1211'>
+<font color=#447700>!  <a name='1212'></font>
+   return<a name='1213'>
+   end function<a name='1214'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1215'></font>
+<font color=#447700>!<a name='1216'></font>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1217'></font>
+<A NAME='FPVSX'><A href='../../html_code/phys/module_shcu_grims.F.html#FPVSX' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1218'>
+   <font color=#993300>function </font><font color=#cc0000>fpvsx</font>(t) <A href='../../call_to/FPVSX.html' TARGET='index'>5</A>,<A href='../../call_from/FPVSX.html' TARGET='index'>1</A><a name='1219'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1220'></font>
+   implicit none<a name='1221'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1222'></font>
+   real             :: fpvsx<a name='1223'>
+<font color=#447700>!<a name='1224'></font>
+   real             :: t<a name='1225'>
+   real             :: tr<a name='1226'>
+<font color=#447700>!<a name='1227'></font>
+   tr=ttp/t<a name='1228'>
+   if(t.ge.ttp) then<a name='1229'>
+     fpvsx=psatk*(tr**xa)*exp(xb*(1.-tr))<a name='1230'>
+   else<a name='1231'>
+     fpvsx=psatk*(tr**xai)*exp(xbi*(1.-tr))<a name='1232'>
+   endif<a name='1233'>
+<font color=#447700>!<a name='1234'></font>
+   return<a name='1235'>
+   end function<a name='1236'>
+<font color=#447700>!-------------------------------------------------------------------------------<a name='1237'></font>
+end module module_shcu_grims<a name='1238'>
+</pre></body></html>

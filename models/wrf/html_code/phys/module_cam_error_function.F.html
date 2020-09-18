@@ -1,0 +1,664 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#define WRF_PORT<a name='2'>
+#define MODAL_AERO<a name='3'>
+<font color=#447700>! Updated to CESM1.0.3 (CAM5.1.01) by Balwinder.Singh@pnnl.gov<a name='4'></font>
+<a name='5'>
+<A NAME='ERROR_FUNCTION'><A href='../../html_code/phys/module_cam_error_function.F.html#ERROR_FUNCTION' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='6'>
+<font color=#993300>module </font><font color=#cc0000>error_function</font> <A href='../../call_to/ERROR_FUNCTION.html' TARGET='index'>6</A>,<A href='../../call_from/ERROR_FUNCTION.html' TARGET='index'>6</A><a name='7'>
+<a name='8'>
+<font color=#447700>! This module provides generic interfaces for functions that evaluate<a name='9'></font>
+<font color=#447700>! erf(x), erfc(x), and exp(x*x)*erfc(x) in either single or double precision.<a name='10'></font>
+<a name='11'>
+implicit none<a name='12'>
+private<a name='13'>
+save<a name='14'>
+<a name='15'>
+<font color=#447700>! Public functions<a name='16'></font>
+public :: erf, erfc, erfcx<a name='17'>
+<a name='18'>
+<A NAME='ERF'><A href='../../html_code/phys/module_cam_error_function.F.html#ERF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='19'>
+<font color=#993300>interface </font><font color=#cc0000>erf</font><a name='20'>
+   module procedure <A href='../../html_code/phys/module_cam_error_function.F.html#ERF_R4'>erf_r4</A><A NAME="ERF_R4_1"><A href='../../html_code/phys/module_cam_error_function.F.html#ERROR_FUNCTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='21'>
+   module procedure <A href='../../html_code/phys/module_mp_p3.F.html#DERF'>derf</A><A NAME="DERF_1"><A href='../../html_code/phys/module_cam_error_function.F.html#ERROR_FUNCTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='22'>
+end interface<a name='23'>
+<a name='24'>
+<A NAME='ERFC'><A href='../../html_code/phys/module_cam_error_function.F.html#ERFC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='25'>
+<font color=#993300>interface </font><font color=#cc0000>erfc</font><a name='26'>
+   module procedure <A href='../../html_code/phys/module_cam_error_function.F.html#ERFC_R4'>erfc_r4</A><A NAME="ERFC_R4_1"><A href='../../html_code/phys/module_cam_error_function.F.html#ERROR_FUNCTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='27'>
+   module procedure <A href='../../html_code/phys/module_cam_error_function.F.html#DERFC'>derfc</A><A NAME="DERFC_1"><A href='../../html_code/phys/module_cam_error_function.F.html#ERROR_FUNCTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='28'>
+end interface<a name='29'>
+<a name='30'>
+<A NAME='ERFCX'><A href='../../html_code/phys/module_cam_error_function.F.html#ERFCX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='31'>
+<font color=#993300>interface </font><font color=#cc0000>erfcx</font><a name='32'>
+   module procedure <A href='../../html_code/phys/module_cam_error_function.F.html#ERFCX_R4'>erfcx_r4</A><A NAME="ERFCX_R4_1"><A href='../../html_code/phys/module_cam_error_function.F.html#ERROR_FUNCTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='33'>
+   module procedure <A href='../../html_code/phys/module_cam_error_function.F.html#DERFCX'>derfcx</A><A NAME="DERFCX_1"><A href='../../html_code/phys/module_cam_error_function.F.html#ERROR_FUNCTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='34'>
+end interface<a name='35'>
+<a name='36'>
+<font color=#447700>! Private variables<a name='37'></font>
+integer, parameter :: r4 = selected_real_kind(6)  <font color=#447700>! 4 byte real<a name='38'></font>
+integer, parameter :: r8 = selected_real_kind(12) <font color=#447700>! 8 byte real<a name='39'></font>
+<a name='40'>
+contains<a name='41'>
+<a name='42'>
+<font color=#447700>!------------------------------------------------------------------<a name='43'></font>
+<font color=#447700>!<a name='44'></font>
+<font color=#447700>! 6 December 2006 -- B. Eaton<a name='45'></font>
+<font color=#447700>! The following comments are from the original version of CALERF.<a name='46'></font>
+<font color=#447700>! The only changes in implementing this module are that the function<a name='47'></font>
+<font color=#447700>! names previously used for the single precision versions have been<a name='48'></font>
+<font color=#447700>! adopted for the new generic interfaces.  To support these interfaces<a name='49'></font>
+<font color=#447700>! there is now both a single precision version (calerf_r4) and a<a name='50'></font>
+<font color=#447700>! double precision version (calerf_r8) of CALERF below.  These versions<a name='51'></font>
+<font color=#447700>! are hardcoded to use IEEE arithmetic.<a name='52'></font>
+<font color=#447700>!<a name='53'></font>
+<font color=#447700>!------------------------------------------------------------------<a name='54'></font>
+<font color=#447700>!<a name='55'></font>
+<font color=#447700>! This packet evaluates  erf(x),  erfc(x),  and  exp(x*x)*erfc(x)<a name='56'></font>
+<font color=#447700>!   for a real argument  x.  It contains three FUNCTION type<a name='57'></font>
+<font color=#447700>!   subprograms: ERF, ERFC, and ERFCX (or DERF, DERFC, and DERFCX),<a name='58'></font>
+<font color=#447700>!   and one SUBROUTINE type subprogram, CALERF.  The calling<a name='59'></font>
+<font color=#447700>!   statements for the primary entries are:<a name='60'></font>
+<font color=#447700>!<a name='61'></font>
+<font color=#447700>!                   Y=ERF(X)     (or   Y=DERF(X)),<a name='62'></font>
+<font color=#447700>!<a name='63'></font>
+<font color=#447700>!                   Y=ERFC(X)    (or   Y=DERFC(X)),<a name='64'></font>
+<font color=#447700>!   and<a name='65'></font>
+<font color=#447700>!                   Y=ERFCX(X)   (or   Y=DERFCX(X)).<a name='66'></font>
+<font color=#447700>!<a name='67'></font>
+<font color=#447700>!   The routine  CALERF  is intended for internal packet use only,<a name='68'></font>
+<font color=#447700>!   all computations within the packet being concentrated in this<a name='69'></font>
+<font color=#447700>!   routine.  The function subprograms invoke  CALERF  with the<a name='70'></font>
+<font color=#447700>!   statement<a name='71'></font>
+<font color=#447700>!<a name='72'></font>
+<font color=#447700>!          CALL CALERF(ARG,RESULT,JINT)<a name='73'></font>
+<font color=#447700>!<a name='74'></font>
+<font color=#447700>!   where the parameter usage is as follows<a name='75'></font>
+<font color=#447700>!<a name='76'></font>
+<font color=#447700>!      Function                     Parameters for CALERF<a name='77'></font>
+<font color=#447700>!       call              ARG                  Result          JINT<a name='78'></font>
+<font color=#447700>!<a name='79'></font>
+<font color=#447700>!     ERF(ARG)      ANY REAL ARGUMENT         ERF(ARG)          0<a name='80'></font>
+<font color=#447700>!     ERFC(ARG)     ABS(ARG) .LT. XBIG        ERFC(ARG)         1<a name='81'></font>
+<font color=#447700>!     ERFCX(ARG)    XNEG .LT. ARG .LT. XMAX   ERFCX(ARG)        2<a name='82'></font>
+<font color=#447700>!<a name='83'></font>
+<font color=#447700>!   The main computation evaluates near-minimax approximations<a name='84'></font>
+<font color=#447700>!   from "Rational Chebyshev approximations for the error function"<a name='85'></font>
+<font color=#447700>!   by W. J. Cody, Math. Comp., 1969, PP. 631-638.  This<a name='86'></font>
+<font color=#447700>!   transportable program uses rational functions that theoretically<a name='87'></font>
+<font color=#447700>!   approximate  erf(x)  and  erfc(x)  to at least 18 significant<a name='88'></font>
+<font color=#447700>!   decimal digits.  The accuracy achieved depends on the arithmetic<a name='89'></font>
+<font color=#447700>!   system, the compiler, the intrinsic functions, and proper<a name='90'></font>
+<font color=#447700>!   selection of the machine-dependent constants.<a name='91'></font>
+<font color=#447700>!<a name='92'></font>
+<font color=#447700>!*******************************************************************<a name='93'></font>
+<font color=#447700>!*******************************************************************<a name='94'></font>
+<font color=#447700>!<a name='95'></font>
+<font color=#447700>! Explanation of machine-dependent constants<a name='96'></font>
+<font color=#447700>!<a name='97'></font>
+<font color=#447700>!   XMIN   = the smallest positive floating-point number.<a name='98'></font>
+<font color=#447700>!   XINF   = the largest positive finite floating-point number.<a name='99'></font>
+<font color=#447700>!   XNEG   = the largest negative argument acceptable to ERFCX;<a name='100'></font>
+<font color=#447700>!            the negative of the solution to the equation<a name='101'></font>
+<font color=#447700>!            2*exp(x*x) = XINF.<a name='102'></font>
+<font color=#447700>!   XSMALL = argument below which erf(x) may be represented by<a name='103'></font>
+<font color=#447700>!            2*x/sqrt(pi)  and above which  x*x  will not underflow.<a name='104'></font>
+<font color=#447700>!            A conservative value is the largest machine number X<a name='105'></font>
+<font color=#447700>!            such that   1.0 + X = 1.0   to machine precision.<a name='106'></font>
+<font color=#447700>!   XBIG   = largest argument acceptable to ERFC;  solution to<a name='107'></font>
+<font color=#447700>!            the equation:  W(x) * (1-0.5/x**2) = XMIN,  where<a name='108'></font>
+<font color=#447700>!            W(x) = exp(-x*x)/[x*sqrt(pi)].<a name='109'></font>
+<font color=#447700>!   XHUGE  = argument above which  1.0 - 1/(2*x*x) = 1.0  to<a name='110'></font>
+<font color=#447700>!            machine precision.  A conservative value is<a name='111'></font>
+<font color=#447700>!            1/[2*sqrt(XSMALL)]<a name='112'></font>
+<font color=#447700>!   XMAX   = largest acceptable argument to ERFCX; the minimum<a name='113'></font>
+<font color=#447700>!            of XINF and 1/[sqrt(pi)*XMIN].<a name='114'></font>
+<font color=#447700>!<a name='115'></font>
+<font color=#447700>!   Approximate values for some important machines are:<a name='116'></font>
+<font color=#447700>!<a name='117'></font>
+<font color=#447700>!                          XMIN       XINF        XNEG     XSMALL<a name='118'></font>
+<font color=#447700>!<a name='119'></font>
+<font color=#447700>!  CDC 7600      (S.P.)  3.13E-294   1.26E+322   -27.220  7.11E-15<a name='120'></font>
+<font color=#447700>!  CRAY-1        (S.P.)  4.58E-2467  5.45E+2465  -75.345  7.11E-15<a name='121'></font>
+<font color=#447700>!  IEEE (IBM/XT,<a name='122'></font>
+<font color=#447700>!    SUN, etc.)  (S.P.)  1.18E-38    3.40E+38     -9.382  5.96E-8<a name='123'></font>
+<font color=#447700>!  IEEE (IBM/XT,<a name='124'></font>
+<font color=#447700>!    SUN, etc.)  (D.P.)  2.23D-308   1.79D+308   -26.628  1.11D-16<a name='125'></font>
+<font color=#447700>!  IBM 195       (D.P.)  5.40D-79    7.23E+75    -13.190  1.39D-17<a name='126'></font>
+<font color=#447700>!  UNIVAC 1108   (D.P.)  2.78D-309   8.98D+307   -26.615  1.73D-18<a name='127'></font>
+<font color=#447700>!  VAX D-Format  (D.P.)  2.94D-39    1.70D+38     -9.345  1.39D-17<a name='128'></font>
+<font color=#447700>!  VAX G-Format  (D.P.)  5.56D-309   8.98D+307   -26.615  1.11D-16<a name='129'></font>
+<font color=#447700>!<a name='130'></font>
+<font color=#447700>!<a name='131'></font>
+<font color=#447700>!                          XBIG       XHUGE       XMAX<a name='132'></font>
+<font color=#447700>!<a name='133'></font>
+<font color=#447700>!  CDC 7600      (S.P.)  25.922      8.39E+6     1.80X+293<a name='134'></font>
+<font color=#447700>!  CRAY-1        (S.P.)  75.326      8.39E+6     5.45E+2465<a name='135'></font>
+<font color=#447700>!  IEEE (IBM/XT,<a name='136'></font>
+<font color=#447700>!    SUN, etc.)  (S.P.)   9.194      2.90E+3     4.79E+37<a name='137'></font>
+<font color=#447700>!  IEEE (IBM/XT,<a name='138'></font>
+<font color=#447700>!    SUN, etc.)  (D.P.)  26.543      6.71D+7     2.53D+307<a name='139'></font>
+<font color=#447700>!  IBM 195       (D.P.)  13.306      1.90D+8     7.23E+75<a name='140'></font>
+<font color=#447700>!  UNIVAC 1108   (D.P.)  26.582      5.37D+8     8.98D+307<a name='141'></font>
+<font color=#447700>!  VAX D-Format  (D.P.)   9.269      1.90D+8     1.70D+38<a name='142'></font>
+<font color=#447700>!  VAX G-Format  (D.P.)  26.569      6.71D+7     8.98D+307<a name='143'></font>
+<font color=#447700>!<a name='144'></font>
+<font color=#447700>!*******************************************************************<a name='145'></font>
+<font color=#447700>!*******************************************************************<a name='146'></font>
+<font color=#447700>!<a name='147'></font>
+<font color=#447700>! Error returns<a name='148'></font>
+<font color=#447700>!<a name='149'></font>
+<font color=#447700>!  The program returns  ERFC = 0      for  ARG .GE. XBIG;<a name='150'></font>
+<font color=#447700>!<a name='151'></font>
+<font color=#447700>!                       ERFCX = XINF  for  ARG .LT. XNEG;<a name='152'></font>
+<font color=#447700>!      and<a name='153'></font>
+<font color=#447700>!                       ERFCX = 0     for  ARG .GE. XMAX.<a name='154'></font>
+<font color=#447700>!<a name='155'></font>
+<font color=#447700>!<a name='156'></font>
+<font color=#447700>! Intrinsic functions required are:<a name='157'></font>
+<font color=#447700>!<a name='158'></font>
+<font color=#447700>!     ABS, AINT, EXP<a name='159'></font>
+<font color=#447700>!<a name='160'></font>
+<font color=#447700>!<a name='161'></font>
+<font color=#447700>!  Author: W. J. Cody<a name='162'></font>
+<font color=#447700>!          Mathematics and Computer Science Division<a name='163'></font>
+<font color=#447700>!          Argonne National Laboratory<a name='164'></font>
+<font color=#447700>!          Argonne, IL 60439<a name='165'></font>
+<font color=#447700>!<a name='166'></font>
+<font color=#447700>!  Latest modification: March 19, 1990<a name='167'></font>
+<font color=#447700>!<a name='168'></font>
+<font color=#447700>!------------------------------------------------------------------<a name='169'></font>
+<a name='170'>
+<A NAME='CALERF_R8'><A href='../../html_code/phys/module_cam_error_function.F.html#CALERF_R8' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='171'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>CALERF_r8</font>(ARG, RESULT, JINT) <A href='../../call_to/CALERF_R8.html' TARGET='index'>3</A><a name='172'>
+<a name='173'>
+   <font color=#447700>!------------------------------------------------------------------<a name='174'></font>
+   <font color=#447700>!  This version uses 8-byte reals<a name='175'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='176'></font>
+   integer, parameter :: rk = r8<a name='177'>
+<a name='178'>
+   <font color=#447700>! arguments<a name='179'></font>
+   real(rk), intent(in)  :: arg<a name='180'>
+   integer,  intent(in)  :: jint<a name='181'>
+   real(rk), intent(out) :: result<a name='182'>
+<a name='183'>
+   <font color=#447700>! local variables<a name='184'></font>
+   INTEGER :: I<a name='185'>
+<a name='186'>
+   real(rk) :: X, Y, YSQ, XNUM, XDEN, DEL<a name='187'>
+<a name='188'>
+   <font color=#447700>!------------------------------------------------------------------<a name='189'></font>
+   <font color=#447700>!  Mathematical constants<a name='190'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='191'></font>
+   real(rk), parameter :: ZERO   = 0.0E0_rk<a name='192'>
+   real(rk), parameter :: FOUR   = 4.0E0_rk<a name='193'>
+   real(rk), parameter :: ONE    = 1.0E0_rk<a name='194'>
+   real(rk), parameter :: HALF   = 0.5E0_rk<a name='195'>
+   real(rk), parameter :: TWO    = 2.0E0_rk<a name='196'>
+   real(rk), parameter :: SQRPI  = 5.6418958354775628695E-1_rk<a name='197'>
+   real(rk), parameter :: THRESH = 0.46875E0_rk<a name='198'>
+   real(rk), parameter :: SIXTEN = 16.0E0_rk<a name='199'>
+<a name='200'>
+<font color=#447700>!------------------------------------------------------------------<a name='201'></font>
+<font color=#447700>!  Machine-dependent constants: IEEE single precision values<a name='202'></font>
+<font color=#447700>!------------------------------------------------------------------<a name='203'></font>
+<font color=#447700>!S      real, parameter :: XINF   =  3.40E+38<a name='204'></font>
+<font color=#447700>!S      real, parameter :: XNEG   = -9.382E0<a name='205'></font>
+<font color=#447700>!S      real, parameter :: XSMALL =  5.96E-8 <a name='206'></font>
+<font color=#447700>!S      real, parameter :: XBIG   =  9.194E0<a name='207'></font>
+<font color=#447700>!S      real, parameter :: XHUGE  =  2.90E3<a name='208'></font>
+<font color=#447700>!S      real, parameter :: XMAX   =  4.79E37<a name='209'></font>
+<a name='210'>
+   <font color=#447700>!------------------------------------------------------------------<a name='211'></font>
+   <font color=#447700>!  Machine-dependent constants: IEEE double precision values<a name='212'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='213'></font>
+   real(rk), parameter :: XINF   =   1.79E308_r8<a name='214'>
+   real(rk), parameter :: XNEG   = -26.628E0_r8<a name='215'>
+   real(rk), parameter :: XSMALL =   1.11E-16_r8<a name='216'>
+   real(rk), parameter :: XBIG   =  26.543E0_r8<a name='217'>
+   real(rk), parameter :: XHUGE  =   6.71E7_r8<a name='218'>
+   real(rk), parameter :: XMAX   =   2.53E307_r8<a name='219'>
+<a name='220'>
+   <font color=#447700>!------------------------------------------------------------------<a name='221'></font>
+   <font color=#447700>!  Coefficients for approximation to  erf  in first interval<a name='222'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='223'></font>
+   real(rk), parameter :: A(5) = (/ 3.16112374387056560E00_rk, 1.13864154151050156E02_rk, &amp;<a name='224'>
+                                    3.77485237685302021E02_rk, 3.20937758913846947E03_rk, &amp;<a name='225'>
+                                    1.85777706184603153E-1_rk /)<a name='226'>
+   real(rk), parameter :: B(4) = (/ 2.36012909523441209E01_rk, 2.44024637934444173E02_rk, &amp;<a name='227'>
+                                    1.28261652607737228E03_rk, 2.84423683343917062E03_rk /)<a name='228'>
+<a name='229'>
+   <font color=#447700>!------------------------------------------------------------------<a name='230'></font>
+   <font color=#447700>!  Coefficients for approximation to  erfc  in second interval<a name='231'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='232'></font>
+   real(rk), parameter :: C(9) = (/ 5.64188496988670089E-1_rk, 8.88314979438837594E00_rk, &amp;<a name='233'>
+                                    6.61191906371416295E01_rk, 2.98635138197400131E02_rk, &amp;<a name='234'>
+                                    8.81952221241769090E02_rk, 1.71204761263407058E03_rk, &amp;<a name='235'>
+                                    2.05107837782607147E03_rk, 1.23033935479799725E03_rk, &amp;<a name='236'>
+                                    2.15311535474403846E-8_rk /)<a name='237'>
+   real(rk), parameter :: D(8) = (/ 1.57449261107098347E01_rk, 1.17693950891312499E02_rk, &amp;<a name='238'>
+                                    5.37181101862009858E02_rk, 1.62138957456669019E03_rk, &amp;<a name='239'>
+                                    3.29079923573345963E03_rk, 4.36261909014324716E03_rk, &amp;<a name='240'>
+                                    3.43936767414372164E03_rk, 1.23033935480374942E03_rk /)<a name='241'>
+<a name='242'>
+   <font color=#447700>!------------------------------------------------------------------<a name='243'></font>
+   <font color=#447700>!  Coefficients for approximation to  erfc  in third interval<a name='244'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='245'></font>
+   real(rk), parameter :: P(6) = (/ 3.05326634961232344E-1_rk, 3.60344899949804439E-1_rk, &amp;<a name='246'>
+                                    1.25781726111229246E-1_rk, 1.60837851487422766E-2_rk, &amp;<a name='247'>
+                                    6.58749161529837803E-4_rk, 1.63153871373020978E-2_rk /)<a name='248'>
+   real(rk), parameter :: Q(5) = (/ 2.56852019228982242E00_rk, 1.87295284992346047E00_rk, &amp;<a name='249'>
+                                    5.27905102951428412E-1_rk, 6.05183413124413191E-2_rk, &amp;<a name='250'>
+                                    2.33520497626869185E-3_rk /)<a name='251'>
+<a name='252'>
+   <font color=#447700>!------------------------------------------------------------------<a name='253'></font>
+   X = ARG<a name='254'>
+   Y = ABS(X)<a name='255'>
+   IF (Y .LE. THRESH) THEN<a name='256'>
+      <font color=#447700>!------------------------------------------------------------------<a name='257'></font>
+      <font color=#447700>!  Evaluate  erf  for  |X| &lt;= 0.46875<a name='258'></font>
+      <font color=#447700>!------------------------------------------------------------------<a name='259'></font>
+      YSQ = ZERO<a name='260'>
+      IF (Y .GT. XSMALL) YSQ = Y * Y<a name='261'>
+      XNUM = A(5)*YSQ<a name='262'>
+      XDEN = YSQ<a name='263'>
+      DO I = 1, 3<a name='264'>
+         XNUM = (XNUM + A(I)) * YSQ<a name='265'>
+         XDEN = (XDEN + B(I)) * YSQ<a name='266'>
+      end do<a name='267'>
+      RESULT = X * (XNUM + A(4)) / (XDEN + B(4))<a name='268'>
+      IF (JINT .NE. 0) RESULT = ONE - RESULT<a name='269'>
+      IF (JINT .EQ. 2) RESULT = EXP(YSQ) * RESULT<a name='270'>
+      GO TO 80<a name='271'>
+   ELSE IF (Y .LE. FOUR) THEN<a name='272'>
+      <font color=#447700>!------------------------------------------------------------------<a name='273'></font>
+      <font color=#447700>!  Evaluate  erfc  for 0.46875 &lt;= |X| &lt;= 4.0<a name='274'></font>
+      <font color=#447700>!------------------------------------------------------------------<a name='275'></font>
+      XNUM = C(9)*Y<a name='276'>
+      XDEN = Y<a name='277'>
+      DO I = 1, 7<a name='278'>
+         XNUM = (XNUM + C(I)) * Y<a name='279'>
+         XDEN = (XDEN + D(I)) * Y<a name='280'>
+      end do<a name='281'>
+      RESULT = (XNUM + C(8)) / (XDEN + D(8))<a name='282'>
+      IF (JINT .NE. 2) THEN<a name='283'>
+         YSQ = AINT(Y*SIXTEN)/SIXTEN<a name='284'>
+         DEL = (Y-YSQ)*(Y+YSQ)<a name='285'>
+         RESULT = EXP(-YSQ*YSQ) * EXP(-DEL) * RESULT<a name='286'>
+      END IF<a name='287'>
+   ELSE<a name='288'>
+      <font color=#447700>!------------------------------------------------------------------<a name='289'></font>
+      <font color=#447700>!  Evaluate  erfc  for |X| &gt; 4.0<a name='290'></font>
+      <font color=#447700>!------------------------------------------------------------------<a name='291'></font>
+      RESULT = ZERO<a name='292'>
+      IF (Y .GE. XBIG) THEN<a name='293'>
+         IF ((JINT .NE. 2) .OR. (Y .GE. XMAX)) GO TO 30<a name='294'>
+         IF (Y .GE. XHUGE) THEN<a name='295'>
+            RESULT = SQRPI / Y<a name='296'>
+            GO TO 30<a name='297'>
+         END IF<a name='298'>
+      END IF<a name='299'>
+      YSQ = ONE / (Y * Y)<a name='300'>
+      XNUM = P(6)*YSQ<a name='301'>
+      XDEN = YSQ<a name='302'>
+      DO I = 1, 4<a name='303'>
+         XNUM = (XNUM + P(I)) * YSQ<a name='304'>
+         XDEN = (XDEN + Q(I)) * YSQ<a name='305'>
+      end do<a name='306'>
+      RESULT = YSQ *(XNUM + P(5)) / (XDEN + Q(5))<a name='307'>
+      RESULT = (SQRPI -  RESULT) / Y<a name='308'>
+      IF (JINT .NE. 2) THEN<a name='309'>
+         YSQ = AINT(Y*SIXTEN)/SIXTEN<a name='310'>
+         DEL = (Y-YSQ)*(Y+YSQ)<a name='311'>
+         RESULT = EXP(-YSQ*YSQ) * EXP(-DEL) * RESULT<a name='312'>
+      END IF<a name='313'>
+   END IF<a name='314'>
+30 continue<a name='315'>
+   <font color=#447700>!------------------------------------------------------------------<a name='316'></font>
+   <font color=#447700>!  Fix up for negative argument, erf, etc.<a name='317'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='318'></font>
+   IF (JINT .EQ. 0) THEN<a name='319'>
+      RESULT = (HALF - RESULT) + HALF<a name='320'>
+      IF (X .LT. ZERO) RESULT = -RESULT<a name='321'>
+   ELSE IF (JINT .EQ. 1) THEN<a name='322'>
+      IF (X .LT. ZERO) RESULT = TWO - RESULT<a name='323'>
+   ELSE<a name='324'>
+      IF (X .LT. ZERO) THEN<a name='325'>
+         IF (X .LT. XNEG) THEN<a name='326'>
+            RESULT = XINF<a name='327'>
+         ELSE<a name='328'>
+            YSQ = AINT(X*SIXTEN)/SIXTEN<a name='329'>
+            DEL = (X-YSQ)*(X+YSQ)<a name='330'>
+            Y = EXP(YSQ*YSQ) * EXP(DEL)<a name='331'>
+            RESULT = (Y+Y) - RESULT<a name='332'>
+         END IF<a name='333'>
+      END IF<a name='334'>
+   END IF<a name='335'>
+80 continue<a name='336'>
+end SUBROUTINE CALERF_r8<a name='337'>
+<a name='338'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='339'></font>
+<a name='340'>
+<A NAME='CALERF_R4'><A href='../../html_code/phys/module_cam_error_function.F.html#CALERF_R4' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='341'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>CALERF_r4</font>(ARG, RESULT, JINT) <A href='../../call_to/CALERF_R4.html' TARGET='index'>3</A><a name='342'>
+<a name='343'>
+   <font color=#447700>!------------------------------------------------------------------<a name='344'></font>
+   <font color=#447700>!  This version uses 4-byte reals<a name='345'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='346'></font>
+   integer, parameter :: rk = r4<a name='347'>
+<a name='348'>
+   <font color=#447700>! arguments<a name='349'></font>
+   real(rk), intent(in)  :: arg<a name='350'>
+   integer,  intent(in)  :: jint<a name='351'>
+   real(rk), intent(out) :: result<a name='352'>
+<a name='353'>
+   <font color=#447700>! local variables<a name='354'></font>
+   INTEGER :: I<a name='355'>
+<a name='356'>
+   real(rk) :: X, Y, YSQ, XNUM, XDEN, DEL<a name='357'>
+<a name='358'>
+   <font color=#447700>!------------------------------------------------------------------<a name='359'></font>
+   <font color=#447700>!  Mathematical constants<a name='360'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='361'></font>
+   real(rk), parameter :: ZERO   = 0.0E0_rk<a name='362'>
+   real(rk), parameter :: FOUR   = 4.0E0_rk<a name='363'>
+   real(rk), parameter :: ONE    = 1.0E0_rk<a name='364'>
+   real(rk), parameter :: HALF   = 0.5E0_rk<a name='365'>
+   real(rk), parameter :: TWO    = 2.0E0_rk<a name='366'>
+   real(rk), parameter :: SQRPI  = 5.6418958354775628695E-1_rk<a name='367'>
+   real(rk), parameter :: THRESH = 0.46875E0_rk<a name='368'>
+   real(rk), parameter :: SIXTEN = 16.0E0_rk<a name='369'>
+<a name='370'>
+   <font color=#447700>!------------------------------------------------------------------<a name='371'></font>
+   <font color=#447700>!  Machine-dependent constants: IEEE single precision values<a name='372'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='373'></font>
+   real(rk), parameter :: XINF   =  3.40E+38_r4<a name='374'>
+   real(rk), parameter :: XNEG   = -9.382E0_r4<a name='375'>
+   real(rk), parameter :: XSMALL =  5.96E-8_r4 <a name='376'>
+   real(rk), parameter :: XBIG   =  9.194E0_r4<a name='377'>
+   real(rk), parameter :: XHUGE  =  2.90E3_r4<a name='378'>
+   real(rk), parameter :: XMAX   =  4.79E37_r4<a name='379'>
+<a name='380'>
+   <font color=#447700>!------------------------------------------------------------------<a name='381'></font>
+   <font color=#447700>!  Coefficients for approximation to  erf  in first interval<a name='382'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='383'></font>
+   real(rk), parameter :: A(5) = (/ 3.16112374387056560E00_rk, 1.13864154151050156E02_rk, &amp;<a name='384'>
+                                    3.77485237685302021E02_rk, 3.20937758913846947E03_rk, &amp;<a name='385'>
+                                    1.85777706184603153E-1_rk /)<a name='386'>
+   real(rk), parameter :: B(4) = (/ 2.36012909523441209E01_rk, 2.44024637934444173E02_rk, &amp;<a name='387'>
+                                    1.28261652607737228E03_rk, 2.84423683343917062E03_rk /)<a name='388'>
+<a name='389'>
+   <font color=#447700>!------------------------------------------------------------------<a name='390'></font>
+   <font color=#447700>!  Coefficients for approximation to  erfc  in second interval<a name='391'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='392'></font>
+   real(rk), parameter :: C(9) = (/ 5.64188496988670089E-1_rk, 8.88314979438837594E00_rk, &amp;<a name='393'>
+                                    6.61191906371416295E01_rk, 2.98635138197400131E02_rk, &amp;<a name='394'>
+                                    8.81952221241769090E02_rk, 1.71204761263407058E03_rk, &amp;<a name='395'>
+                                    2.05107837782607147E03_rk, 1.23033935479799725E03_rk, &amp;<a name='396'>
+                                    2.15311535474403846E-8_rk /)<a name='397'>
+   real(rk), parameter :: D(8) = (/ 1.57449261107098347E01_rk, 1.17693950891312499E02_rk, &amp;<a name='398'>
+                                    5.37181101862009858E02_rk, 1.62138957456669019E03_rk, &amp;<a name='399'>
+                                    3.29079923573345963E03_rk, 4.36261909014324716E03_rk, &amp;<a name='400'>
+                                    3.43936767414372164E03_rk, 1.23033935480374942E03_rk /)<a name='401'>
+<a name='402'>
+   <font color=#447700>!------------------------------------------------------------------<a name='403'></font>
+   <font color=#447700>!  Coefficients for approximation to  erfc  in third interval<a name='404'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='405'></font>
+   real(rk), parameter :: P(6) = (/ 3.05326634961232344E-1_rk, 3.60344899949804439E-1_rk, &amp;<a name='406'>
+                                    1.25781726111229246E-1_rk, 1.60837851487422766E-2_rk, &amp;<a name='407'>
+                                    6.58749161529837803E-4_rk, 1.63153871373020978E-2_rk /)<a name='408'>
+   real(rk), parameter :: Q(5) = (/ 2.56852019228982242E00_rk, 1.87295284992346047E00_rk, &amp;<a name='409'>
+                                    5.27905102951428412E-1_rk, 6.05183413124413191E-2_rk, &amp;<a name='410'>
+                                    2.33520497626869185E-3_rk /)<a name='411'>
+<a name='412'>
+   <font color=#447700>!------------------------------------------------------------------<a name='413'></font>
+   X = ARG<a name='414'>
+   Y = ABS(X)<a name='415'>
+   IF (Y .LE. THRESH) THEN<a name='416'>
+      <font color=#447700>!------------------------------------------------------------------<a name='417'></font>
+      <font color=#447700>!  Evaluate  erf  for  |X| &lt;= 0.46875<a name='418'></font>
+      <font color=#447700>!------------------------------------------------------------------<a name='419'></font>
+      YSQ = ZERO<a name='420'>
+      IF (Y .GT. XSMALL) YSQ = Y * Y<a name='421'>
+      XNUM = A(5)*YSQ<a name='422'>
+      XDEN = YSQ<a name='423'>
+      DO I = 1, 3<a name='424'>
+         XNUM = (XNUM + A(I)) * YSQ<a name='425'>
+         XDEN = (XDEN + B(I)) * YSQ<a name='426'>
+      end do<a name='427'>
+      RESULT = X * (XNUM + A(4)) / (XDEN + B(4))<a name='428'>
+      IF (JINT .NE. 0) RESULT = ONE - RESULT<a name='429'>
+      IF (JINT .EQ. 2) RESULT = EXP(YSQ) * RESULT<a name='430'>
+      GO TO 80<a name='431'>
+   ELSE IF (Y .LE. FOUR) THEN<a name='432'>
+      <font color=#447700>!------------------------------------------------------------------<a name='433'></font>
+      <font color=#447700>!  Evaluate  erfc  for 0.46875 &lt;= |X| &lt;= 4.0<a name='434'></font>
+      <font color=#447700>!------------------------------------------------------------------<a name='435'></font>
+      XNUM = C(9)*Y<a name='436'>
+      XDEN = Y<a name='437'>
+      DO I = 1, 7<a name='438'>
+         XNUM = (XNUM + C(I)) * Y<a name='439'>
+         XDEN = (XDEN + D(I)) * Y<a name='440'>
+      end do<a name='441'>
+      RESULT = (XNUM + C(8)) / (XDEN + D(8))<a name='442'>
+      IF (JINT .NE. 2) THEN<a name='443'>
+         YSQ = AINT(Y*SIXTEN)/SIXTEN<a name='444'>
+         DEL = (Y-YSQ)*(Y+YSQ)<a name='445'>
+         RESULT = EXP(-YSQ*YSQ) * EXP(-DEL) * RESULT<a name='446'>
+      END IF<a name='447'>
+   ELSE<a name='448'>
+      <font color=#447700>!------------------------------------------------------------------<a name='449'></font>
+      <font color=#447700>!  Evaluate  erfc  for |X| &gt; 4.0<a name='450'></font>
+      <font color=#447700>!------------------------------------------------------------------<a name='451'></font>
+      RESULT = ZERO<a name='452'>
+      IF (Y .GE. XBIG) THEN<a name='453'>
+         IF ((JINT .NE. 2) .OR. (Y .GE. XMAX)) GO TO 30<a name='454'>
+         IF (Y .GE. XHUGE) THEN<a name='455'>
+            RESULT = SQRPI / Y<a name='456'>
+            GO TO 30<a name='457'>
+         END IF<a name='458'>
+      END IF<a name='459'>
+      YSQ = ONE / (Y * Y)<a name='460'>
+      XNUM = P(6)*YSQ<a name='461'>
+      XDEN = YSQ<a name='462'>
+      DO I = 1, 4<a name='463'>
+         XNUM = (XNUM + P(I)) * YSQ<a name='464'>
+         XDEN = (XDEN + Q(I)) * YSQ<a name='465'>
+      end do<a name='466'>
+      RESULT = YSQ *(XNUM + P(5)) / (XDEN + Q(5))<a name='467'>
+      RESULT = (SQRPI -  RESULT) / Y<a name='468'>
+      IF (JINT .NE. 2) THEN<a name='469'>
+         YSQ = AINT(Y*SIXTEN)/SIXTEN<a name='470'>
+         DEL = (Y-YSQ)*(Y+YSQ)<a name='471'>
+         RESULT = EXP(-YSQ*YSQ) * EXP(-DEL) * RESULT<a name='472'>
+      END IF<a name='473'>
+   END IF<a name='474'>
+30 continue<a name='475'>
+   <font color=#447700>!------------------------------------------------------------------<a name='476'></font>
+   <font color=#447700>!  Fix up for negative argument, erf, etc.<a name='477'></font>
+   <font color=#447700>!------------------------------------------------------------------<a name='478'></font>
+   IF (JINT .EQ. 0) THEN<a name='479'>
+      RESULT = (HALF - RESULT) + HALF<a name='480'>
+      IF (X .LT. ZERO) RESULT = -RESULT<a name='481'>
+   ELSE IF (JINT .EQ. 1) THEN<a name='482'>
+      IF (X .LT. ZERO) RESULT = TWO - RESULT<a name='483'>
+   ELSE<a name='484'>
+      IF (X .LT. ZERO) THEN<a name='485'>
+         IF (X .LT. XNEG) THEN<a name='486'>
+            RESULT = XINF<a name='487'>
+         ELSE<a name='488'>
+            YSQ = AINT(X*SIXTEN)/SIXTEN<a name='489'>
+            DEL = (X-YSQ)*(X+YSQ)<a name='490'>
+            Y = EXP(YSQ*YSQ) * EXP(DEL)<a name='491'>
+            RESULT = (Y+Y) - RESULT<a name='492'>
+         END IF<a name='493'>
+      END IF<a name='494'>
+   END IF<a name='495'>
+80 continue<a name='496'>
+end SUBROUTINE CALERF_r4<a name='497'>
+<a name='498'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='499'></font>
+<a name='500'>
+<A NAME='DERF'><A href='../../html_code/phys/module_cam_error_function.F.html#DERF' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='501'>
+<font color=#993300>FUNCTION </font><font color=#cc0000>DERF</font>(X) <A href='../../call_to/DERF.html' TARGET='index'>1</A>,<A href='../../call_from/DERF.html' TARGET='index'>1</A><a name='502'>
+<font color=#447700>!--------------------------------------------------------------------<a name='503'></font>
+<font color=#447700>!<a name='504'></font>
+<font color=#447700>! This subprogram computes approximate values for erf(x).<a name='505'></font>
+<font color=#447700>!   (see comments heading CALERF).<a name='506'></font>
+<font color=#447700>!<a name='507'></font>
+<font color=#447700>!   Author/date: W. J. Cody, January 8, 1985<a name='508'></font>
+<font color=#447700>!<a name='509'></font>
+<font color=#447700>!--------------------------------------------------------------------<a name='510'></font>
+   integer, parameter :: rk = r8 <font color=#447700>! 8 byte real<a name='511'></font>
+<a name='512'>
+   <font color=#447700>! argument<a name='513'></font>
+   real(rk), intent(in) :: X<a name='514'>
+<a name='515'>
+   <font color=#447700>! return value<a name='516'></font>
+   real(rk) :: DERF<a name='517'>
+<a name='518'>
+   <font color=#447700>! local variables<a name='519'></font>
+   INTEGER :: JINT = 0<a name='520'>
+   <font color=#447700>!------------------------------------------------------------------<a name='521'></font>
+<a name='522'>
+   CALL <A href='../../html_code/phys/module_cam_error_function.F.html#CALERF_R8'>CALERF_r8</A><A href='../../html_code/phys/module_mp_p3.F.html#DERF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALERF_R8_1">(X, DERF, JINT)<a name='523'>
+END FUNCTION DERF<a name='524'>
+<a name='525'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='526'></font>
+<a name='527'>
+<A NAME='ERF_R4'><A href='../../html_code/phys/module_cam_error_function.F.html#ERF_R4' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='528'>
+<font color=#993300>FUNCTION </font><font color=#cc0000>ERF_r4</font>(X) <A href='../../call_to/ERF_R4.html' TARGET='index'>1</A>,<A href='../../call_from/ERF_R4.html' TARGET='index'>1</A><a name='529'>
+<font color=#447700>!--------------------------------------------------------------------<a name='530'></font>
+<font color=#447700>!<a name='531'></font>
+<font color=#447700>! This subprogram computes approximate values for erf(x).<a name='532'></font>
+<font color=#447700>!   (see comments heading CALERF).<a name='533'></font>
+<font color=#447700>!<a name='534'></font>
+<font color=#447700>!   Author/date: W. J. Cody, January 8, 1985<a name='535'></font>
+<font color=#447700>!<a name='536'></font>
+<font color=#447700>!--------------------------------------------------------------------<a name='537'></font>
+   integer, parameter :: rk = r4 <font color=#447700>! 4 byte real<a name='538'></font>
+<a name='539'>
+   <font color=#447700>! argument<a name='540'></font>
+   real(rk), intent(in) :: X<a name='541'>
+<a name='542'>
+   <font color=#447700>! return value<a name='543'></font>
+   real(rk) :: ERF_r4<a name='544'>
+<a name='545'>
+   <font color=#447700>! local variables<a name='546'></font>
+   INTEGER :: JINT = 0<a name='547'>
+   <font color=#447700>!------------------------------------------------------------------<a name='548'></font>
+<a name='549'>
+   CALL <A href='../../html_code/phys/module_cam_error_function.F.html#CALERF_R4'>CALERF_r4</A><A href='../../html_code/phys/module_cam_error_function.F.html#ERF_R4' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALERF_R4_1">(X, ERF_r4, JINT)<a name='550'>
+END FUNCTION ERF_r4<a name='551'>
+<a name='552'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='553'></font>
+<a name='554'>
+<A NAME='DERFC'><A href='../../html_code/phys/module_cam_error_function.F.html#DERFC' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='555'>
+<font color=#993300>FUNCTION </font><font color=#cc0000>DERFC</font>(X) <A href='../../call_to/DERFC.html' TARGET='index'>1</A>,<A href='../../call_from/DERFC.html' TARGET='index'>1</A><a name='556'>
+<font color=#447700>!--------------------------------------------------------------------<a name='557'></font>
+<font color=#447700>!<a name='558'></font>
+<font color=#447700>! This subprogram computes approximate values for erfc(x).<a name='559'></font>
+<font color=#447700>!   (see comments heading CALERF).<a name='560'></font>
+<font color=#447700>!<a name='561'></font>
+<font color=#447700>!   Author/date: W. J. Cody, January 8, 1985<a name='562'></font>
+<font color=#447700>!<a name='563'></font>
+<font color=#447700>!--------------------------------------------------------------------<a name='564'></font>
+   integer, parameter :: rk = r8 <font color=#447700>! 8 byte real<a name='565'></font>
+<a name='566'>
+   <font color=#447700>! argument<a name='567'></font>
+   real(rk), intent(in) :: X<a name='568'>
+<a name='569'>
+   <font color=#447700>! return value<a name='570'></font>
+   real(rk) :: DERFC<a name='571'>
+<a name='572'>
+   <font color=#447700>! local variables<a name='573'></font>
+   INTEGER :: JINT = 1<a name='574'>
+   <font color=#447700>!------------------------------------------------------------------<a name='575'></font>
+<a name='576'>
+   CALL <A href='../../html_code/phys/module_cam_error_function.F.html#CALERF_R8'>CALERF_r8</A><A href='../../html_code/phys/module_cam_error_function.F.html#DERFC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALERF_R8_2">(X, DERFC, JINT)<a name='577'>
+END FUNCTION DERFC<a name='578'>
+<a name='579'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='580'></font>
+<a name='581'>
+<A NAME='ERFC_R4'><A href='../../html_code/phys/module_cam_error_function.F.html#ERFC_R4' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='582'>
+<font color=#993300>FUNCTION </font><font color=#cc0000>ERFC_r4</font>(X) <A href='../../call_to/ERFC_R4.html' TARGET='index'>1</A>,<A href='../../call_from/ERFC_R4.html' TARGET='index'>1</A><a name='583'>
+<font color=#447700>!--------------------------------------------------------------------<a name='584'></font>
+<font color=#447700>!<a name='585'></font>
+<font color=#447700>! This subprogram computes approximate values for erfc(x).<a name='586'></font>
+<font color=#447700>!   (see comments heading CALERF).<a name='587'></font>
+<font color=#447700>!<a name='588'></font>
+<font color=#447700>!   Author/date: W. J. Cody, January 8, 1985<a name='589'></font>
+<font color=#447700>!<a name='590'></font>
+<font color=#447700>!--------------------------------------------------------------------<a name='591'></font>
+   integer, parameter :: rk = r4 <font color=#447700>! 4 byte real<a name='592'></font>
+<a name='593'>
+   <font color=#447700>! argument<a name='594'></font>
+   real(rk), intent(in) :: X<a name='595'>
+<a name='596'>
+   <font color=#447700>! return value<a name='597'></font>
+   real(rk) :: ERFC_r4<a name='598'>
+<a name='599'>
+   <font color=#447700>! local variables<a name='600'></font>
+   INTEGER :: JINT = 1<a name='601'>
+   <font color=#447700>!------------------------------------------------------------------<a name='602'></font>
+<a name='603'>
+   CALL <A href='../../html_code/phys/module_cam_error_function.F.html#CALERF_R4'>CALERF_r4</A><A href='../../html_code/phys/module_cam_error_function.F.html#ERFC_R4' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALERF_R4_2">(X, ERFC_r4, JINT)<a name='604'>
+END FUNCTION ERFC_r4<a name='605'>
+<a name='606'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='607'></font>
+<a name='608'>
+<A NAME='DERFCX'><A href='../../html_code/phys/module_cam_error_function.F.html#DERFCX' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='609'>
+<font color=#993300>FUNCTION </font><font color=#cc0000>DERFCX</font>(X) <A href='../../call_to/DERFCX.html' TARGET='index'>1</A>,<A href='../../call_from/DERFCX.html' TARGET='index'>1</A><a name='610'>
+<font color=#447700>!--------------------------------------------------------------------<a name='611'></font>
+<font color=#447700>!<a name='612'></font>
+<font color=#447700>! This subprogram computes approximate values for exp(x*x) * erfc(x).<a name='613'></font>
+<font color=#447700>!   (see comments heading CALERF).<a name='614'></font>
+<font color=#447700>!<a name='615'></font>
+<font color=#447700>!   Author/date: W. J. Cody, March 30, 1987<a name='616'></font>
+<font color=#447700>!<a name='617'></font>
+<font color=#447700>!--------------------------------------------------------------------<a name='618'></font>
+   integer, parameter :: rk = r8 <font color=#447700>! 8 byte real<a name='619'></font>
+<a name='620'>
+   <font color=#447700>! argument<a name='621'></font>
+   real(rk), intent(in) :: X<a name='622'>
+<a name='623'>
+   <font color=#447700>! return value<a name='624'></font>
+   real(rk) :: DERFCX<a name='625'>
+<a name='626'>
+   <font color=#447700>! local variables<a name='627'></font>
+   INTEGER :: JINT = 2<a name='628'>
+   <font color=#447700>!------------------------------------------------------------------<a name='629'></font>
+<a name='630'>
+   CALL <A href='../../html_code/phys/module_cam_error_function.F.html#CALERF_R8'>CALERF_r8</A><A href='../../html_code/phys/module_cam_error_function.F.html#DERFCX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALERF_R8_3">(X, DERFCX, JINT)<a name='631'>
+END FUNCTION DERFCX<a name='632'>
+<a name='633'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='634'></font>
+<a name='635'>
+<A NAME='ERFCX_R4'><A href='../../html_code/phys/module_cam_error_function.F.html#ERFCX_R4' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='636'>
+<font color=#993300>FUNCTION </font><font color=#cc0000>ERFCX_R4</font>(X) <A href='../../call_to/ERFCX_R4.html' TARGET='index'>1</A>,<A href='../../call_from/ERFCX_R4.html' TARGET='index'>1</A><a name='637'>
+<font color=#447700>!--------------------------------------------------------------------<a name='638'></font>
+<font color=#447700>!<a name='639'></font>
+<font color=#447700>! This subprogram computes approximate values for exp(x*x) * erfc(x).<a name='640'></font>
+<font color=#447700>!   (see comments heading CALERF).<a name='641'></font>
+<font color=#447700>!<a name='642'></font>
+<font color=#447700>!   Author/date: W. J. Cody, March 30, 1987<a name='643'></font>
+<font color=#447700>!<a name='644'></font>
+<font color=#447700>!--------------------------------------------------------------------<a name='645'></font>
+   integer, parameter :: rk = r4 <font color=#447700>! 8 byte real<a name='646'></font>
+<a name='647'>
+   <font color=#447700>! argument<a name='648'></font>
+   real(rk), intent(in) :: X<a name='649'>
+<a name='650'>
+   <font color=#447700>! return value<a name='651'></font>
+   real(rk) :: ERFCX_R4<a name='652'>
+<a name='653'>
+   <font color=#447700>! local variables<a name='654'></font>
+   INTEGER :: JINT = 2<a name='655'>
+   <font color=#447700>!------------------------------------------------------------------<a name='656'></font>
+<a name='657'>
+   CALL <A href='../../html_code/phys/module_cam_error_function.F.html#CALERF_R4'>CALERF_r4</A><A href='../../html_code/phys/module_cam_error_function.F.html#ERFCX_R4' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CALERF_R4_3">(X, ERFCX_R4, JINT)<a name='658'>
+END FUNCTION ERFCX_R4<a name='659'>
+<a name='660'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='661'></font>
+<a name='662'>
+end module error_function<a name='663'>
+</pre></body></html>

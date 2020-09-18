@@ -1,0 +1,1359 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#define WRF_PORT<a name='2'>
+#define MODAL_AERO<a name='3'>
+<font color=#447700>! Updated to CESM1.0.3 (CAM5.1.01) by Balwinder.Singh@pnnl.gov<a name='4'></font>
+<font color=#447700>!<a name='5'></font>
+<font color=#447700>! Common block and statement functions for saturation vapor pressure<a name='6'></font>
+<font color=#447700>! look-up procedure, J. J. Hack, February 1990<a name='7'></font>
+<font color=#447700>!<a name='8'></font>
+<font color=#447700>! Ported to WRF by William.Gustafson@pnl.gov, Nov. 2009<a name='9'></font>
+<font color=#447700>! Updated to version from CESM1_0_1, Nov. 2010<a name='10'></font>
+<font color=#447700>! Updated to version CESM1.0.3 (CAM5.1.01)- Balwinder.Singh@pnnl.gov<a name='11'></font>
+<font color=#447700>!<a name='12'></font>
+<font color=#447700>! $Id$<a name='13'></font>
+<font color=#447700>!<a name='14'></font>
+<A NAME='WV_SATURATION'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#WV_SATURATION' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='15'>
+<font color=#993300>module </font><font color=#cc0000>wv_saturation</font> <A href='../../call_to/WV_SATURATION.html' TARGET='index'>19</A>,<A href='../../call_from/WV_SATURATION.html' TARGET='index'>3</A><a name='16'>
+  use <A href='../../html_code/phys/module_cam_shr_kind_mod.F.html#SHR_KIND_MOD'>shr_kind_mod</A><A href='../../html_code/phys/module_cam_wv_saturation.F.html#WV_SATURATION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_KIND_MOD_21">, only: r8 =&gt; shr_kind_r8<a name='17'>
+#ifndef WRF_PORT<a name='18'>
+  use abortutils,   only: endrun<a name='19'>
+  use cam_logfile,  only: iulog<a name='20'>
+#else<a name='21'>
+  use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_wv_saturation.F.html#WV_SATURATION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_37">, only: endrun, iulog<a name='22'>
+  use <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/phys/module_cam_wv_saturation.F.html#WV_SATURATION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_44"><a name='23'>
+#endif<a name='24'>
+<a name='25'>
+  implicit none<a name='26'>
+  private<a name='27'>
+  save<a name='28'>
+<font color=#447700>!<a name='29'></font>
+<font color=#447700>! Public interfaces<a name='30'></font>
+<font color=#447700>!<a name='31'></font>
+  public gestbl   <font color=#447700>! Initialization subroutine<a name='32'></font>
+  public estblf   <font color=#447700>! saturation pressure table lookup<a name='33'></font>
+  public aqsat    <font color=#447700>! Returns saturation vapor pressure<a name='34'></font>
+#ifndef WRF_PORT<a name='35'>
+  public aqsatd   <font color=#447700>! Same as aqsat, but also returns a temperature derivitive<a name='36'></font>
+#endif<a name='37'>
+  public vqsatd   <font color=#447700>! Vector version of aqsatd<a name='38'></font>
+  public fqsatd   <font color=#447700>! Function version of vqsatd<a name='39'></font>
+  public qsat_water  <font color=#447700>! saturation mixing ration with respect to liquid water<a name='40'></font>
+#ifndef WRF_PORT<a name='41'>
+  public vqsat_water <font color=#447700>! vector version of qsat_water<a name='42'></font>
+  public qsat_ice    <font color=#447700>! saturation mixing ration with respect to ice<a name='43'></font>
+  public vqsat_ice   <font color=#447700>! vector version of qsat_ice<a name='44'></font>
+#endif<a name='45'>
+  public vqsatd_water<a name='46'>
+#ifndef WRF_PORT<a name='47'>
+  public aqsat_water<a name='48'>
+  public vqsatd2_water         <font color=#447700>! Variant of vqsatd_water to print out dqsdT<a name='49'></font>
+  public vqsatd2_water_single  <font color=#447700>! Single value version of vqsatd2_water<a name='50'></font>
+#endif<a name='51'>
+  public vqsatd2<a name='52'>
+  public vqsatd2_single<a name='53'>
+  public polysvp<a name='54'>
+<font color=#447700>!<a name='55'></font>
+<font color=#447700>! Data used by cldwat<a name='56'></font>
+<font color=#447700>!<a name='57'></font>
+  public hlatv, tmin, hlatf, rgasv, pcf, cp, epsqs, ttrice<a name='58'>
+<font color=#447700>!<a name='59'></font>
+<font color=#447700>! Data<a name='60'></font>
+<font color=#447700>!<a name='61'></font>
+  integer plenest  <font color=#447700>! length of saturation vapor pressure table<a name='62'></font>
+  parameter (plenest=250)<a name='63'>
+<font color=#447700>!<a name='64'></font>
+<font color=#447700>! Table of saturation vapor pressure values es from tmin degrees<a name='65'></font>
+<font color=#447700>! to tmax+1 degrees k in one degree increments.  ttrice defines the<a name='66'></font>
+<font color=#447700>! transition region where es is a combination of ice &amp; water values<a name='67'></font>
+<font color=#447700>!<a name='68'></font>
+  real(r8) estbl(plenest)      <font color=#447700>! table values of saturation vapor pressure<a name='69'></font>
+  real(r8) tmin       <font color=#447700>! min temperature (K) for table<a name='70'></font>
+  real(r8) tmax       <font color=#447700>! max temperature (K) for table<a name='71'></font>
+  real(r8) ttrice     <font color=#447700>! transition range from es over H2O to es over ice<a name='72'></font>
+  real(r8) pcf(6)     <font color=#447700>! polynomial coeffs -&gt; es transition water to ice<a name='73'></font>
+  real(r8) epsqs      <font color=#447700>! Ratio of h2o to dry air molecular weights <a name='74'></font>
+  real(r8) rgasv      <font color=#447700>! Gas constant for water vapor<a name='75'></font>
+  real(r8) hlatf      <font color=#447700>! Latent heat of vaporization<a name='76'></font>
+  real(r8) hlatv      <font color=#447700>! Latent heat of fusion<a name='77'></font>
+  real(r8) cp         <font color=#447700>! specific heat of dry air<a name='78'></font>
+  real(r8) tmelt      <font color=#447700>! Melting point of water (K)<a name='79'></font>
+  logical icephs  <font color=#447700>! false =&gt; saturation vapor press over water only<a name='80'></font>
+<a name='81'>
+contains<a name='82'>
+<a name='83'>
+<A NAME='ESTBLF'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#ESTBLF' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='84'>
+   real(r8) <font color=#993300>function </font><font color=#cc0000>estblf</font>( td ) <A href='../../call_to/ESTBLF.html' TARGET='index'>18</A><a name='85'>
+<font color=#447700>!<a name='86'></font>
+<font color=#447700>! Saturation vapor pressure table lookup<a name='87'></font>
+<font color=#447700>!<a name='88'></font>
+   real(r8), intent(in) :: td         <font color=#447700>! Temperature for saturation lookup<a name='89'></font>
+<font color=#447700>!<a name='90'></font>
+   real(r8) :: e       <font color=#447700>! intermediate variable for es look-up<a name='91'></font>
+   real(r8) :: ai<a name='92'>
+   integer  :: i<a name='93'>
+<font color=#447700>!<a name='94'></font>
+   e = max(min(td,tmax),tmin)   <font color=#447700>! partial pressure<a name='95'></font>
+   i = int(e-tmin)+1<a name='96'>
+   ai = aint(e-tmin)<a name='97'>
+   estblf = (tmin+ai-e+1._r8)* &amp;<a name='98'>
+            estbl(i)-(tmin+ai-e)* &amp;<a name='99'>
+            estbl(i+1)<a name='100'>
+   end function estblf<a name='101'>
+<a name='102'>
+<A NAME='GESTBL'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#GESTBL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='103'>
+<font color=#993300>subroutine </font><font color=#cc0000>gestbl</font>(tmn     ,tmx     ,trice   ,ip      ,epsil   , &amp; <A href='../../call_to/GESTBL.html' TARGET='index'>2</A>,<A href='../../call_from/GESTBL.html' TARGET='index'>8</A><a name='104'>
+                  latvap  ,latice  ,rh2o    ,cpair   ,tmeltx   )<a name='105'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='106'></font>
+<font color=#447700>! <a name='107'></font>
+<font color=#447700>! Purpose: <a name='108'></font>
+<font color=#447700>! Builds saturation vapor pressure table for later lookup procedure.<a name='109'></font>
+<font color=#447700>! <a name='110'></font>
+<font color=#447700>! Method: <a name='111'></font>
+<font color=#447700>! Uses Goff &amp; Gratch (1946) relationships to generate the table<a name='112'></font>
+<font color=#447700>! according to a set of free parameters defined below.  Auxiliary<a name='113'></font>
+<font color=#447700>! routines are also included for making rapid estimates (well with 1%)<a name='114'></font>
+<font color=#447700>! of both es and d(es)/dt for the particular table configuration.<a name='115'></font>
+<font color=#447700>! <a name='116'></font>
+<font color=#447700>! Author: J. Hack<a name='117'></font>
+<font color=#447700>! <a name='118'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='119'></font>
+#ifndef WRF_PORT<a name='120'>
+   use spmd_utils, only: masterproc<a name='121'>
+#else<a name='122'>
+   use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_ra_cam_support.F.html#GESTBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_38">, only: masterproc<a name='123'>
+   use <A href='../../html_code/phys/module_cam_gffgch.F.html#MODULE_CAM_GFFGCH'>module_cam_gffgch</A><A href='../../html_code/phys/module_ra_cam_support.F.html#GESTBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_GFFGCH_1"><a name='124'>
+#endif<a name='125'>
+<font color=#447700>!------------------------------Arguments--------------------------------<a name='126'></font>
+<font color=#447700>!<a name='127'></font>
+<font color=#447700>! Input arguments<a name='128'></font>
+<font color=#447700>!<a name='129'></font>
+   real(r8), intent(in) :: tmn           <font color=#447700>! Minimum temperature entry in es lookup table<a name='130'></font>
+   real(r8), intent(in) :: tmx           <font color=#447700>! Maximum temperature entry in es lookup table<a name='131'></font>
+   real(r8), intent(in) :: epsil         <font color=#447700>! Ratio of h2o to dry air molecular weights<a name='132'></font>
+   real(r8), intent(in) :: trice         <font color=#447700>! Transition range from es over range to es over ice<a name='133'></font>
+   real(r8), intent(in) :: latvap        <font color=#447700>! Latent heat of vaporization<a name='134'></font>
+   real(r8), intent(in) :: latice        <font color=#447700>! Latent heat of fusion<a name='135'></font>
+   real(r8), intent(in) :: rh2o          <font color=#447700>! Gas constant for water vapor<a name='136'></font>
+   real(r8), intent(in) :: cpair         <font color=#447700>! Specific heat of dry air<a name='137'></font>
+   real(r8), intent(in) :: tmeltx        <font color=#447700>! Melting point of water (K)<a name='138'></font>
+<font color=#447700>!<a name='139'></font>
+<font color=#447700>!---------------------------Local variables-----------------------------<a name='140'></font>
+<font color=#447700>!<a name='141'></font>
+   real(r8) t             <font color=#447700>! Temperature<a name='142'></font>
+   integer n          <font color=#447700>! Increment counter<a name='143'></font>
+   integer lentbl     <font color=#447700>! Calculated length of lookup table<a name='144'></font>
+   integer itype      <font color=#447700>! Ice phase: 0 -&gt; no ice phase<a name='145'></font>
+<font color=#447700>!            1 -&gt; ice phase, no transition<a name='146'></font>
+<font color=#447700>!           -x -&gt; ice phase, x degree transition<a name='147'></font>
+   logical ip         <font color=#447700>! Ice phase logical flag<a name='148'></font>
+<font color=#447700>!<a name='149'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='150'></font>
+<font color=#447700>!<a name='151'></font>
+<font color=#447700>! Set es table parameters<a name='152'></font>
+<font color=#447700>!<a name='153'></font>
+   tmin   = tmn       <font color=#447700>! Minimum temperature entry in table<a name='154'></font>
+   tmax   = tmx       <font color=#447700>! Maximum temperature entry in table<a name='155'></font>
+   ttrice = trice     <font color=#447700>! Trans. range from es over h2o to es over ice<a name='156'></font>
+   icephs = ip        <font color=#447700>! Ice phase (true or false)<a name='157'></font>
+<font color=#447700>!<a name='158'></font>
+<font color=#447700>! Set physical constants required for es calculation<a name='159'></font>
+<font color=#447700>!<a name='160'></font>
+   epsqs  = epsil<a name='161'>
+   hlatv  = latvap<a name='162'>
+   hlatf  = latice<a name='163'>
+   rgasv  = rh2o<a name='164'>
+   cp     = cpair<a name='165'>
+   tmelt  = tmeltx<a name='166'>
+<font color=#447700>!<a name='167'></font>
+   lentbl = INT(tmax-tmin+2.000001_r8)<a name='168'>
+   if (lentbl .gt. plenest) then<a name='169'>
+      write(iulog,9000) tmax, tmin, plenest<a name='170'>
+#ifdef WRF_PORT<a name='171'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_ra_cam_support.F.html#GESTBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_624">(iulog)<a name='172'>
+#endif<a name='173'>
+      call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_ra_cam_support.F.html#GESTBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_25"> ('GESTBL')    <font color=#447700>! Abnormal termination<a name='174'></font>
+   end if<a name='175'>
+<font color=#447700>!<a name='176'></font>
+<font color=#447700>! Begin building es table.<a name='177'></font>
+<font color=#447700>! Check whether ice phase requested.<a name='178'></font>
+<font color=#447700>! If so, set appropriate transition range for temperature<a name='179'></font>
+<font color=#447700>!<a name='180'></font>
+   if (icephs) then<a name='181'>
+      if (ttrice /= 0.0_r8) then<a name='182'>
+         itype = -ttrice<a name='183'>
+      else<a name='184'>
+         itype = 1<a name='185'>
+      end if<a name='186'>
+   else<a name='187'>
+      itype = 0<a name='188'>
+   end if<a name='189'>
+<font color=#447700>!<a name='190'></font>
+   t = tmin - 1.0_r8<a name='191'>
+   do n=1,lentbl<a name='192'>
+      t = t + 1.0_r8<a name='193'>
+      call <A href='../../html_code/phys/module_ra_cam_support.F.html#GFFGCH'>gffgch</A><A href='../../html_code/phys/module_ra_cam_support.F.html#GESTBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GFFGCH_1">(t,estbl(n),itype)<a name='194'>
+   end do<a name='195'>
+<font color=#447700>!<a name='196'></font>
+   do n=lentbl+1,plenest<a name='197'>
+      estbl(n) = -99999.0_r8<a name='198'>
+   end do<a name='199'>
+<font color=#447700>!<a name='200'></font>
+<font color=#447700>! Table complete -- Set coefficients for polynomial approximation of<a name='201'></font>
+<font color=#447700>! difference between saturation vapor press over water and saturation<a name='202'></font>
+<font color=#447700>! pressure over ice for -ttrice &lt; t &lt; 0 (degrees C). NOTE: polynomial<a name='203'></font>
+<font color=#447700>! is valid in the range -40 &lt; t &lt; 0 (degrees C).<a name='204'></font>
+<font color=#447700>!<a name='205'></font>
+<font color=#447700>!                  --- Degree 5 approximation ---<a name='206'></font>
+<font color=#447700>!<a name='207'></font>
+   pcf(1) =  5.04469588506e-01_r8<a name='208'>
+   pcf(2) = -5.47288442819e+00_r8<a name='209'>
+   pcf(3) = -3.67471858735e-01_r8<a name='210'>
+   pcf(4) = -8.95963532403e-03_r8<a name='211'>
+   pcf(5) = -7.78053686625e-05_r8<a name='212'>
+<font color=#447700>!<a name='213'></font>
+<font color=#447700>!                  --- Degree 6 approximation ---<a name='214'></font>
+<font color=#447700>!<a name='215'></font>
+<font color=#447700>!-----pcf(1) =  7.63285250063e-02<a name='216'></font>
+<font color=#447700>!-----pcf(2) = -5.86048427932e+00<a name='217'></font>
+<font color=#447700>!-----pcf(3) = -4.38660831780e-01<a name='218'></font>
+<font color=#447700>!-----pcf(4) = -1.37898276415e-02<a name='219'></font>
+<font color=#447700>!-----pcf(5) = -2.14444472424e-04<a name='220'></font>
+<font color=#447700>!-----pcf(6) = -1.36639103771e-06<a name='221'></font>
+<font color=#447700>!<a name='222'></font>
+   if (masterproc) then<a name='223'>
+      write(iulog,*)' *** SATURATION VAPOR PRESSURE TABLE COMPLETED ***'<a name='224'>
+#ifdef WRF_PORT<a name='225'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_ra_cam_support.F.html#GESTBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_625">(iulog)<a name='226'>
+#endif<a name='227'>
+   end if<a name='228'>
+<a name='229'>
+   return<a name='230'>
+<font color=#447700>!<a name='231'></font>
+9000 format('GESTBL: FATAL ERROR *********************************',/, &amp;<a name='232'>
+            ' TMAX AND TMIN REQUIRE A LARGER DIMENSION ON THE LENGTH', &amp;<a name='233'>
+            ' OF THE SATURATION VAPOR PRESSURE TABLE ESTBL(PLENEST)',/, &amp;<a name='234'>
+            ' TMAX, TMIN, AND PLENEST =&gt; ', 2f7.2, i3)<a name='235'>
+<font color=#447700>!<a name='236'></font>
+end subroutine gestbl<a name='237'>
+<a name='238'>
+<A NAME='AQSAT'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#AQSAT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='239'>
+<font color=#993300>subroutine </font><font color=#cc0000>aqsat</font>(t       ,p       ,es      ,qs        ,ii      , &amp; <A href='../../call_to/AQSAT.html' TARGET='index'>4</A>,<A href='../../call_from/AQSAT.html' TARGET='index'>2</A><a name='240'>
+                 ilen    ,kk      ,kstart  ,kend      )<a name='241'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='242'></font>
+<font color=#447700>! <a name='243'></font>
+<font color=#447700>! Purpose: <a name='244'></font>
+<font color=#447700>! Utility procedure to look up and return saturation vapor pressure from<a name='245'></font>
+<font color=#447700>! precomputed table, calculate and return saturation specific humidity<a name='246'></font>
+<font color=#447700>! (g/g),for input arrays of temperature and pressure (dimensioned ii,kk)<a name='247'></font>
+<font color=#447700>! This routine is useful for evaluating only a selected region in the<a name='248'></font>
+<font color=#447700>! vertical.<a name='249'></font>
+<font color=#447700>! <a name='250'></font>
+<font color=#447700>! Method: <a name='251'></font>
+<font color=#447700>! &lt;Describe the algorithm(s) used in the routine.&gt; <a name='252'></font>
+<font color=#447700>! &lt;Also include any applicable external references.&gt; <a name='253'></font>
+<font color=#447700>! <a name='254'></font>
+<font color=#447700>! Author: J. Hack<a name='255'></font>
+<font color=#447700>! <a name='256'></font>
+<font color=#447700>!------------------------------Arguments--------------------------------<a name='257'></font>
+<font color=#447700>!<a name='258'></font>
+<font color=#447700>! Input arguments<a name='259'></font>
+<font color=#447700>!<a name='260'></font>
+   integer, intent(in) :: ii             <font color=#447700>! I dimension of arrays t, p, es, qs<a name='261'></font>
+   integer, intent(in) :: kk             <font color=#447700>! K dimension of arrays t, p, es, qs<a name='262'></font>
+   integer, intent(in) :: ilen           <font color=#447700>! Length of vectors in I direction which<a name='263'></font>
+   integer, intent(in) :: kstart         <font color=#447700>! Starting location in K direction<a name='264'></font>
+   integer, intent(in) :: kend           <font color=#447700>! Ending location in K direction<a name='265'></font>
+   real(r8), intent(in) :: t(ii,kk)          <font color=#447700>! Temperature<a name='266'></font>
+   real(r8), intent(in) :: p(ii,kk)          <font color=#447700>! Pressure<a name='267'></font>
+<font color=#447700>!<a name='268'></font>
+<font color=#447700>! Output arguments<a name='269'></font>
+<font color=#447700>!<a name='270'></font>
+   real(r8), intent(out) :: es(ii,kk)         <font color=#447700>! Saturation vapor pressure<a name='271'></font>
+   real(r8), intent(out) :: qs(ii,kk)         <font color=#447700>! Saturation specific humidity<a name='272'></font>
+<font color=#447700>!<a name='273'></font>
+<font color=#447700>!---------------------------Local workspace-----------------------------<a name='274'></font>
+<font color=#447700>!<a name='275'></font>
+   real(r8) omeps             <font color=#447700>! 1 - 0.622<a name='276'></font>
+   integer i, k           <font color=#447700>! Indices<a name='277'></font>
+<font color=#447700>!<a name='278'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='279'></font>
+<font color=#447700>!<a name='280'></font>
+   omeps = 1.0_r8 - epsqs<a name='281'>
+   do k=kstart,kend<a name='282'>
+      do i=1,ilen<a name='283'>
+         es(i,k) = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_ra_cam_support.F.html#AQSAT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_9">(t(i,k))<a name='284'>
+<font color=#447700>!<a name='285'></font>
+<font color=#447700>! Saturation specific humidity<a name='286'></font>
+<font color=#447700>!<a name='287'></font>
+         qs(i,k) = epsqs*es(i,k)/(p(i,k) - omeps*es(i,k))<a name='288'>
+<font color=#447700>!<a name='289'></font>
+<font color=#447700>! The following check is to avoid the generation of negative values<a name='290'></font>
+<font color=#447700>! that can occur in the upper stratosphere and mesosphere<a name='291'></font>
+<font color=#447700>!<a name='292'></font>
+         qs(i,k) = min(1.0_r8,qs(i,k))<a name='293'>
+<font color=#447700>!<a name='294'></font>
+         if (qs(i,k) &lt; 0.0_r8) then<a name='295'>
+            qs(i,k) = 1.0_r8<a name='296'>
+            es(i,k) = p(i,k)<a name='297'>
+         end if<a name='298'>
+      end do<a name='299'>
+   end do<a name='300'>
+<font color=#447700>!<a name='301'></font>
+   return<a name='302'>
+end subroutine aqsat<a name='303'>
+<a name='304'>
+<font color=#447700>!++xl<a name='305'></font>
+#ifndef WRF_PORT<a name='306'>
+<A NAME='AQSAT_WATER'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#AQSAT_WATER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='307'>
+<font color=#993300>subroutine </font><font color=#cc0000>aqsat_water</font>(t       ,p       ,es      ,qs        ,ii      , &amp;,<A href='../../call_from/AQSAT_WATER.html' TARGET='index'>1</A><a name='308'>
+                       ilen    ,kk      ,kstart  ,kend      )<a name='309'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='310'></font>
+<font color=#447700>!<a name='311'></font>
+<font color=#447700>! Purpose:<a name='312'></font>
+<font color=#447700>! Utility procedure to look up and return saturation vapor pressure from<a name='313'></font>
+<font color=#447700>! precomputed table, calculate and return saturation specific humidity<a name='314'></font>
+<font color=#447700>! (g/g),for input arrays of temperature and pressure (dimensioned ii,kk)<a name='315'></font>
+<font color=#447700>! This routine is useful for evaluating only a selected region in the<a name='316'></font>
+<font color=#447700>! vertical.<a name='317'></font>
+<font color=#447700>!<a name='318'></font>
+<font color=#447700>! Method:<a name='319'></font>
+<font color=#447700>! &lt;Describe the algorithm(s) used in the routine.&gt;<a name='320'></font>
+<font color=#447700>! &lt;Also include any applicable external references.&gt;<a name='321'></font>
+<font color=#447700>!<a name='322'></font>
+<font color=#447700>! Author: J. Hack<a name='323'></font>
+<font color=#447700>!<a name='324'></font>
+<font color=#447700>!------------------------------Arguments--------------------------------<a name='325'></font>
+<font color=#447700>!<a name='326'></font>
+<font color=#447700>! Input arguments<a name='327'></font>
+<font color=#447700>!<a name='328'></font>
+   integer, intent(in) :: ii             <font color=#447700>! I dimension of arrays t, p, es, qs<a name='329'></font>
+   integer, intent(in) :: kk             <font color=#447700>! K dimension of arrays t, p, es, qs<a name='330'></font>
+   integer, intent(in) :: ilen           <font color=#447700>! Length of vectors in I direction which<a name='331'></font>
+   integer, intent(in) :: kstart         <font color=#447700>! Starting location in K direction<a name='332'></font>
+   integer, intent(in) :: kend           <font color=#447700>! Ending location in K direction<a name='333'></font>
+   real(r8), intent(in) :: t(ii,kk)          <font color=#447700>! Temperature<a name='334'></font>
+   real(r8), intent(in) :: p(ii,kk)          <font color=#447700>! Pressure<a name='335'></font>
+<font color=#447700>!<a name='336'></font>
+<font color=#447700>! Output arguments<a name='337'></font>
+<font color=#447700>!<a name='338'></font>
+   real(r8), intent(out) :: es(ii,kk)         <font color=#447700>! Saturation vapor pressure<a name='339'></font>
+   real(r8), intent(out) :: qs(ii,kk)         <font color=#447700>! Saturation specific humidity<a name='340'></font>
+<font color=#447700>!<a name='341'></font>
+<font color=#447700>!---------------------------Local workspace-----------------------------<a name='342'></font>
+<font color=#447700>!<a name='343'></font>
+   real(r8) omeps             <font color=#447700>! 1 - 0.622<a name='344'></font>
+   integer i, k           <font color=#447700>! Indices<a name='345'></font>
+<font color=#447700>!<a name='346'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='347'></font>
+<font color=#447700>!<a name='348'></font>
+   omeps = 1.0_r8 - epsqs<a name='349'>
+   do k=kstart,kend<a name='350'>
+      do i=1,ilen<a name='351'>
+<font color=#447700>!        es(i,k) = estblf(t(i,k))<a name='352'></font>
+         es(i,k) = <A href='../../html_code/phys/module_mp_morr_two_moment.F.html#POLYSVP'>polysvp</A><A href='../../html_code/phys/module_cam_wv_saturation.F.html#AQSAT_WATER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="POLYSVP_13">(t(i,k),0)<a name='353'>
+<font color=#447700>!<a name='354'></font>
+<font color=#447700>! Saturation specific humidity<a name='355'></font>
+<font color=#447700>!<a name='356'></font>
+         qs(i,k) = epsqs*es(i,k)/(p(i,k) - omeps*es(i,k))<a name='357'>
+<font color=#447700>!<a name='358'></font>
+<font color=#447700>! The following check is to avoid the generation of negative values<a name='359'></font>
+<font color=#447700>! that can occur in the upper stratosphere and mesosphere<a name='360'></font>
+<font color=#447700>!<a name='361'></font>
+         qs(i,k) = min(1.0_r8,qs(i,k))<a name='362'>
+<font color=#447700>!<a name='363'></font>
+         if (qs(i,k) &lt; 0.0_r8) then<a name='364'>
+            qs(i,k) = 1.0_r8<a name='365'>
+            es(i,k) = p(i,k)<a name='366'>
+         end if<a name='367'>
+      end do<a name='368'>
+   end do<a name='369'>
+<font color=#447700>!<a name='370'></font>
+   return<a name='371'>
+end subroutine aqsat_water<a name='372'>
+<font color=#447700>!--xl<a name='373'></font>
+<a name='374'>
+<a name='375'>
+<A NAME='AQSATD'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#AQSATD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='376'>
+<font color=#993300>subroutine </font><font color=#cc0000>aqsatd</font>(t       ,p       ,es      ,qs      ,gam     , &amp;,<A href='../../call_from/AQSATD.html' TARGET='index'>1</A><a name='377'>
+                  ii      ,ilen    ,kk      ,kstart  ,kend    )<a name='378'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='379'></font>
+<font color=#447700>! <a name='380'></font>
+<font color=#447700>! Purpose: <a name='381'></font>
+<font color=#447700>! Utility procedure to look up and return saturation vapor pressure from<a name='382'></font>
+<font color=#447700>! precomputed table, calculate and return saturation specific humidity<a name='383'></font>
+<font color=#447700>! (g/g).   <a name='384'></font>
+<font color=#447700>! <a name='385'></font>
+<font color=#447700>! Method: <a name='386'></font>
+<font color=#447700>! Differs from aqsat by also calculating and returning<a name='387'></font>
+<font color=#447700>! gamma (l/cp)*(d(qsat)/dT)<a name='388'></font>
+<font color=#447700>! Input arrays temperature and pressure (dimensioned ii,kk).<a name='389'></font>
+<font color=#447700>! <a name='390'></font>
+<font color=#447700>! Author: J. Hack<a name='391'></font>
+<font color=#447700>! <a name='392'></font>
+<font color=#447700>!------------------------------Arguments--------------------------------<a name='393'></font>
+<font color=#447700>!<a name='394'></font>
+<font color=#447700>! Input arguments<a name='395'></font>
+<font color=#447700>!<a name='396'></font>
+   integer, intent(in) :: ii            <font color=#447700>! I dimension of arrays t, p, es, qs<a name='397'></font>
+   integer, intent(in) :: ilen          <font color=#447700>! Vector length in I direction<a name='398'></font>
+   integer, intent(in) :: kk            <font color=#447700>! K dimension of arrays t, p, es, qs<a name='399'></font>
+   integer, intent(in) :: kstart        <font color=#447700>! Starting location in K direction<a name='400'></font>
+   integer, intent(in) :: kend          <font color=#447700>! Ending location in K direction<a name='401'></font>
+<a name='402'>
+   real(r8), intent(in) :: t(ii,kk)         <font color=#447700>! Temperature<a name='403'></font>
+   real(r8), intent(in) :: p(ii,kk)         <font color=#447700>! Pressure<a name='404'></font>
+<a name='405'>
+<font color=#447700>!<a name='406'></font>
+<font color=#447700>! Output arguments<a name='407'></font>
+<font color=#447700>!<a name='408'></font>
+   real(r8), intent(out) :: es(ii,kk)        <font color=#447700>! Saturation vapor pressure<a name='409'></font>
+   real(r8), intent(out) :: qs(ii,kk)        <font color=#447700>! Saturation specific humidity<a name='410'></font>
+   real(r8), intent(out) :: gam(ii,kk)       <font color=#447700>! (l/cp)*(d(qs)/dt)<a name='411'></font>
+<font color=#447700>!<a name='412'></font>
+<font color=#447700>!---------------------------Local workspace-----------------------------<a name='413'></font>
+<font color=#447700>!<a name='414'></font>
+   logical lflg          <font color=#447700>! True if in temperature transition region<a name='415'></font>
+   integer i             <font color=#447700>! i index for vector calculations<a name='416'></font>
+   integer k             <font color=#447700>! k index<a name='417'></font>
+   real(r8) omeps            <font color=#447700>! 1. - 0.622<a name='418'></font>
+   real(r8) trinv            <font color=#447700>! Reciprocal of ttrice (transition range)<a name='419'></font>
+   real(r8) tc               <font color=#447700>! Temperature (in degrees C)<a name='420'></font>
+   real(r8) weight           <font color=#447700>! Weight for es transition from water to ice<a name='421'></font>
+   real(r8) hltalt           <font color=#447700>! Appropriately modified hlat for T derivatives<a name='422'></font>
+   real(r8) hlatsb           <font color=#447700>! hlat weighted in transition region<a name='423'></font>
+   real(r8) hlatvp           <font color=#447700>! hlat modified for t changes above freezing<a name='424'></font>
+   real(r8) tterm            <font color=#447700>! Account for d(es)/dT in transition region<a name='425'></font>
+   real(r8) desdt            <font color=#447700>! d(es)/dT<a name='426'></font>
+<font color=#447700>!<a name='427'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='428'></font>
+<font color=#447700>!<a name='429'></font>
+   omeps = 1.0_r8 - epsqs<a name='430'>
+   do k=kstart,kend<a name='431'>
+      do i=1,ilen<a name='432'>
+         es(i,k) = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_cam_wv_saturation.F.html#AQSATD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_10">(t(i,k))<a name='433'>
+<font color=#447700>!<a name='434'></font>
+<font color=#447700>! Saturation specific humidity<a name='435'></font>
+<font color=#447700>!<a name='436'></font>
+         qs(i,k) = epsqs*es(i,k)/(p(i,k) - omeps*es(i,k))<a name='437'>
+<font color=#447700>!<a name='438'></font>
+<font color=#447700>! The following check is to avoid the generation of negative qs<a name='439'></font>
+<font color=#447700>! values which can occur in the upper stratosphere and mesosphere<a name='440'></font>
+<font color=#447700>!<a name='441'></font>
+         qs(i,k) = min(1.0_r8,qs(i,k))<a name='442'>
+<font color=#447700>!<a name='443'></font>
+         if (qs(i,k) &lt; 0.0_r8) then<a name='444'>
+            qs(i,k) = 1.0_r8<a name='445'>
+            es(i,k) = p(i,k)<a name='446'>
+         end if<a name='447'>
+      end do<a name='448'>
+   end do<a name='449'>
+<font color=#447700>!<a name='450'></font>
+<font color=#447700>! "generalized" analytic expression for t derivative of es<a name='451'></font>
+<font color=#447700>! accurate to within 1 percent for 173.16 &lt; t &lt; 373.16<a name='452'></font>
+<font color=#447700>!<a name='453'></font>
+   trinv = 0.0_r8<a name='454'>
+   if ((.not. icephs) .or. (ttrice.eq.0.0_r8)) go to 10<a name='455'>
+   trinv = 1.0_r8/ttrice<a name='456'>
+<font color=#447700>!<a name='457'></font>
+   do k=kstart,kend<a name='458'>
+      do i=1,ilen<a name='459'>
+<font color=#447700>!<a name='460'></font>
+<font color=#447700>! Weighting of hlat accounts for transition from water to ice<a name='461'></font>
+<font color=#447700>! polynomial expression approximates difference between es over<a name='462'></font>
+<font color=#447700>! water and es over ice from 0 to -ttrice (C) (min of ttrice is<a name='463'></font>
+<font color=#447700>! -40): required for accurate estimate of es derivative in transition<a name='464'></font>
+<font color=#447700>! range from ice to water also accounting for change of hlatv with t<a name='465'></font>
+<font color=#447700>! above freezing where constant slope is given by -2369 j/(kg c) =cpv - cw<a name='466'></font>
+<font color=#447700>!<a name='467'></font>
+         tc     = t(i,k) - tmelt<a name='468'>
+         lflg   = (tc &gt;= -ttrice .and. tc &lt; 0.0_r8)<a name='469'>
+         weight = min(-tc*trinv,1.0_r8)<a name='470'>
+         hlatsb = hlatv + weight*hlatf<a name='471'>
+         hlatvp = hlatv - 2369.0_r8*tc<a name='472'>
+         if (t(i,k) &lt; tmelt) then<a name='473'>
+            hltalt = hlatsb<a name='474'>
+         else<a name='475'>
+            hltalt = hlatvp<a name='476'>
+         end if<a name='477'>
+         if (lflg) then<a name='478'>
+            tterm = pcf(1) + tc*(pcf(2) + tc*(pcf(3) + tc*(pcf(4) + tc*pcf(5))))<a name='479'>
+         else<a name='480'>
+            tterm = 0.0_r8<a name='481'>
+         end if<a name='482'>
+         desdt    = hltalt*es(i,k)/(rgasv*t(i,k)*t(i,k)) + tterm*trinv<a name='483'>
+         gam(i,k) = hltalt*qs(i,k)*p(i,k)*desdt/(cp*es(i,k)*(p(i,k) - omeps*es(i,k)))<a name='484'>
+         if (qs(i,k) == 1.0_r8) gam(i,k) = 0.0_r8<a name='485'>
+      end do<a name='486'>
+   end do<a name='487'>
+<font color=#447700>!<a name='488'></font>
+   go to 20<a name='489'>
+<font color=#447700>!<a name='490'></font>
+<font color=#447700>! No icephs or water to ice transition<a name='491'></font>
+<font color=#447700>!<a name='492'></font>
+10 do k=kstart,kend<a name='493'>
+      do i=1,ilen<a name='494'>
+<font color=#447700>!<a name='495'></font>
+<font color=#447700>! Account for change of hlatv with t above freezing where<a name='496'></font>
+<font color=#447700>! constant slope is given by -2369 j/(kg c) = cpv - cw<a name='497'></font>
+<font color=#447700>!<a name='498'></font>
+         hlatvp = hlatv - 2369.0_r8*(t(i,k)-tmelt)<a name='499'>
+         if (icephs) then<a name='500'>
+            hlatsb = hlatv + hlatf<a name='501'>
+         else<a name='502'>
+            hlatsb = hlatv<a name='503'>
+         end if<a name='504'>
+         if (t(i,k) &lt; tmelt) then<a name='505'>
+            hltalt = hlatsb<a name='506'>
+         else<a name='507'>
+            hltalt = hlatvp<a name='508'>
+         end if<a name='509'>
+         desdt    = hltalt*es(i,k)/(rgasv*t(i,k)*t(i,k))<a name='510'>
+         gam(i,k) = hltalt*qs(i,k)*p(i,k)*desdt/(cp*es(i,k)*(p(i,k) - omeps*es(i,k)))<a name='511'>
+         if (qs(i,k) == 1.0_r8) gam(i,k) = 0.0_r8<a name='512'>
+      end do<a name='513'>
+   end do<a name='514'>
+<font color=#447700>!<a name='515'></font>
+20 return<a name='516'>
+end subroutine aqsatd<a name='517'>
+#endif<a name='518'>
+<A NAME='VQSATD'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='519'>
+<font color=#993300>subroutine </font><font color=#cc0000>vqsatd</font>(t       ,p       ,es      ,qs      ,gam      , &amp; <A href='../../call_to/VQSATD.html' TARGET='index'>2</A>,<A href='../../call_from/VQSATD.html' TARGET='index'>1</A><a name='520'>
+                  len     )<a name='521'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='522'></font>
+<font color=#447700>! <a name='523'></font>
+<font color=#447700>! Purpose: <a name='524'></font>
+<font color=#447700>! Utility procedure to look up and return saturation vapor pressure from<a name='525'></font>
+<font color=#447700>! precomputed table, calculate and return saturation specific humidity<a name='526'></font>
+<font color=#447700>! (g/g), and calculate and return gamma (l/cp)*(d(qsat)/dT).  The same<a name='527'></font>
+<font color=#447700>! function as qsatd, but operates on vectors of temperature and pressure<a name='528'></font>
+<font color=#447700>! <a name='529'></font>
+<font color=#447700>! Method: <a name='530'></font>
+<font color=#447700>! <a name='531'></font>
+<font color=#447700>! Author: J. Hack<a name='532'></font>
+<font color=#447700>! <a name='533'></font>
+<font color=#447700>!------------------------------Arguments--------------------------------<a name='534'></font>
+<font color=#447700>!<a name='535'></font>
+<font color=#447700>! Input arguments<a name='536'></font>
+<font color=#447700>!<a name='537'></font>
+   integer, intent(in) :: len       <font color=#447700>! vector length<a name='538'></font>
+   real(r8), intent(in) :: t(len)       <font color=#447700>! temperature<a name='539'></font>
+   real(r8), intent(in) :: p(len)       <font color=#447700>! pressure<a name='540'></font>
+<font color=#447700>!<a name='541'></font>
+<font color=#447700>! Output arguments<a name='542'></font>
+<font color=#447700>!<a name='543'></font>
+   real(r8), intent(out) :: es(len)   <font color=#447700>! saturation vapor pressure<a name='544'></font>
+   real(r8), intent(out) :: qs(len)   <font color=#447700>! saturation specific humidity<a name='545'></font>
+   real(r8), intent(out) :: gam(len)  <font color=#447700>! (l/cp)*(d(qs)/dt)<a name='546'></font>
+<font color=#447700>!<a name='547'></font>
+<font color=#447700>!--------------------------Local Variables------------------------------<a name='548'></font>
+<font color=#447700>!<a name='549'></font>
+   logical lflg   <font color=#447700>! true if in temperature transition region<a name='550'></font>
+<font color=#447700>!<a name='551'></font>
+   integer i      <font color=#447700>! index for vector calculations<a name='552'></font>
+<font color=#447700>!<a name='553'></font>
+   real(r8) omeps     <font color=#447700>! 1. - 0.622<a name='554'></font>
+   real(r8) trinv     <font color=#447700>! reciprocal of ttrice (transition range)<a name='555'></font>
+   real(r8) tc        <font color=#447700>! temperature (in degrees C)<a name='556'></font>
+   real(r8) weight    <font color=#447700>! weight for es transition from water to ice<a name='557'></font>
+   real(r8) hltalt    <font color=#447700>! appropriately modified hlat for T derivatives<a name='558'></font>
+<font color=#447700>!<a name='559'></font>
+   real(r8) hlatsb    <font color=#447700>! hlat weighted in transition region<a name='560'></font>
+   real(r8) hlatvp    <font color=#447700>! hlat modified for t changes above freezing<a name='561'></font>
+   real(r8) tterm     <font color=#447700>! account for d(es)/dT in transition region<a name='562'></font>
+   real(r8) desdt     <font color=#447700>! d(es)/dT<a name='563'></font>
+<font color=#447700>!<a name='564'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='565'></font>
+<font color=#447700>!<a name='566'></font>
+   omeps = 1.0_r8 - epsqs<a name='567'>
+   do i=1,len<a name='568'>
+      es(i) = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_11">(t(i))<a name='569'>
+<font color=#447700>!<a name='570'></font>
+<font color=#447700>! Saturation specific humidity<a name='571'></font>
+<font color=#447700>!<a name='572'></font>
+      qs(i) = epsqs*es(i)/(p(i) - omeps*es(i))<a name='573'>
+<font color=#447700>!<a name='574'></font>
+<font color=#447700>! The following check is to avoid the generation of negative<a name='575'></font>
+<font color=#447700>! values that can occur in the upper stratosphere and mesosphere<a name='576'></font>
+<font color=#447700>!<a name='577'></font>
+      qs(i) = min(1.0_r8,qs(i))<a name='578'>
+<font color=#447700>!<a name='579'></font>
+      if (qs(i) &lt; 0.0_r8) then<a name='580'>
+         qs(i) = 1.0_r8<a name='581'>
+         es(i) = p(i)<a name='582'>
+      end if<a name='583'>
+   end do<a name='584'>
+<font color=#447700>!<a name='585'></font>
+<font color=#447700>! "generalized" analytic expression for t derivative of es<a name='586'></font>
+<font color=#447700>! accurate to within 1 percent for 173.16 &lt; t &lt; 373.16<a name='587'></font>
+<font color=#447700>!<a name='588'></font>
+   trinv = 0.0_r8<a name='589'>
+   if ((.not. icephs) .or. (ttrice.eq.0.0_r8)) go to 10<a name='590'>
+   trinv = 1.0_r8/ttrice<a name='591'>
+   do i=1,len<a name='592'>
+<font color=#447700>!<a name='593'></font>
+<font color=#447700>! Weighting of hlat accounts for transition from water to ice<a name='594'></font>
+<font color=#447700>! polynomial expression approximates difference between es over<a name='595'></font>
+<font color=#447700>! water and es over ice from 0 to -ttrice (C) (min of ttrice is<a name='596'></font>
+<font color=#447700>! -40): required for accurate estimate of es derivative in transition<a name='597'></font>
+<font color=#447700>! range from ice to water also accounting for change of hlatv with t<a name='598'></font>
+<font color=#447700>! above freezing where const slope is given by -2369 j/(kg c) = cpv - cw<a name='599'></font>
+<font color=#447700>!<a name='600'></font>
+      tc     = t(i) - tmelt<a name='601'>
+      lflg   = (tc &gt;= -ttrice .and. tc &lt; 0.0_r8)<a name='602'>
+      weight = min(-tc*trinv,1.0_r8)<a name='603'>
+      hlatsb = hlatv + weight*hlatf<a name='604'>
+      hlatvp = hlatv - 2369.0_r8*tc<a name='605'>
+      if (t(i) &lt; tmelt) then<a name='606'>
+         hltalt = hlatsb<a name='607'>
+      else<a name='608'>
+         hltalt = hlatvp<a name='609'>
+      end if<a name='610'>
+      if (lflg) then<a name='611'>
+         tterm = pcf(1) + tc*(pcf(2) + tc*(pcf(3) + tc*(pcf(4) + tc*pcf(5))))<a name='612'>
+      else<a name='613'>
+         tterm = 0.0_r8<a name='614'>
+      end if<a name='615'>
+      desdt  = hltalt*es(i)/(rgasv*t(i)*t(i)) + tterm*trinv<a name='616'>
+      gam(i) = hltalt*qs(i)*p(i)*desdt/(cp*es(i)*(p(i) - omeps*es(i)))<a name='617'>
+      if (qs(i) == 1.0_r8) gam(i) = 0.0_r8<a name='618'>
+   end do<a name='619'>
+   return<a name='620'>
+<font color=#447700>!<a name='621'></font>
+<font color=#447700>! No icephs or water to ice transition<a name='622'></font>
+<font color=#447700>!<a name='623'></font>
+10 do i=1,len<a name='624'>
+<font color=#447700>!<a name='625'></font>
+<font color=#447700>! Account for change of hlatv with t above freezing where<a name='626'></font>
+<font color=#447700>! constant slope is given by -2369 j/(kg c) = cpv - cw<a name='627'></font>
+<font color=#447700>!<a name='628'></font>
+      hlatvp = hlatv - 2369.0_r8*(t(i)-tmelt)<a name='629'>
+      if (icephs) then<a name='630'>
+         hlatsb = hlatv + hlatf<a name='631'>
+      else<a name='632'>
+         hlatsb = hlatv<a name='633'>
+      end if<a name='634'>
+      if (t(i) &lt; tmelt) then<a name='635'>
+         hltalt = hlatsb<a name='636'>
+      else<a name='637'>
+         hltalt = hlatvp<a name='638'>
+      end if<a name='639'>
+      desdt  = hltalt*es(i)/(rgasv*t(i)*t(i))<a name='640'>
+      gam(i) = hltalt*qs(i)*p(i)*desdt/(cp*es(i)*(p(i) - omeps*es(i)))<a name='641'>
+      if (qs(i) == 1.0_r8) gam(i) = 0.0_r8<a name='642'>
+   end do<a name='643'>
+<font color=#447700>!<a name='644'></font>
+   return<a name='645'>
+<font color=#447700>!<a name='646'></font>
+end subroutine vqsatd<a name='647'>
+<a name='648'>
+<font color=#447700>!++xl<a name='649'></font>
+<A NAME='VQSATD_WATER'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD_WATER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='650'>
+<font color=#993300>subroutine </font><font color=#cc0000>vqsatd_water</font>(t       ,p       ,es      ,qs      ,gam      , &amp; <A href='../../call_to/VQSATD_WATER.html' TARGET='index'>2</A>,<A href='../../call_from/VQSATD_WATER.html' TARGET='index'>1</A><a name='651'>
+                        len     )<a name='652'>
+<a name='653'>
+<font color=#447700>!------------------------------Arguments--------------------------------<a name='654'></font>
+<font color=#447700>!<a name='655'></font>
+<font color=#447700>! Input arguments<a name='656'></font>
+<font color=#447700>!<a name='657'></font>
+   integer, intent(in) :: len       <font color=#447700>! vector length<a name='658'></font>
+   real(r8), intent(in) :: t(len)       <font color=#447700>! temperature<a name='659'></font>
+   real(r8), intent(in) :: p(len)       <font color=#447700>! pressure<a name='660'></font>
+<a name='661'>
+<font color=#447700>!<a name='662'></font>
+<font color=#447700>! Output arguments<a name='663'></font>
+<font color=#447700>!<a name='664'></font>
+   real(r8), intent(out) :: es(len)   <font color=#447700>! saturation vapor pressure<a name='665'></font>
+   real(r8), intent(out) :: qs(len)   <font color=#447700>! saturation specific humidity<a name='666'></font>
+   real(r8), intent(out) :: gam(len)  <font color=#447700>! (l/cp)*(d(qs)/dt)<a name='667'></font>
+<a name='668'>
+<font color=#447700>!<a name='669'></font>
+<font color=#447700>!--------------------------Local Variables------------------------------<a name='670'></font>
+<font color=#447700>!<a name='671'></font>
+<font color=#447700>!<a name='672'></font>
+   integer i      <font color=#447700>! index for vector calculations<a name='673'></font>
+<font color=#447700>!<a name='674'></font>
+   real(r8) omeps     <font color=#447700>! 1. - 0.622<a name='675'></font>
+   real(r8) hltalt    <font color=#447700>! appropriately modified hlat for T derivatives<a name='676'></font>
+<font color=#447700>!<a name='677'></font>
+   real(r8) hlatsb    <font color=#447700>! hlat weighted in transition region<a name='678'></font>
+   real(r8) hlatvp    <font color=#447700>! hlat modified for t changes above freezing<a name='679'></font>
+   real(r8) desdt     <font color=#447700>! d(es)/dT<a name='680'></font>
+<font color=#447700>!<a name='681'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='682'></font>
+<font color=#447700>!<a name='683'></font>
+   omeps = 1.0_r8 - epsqs<a name='684'>
+   do i=1,len<a name='685'>
+      es(i) = <A href='../../html_code/phys/module_mp_morr_two_moment.F.html#POLYSVP'>polysvp</A><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD_WATER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="POLYSVP_14">(t(i),0)<a name='686'>
+<font color=#447700>!<a name='687'></font>
+<font color=#447700>! Saturation specific humidity<a name='688'></font>
+<font color=#447700>!<a name='689'></font>
+      qs(i) = epsqs*es(i)/(p(i) - omeps*es(i))<a name='690'>
+<font color=#447700>!<a name='691'></font>
+<font color=#447700>! The following check is to avoid the generation of negative<a name='692'></font>
+<font color=#447700>! values that can occur in the upper stratosphere and mesosphere<a name='693'></font>
+<font color=#447700>!<a name='694'></font>
+      qs(i) = min(1.0_r8,qs(i))<a name='695'>
+<font color=#447700>!<a name='696'></font>
+      if (qs(i) &lt; 0.0_r8) then<a name='697'>
+         qs(i) = 1.0_r8<a name='698'>
+         es(i) = p(i)<a name='699'>
+      end if<a name='700'>
+   end do<a name='701'>
+<font color=#447700>!<a name='702'></font>
+<font color=#447700>! No icephs or water to ice transition<a name='703'></font>
+<font color=#447700>!<a name='704'></font>
+   do i=1,len<a name='705'>
+<font color=#447700>!<a name='706'></font>
+<font color=#447700>! Account for change of hlatv with t above freezing where<a name='707'></font>
+<font color=#447700>! constant slope is given by -2369 j/(kg c) = cpv - cw<a name='708'></font>
+<font color=#447700>!<a name='709'></font>
+      hlatvp = hlatv - 2369.0_r8*(t(i)-tmelt)<a name='710'>
+      hlatsb = hlatv<a name='711'>
+      if (t(i) &lt; tmelt) then<a name='712'>
+         hltalt = hlatsb<a name='713'>
+      else<a name='714'>
+         hltalt = hlatvp<a name='715'>
+      end if<a name='716'>
+      desdt  = hltalt*es(i)/(rgasv*t(i)*t(i))<a name='717'>
+      gam(i) = hltalt*qs(i)*p(i)*desdt/(cp*es(i)*(p(i) - omeps*es(i)))<a name='718'>
+      if (qs(i) == 1.0_r8) gam(i) = 0.0_r8<a name='719'>
+   end do<a name='720'>
+<font color=#447700>!<a name='721'></font>
+   return<a name='722'>
+<font color=#447700>!<a name='723'></font>
+end subroutine vqsatd_water<a name='724'>
+<a name='725'>
+<A NAME='POLYSVP'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#POLYSVP' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='726'>
+      <font color=#993300>function </font><font color=#cc0000>polysvp</font> (T,type) <A href='../../call_to/POLYSVP.html' TARGET='index'>27</A><a name='727'>
+<font color=#447700>!  Compute saturation vapor pressure by using<a name='728'></font>
+<font color=#447700>! function from Goff and Gatch (1946)<a name='729'></font>
+<a name='730'>
+<font color=#447700>!  Polysvp returned in units of pa.<a name='731'></font>
+<font color=#447700>!  T is input in units of K.<a name='732'></font>
+<font color=#447700>!  type refers to saturation with respect to liquid (0) or ice (1)<a name='733'></font>
+<a name='734'>
+      real(r8) dum<a name='735'>
+<a name='736'>
+      real(r8) T,polysvp<a name='737'>
+<a name='738'>
+      integer type<a name='739'>
+<a name='740'>
+<font color=#447700>! ice<a name='741'></font>
+<a name='742'>
+      if (type.eq.1) then<a name='743'>
+<a name='744'>
+<font color=#447700>! Goff Gatch equation (good down to -100 C)<a name='745'></font>
+<a name='746'>
+         polysvp = 10._r8**(-9.09718_r8*(273.16_r8/t-1._r8)-3.56654_r8* &amp;<a name='747'>
+          log10(273.16_r8/t)+0.876793_r8*(1._r8-t/273.16_r8)+ &amp;<a name='748'>
+          log10(6.1071_r8))*100._r8<a name='749'>
+<a name='750'>
+      end if<a name='751'>
+<a name='752'>
+<font color=#447700>! Goff Gatch equation, uncertain below -70 C<a name='753'></font>
+<a name='754'>
+      if (type.eq.0) then<a name='755'>
+         polysvp = 10._r8**(-7.90298_r8*(373.16_r8/t-1._r8)+ &amp;<a name='756'>
+             5.02808_r8*log10(373.16_r8/t)- &amp;<a name='757'>
+             1.3816e-7_r8*(10._r8**(11.344_r8*(1._r8-t/373.16_r8))-1._r8)+ &amp;<a name='758'>
+             8.1328e-3_r8*(10._r8**(-3.49149_r8*(373.16_r8/t-1._r8))-1._r8)+ &amp;<a name='759'>
+             log10(1013.246_r8))*100._r8<a name='760'>
+         end if<a name='761'>
+<a name='762'>
+<a name='763'>
+      end function polysvp<a name='764'>
+<font color=#447700>!--xl<a name='765'></font>
+<a name='766'>
+<A NAME='FQSATD'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#FQSATD' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='767'>
+integer <font color=#993300>function </font><font color=#cc0000>fqsatd</font>(t    ,p    ,es    ,qs   ,gam   , len     ),<A href='../../call_from/FQSATD.html' TARGET='index'>1</A><a name='768'>
+  <font color=#447700>!----------------------------------------------------------------------- <a name='769'></font>
+  <font color=#447700>! Purpose: <a name='770'></font>
+  <font color=#447700>! This is merely a function interface vqsatd.<a name='771'></font>
+  <font color=#447700>!------------------------------Arguments--------------------------------<a name='772'></font>
+  <font color=#447700>! Input arguments<a name='773'></font>
+  integer, intent(in) :: len       <font color=#447700>! vector length<a name='774'></font>
+  real(r8), intent(in) :: t(len)       <font color=#447700>! temperature<a name='775'></font>
+  real(r8), intent(in) :: p(len)       <font color=#447700>! pressure<a name='776'></font>
+  <font color=#447700>! Output arguments<a name='777'></font>
+  real(r8), intent(out) :: es(len)   <font color=#447700>! saturation vapor pressure<a name='778'></font>
+  real(r8), intent(out) :: qs(len)   <font color=#447700>! saturation specific humidity<a name='779'></font>
+  real(r8), intent(out) :: gam(len)  <font color=#447700>! (l/cp)*(d(qs)/dt)<a name='780'></font>
+  <font color=#447700>! Call vqsatd<a name='781'></font>
+  call <A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD'>vqsatd</A><A href='../../html_code/phys/module_cam_wv_saturation.F.html#FQSATD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VQSATD_2">(t       ,p       ,es      ,qs      ,gam  , len     )<a name='782'>
+  fqsatd = 1<a name='783'>
+  return<a name='784'>
+end function fqsatd<a name='785'>
+<a name='786'>
+<A NAME='QSAT_WATER'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#QSAT_WATER' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='787'>
+real(r8) <font color=#993300>function </font><font color=#cc0000>qsat_water</font>(t,p)<a name='788'>
+  <font color=#447700>!  saturation mixing ratio w/respect to liquid water<a name='789'></font>
+  real(r8) t <font color=#447700>! temperature<a name='790'></font>
+  real(r8) p <font color=#447700>! pressure (Pa)<a name='791'></font>
+  real(r8) es <font color=#447700>! saturation vapor pressure (Pa)<a name='792'></font>
+  real(r8) ps, ts, e1, e2, f1, f2, f3, f4, f5, f<a name='793'>
+  <font color=#447700>!  real(r8) t0inv ! 1/273.<a name='794'></font>
+  <font color=#447700>!  data t0inv/0.003663/<a name='795'></font>
+  <font color=#447700>!  save t0inv<a name='796'></font>
+  <font color=#447700>!  es = 611.*exp(hlatv/rgasv*(t0inv-1./t))<a name='797'></font>
+<a name='798'>
+  ps = 1013.246_r8<a name='799'>
+  ts = 373.16_r8<a name='800'>
+  e1 = 11.344_r8*(1.0_r8 - t/ts)<a name='801'>
+  e2 = -3.49149_r8*(ts/t - 1.0_r8)<a name='802'>
+  f1 = -7.90298_r8*(ts/t - 1.0_r8)<a name='803'>
+  f2 = 5.02808_r8*log10(ts/t)<a name='804'>
+  f3 = -1.3816_r8*(10.0_r8**e1 - 1.0_r8)/10000000.0_r8<a name='805'>
+  f4 = 8.1328_r8*(10.0_r8**e2 - 1.0_r8)/1000.0_r8<a name='806'>
+  f5 = log10(ps)<a name='807'>
+  f  = f1 + f2 + f3 + f4 + f5<a name='808'>
+  es = (10.0_r8**f)*100.0_r8<a name='809'>
+<a name='810'>
+  qsat_water = epsqs*es/(p-(1.-epsqs)*es) <font color=#447700>! saturation w/respect to liquid only<a name='811'></font>
+  if(qsat_water &lt; 0.) qsat_water = 1.<a name='812'>
+<a name='813'>
+end function qsat_water<a name='814'>
+#ifndef WRF_PORT<a name='815'>
+<A NAME='VQSAT_WATER'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSAT_WATER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='816'>
+<font color=#993300>subroutine </font><font color=#cc0000>vqsat_water</font>(t,p,qsat_water,len)<a name='817'>
+  <font color=#447700>!  saturation mixing ratio w/respect to liquid water<a name='818'></font>
+  integer, intent(in)  :: len<a name='819'>
+  real(r8) t(len) <font color=#447700>! temperature<a name='820'></font>
+  real(r8) p(len) <font color=#447700>! pressure (Pa)<a name='821'></font>
+  real(r8) qsat_water(len)<a name='822'>
+  real(r8) es <font color=#447700>! saturation vapor pressure (Pa)<a name='823'></font>
+  real(r8), parameter :: t0inv = 1._r8/273._r8<a name='824'>
+  real(r8) coef<a name='825'>
+  integer :: i<a name='826'>
+<a name='827'>
+  coef = hlatv/rgasv<a name='828'>
+  do i=1,len<a name='829'>
+     es = 611._r8*exp(coef*(t0inv-1./t(i)))<a name='830'>
+     qsat_water(i) = epsqs*es/(p(i)-(1.-epsqs)*es) <font color=#447700>! saturation w/respect to liquid only<a name='831'></font>
+     if(qsat_water(i) &lt; 0.) qsat_water(i) = 1.<a name='832'>
+  enddo<a name='833'>
+<a name='834'>
+  return<a name='835'>
+<a name='836'>
+end subroutine vqsat_water<a name='837'>
+<a name='838'>
+<A NAME='QSAT_ICE'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#QSAT_ICE' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='839'>
+real(r8) <font color=#993300>function </font><font color=#cc0000>qsat_ice</font>(t,p)<a name='840'>
+  <font color=#447700>!  saturation mixing ratio w/respect to ice<a name='841'></font>
+  real(r8) t <font color=#447700>! temperature<a name='842'></font>
+  real(r8) p <font color=#447700>! pressure (Pa)<a name='843'></font>
+  real(r8) es <font color=#447700>! saturation vapor pressure (Pa)<a name='844'></font>
+  real(r8), parameter :: t0inv = 1._r8/273._r8<a name='845'>
+  es = 611.*exp((hlatv+hlatf)/rgasv*(t0inv-1./t))<a name='846'>
+  qsat_ice = epsqs*es/(p-(1.-epsqs)*es) <font color=#447700>! saturation w/respect to liquid only<a name='847'></font>
+  if(qsat_ice &lt; 0.) qsat_ice = 1.<a name='848'>
+<a name='849'>
+end function qsat_ice<a name='850'>
+<a name='851'>
+<A NAME='VQSAT_ICE'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSAT_ICE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='852'>
+<font color=#993300>subroutine </font><font color=#cc0000>vqsat_ice</font>(t,p,qsat_ice,len)<a name='853'>
+  <font color=#447700>!  saturation mixing ratio w/respect to liquid water<a name='854'></font>
+  integer,intent(in) :: len<a name='855'>
+  real(r8) t(len) <font color=#447700>! temperature<a name='856'></font>
+  real(r8) p(len) <font color=#447700>! pressure (Pa)<a name='857'></font>
+  real(r8) qsat_ice(len)<a name='858'>
+  real(r8) es <font color=#447700>! saturation vapor pressure (Pa)<a name='859'></font>
+  real(r8), parameter :: t0inv = 1._r8/273._r8<a name='860'>
+  real(r8) coef<a name='861'>
+  integer :: i<a name='862'>
+<a name='863'>
+  coef = (hlatv+hlatf)/rgasv<a name='864'>
+  do i=1,len<a name='865'>
+     es = 611.*exp(coef*(t0inv-1./t(i)))<a name='866'>
+     qsat_ice(i) = epsqs*es/(p(i)-(1.-epsqs)*es) <font color=#447700>! saturation w/respect to liquid only<a name='867'></font>
+     if(qsat_ice(i) &lt; 0.) qsat_ice(i) = 1.<a name='868'>
+  enddo<a name='869'>
+<a name='870'>
+  return<a name='871'>
+<a name='872'>
+end subroutine vqsat_ice<a name='873'>
+<a name='874'>
+<font color=#447700>! Sungsu<a name='875'></font>
+<font color=#447700>! Below two subroutines (vqsatd2_water,vqsatd2_water_single) are by Sungsu<a name='876'></font>
+<font color=#447700>! Replace 'gam -&gt; dqsdt'<a name='877'></font>
+<font color=#447700>! Sungsu<a name='878'></font>
+<a name='879'>
+<A NAME='VQSATD2_WATER'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD2_WATER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='880'>
+<font color=#993300>subroutine </font><font color=#cc0000>vqsatd2_water</font>(t       ,p       ,es      ,qs      ,dqsdt      , &amp;,<A href='../../call_from/VQSATD2_WATER.html' TARGET='index'>1</A><a name='881'>
+                        len     )<a name='882'>
+<a name='883'>
+<font color=#447700>!------------------------------Arguments--------------------------------<a name='884'></font>
+<font color=#447700>!<a name='885'></font>
+<font color=#447700>! Input arguments<a name='886'></font>
+<font color=#447700>!<a name='887'></font>
+   integer, intent(in) :: len       <font color=#447700>! vector length<a name='888'></font>
+   real(r8), intent(in) :: t(len)       <font color=#447700>! temperature<a name='889'></font>
+   real(r8), intent(in) :: p(len)       <font color=#447700>! pressure<a name='890'></font>
+<a name='891'>
+<font color=#447700>!<a name='892'></font>
+<font color=#447700>! Output arguments<a name='893'></font>
+<font color=#447700>!<a name='894'></font>
+   real(r8), intent(out) :: es(len)   <font color=#447700>! saturation vapor pressure<a name='895'></font>
+   real(r8), intent(out) :: qs(len)   <font color=#447700>! saturation specific humidity<a name='896'></font>
+ <font color=#447700>! real(r8), intent(out) :: gam(len)  ! (l/cp)*(d(qs)/dt)<a name='897'></font>
+ <font color=#447700>! Sungsu<a name='898'></font>
+   real(r8), intent(out) :: dqsdt(len)  <font color=#447700>! (d(qs)/dt)<a name='899'></font>
+ <font color=#447700>! End by Sungsu<a name='900'></font>
+<a name='901'>
+<font color=#447700>!<a name='902'></font>
+<font color=#447700>!--------------------------Local Variables------------------------------<a name='903'></font>
+<font color=#447700>!<a name='904'></font>
+<font color=#447700>!<a name='905'></font>
+   integer i      <font color=#447700>! index for vector calculations<a name='906'></font>
+<font color=#447700>!<a name='907'></font>
+   real(r8) omeps     <font color=#447700>! 1. - 0.622<a name='908'></font>
+   real(r8) hltalt    <font color=#447700>! appropriately modified hlat for T derivatives<a name='909'></font>
+<font color=#447700>!<a name='910'></font>
+   real(r8) hlatsb    <font color=#447700>! hlat weighted in transition region<a name='911'></font>
+   real(r8) hlatvp    <font color=#447700>! hlat modified for t changes above freezing<a name='912'></font>
+   real(r8) desdt     <font color=#447700>! d(es)/dT<a name='913'></font>
+<a name='914'>
+ <font color=#447700>! Sungsu<a name='915'></font>
+   real(r8) gam(len)  <font color=#447700>! (l/cp)*(d(qs)/dt)<a name='916'></font>
+ <font color=#447700>! End by Sungsu<a name='917'></font>
+<a name='918'>
+<font color=#447700>!<a name='919'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='920'></font>
+<font color=#447700>!<a name='921'></font>
+   omeps = 1.0_r8 - epsqs<a name='922'>
+   do i=1,len<a name='923'>
+      es(i) = <A href='../../html_code/phys/module_mp_morr_two_moment.F.html#POLYSVP'>polysvp</A><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD2_WATER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="POLYSVP_15">(t(i),0)<a name='924'>
+<font color=#447700>!<a name='925'></font>
+<font color=#447700>! Saturation specific humidity<a name='926'></font>
+<font color=#447700>!<a name='927'></font>
+      qs(i) = epsqs*es(i)/(p(i) - omeps*es(i))<a name='928'>
+<font color=#447700>!<a name='929'></font>
+<font color=#447700>! The following check is to avoid the generation of negative<a name='930'></font>
+<font color=#447700>! values that can occur in the upper stratosphere and mesosphere<a name='931'></font>
+<font color=#447700>!<a name='932'></font>
+      qs(i) = min(1.0_r8,qs(i))<a name='933'>
+<font color=#447700>!<a name='934'></font>
+      if (qs(i) &lt; 0.0_r8) then<a name='935'>
+         qs(i) = 1.0_r8<a name='936'>
+         es(i) = p(i)<a name='937'>
+      end if<a name='938'>
+   end do<a name='939'>
+<font color=#447700>!<a name='940'></font>
+<font color=#447700>! No icephs or water to ice transition<a name='941'></font>
+<font color=#447700>!<a name='942'></font>
+   do i=1,len<a name='943'>
+<font color=#447700>!<a name='944'></font>
+<font color=#447700>! Account for change of hlatv with t above freezing where<a name='945'></font>
+<font color=#447700>! constant slope is given by -2369 j/(kg c) = cpv - cw<a name='946'></font>
+<font color=#447700>!<a name='947'></font>
+      hlatvp = hlatv - 2369.0_r8*(t(i)-tmelt)<a name='948'>
+      hlatsb = hlatv<a name='949'>
+      if (t(i) &lt; tmelt) then<a name='950'>
+         hltalt = hlatsb<a name='951'>
+      else<a name='952'>
+         hltalt = hlatvp<a name='953'>
+      end if<a name='954'>
+      desdt  = hltalt*es(i)/(rgasv*t(i)*t(i))<a name='955'>
+      gam(i) = hltalt*qs(i)*p(i)*desdt/(cp*es(i)*(p(i) - omeps*es(i)))<a name='956'>
+      if (qs(i) == 1.0_r8) gam(i) = 0.0_r8<a name='957'>
+    <font color=#447700>! Sungsu<a name='958'></font>
+      dqsdt(i) = (cp/hltalt)*gam(i)<a name='959'>
+    <font color=#447700>! End by Sungsu<a name='960'></font>
+   end do<a name='961'>
+<font color=#447700>!<a name='962'></font>
+   return<a name='963'>
+<font color=#447700>!<a name='964'></font>
+end subroutine vqsatd2_water<a name='965'>
+<a name='966'>
+<A NAME='VQSATD2_WATER_SINGLE'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD2_WATER_SINGLE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='967'>
+<font color=#993300>subroutine </font><font color=#cc0000>vqsatd2_water_single</font>(t       ,p       ,es      ,qs      ,dqsdt),<A href='../../call_from/VQSATD2_WATER_SINGLE.html' TARGET='index'>1</A><a name='968'>
+<a name='969'>
+<font color=#447700>!------------------------------Arguments--------------------------------<a name='970'></font>
+<font color=#447700>!<a name='971'></font>
+<font color=#447700>! Input arguments<a name='972'></font>
+<font color=#447700>!<a name='973'></font>
+<a name='974'>
+   real(r8), intent(in) :: t       <font color=#447700>! temperature<a name='975'></font>
+   real(r8), intent(in) :: p       <font color=#447700>! pressure<a name='976'></font>
+<a name='977'>
+<font color=#447700>!<a name='978'></font>
+<font color=#447700>! Output arguments<a name='979'></font>
+<font color=#447700>!<a name='980'></font>
+   real(r8), intent(out) :: es   <font color=#447700>! saturation vapor pressure<a name='981'></font>
+   real(r8), intent(out) :: qs   <font color=#447700>! saturation specific humidity<a name='982'></font>
+ <font color=#447700>! real(r8), intent(out) :: gam  ! (l/cp)*(d(qs)/dt)<a name='983'></font>
+ <font color=#447700>! Sungsu<a name='984'></font>
+   real(r8), intent(out) :: dqsdt  <font color=#447700>! (d(qs)/dt)<a name='985'></font>
+ <font color=#447700>! End by Sungsu<a name='986'></font>
+<a name='987'>
+<font color=#447700>!<a name='988'></font>
+<font color=#447700>!--------------------------Local Variables------------------------------<a name='989'></font>
+<font color=#447700>!<a name='990'></font>
+<font color=#447700>!<a name='991'></font>
+   integer i      <font color=#447700>! index for vector calculations<a name='992'></font>
+<font color=#447700>!<a name='993'></font>
+   real(r8) omeps     <font color=#447700>! 1. - 0.622<a name='994'></font>
+   real(r8) hltalt    <font color=#447700>! appropriately modified hlat for T derivatives<a name='995'></font>
+<font color=#447700>!<a name='996'></font>
+   real(r8) hlatsb    <font color=#447700>! hlat weighted in transition region<a name='997'></font>
+   real(r8) hlatvp    <font color=#447700>! hlat modified for t changes above freezing<a name='998'></font>
+   real(r8) desdt     <font color=#447700>! d(es)/dT<a name='999'></font>
+<a name='1000'>
+ <font color=#447700>! Sungsu<a name='1001'></font>
+   real(r8) gam  <font color=#447700>! (l/cp)*(d(qs)/dt)<a name='1002'></font>
+ <font color=#447700>! End by Sungsu<a name='1003'></font>
+<a name='1004'>
+<font color=#447700>!<a name='1005'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1006'></font>
+<font color=#447700>!<a name='1007'></font>
+   omeps = 1.0_r8 - epsqs<a name='1008'>
+<font color=#447700>!  do i=1,len<a name='1009'></font>
+      es = <A href='../../html_code/phys/module_mp_morr_two_moment.F.html#POLYSVP'>polysvp</A><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD2_WATER_SINGLE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="POLYSVP_16">(t,0)<a name='1010'>
+<font color=#447700>!<a name='1011'></font>
+<font color=#447700>! Saturation specific humidity<a name='1012'></font>
+<font color=#447700>!<a name='1013'></font>
+      qs = epsqs*es/(p - omeps*es)<a name='1014'>
+<font color=#447700>!<a name='1015'></font>
+<font color=#447700>! The following check is to avoid the generation of negative<a name='1016'></font>
+<font color=#447700>! values that can occur in the upper stratosphere and mesosphere<a name='1017'></font>
+<font color=#447700>!<a name='1018'></font>
+      qs = min(1.0_r8,qs)<a name='1019'>
+<font color=#447700>!<a name='1020'></font>
+      if (qs &lt; 0.0_r8) then<a name='1021'>
+         qs = 1.0_r8<a name='1022'>
+         es = p<a name='1023'>
+      end if<a name='1024'>
+<font color=#447700>!  end do<a name='1025'></font>
+<font color=#447700>!<a name='1026'></font>
+<font color=#447700>! No icephs or water to ice transition<a name='1027'></font>
+<font color=#447700>!<a name='1028'></font>
+<font color=#447700>!  do i=1,len<a name='1029'></font>
+<font color=#447700>!<a name='1030'></font>
+<font color=#447700>! Account for change of hlatv with t above freezing where<a name='1031'></font>
+<font color=#447700>! constant slope is given by -2369 j/(kg c) = cpv - cw<a name='1032'></font>
+<font color=#447700>!<a name='1033'></font>
+      hlatvp = hlatv - 2369.0_r8*(t-tmelt)<a name='1034'>
+      hlatsb = hlatv<a name='1035'>
+      if (t &lt; tmelt) then<a name='1036'>
+         hltalt = hlatsb<a name='1037'>
+      else<a name='1038'>
+         hltalt = hlatvp<a name='1039'>
+      end if<a name='1040'>
+      desdt  = hltalt*es/(rgasv*t*t)<a name='1041'>
+      gam = hltalt*qs*p*desdt/(cp*es*(p - omeps*es))<a name='1042'>
+      if (qs == 1.0_r8) gam = 0.0_r8<a name='1043'>
+    <font color=#447700>! Sungsu<a name='1044'></font>
+      dqsdt = (cp/hltalt)*gam<a name='1045'>
+    <font color=#447700>! End by Sungsu<a name='1046'></font>
+<font color=#447700>!  end do<a name='1047'></font>
+<font color=#447700>!<a name='1048'></font>
+   return<a name='1049'>
+<font color=#447700>!<a name='1050'></font>
+end subroutine vqsatd2_water_single<a name='1051'>
+<a name='1052'>
+#endif<a name='1053'>
+<A NAME='VQSATD2'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD2' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1054'>
+<font color=#993300>subroutine </font><font color=#cc0000>vqsatd2</font>(t       ,p       ,es      ,qs      ,dqsdt      , &amp;,<A href='../../call_from/VQSATD2.html' TARGET='index'>1</A><a name='1055'>
+                   len     )<a name='1056'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='1057'></font>
+<font color=#447700>! Sungsu : This is directly copied from 'vqsatd' but 'dqsdt' is output<a name='1058'></font>
+<font color=#447700>!          instead of gam for use in Sungsu's equilibrium stratiform<a name='1059'></font>
+<font color=#447700>!          macrophysics scheme.<a name='1060'></font>
+<font color=#447700>! <a name='1061'></font>
+<font color=#447700>! Purpose: <a name='1062'></font>
+<font color=#447700>! Utility procedure to look up and return saturation vapor pressure from<a name='1063'></font>
+<font color=#447700>! precomputed table, calculate and return saturation specific humidity<a name='1064'></font>
+<font color=#447700>! (g/g), and calculate and return gamma (l/cp)*(d(qsat)/dT).  The same<a name='1065'></font>
+<font color=#447700>! function as qsatd, but operates on vectors of temperature and pressure<a name='1066'></font>
+<font color=#447700>! <a name='1067'></font>
+<font color=#447700>! Method: <a name='1068'></font>
+<font color=#447700>! <a name='1069'></font>
+<font color=#447700>! Author: J. Hack<a name='1070'></font>
+<font color=#447700>! <a name='1071'></font>
+<font color=#447700>!------------------------------Arguments--------------------------------<a name='1072'></font>
+<font color=#447700>!<a name='1073'></font>
+<font color=#447700>! Input arguments<a name='1074'></font>
+<font color=#447700>!<a name='1075'></font>
+   integer, intent(in) :: len       <font color=#447700>! vector length<a name='1076'></font>
+   real(r8), intent(in) :: t(len)       <font color=#447700>! temperature<a name='1077'></font>
+   real(r8), intent(in) :: p(len)       <font color=#447700>! pressure<a name='1078'></font>
+<font color=#447700>!<a name='1079'></font>
+<font color=#447700>! Output arguments<a name='1080'></font>
+<font color=#447700>!<a name='1081'></font>
+   real(r8), intent(out) :: es(len)   <font color=#447700>! saturation vapor pressure<a name='1082'></font>
+   real(r8), intent(out) :: qs(len)   <font color=#447700>! saturation specific humidity<a name='1083'></font>
+ <font color=#447700>! real(r8), intent(out) :: gam(len)  ! (l/cp)*(d(qs)/dt)<a name='1084'></font>
+ <font color=#447700>! Sungsu<a name='1085'></font>
+   real(r8), intent(out) :: dqsdt(len)  <font color=#447700>! (d(qs)/dt)<a name='1086'></font>
+ <font color=#447700>! End by Sungsu <a name='1087'></font>
+<a name='1088'>
+<font color=#447700>!<a name='1089'></font>
+<font color=#447700>!--------------------------Local Variables------------------------------<a name='1090'></font>
+<font color=#447700>!<a name='1091'></font>
+   logical lflg   <font color=#447700>! true if in temperature transition region<a name='1092'></font>
+<font color=#447700>!<a name='1093'></font>
+   integer i      <font color=#447700>! index for vector calculations<a name='1094'></font>
+<font color=#447700>!<a name='1095'></font>
+   real(r8) omeps     <font color=#447700>! 1. - 0.622<a name='1096'></font>
+   real(r8) trinv     <font color=#447700>! reciprocal of ttrice (transition range)<a name='1097'></font>
+   real(r8) tc        <font color=#447700>! temperature (in degrees C)<a name='1098'></font>
+   real(r8) weight    <font color=#447700>! weight for es transition from water to ice<a name='1099'></font>
+   real(r8) hltalt    <font color=#447700>! appropriately modified hlat for T derivatives<a name='1100'></font>
+<font color=#447700>!<a name='1101'></font>
+   real(r8) hlatsb    <font color=#447700>! hlat weighted in transition region<a name='1102'></font>
+   real(r8) hlatvp    <font color=#447700>! hlat modified for t changes above freezing<a name='1103'></font>
+   real(r8) tterm     <font color=#447700>! account for d(es)/dT in transition region<a name='1104'></font>
+   real(r8) desdt     <font color=#447700>! d(es)/dT<a name='1105'></font>
+<a name='1106'>
+ <font color=#447700>! Sungsu<a name='1107'></font>
+   real(r8) gam(len)  <font color=#447700>! (l/cp)*(d(qs)/dt)<a name='1108'></font>
+ <font color=#447700>! End by Sungsu<a name='1109'></font>
+<font color=#447700>!<a name='1110'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1111'></font>
+<font color=#447700>!<a name='1112'></font>
+   omeps = 1.0_r8 - epsqs<a name='1113'>
+   do i=1,len<a name='1114'>
+      es(i) = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_12">(t(i))<a name='1115'>
+<font color=#447700>!<a name='1116'></font>
+<font color=#447700>! Saturation specific humidity<a name='1117'></font>
+<font color=#447700>!<a name='1118'></font>
+      qs(i) = epsqs*es(i)/(p(i) - omeps*es(i))<a name='1119'>
+<font color=#447700>!<a name='1120'></font>
+<font color=#447700>! The following check is to avoid the generation of negative<a name='1121'></font>
+<font color=#447700>! values that can occur in the upper stratosphere and mesosphere<a name='1122'></font>
+<font color=#447700>!<a name='1123'></font>
+      qs(i) = min(1.0_r8,qs(i))<a name='1124'>
+<font color=#447700>!<a name='1125'></font>
+      if (qs(i) &lt; 0.0_r8) then<a name='1126'>
+         qs(i) = 1.0_r8<a name='1127'>
+         es(i) = p(i)<a name='1128'>
+      end if<a name='1129'>
+   end do<a name='1130'>
+<font color=#447700>!<a name='1131'></font>
+<font color=#447700>! "generalized" analytic expression for t derivative of es<a name='1132'></font>
+<font color=#447700>! accurate to within 1 percent for 173.16 &lt; t &lt; 373.16<a name='1133'></font>
+<font color=#447700>!<a name='1134'></font>
+   trinv = 0.0_r8<a name='1135'>
+   if ((.not. icephs) .or. (ttrice.eq.0.0_r8)) go to 10<a name='1136'>
+   trinv = 1.0_r8/ttrice<a name='1137'>
+   do i=1,len<a name='1138'>
+<font color=#447700>!<a name='1139'></font>
+<font color=#447700>! Weighting of hlat accounts for transition from water to ice<a name='1140'></font>
+<font color=#447700>! polynomial expression approximates difference between es over<a name='1141'></font>
+<font color=#447700>! water and es over ice from 0 to -ttrice (C) (min of ttrice is<a name='1142'></font>
+<font color=#447700>! -40): required for accurate estimate of es derivative in transition<a name='1143'></font>
+<font color=#447700>! range from ice to water also accounting for change of hlatv with t<a name='1144'></font>
+<font color=#447700>! above freezing where const slope is given by -2369 j/(kg c) = cpv - cw<a name='1145'></font>
+<font color=#447700>!<a name='1146'></font>
+      tc     = t(i) - tmelt<a name='1147'>
+      lflg   = (tc &gt;= -ttrice .and. tc &lt; 0.0_r8)<a name='1148'>
+      weight = min(-tc*trinv,1.0_r8)<a name='1149'>
+      hlatsb = hlatv + weight*hlatf<a name='1150'>
+      hlatvp = hlatv - 2369.0_r8*tc<a name='1151'>
+      if (t(i) &lt; tmelt) then<a name='1152'>
+         hltalt = hlatsb<a name='1153'>
+      else<a name='1154'>
+         hltalt = hlatvp<a name='1155'>
+      end if<a name='1156'>
+      if (lflg) then<a name='1157'>
+         tterm = pcf(1) + tc*(pcf(2) + tc*(pcf(3) + tc*(pcf(4) + tc*pcf(5))))<a name='1158'>
+      else<a name='1159'>
+         tterm = 0.0_r8<a name='1160'>
+      end if<a name='1161'>
+      desdt  = hltalt*es(i)/(rgasv*t(i)*t(i)) + tterm*trinv<a name='1162'>
+      gam(i) = hltalt*qs(i)*p(i)*desdt/(cp*es(i)*(p(i) - omeps*es(i)))<a name='1163'>
+      if (qs(i) == 1.0_r8) gam(i) = 0.0_r8<a name='1164'>
+    <font color=#447700>! Sungsu<a name='1165'></font>
+      dqsdt(i) = (cp/hltalt)*gam(i)<a name='1166'>
+    <font color=#447700>! End by Sungsu<a name='1167'></font>
+   end do<a name='1168'>
+   return<a name='1169'>
+<font color=#447700>!<a name='1170'></font>
+<font color=#447700>! No icephs or water to ice transition<a name='1171'></font>
+<font color=#447700>!<a name='1172'></font>
+10 do i=1,len<a name='1173'>
+<font color=#447700>!<a name='1174'></font>
+<font color=#447700>! Account for change of hlatv with t above freezing where<a name='1175'></font>
+<font color=#447700>! constant slope is given by -2369 j/(kg c) = cpv - cw<a name='1176'></font>
+<font color=#447700>!<a name='1177'></font>
+      hlatvp = hlatv - 2369.0_r8*(t(i)-tmelt)<a name='1178'>
+      if (icephs) then<a name='1179'>
+         hlatsb = hlatv + hlatf<a name='1180'>
+      else<a name='1181'>
+         hlatsb = hlatv<a name='1182'>
+      end if<a name='1183'>
+      if (t(i) &lt; tmelt) then<a name='1184'>
+         hltalt = hlatsb<a name='1185'>
+      else<a name='1186'>
+         hltalt = hlatvp<a name='1187'>
+      end if<a name='1188'>
+      desdt  = hltalt*es(i)/(rgasv*t(i)*t(i))<a name='1189'>
+      gam(i) = hltalt*qs(i)*p(i)*desdt/(cp*es(i)*(p(i) - omeps*es(i)))<a name='1190'>
+      if (qs(i) == 1.0_r8) gam(i) = 0.0_r8<a name='1191'>
+    <font color=#447700>! Sungsu<a name='1192'></font>
+      dqsdt(i) = (cp/hltalt)*gam(i)<a name='1193'>
+    <font color=#447700>! End by Sungsu<a name='1194'></font>
+   end do<a name='1195'>
+<font color=#447700>!<a name='1196'></font>
+   return<a name='1197'>
+<font color=#447700>!<a name='1198'></font>
+end subroutine vqsatd2<a name='1199'>
+<a name='1200'>
+<a name='1201'>
+<font color=#447700>! Below routine is by Sungsu<a name='1202'></font>
+<a name='1203'>
+<A NAME='VQSATD2_SINGLE'><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD2_SINGLE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1204'>
+<font color=#993300>subroutine </font><font color=#cc0000>vqsatd2_single</font>(t       ,p       ,es      ,qs      ,dqsdt),<A href='../../call_from/VQSATD2_SINGLE.html' TARGET='index'>1</A><a name='1205'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='1206'></font>
+<font color=#447700>! Sungsu : This is directly copied from 'vqsatd' but 'dqsdt' is output<a name='1207'></font>
+<font color=#447700>!          instead of gam for use in Sungsu's equilibrium stratiform<a name='1208'></font>
+<font color=#447700>!          macrophysics scheme.<a name='1209'></font>
+<font color=#447700>! <a name='1210'></font>
+<font color=#447700>! Purpose: <a name='1211'></font>
+<font color=#447700>! Utility procedure to look up and return saturation vapor pressure from<a name='1212'></font>
+<font color=#447700>! precomputed table, calculate and return saturation specific humidity<a name='1213'></font>
+<font color=#447700>! (g/g), and calculate and return gamma (l/cp)*(d(qsat)/dT).  The same<a name='1214'></font>
+<font color=#447700>! function as qsatd, but operates on vectors of temperature and pressure<a name='1215'></font>
+<font color=#447700>! <a name='1216'></font>
+<font color=#447700>! Method: <a name='1217'></font>
+<font color=#447700>! <a name='1218'></font>
+<font color=#447700>! Author: J. Hack<a name='1219'></font>
+<font color=#447700>! <a name='1220'></font>
+<font color=#447700>!------------------------------Arguments--------------------------------<a name='1221'></font>
+<font color=#447700>!<a name='1222'></font>
+<font color=#447700>! Input arguments<a name='1223'></font>
+<font color=#447700>!<a name='1224'></font>
+   real(r8), intent(in) :: t       <font color=#447700>! temperature<a name='1225'></font>
+   real(r8), intent(in) :: p       <font color=#447700>! pressure<a name='1226'></font>
+<font color=#447700>!<a name='1227'></font>
+<font color=#447700>! Output arguments<a name='1228'></font>
+<font color=#447700>!<a name='1229'></font>
+   real(r8), intent(out) :: es     <font color=#447700>! saturation vapor pressure<a name='1230'></font>
+   real(r8), intent(out) :: qs     <font color=#447700>! saturation specific humidity<a name='1231'></font>
+ <font color=#447700>! real(r8), intent(out) :: gam    ! (l/cp)*(d(qs)/dt)<a name='1232'></font>
+ <font color=#447700>! Sungsu<a name='1233'></font>
+   real(r8), intent(out) :: dqsdt  <font color=#447700>! (d(qs)/dt)<a name='1234'></font>
+ <font color=#447700>! End by Sungsu <a name='1235'></font>
+<a name='1236'>
+<font color=#447700>!<a name='1237'></font>
+<font color=#447700>!--------------------------Local Variables------------------------------<a name='1238'></font>
+<font color=#447700>!<a name='1239'></font>
+   logical lflg   <font color=#447700>! true if in temperature transition region<a name='1240'></font>
+<font color=#447700>!<a name='1241'></font>
+<font color=#447700>!  integer i      ! index for vector calculations<a name='1242'></font>
+<font color=#447700>!<a name='1243'></font>
+   real(r8) omeps     <font color=#447700>! 1. - 0.622<a name='1244'></font>
+   real(r8) trinv     <font color=#447700>! reciprocal of ttrice (transition range)<a name='1245'></font>
+   real(r8) tc        <font color=#447700>! temperature (in degrees C)<a name='1246'></font>
+   real(r8) weight    <font color=#447700>! weight for es transition from water to ice<a name='1247'></font>
+   real(r8) hltalt    <font color=#447700>! appropriately modified hlat for T derivatives<a name='1248'></font>
+<font color=#447700>!<a name='1249'></font>
+   real(r8) hlatsb    <font color=#447700>! hlat weighted in transition region<a name='1250'></font>
+   real(r8) hlatvp    <font color=#447700>! hlat modified for t changes above freezing<a name='1251'></font>
+   real(r8) tterm     <font color=#447700>! account for d(es)/dT in transition region<a name='1252'></font>
+   real(r8) desdt     <font color=#447700>! d(es)/dT<a name='1253'></font>
+<a name='1254'>
+ <font color=#447700>! Sungsu<a name='1255'></font>
+   real(r8) gam       <font color=#447700>! (l/cp)*(d(qs)/dt)<a name='1256'></font>
+ <font color=#447700>! End by Sungsu<a name='1257'></font>
+<font color=#447700>!<a name='1258'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1259'></font>
+<font color=#447700>!<a name='1260'></font>
+   omeps = 1.0_r8 - epsqs<a name='1261'>
+<a name='1262'>
+<font color=#447700>!  do i=1,len<a name='1263'></font>
+<a name='1264'>
+      es = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD2_SINGLE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_13">(t)<a name='1265'>
+<font color=#447700>!<a name='1266'></font>
+<font color=#447700>! Saturation specific humidity<a name='1267'></font>
+<font color=#447700>!<a name='1268'></font>
+      qs = epsqs*es/(p - omeps*es)<a name='1269'>
+<font color=#447700>!<a name='1270'></font>
+<font color=#447700>! The following check is to avoid the generation of negative<a name='1271'></font>
+<font color=#447700>! values that can occur in the upper stratosphere and mesosphere<a name='1272'></font>
+<font color=#447700>!<a name='1273'></font>
+      qs = min(1.0_r8,qs)<a name='1274'>
+<font color=#447700>!<a name='1275'></font>
+      if (qs &lt; 0.0_r8) then<a name='1276'>
+         qs = 1.0_r8<a name='1277'>
+         es = p<a name='1278'>
+      end if<a name='1279'>
+<a name='1280'>
+<font color=#447700>!  end do<a name='1281'></font>
+<font color=#447700>!<a name='1282'></font>
+<font color=#447700>! "generalized" analytic expression for t derivative of es<a name='1283'></font>
+<font color=#447700>! accurate to within 1 percent for 173.16 &lt; t &lt; 373.16<a name='1284'></font>
+<font color=#447700>!<a name='1285'></font>
+   trinv = 0.0_r8<a name='1286'>
+   if ((.not. icephs) .or. (ttrice.eq.0.0_r8)) go to 10<a name='1287'>
+   trinv = 1.0_r8/ttrice<a name='1288'>
+<a name='1289'>
+<font color=#447700>!  do i=1,len<a name='1290'></font>
+<font color=#447700>!<a name='1291'></font>
+<font color=#447700>! Weighting of hlat accounts for transition from water to ice<a name='1292'></font>
+<font color=#447700>! polynomial expression approximates difference between es over<a name='1293'></font>
+<font color=#447700>! water and es over ice from 0 to -ttrice (C) (min of ttrice is<a name='1294'></font>
+<font color=#447700>! -40): required for accurate estimate of es derivative in transition<a name='1295'></font>
+<font color=#447700>! range from ice to water also accounting for change of hlatv with t<a name='1296'></font>
+<font color=#447700>! above freezing where const slope is given by -2369 j/(kg c) = cpv - cw<a name='1297'></font>
+<font color=#447700>!<a name='1298'></font>
+      tc     = t - tmelt<a name='1299'>
+      lflg   = (tc &gt;= -ttrice .and. tc &lt; 0.0_r8)<a name='1300'>
+      weight = min(-tc*trinv,1.0_r8)<a name='1301'>
+      hlatsb = hlatv + weight*hlatf<a name='1302'>
+      hlatvp = hlatv - 2369.0_r8*tc<a name='1303'>
+      if (t &lt; tmelt) then<a name='1304'>
+         hltalt = hlatsb<a name='1305'>
+      else<a name='1306'>
+         hltalt = hlatvp<a name='1307'>
+      end if<a name='1308'>
+      if (lflg) then<a name='1309'>
+         tterm = pcf(1) + tc*(pcf(2) + tc*(pcf(3) + tc*(pcf(4) + tc*pcf(5))))<a name='1310'>
+      else<a name='1311'>
+         tterm = 0.0_r8<a name='1312'>
+      end if<a name='1313'>
+      desdt  = hltalt*es/(rgasv*t*t) + tterm*trinv<a name='1314'>
+      gam = hltalt*qs*p*desdt/(cp*es*(p - omeps*es))<a name='1315'>
+      if (qs == 1.0_r8) gam = 0.0_r8<a name='1316'>
+    <font color=#447700>! Sungsu<a name='1317'></font>
+      dqsdt = (cp/hltalt)*gam<a name='1318'>
+    <font color=#447700>! End by Sungsu<a name='1319'></font>
+<font color=#447700>!  end do<a name='1320'></font>
+   return<a name='1321'>
+<font color=#447700>!<a name='1322'></font>
+<font color=#447700>! No icephs or water to ice transition<a name='1323'></font>
+<font color=#447700>!<a name='1324'></font>
+<a name='1325'>
+10 continue<a name='1326'>
+<a name='1327'>
+<font color=#447700>!10 do i=1,len<a name='1328'></font>
+<font color=#447700>!<a name='1329'></font>
+<font color=#447700>! Account for change of hlatv with t above freezing where<a name='1330'></font>
+<font color=#447700>! constant slope is given by -2369 j/(kg c) = cpv - cw<a name='1331'></font>
+<font color=#447700>!<a name='1332'></font>
+      hlatvp = hlatv - 2369.0_r8*(t-tmelt)<a name='1333'>
+      if (icephs) then<a name='1334'>
+         hlatsb = hlatv + hlatf<a name='1335'>
+      else<a name='1336'>
+         hlatsb = hlatv<a name='1337'>
+      end if<a name='1338'>
+      if (t &lt; tmelt) then<a name='1339'>
+         hltalt = hlatsb<a name='1340'>
+      else<a name='1341'>
+         hltalt = hlatvp<a name='1342'>
+      end if<a name='1343'>
+      desdt  = hltalt*es/(rgasv*t*t)<a name='1344'>
+      gam = hltalt*qs*p*desdt/(cp*es*(p - omeps*es))<a name='1345'>
+      if (qs == 1.0_r8) gam = 0.0_r8<a name='1346'>
+    <font color=#447700>! Sungsu<a name='1347'></font>
+      dqsdt = (cp/hltalt)*gam<a name='1348'>
+    <font color=#447700>! End by Sungsu<a name='1349'></font>
+<a name='1350'>
+<font color=#447700>!  end do<a name='1351'></font>
+<font color=#447700>!<a name='1352'></font>
+   return<a name='1353'>
+<font color=#447700>!<a name='1354'></font>
+end subroutine vqsatd2_single<a name='1355'>
+<a name='1356'>
+<a name='1357'>
+end module wv_saturation <a name='1358'>
+</pre></body></html>

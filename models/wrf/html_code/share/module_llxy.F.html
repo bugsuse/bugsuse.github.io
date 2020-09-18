@@ -1,0 +1,2257 @@
+<HTML> <BODY BGCOLOR=#eedddd LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_LLXY'><A href='../../html_code/share/module_llxy.F.html#MODULE_LLXY' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_llxy</font> <A href='../../call_to/MODULE_LLXY.html' TARGET='index'>14</A><a name='3'>
+<a name='4'>
+<font color=#447700>! Module that defines constants, data structures, and<a name='5'></font>
+<font color=#447700>! subroutines used to convert grid indices to lat/lon<a name='6'></font>
+<font color=#447700>! and vice versa.   <a name='7'></font>
+<font color=#447700>!<a name='8'></font>
+<font color=#447700>! SUPPORTED PROJECTIONS<a name='9'></font>
+<font color=#447700>! ---------------------<a name='10'></font>
+<font color=#447700>! Cylindrical Lat/Lon (code = PROJ_LATLON)<a name='11'></font>
+<font color=#447700>! Mercator (code = PROJ_MERC)<a name='12'></font>
+<font color=#447700>! Lambert Conformal (code = PROJ_LC)<a name='13'></font>
+<font color=#447700>! Gaussian (code = PROJ_GAUSS)<a name='14'></font>
+<font color=#447700>! Polar Stereographic (code = PROJ_PS)<a name='15'></font>
+<font color=#447700>! Rotated Lat/Lon (code = PROJ_ROTLL)<a name='16'></font>
+<font color=#447700>!<a name='17'></font>
+<font color=#447700>! REMARKS<a name='18'></font>
+<font color=#447700>! -------<a name='19'></font>
+<font color=#447700>! The routines contained within were adapted from routines<a name='20'></font>
+<font color=#447700>! obtained from NCEP's w3 library.  The original NCEP routines were less<a name='21'></font>
+<font color=#447700>! flexible (e.g., polar-stereo routines only supported truelat of 60N/60S)<a name='22'></font>
+<font color=#447700>! than what we needed, so modifications based on equations in Hoke, Hayes, and<a name='23'></font>
+<font color=#447700>! Renninger (AFGWC/TN/79-003) were added to improve the flexibility.  <a name='24'></font>
+<font color=#447700>! Additionally, coding was improved to F90 standards and the routines were<a name='25'></font>
+<font color=#447700>! combined into this module.  <a name='26'></font>
+<font color=#447700>!<a name='27'></font>
+<font color=#447700>! ASSUMPTIONS<a name='28'></font>
+<font color=#447700>! -----------<a name='29'></font>
+<font color=#447700>!  Grid Definition:<a name='30'></font>
+<font color=#447700>!    For mercator, lambert conformal, and polar-stereographic projections,<a name='31'></font>
+<font color=#447700>!    the routines within assume the following:<a name='32'></font>
+<font color=#447700>!<a name='33'></font>
+<font color=#447700>!       1.  Grid is dimensioned (i,j) where i is the East-West direction,<a name='34'></font>
+<font color=#447700>!           positive toward the east, and j is the north-south direction,<a name='35'></font>
+<font color=#447700>!           positive toward the north.<a name='36'></font>
+<font color=#447700>!       2.  Origin is at (1,1) and is located at the southwest corner,<a name='37'></font>
+<font color=#447700>!           regardless of hemispere.<a name='38'></font>
+<font color=#447700>!       3.  Grid spacing (dx) is always positive.<a name='39'></font>
+<font color=#447700>!       4.  Values of true latitudes must be positive for NH domains<a name='40'></font>
+<font color=#447700>!           and negative for SH domains.<a name='41'></font>
+<font color=#447700>!<a name='42'></font>
+<font color=#447700>!     For the latlon and Gaussian projection, the grid origin may be at any<a name='43'></font>
+<font color=#447700>!     of the corners, and the deltalat and deltalon values can be signed to<a name='44'></font>
+<font color=#447700>!     account for this using the following convention:<a name='45'></font>
+<font color=#447700>!       Origin Location        Deltalat Sign      Deltalon Sign<a name='46'></font>
+<font color=#447700>!       ---------------        -------------      -------------<a name='47'></font>
+<font color=#447700>!        SW Corner                  +                   +<a name='48'></font>
+<font color=#447700>!        NE Corner                  -                   -<a name='49'></font>
+<font color=#447700>!        NW Corner                  -                   +<a name='50'></font>
+<font color=#447700>!        SE Corner                  +                   -<a name='51'></font>
+<font color=#447700>!<a name='52'></font>
+<font color=#447700>!  Data Definitions:<a name='53'></font>
+<font color=#447700>!       1. Any arguments that are a latitude value are expressed in<a name='54'></font>
+<font color=#447700>!          degrees north with a valid range of -90 -&gt; 90<a name='55'></font>
+<font color=#447700>!       2. Any arguments that are a longitude value are expressed in<a name='56'></font>
+<font color=#447700>!          degrees east with a valid range of -180 -&gt; 180.<a name='57'></font>
+<font color=#447700>!       3. Distances are in meters and are always positive.<a name='58'></font>
+<font color=#447700>!       4. The standard longitude (stdlon) is defined as the longitude<a name='59'></font>
+<font color=#447700>!          line which is parallel to the grid's y-axis (j-direction), along<a name='60'></font>
+<font color=#447700>!          which latitude increases (NOT the absolute value of latitude, but<a name='61'></font>
+<font color=#447700>!          the actual latitude, such that latitude increases continuously<a name='62'></font>
+<font color=#447700>!          from the south pole to the north pole) as j increases.<a name='63'></font>
+<font color=#447700>!       5. One true latitude value is required for polar-stereographic and<a name='64'></font>
+<font color=#447700>!          mercator projections, and defines at which latitude the<a name='65'></font>
+<font color=#447700>!          grid spacing is true.  For lambert conformal, two true latitude<a name='66'></font>
+<font color=#447700>!          values must be specified, but may be set equal to each other to<a name='67'></font>
+<font color=#447700>!          specify a tangent projection instead of a secant projection.<a name='68'></font>
+<font color=#447700>!<a name='69'></font>
+<font color=#447700>! USAGE<a name='70'></font>
+<font color=#447700>! -----<a name='71'></font>
+<font color=#447700>! To use the routines in this module, the calling routines must have the<a name='72'></font>
+<font color=#447700>! following statement at the beginning of its declaration block:<a name='73'></font>
+<font color=#447700>!   USE map_utils<a name='74'></font>
+<font color=#447700>!<a name='75'></font>
+<font color=#447700>! The use of the module not only provides access to the necessary routines,<a name='76'></font>
+<font color=#447700>! but also defines a structure of TYPE (proj_info) that can be used<a name='77'></font>
+<font color=#447700>! to declare a variable of the same type to hold your map projection<a name='78'></font>
+<font color=#447700>! information.  It also defines some integer parameters that contain<a name='79'></font>
+<font color=#447700>! the projection codes so one only has to use those variable names rather<a name='80'></font>
+<font color=#447700>! than remembering the acutal code when using them.  The basic steps are<a name='81'></font>
+<font color=#447700>! as follows:<a name='82'></font>
+<font color=#447700>!<a name='83'></font>
+<font color=#447700>!   1.  Ensure the "USE map_utils" is in your declarations.<a name='84'></font>
+<font color=#447700>!   2.  Declare the projection information structure as type(proj_info):<a name='85'></font>
+<font color=#447700>!         TYPE(proj_info) :: proj<a name='86'></font>
+<font color=#447700>!   3.  Populate your structure by calling the map_set routine:<a name='87'></font>
+<font color=#447700>!         CALL map_set(code,lat1,lon1,knowni,knownj,dx,stdlon,truelat1,truelat2,proj)<a name='88'></font>
+<font color=#447700>!       where:<a name='89'></font>
+<font color=#447700>!         code (input) = one of PROJ_LATLON, PROJ_MERC, PROJ_LC, PROJ_PS,<a name='90'></font>
+<font color=#447700>!                        PROJ_GAUSS, or PROJ_ROTLL<a name='91'></font>
+<font color=#447700>!         lat1 (input) = Latitude of grid origin point (i,j)=(1,1)<a name='92'></font>
+<font color=#447700>!                         (see assumptions!)<a name='93'></font>
+<font color=#447700>!         lon1 (input) = Longitude of grid origin<a name='94'></font>
+<font color=#447700>!         knowni (input) = origin point, x-location<a name='95'></font>
+<font color=#447700>!         knownj (input) = origin point, y-location<a name='96'></font>
+<font color=#447700>!         dx (input) = grid spacing in meters (ignored for LATLON projections)<a name='97'></font>
+<font color=#447700>!         stdlon (input) = Standard longitude for PROJ_PS and PROJ_LC,<a name='98'></font>
+<font color=#447700>!               deltalon (see assumptions) for PROJ_LATLON,<a name='99'></font>
+<font color=#447700>!               ignored for PROJ_MERC<a name='100'></font>
+<font color=#447700>!         truelat1 (input) = 1st true latitude for PROJ_PS, PROJ_LC, and<a name='101'></font>
+<font color=#447700>!                PROJ_MERC, deltalat (see assumptions) for PROJ_LATLON<a name='102'></font>
+<font color=#447700>!         truelat2 (input) = 2nd true latitude for PROJ_LC,<a name='103'></font>
+<font color=#447700>!                ignored for all others.<a name='104'></font>
+<font color=#447700>!         proj (output) = The structure of type (proj_info) that will be fully<a name='105'></font>
+<font color=#447700>!                populated after this call<a name='106'></font>
+<font color=#447700>!<a name='107'></font>
+<font color=#447700>!   4.  Now that the proj structure is populated, you may call either<a name='108'></font>
+<font color=#447700>!       of the following routines:<a name='109'></font>
+<font color=#447700>!<a name='110'></font>
+<font color=#447700>!       latlon_to_ij(proj, lat, lon, i, j)<a name='111'></font>
+<font color=#447700>!       ij_to_latlon(proj, i, j, lat, lon)<a name='112'></font>
+<font color=#447700>!<a name='113'></font>
+<font color=#447700>!       It is incumbent upon the calling routine to determine whether or<a name='114'></font>
+<font color=#447700>!       not the values returned are within your domain's bounds.  All values<a name='115'></font>
+<font color=#447700>!       of i, j, lat, and lon are REAL values.<a name='116'></font>
+<font color=#447700>!<a name='117'></font>
+<font color=#447700>!<a name='118'></font>
+<font color=#447700>! REFERENCES<a name='119'></font>
+<font color=#447700>! ----------<a name='120'></font>
+<font color=#447700>!  Hoke, Hayes, and Renninger, "Map Preojections and Grid Systems for<a name='121'></font>
+<font color=#447700>!       Meteorological Applications." AFGWC/TN-79/003(Rev), Air Weather<a name='122'></font>
+<font color=#447700>!       Service, 1985.<a name='123'></font>
+<font color=#447700>!<a name='124'></font>
+<font color=#447700>!  NCAR MM5v3 Modeling System, REGRIDDER program, module_first_guess_map.F<a name='125'></font>
+<font color=#447700>!  NCEP routines w3fb06, w3fb07, w3fb08, w3fb09, w3fb11, w3fb12<a name='126'></font>
+<font color=#447700>!<a name='127'></font>
+<font color=#447700>! HISTORY<a name='128'></font>
+<font color=#447700>! -------<a name='129'></font>
+<font color=#447700>! 27 Mar 2001 - Original Version<a name='130'></font>
+<font color=#447700>!               Brent L. Shaw, NOAA/FSL (CSU/CIRA)<a name='131'></font>
+<font color=#447700>!<a name='132'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='133'></font>
+<a name='134'>
+   USE <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/share/module_llxy.F.html#module_llxy.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_110"><a name='135'>
+<a name='136'>
+   INTEGER, PARAMETER :: HH=4, VV=5<a name='137'>
+<a name='138'>
+   REAL, PARAMETER :: PI = 3.141592653589793<a name='139'>
+   REAL, PARAMETER :: OMEGA_E = 7.292e-5<a name='140'>
+<a name='141'>
+   REAL, PARAMETER :: DEG_PER_RAD = 180./PI<a name='142'>
+   REAL, PARAMETER :: RAD_PER_DEG = PI/180.<a name='143'>
+<a name='144'>
+   REAL, PARAMETER :: A_WGS84  = 6378137.<a name='145'>
+   REAL, PARAMETER :: B_WGS84  = 6356752.314<a name='146'>
+   REAL, PARAMETER :: RE_WGS84 = A_WGS84<a name='147'>
+   REAL, PARAMETER :: E_WGS84  = 0.081819192<a name='148'>
+<a name='149'>
+   REAL, PARAMETER :: A_NAD83  = 6378137.<a name='150'>
+   REAL, PARAMETER :: RE_NAD83 = A_NAD83<a name='151'>
+   REAL, PARAMETER :: E_NAD83  = 0.0818187034<a name='152'>
+<a name='153'>
+   REAL, PARAMETER :: EARTH_RADIUS_M = 6370000.<a name='154'>
+   REAL, PARAMETER :: EARTH_CIRC_M = 2.*PI*EARTH_RADIUS_M<a name='155'>
+<a name='156'>
+   INTEGER, PUBLIC, PARAMETER  :: PROJ_LATLON = 0<a name='157'>
+   INTEGER, PUBLIC, PARAMETER  :: PROJ_LC = 1<a name='158'>
+   INTEGER, PUBLIC, PARAMETER  :: PROJ_PS = 2<a name='159'>
+   INTEGER, PUBLIC, PARAMETER  :: PROJ_PS_WGS84 = 102<a name='160'>
+   INTEGER, PUBLIC, PARAMETER  :: PROJ_MERC = 3<a name='161'>
+   INTEGER, PUBLIC, PARAMETER  :: PROJ_GAUSS = 4<a name='162'>
+   INTEGER, PUBLIC, PARAMETER  :: PROJ_CYL = 5<a name='163'>
+   INTEGER, PUBLIC, PARAMETER  :: PROJ_CASSINI = 6<a name='164'>
+   INTEGER, PUBLIC, PARAMETER  :: PROJ_ALBERS_NAD83 = 105<a name='165'>
+   INTEGER, PUBLIC, PARAMETER  :: PROJ_ROTLL = 203<a name='166'>
+<a name='167'>
+   <font color=#447700>! Define some private constants<a name='168'></font>
+   INTEGER, PRIVATE, PARAMETER :: HIGH = 8<a name='169'>
+ <a name='170'>
+   TYPE proj_info<a name='171'>
+ <a name='172'>
+      INTEGER          :: code     <font color=#447700>! Integer code for projection TYPE<a name='173'></font>
+      INTEGER          :: nlat     <font color=#447700>! For Gaussian -- number of latitude points <a name='174'></font>
+                                   <font color=#447700>!  north of the equator <a name='175'></font>
+      INTEGER          :: nlon     <font color=#447700>!<a name='176'></font>
+                                   <font color=#447700>!<a name='177'></font>
+      INTEGER          :: ixdim    <font color=#447700>! For Rotated Lat/Lon -- number of mass points<a name='178'></font>
+                                   <font color=#447700>!  in an odd row<a name='179'></font>
+      INTEGER          :: jydim    <font color=#447700>! For Rotated Lat/Lon -- number of rows<a name='180'></font>
+      INTEGER          :: stagger  <font color=#447700>! For Rotated Lat/Lon -- mass or velocity grid <a name='181'></font>
+      REAL             :: phi      <font color=#447700>! For Rotated Lat/Lon -- domain half-extent in <a name='182'></font>
+                                   <font color=#447700>!  degrees latitude<a name='183'></font>
+      REAL             :: lambda   <font color=#447700>! For Rotated Lat/Lon -- domain half-extend in<a name='184'></font>
+                                   <font color=#447700>!  degrees longitude<a name='185'></font>
+      REAL             :: lat1     <font color=#447700>! SW latitude (1,1) in degrees (-90-&gt;90N)<a name='186'></font>
+      REAL             :: lon1     <font color=#447700>! SW longitude (1,1) in degrees (-180-&gt;180E)<a name='187'></font>
+      REAL             :: lat0     <font color=#447700>! For Cassini, latitude of projection pole<a name='188'></font>
+      REAL             :: lon0     <font color=#447700>! For Cassini, longitude of projection pole<a name='189'></font>
+      REAL             :: dx       <font color=#447700>! Grid spacing in meters at truelats, used<a name='190'></font>
+                                   <font color=#447700>!  only for ps, lc, and merc projections<a name='191'></font>
+      REAL             :: dy       <font color=#447700>! Grid spacing in meters at truelats, used<a name='192'></font>
+                                   <font color=#447700>!  only for ps, lc, and merc projections<a name='193'></font>
+      REAL             :: latinc   <font color=#447700>! Latitude increment for cylindrical lat/lon<a name='194'></font>
+      REAL             :: loninc   <font color=#447700>! Longitude increment for cylindrical lat/lon<a name='195'></font>
+                                   <font color=#447700>!  also the lon increment for Gaussian grid<a name='196'></font>
+      REAL             :: dlat     <font color=#447700>! Lat increment for lat/lon grids<a name='197'></font>
+      REAL             :: dlon     <font color=#447700>! Lon increment for lat/lon grids<a name='198'></font>
+      REAL             :: stdlon   <font color=#447700>! Longitude parallel to y-axis (-180-&gt;180E)<a name='199'></font>
+      REAL             :: truelat1 <font color=#447700>! First true latitude (all projections)<a name='200'></font>
+      REAL             :: truelat2 <font color=#447700>! Second true lat (LC only)<a name='201'></font>
+      REAL             :: hemi     <font color=#447700>! 1 for NH, -1 for SH<a name='202'></font>
+      REAL             :: cone     <font color=#447700>! Cone factor for LC projections<a name='203'></font>
+      REAL             :: polei    <font color=#447700>! Computed i-location of pole point<a name='204'></font>
+      REAL             :: polej    <font color=#447700>! Computed j-location of pole point<a name='205'></font>
+      REAL             :: rsw      <font color=#447700>! Computed radius to SW corner<a name='206'></font>
+      REAL             :: rebydx   <font color=#447700>! Earth radius divided by dx<a name='207'></font>
+      REAL             :: knowni   <font color=#447700>! X-location of known lat/lon<a name='208'></font>
+      REAL             :: knownj   <font color=#447700>! Y-location of known lat/lon<a name='209'></font>
+      REAL             :: re_m     <font color=#447700>! Radius of spherical earth, meters<a name='210'></font>
+      REAL             :: rho0     <font color=#447700>! For Albers equal area<a name='211'></font>
+      REAL             :: nc       <font color=#447700>! For Albers equal area<a name='212'></font>
+      REAL             :: bigc     <font color=#447700>! For Albers equal area<a name='213'></font>
+      LOGICAL          :: init     <font color=#447700>! Flag to indicate if this struct is <a name='214'></font>
+                                   <font color=#447700>!  ready for use<a name='215'></font>
+      LOGICAL          :: wrap     <font color=#447700>! For Gaussian -- flag to indicate wrapping <a name='216'></font>
+                                   <font color=#447700>!  around globe?<a name='217'></font>
+      REAL, POINTER, DIMENSION(:) :: gauss_lat  <font color=#447700>! Latitude array for Gaussian grid<a name='218'></font>
+ <a name='219'>
+   END TYPE proj_info<a name='220'>
+<a name='221'>
+ <font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='222'></font>
+ CONTAINS<a name='223'>
+ <font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='224'></font>
+ <a name='225'>
+<A NAME='MAP_INIT'><A href='../../html_code/share/module_llxy.F.html#MAP_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='226'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>map_init</font>(proj) <A href='../../call_to/MAP_INIT.html' TARGET='index'>7</A><a name='227'>
+      <font color=#447700>! Initializes the map projection structure to missing values<a name='228'></font>
+  <a name='229'>
+      IMPLICIT NONE<a name='230'>
+      TYPE(proj_info), INTENT(INOUT)  :: proj<a name='231'>
+  <a name='232'>
+      proj%code     = -999<a name='233'>
+      proj%lat1     = -999.9<a name='234'>
+      proj%lon1     = -999.9<a name='235'>
+      proj%lat0     = -999.9<a name='236'>
+      proj%lon0     = -999.9<a name='237'>
+      proj%dx       = -999.9<a name='238'>
+      proj%dy       = -999.9<a name='239'>
+      proj%latinc   = -999.9<a name='240'>
+      proj%loninc   = -999.9<a name='241'>
+      proj%stdlon   = -999.9<a name='242'>
+      proj%truelat1 = -999.9<a name='243'>
+      proj%truelat2 = -999.9<a name='244'>
+      proj%phi      = -999.9<a name='245'>
+      proj%lambda   = -999.9<a name='246'>
+      proj%ixdim    = -999<a name='247'>
+      proj%jydim    = -999<a name='248'>
+      proj%stagger  = HH<a name='249'>
+      proj%nlat     = 0<a name='250'>
+      proj%nlon     = 0<a name='251'>
+      proj%hemi     = 0.0<a name='252'>
+      proj%cone     = -999.9<a name='253'>
+      proj%polei    = -999.9<a name='254'>
+      proj%polej    = -999.9<a name='255'>
+      proj%rsw      = -999.9<a name='256'>
+      proj%knowni   = -999.9<a name='257'>
+      proj%knownj   = -999.9<a name='258'>
+      proj%re_m     = EARTH_RADIUS_M<a name='259'>
+      proj%init     = .FALSE.<a name='260'>
+      proj%wrap     = .FALSE.<a name='261'>
+      proj%rho0     = 0.<a name='262'>
+      proj%nc       = 0.<a name='263'>
+      proj%bigc     = 0.<a name='264'>
+      nullify(proj%gauss_lat)<a name='265'>
+   <a name='266'>
+   END SUBROUTINE map_init<a name='267'>
+<a name='268'>
+<a name='269'>
+<A NAME='MAP_SET'><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='270'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>map_set</font>(proj_code, proj, lat1, lon1, lat0, lon0, knowni, knownj, dx, latinc, &amp; <A href='../../call_to/MAP_SET.html' TARGET='index'>31</A>,<A href='../../call_from/MAP_SET.html' TARGET='index'>26</A><a name='271'>
+                      loninc, stdlon, truelat1, truelat2, nlat, nlon, ixdim, jydim, &amp;<a name='272'>
+                      stagger, phi, lambda, r_earth)<a name='273'>
+      <font color=#447700>! Given a partially filled proj_info structure, this routine computes<a name='274'></font>
+      <font color=#447700>! polei, polej, rsw, and cone (if LC projection) to complete the <a name='275'></font>
+      <font color=#447700>! structure.  This allows us to eliminate redundant calculations when<a name='276'></font>
+      <font color=#447700>! calling the coordinate conversion routines multiple times for the<a name='277'></font>
+      <font color=#447700>! same map.<a name='278'></font>
+      <font color=#447700>! This will generally be the first routine called when a user wants<a name='279'></font>
+      <font color=#447700>! to be able to use the coordinate conversion routines, and it<a name='280'></font>
+      <font color=#447700>! will call the appropriate subroutines based on the <a name='281'></font>
+      <font color=#447700>! proj%code which indicates which projection type this is.<a name='282'></font>
+  <a name='283'>
+      IMPLICIT NONE<a name='284'>
+      <a name='285'>
+      <font color=#447700>! Declare arguments<a name='286'></font>
+      INTEGER, INTENT(IN)               :: proj_code<a name='287'>
+      INTEGER, INTENT(IN), OPTIONAL     :: nlat<a name='288'>
+      INTEGER, INTENT(IN), OPTIONAL     :: nlon<a name='289'>
+      INTEGER, INTENT(IN), OPTIONAL     :: ixdim<a name='290'>
+      INTEGER, INTENT(IN), OPTIONAL     :: jydim<a name='291'>
+      INTEGER, INTENT(IN), OPTIONAL     :: stagger<a name='292'>
+      REAL, INTENT(IN), OPTIONAL        :: latinc<a name='293'>
+      REAL, INTENT(IN), OPTIONAL        :: loninc<a name='294'>
+      REAL, INTENT(IN), OPTIONAL        :: lat1<a name='295'>
+      REAL, INTENT(IN), OPTIONAL        :: lon1<a name='296'>
+      REAL, INTENT(IN), OPTIONAL        :: lat0<a name='297'>
+      REAL, INTENT(IN), OPTIONAL        :: lon0<a name='298'>
+      REAL, INTENT(IN), OPTIONAL        :: dx<a name='299'>
+      REAL, INTENT(IN), OPTIONAL        :: stdlon<a name='300'>
+      REAL, INTENT(IN), OPTIONAL        :: truelat1<a name='301'>
+      REAL, INTENT(IN), OPTIONAL        :: truelat2<a name='302'>
+      REAL, INTENT(IN), OPTIONAL        :: knowni<a name='303'>
+      REAL, INTENT(IN), OPTIONAL        :: knownj<a name='304'>
+      REAL, INTENT(IN), OPTIONAL        :: phi<a name='305'>
+      REAL, INTENT(IN), OPTIONAL        :: lambda<a name='306'>
+      REAL, INTENT(IN), OPTIONAL        :: r_earth<a name='307'>
+      TYPE(proj_info), INTENT(OUT)      :: proj<a name='308'>
+<a name='309'>
+      INTEGER :: iter<a name='310'>
+      REAL :: dummy_lon1<a name='311'>
+      REAL :: dummy_lon0<a name='312'>
+      REAL :: dummy_stdlon<a name='313'>
+  <a name='314'>
+      <font color=#447700>! First, verify that mandatory parameters are present for the specified proj_code<a name='315'></font>
+      IF ( proj_code == PROJ_LC ) THEN<a name='316'>
+         IF ( .NOT.PRESENT(truelat1) .OR. &amp;<a name='317'>
+              .NOT.PRESENT(truelat2) .OR. &amp;<a name='318'>
+              .NOT.PRESENT(lat1) .OR. &amp;<a name='319'>
+              .NOT.PRESENT(lon1) .OR. &amp;<a name='320'>
+              .NOT.PRESENT(knowni) .OR. &amp;<a name='321'>
+              .NOT.PRESENT(knownj) .OR. &amp;<a name='322'>
+              .NOT.PRESENT(stdlon) .OR. &amp;<a name='323'>
+              .NOT.PRESENT(dx) ) THEN<a name='324'>
+            PRINT '(A,I2)', 'The following are mandatory parameters for projection code : ', proj_code<a name='325'>
+            PRINT '(A)', ' truelat1, truelat2, lat1, lon1, knowni, knownj, stdlon, dx'<a name='326'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1404"> ( 'MAP_INIT' )<a name='327'>
+         END IF<a name='328'>
+      ELSE IF ( proj_code == PROJ_PS ) THEN<a name='329'>
+         IF ( .NOT.PRESENT(truelat1) .OR. &amp;<a name='330'>
+              .NOT.PRESENT(lat1) .OR. &amp;<a name='331'>
+              .NOT.PRESENT(lon1) .OR. &amp;<a name='332'>
+              .NOT.PRESENT(knowni) .OR. &amp;<a name='333'>
+              .NOT.PRESENT(knownj) .OR. &amp;<a name='334'>
+              .NOT.PRESENT(stdlon) .OR. &amp;<a name='335'>
+              .NOT.PRESENT(dx) ) THEN<a name='336'>
+            PRINT '(A,I2)', 'The following are mandatory parameters for projection code : ', proj_code<a name='337'>
+            PRINT '(A)', ' truelat1, lat1, lon1, knonwi, knownj, stdlon, dx'<a name='338'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1405"> ( 'MAP_INIT' )<a name='339'>
+         END IF<a name='340'>
+      ELSE IF ( proj_code == PROJ_PS_WGS84 ) THEN<a name='341'>
+         IF ( .NOT.PRESENT(truelat1) .OR. &amp;<a name='342'>
+              .NOT.PRESENT(lat1) .OR. &amp;<a name='343'>
+              .NOT.PRESENT(lon1) .OR. &amp;<a name='344'>
+              .NOT.PRESENT(knowni) .OR. &amp;<a name='345'>
+              .NOT.PRESENT(knownj) .OR. &amp;<a name='346'>
+              .NOT.PRESENT(stdlon) .OR. &amp;<a name='347'>
+              .NOT.PRESENT(dx) ) THEN<a name='348'>
+            PRINT '(A,I2)', 'The following are mandatory parameters for projection code : ', proj_code<a name='349'>
+            PRINT '(A)', ' truelat1, lat1, lon1, knonwi, knownj, stdlon, dx'<a name='350'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1406"> ( 'MAP_INIT' )<a name='351'>
+         END IF<a name='352'>
+      ELSE IF ( proj_code == PROJ_ALBERS_NAD83 ) THEN<a name='353'>
+         IF ( .NOT.PRESENT(truelat1) .OR. &amp;<a name='354'>
+              .NOT.PRESENT(truelat2) .OR. &amp;<a name='355'>
+              .NOT.PRESENT(lat1) .OR. &amp;<a name='356'>
+              .NOT.PRESENT(lon1) .OR. &amp;<a name='357'>
+              .NOT.PRESENT(knowni) .OR. &amp;<a name='358'>
+              .NOT.PRESENT(knownj) .OR. &amp;<a name='359'>
+              .NOT.PRESENT(stdlon) .OR. &amp;<a name='360'>
+              .NOT.PRESENT(dx) ) THEN<a name='361'>
+            PRINT '(A,I2)', 'The following are mandatory parameters for projection code : ', proj_code<a name='362'>
+            PRINT '(A)', ' truelat1, truelat2, lat1, lon1, knonwi, knownj, stdlon, dx'<a name='363'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1407"> ( 'MAP_INIT' )<a name='364'>
+         END IF<a name='365'>
+      ELSE IF ( proj_code == PROJ_MERC ) THEN<a name='366'>
+         IF ( .NOT.PRESENT(truelat1) .OR. &amp;<a name='367'>
+              .NOT.PRESENT(lat1) .OR. &amp;<a name='368'>
+              .NOT.PRESENT(lon1) .OR. &amp;<a name='369'>
+              .NOT.PRESENT(knowni) .OR. &amp;<a name='370'>
+              .NOT.PRESENT(knownj) .OR. &amp;<a name='371'>
+              .NOT.PRESENT(dx) ) THEN<a name='372'>
+            PRINT '(A,I2)', 'The following are mandatory parameters for projection code : ', proj_code<a name='373'>
+            PRINT '(A)', ' truelat1, lat1, lon1, knowni, knownj, dx'<a name='374'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1408"> ( 'MAP_INIT' )<a name='375'>
+         END IF<a name='376'>
+      ELSE IF ( proj_code == PROJ_LATLON ) THEN<a name='377'>
+         IF ( .NOT.PRESENT(latinc) .OR. &amp;<a name='378'>
+              .NOT.PRESENT(loninc) .OR. &amp;<a name='379'>
+              .NOT.PRESENT(knowni) .OR. &amp;<a name='380'>
+              .NOT.PRESENT(knownj) .OR. &amp;<a name='381'>
+              .NOT.PRESENT(lat1) .OR. &amp;<a name='382'>
+              .NOT.PRESENT(lon1) ) THEN<a name='383'>
+            PRINT '(A,I2)', 'The following are mandatory parameters for projection code : ', proj_code<a name='384'>
+            PRINT '(A)', ' latinc, loninc, knowni, knownj, lat1, lon1'<a name='385'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1409"> ( 'MAP_INIT' )<a name='386'>
+         END IF<a name='387'>
+      ELSE IF ( proj_code == PROJ_CYL ) THEN<a name='388'>
+         IF ( .NOT.PRESENT(latinc) .OR. &amp;<a name='389'>
+              .NOT.PRESENT(loninc) .OR. &amp;<a name='390'>
+              .NOT.PRESENT(stdlon) ) THEN<a name='391'>
+            PRINT '(A,I2)', 'The following are mandatory parameters for projection code : ', proj_code<a name='392'>
+            PRINT '(A)', ' latinc, loninc, stdlon'<a name='393'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1410"> ( 'MAP_INIT' )<a name='394'>
+         END IF<a name='395'>
+      ELSE IF ( proj_code == PROJ_CASSINI ) THEN<a name='396'>
+         IF ( .NOT.PRESENT(latinc) .OR. &amp;<a name='397'>
+              .NOT.PRESENT(loninc) .OR. &amp;<a name='398'>
+              .NOT.PRESENT(lat1) .OR. &amp;<a name='399'>
+              .NOT.PRESENT(lon1) .OR. &amp;<a name='400'>
+              .NOT.PRESENT(lat0) .OR. &amp;<a name='401'>
+              .NOT.PRESENT(lon0) .OR. &amp;<a name='402'>
+              .NOT.PRESENT(knowni) .OR. &amp;<a name='403'>
+              .NOT.PRESENT(knownj) .OR. &amp;<a name='404'>
+              .NOT.PRESENT(stdlon) ) THEN<a name='405'>
+            PRINT '(A,I2)', 'The following are mandatory parameters for projection code : ', proj_code<a name='406'>
+            PRINT '(A)', ' latinc, loninc, lat1, lon1, knowni, knownj, lat0, lon0, stdlon'<a name='407'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1411"> ( 'MAP_INIT' )<a name='408'>
+         END IF<a name='409'>
+      ELSE IF ( proj_code == PROJ_GAUSS ) THEN<a name='410'>
+         IF ( .NOT.PRESENT(nlat) .OR. &amp;<a name='411'>
+              .NOT.PRESENT(lat1) .OR. &amp;<a name='412'>
+              .NOT.PRESENT(lon1) .OR. &amp;<a name='413'>
+              .NOT.PRESENT(loninc) ) THEN<a name='414'>
+            PRINT '(A,I2)', 'The following are mandatory parameters for projection code : ', proj_code<a name='415'>
+            PRINT '(A)', ' nlat, lat1, lon1, loninc'<a name='416'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1412"> ( 'MAP_INIT' )<a name='417'>
+         END IF<a name='418'>
+      ELSE IF ( proj_code == PROJ_ROTLL ) THEN<a name='419'>
+         IF ( .NOT.PRESENT(ixdim) .OR. &amp;<a name='420'>
+              .NOT.PRESENT(jydim) .OR. &amp;<a name='421'>
+              .NOT.PRESENT(phi) .OR. &amp;<a name='422'>
+              .NOT.PRESENT(lambda) .OR. &amp;<a name='423'>
+              .NOT.PRESENT(lat1) .OR. &amp;<a name='424'>
+              .NOT.PRESENT(lon1) .OR. &amp;<a name='425'>
+              .NOT.PRESENT(stagger) ) THEN<a name='426'>
+            PRINT '(A,I2)', 'The following are mandatory parameters for projection code : ', proj_code<a name='427'>
+            PRINT '(A)', ' ixdim, jydim, phi, lambda, lat1, lon1, stagger'<a name='428'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1413"> ( 'MAP_INIT' )<a name='429'>
+         END IF<a name='430'>
+      ELSE<a name='431'>
+         PRINT '(A,I2)', 'Unknown projection code: ', proj_code<a name='432'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1414"> ( 'MAP_INIT' )<a name='433'>
+      END IF<a name='434'>
+  <a name='435'>
+      <font color=#447700>! Check for validity of mandatory variables in proj<a name='436'></font>
+      IF ( PRESENT(lat1) ) THEN<a name='437'>
+         IF ( ABS(lat1) .GT. 90. ) THEN<a name='438'>
+            PRINT '(A)', 'Latitude of origin corner required as follows:'<a name='439'>
+            PRINT '(A)', '    -90N &lt;= lat1 &lt; = 90.N'<a name='440'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1415"> ( 'MAP_INIT' )<a name='441'>
+         ENDIF<a name='442'>
+      ENDIF<a name='443'>
+  <a name='444'>
+      IF ( PRESENT(lon1) ) THEN<a name='445'>
+         dummy_lon1 = lon1<a name='446'>
+         IF ( ABS(dummy_lon1) .GT. 180.) THEN<a name='447'>
+            iter = 0 <a name='448'>
+            DO WHILE (ABS(dummy_lon1) &gt; 180. .AND. iter &lt; 10)<a name='449'>
+               IF (dummy_lon1 &lt; -180.) dummy_lon1 = dummy_lon1 + 360.<a name='450'>
+               IF (dummy_lon1 &gt; 180.) dummy_lon1 = dummy_lon1 - 360.<a name='451'>
+               iter = iter + 1<a name='452'>
+            END DO<a name='453'>
+            IF (abs(dummy_lon1) &gt; 180.) THEN<a name='454'>
+               PRINT '(A)', 'Longitude of origin required as follows:'<a name='455'>
+               PRINT '(A)', '   -180E &lt;= lon1 &lt;= 180W'<a name='456'>
+               CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1416"> ( 'MAP_INIT' )<a name='457'>
+            ENDIF<a name='458'>
+         ENDIF<a name='459'>
+      ENDIF<a name='460'>
+  <a name='461'>
+      IF ( PRESENT(lon0) ) THEN<a name='462'>
+         dummy_lon0 = lon0<a name='463'>
+         IF ( ABS(dummy_lon0) .GT. 180.) THEN<a name='464'>
+            iter = 0 <a name='465'>
+            DO WHILE (ABS(dummy_lon0) &gt; 180. .AND. iter &lt; 10)<a name='466'>
+               IF (dummy_lon0 &lt; -180.) dummy_lon0 = dummy_lon0 + 360.<a name='467'>
+               IF (dummy_lon0 &gt; 180.) dummy_lon0 = dummy_lon0 - 360.<a name='468'>
+               iter = iter + 1<a name='469'>
+            END DO<a name='470'>
+            IF (abs(dummy_lon0) &gt; 180.) THEN<a name='471'>
+               PRINT '(A)', 'Longitude of pole required as follows:'<a name='472'>
+               PRINT '(A)', '   -180E &lt;= lon0 &lt;= 180W'<a name='473'>
+               CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1417"> ( 'MAP_INIT' )<a name='474'>
+            ENDIF<a name='475'>
+         ENDIF<a name='476'>
+      ENDIF<a name='477'>
+  <a name='478'>
+      IF ( PRESENT(dx) ) THEN<a name='479'>
+         IF ((dx .LE. 0.).AND.(proj_code .NE. PROJ_LATLON)) THEN<a name='480'>
+            PRINT '(A)', 'Require grid spacing (dx) in meters be positive'<a name='481'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1418"> ( 'MAP_INIT' )<a name='482'>
+         ENDIF<a name='483'>
+      ENDIF<a name='484'>
+  <a name='485'>
+      IF ( PRESENT(stdlon) ) THEN<a name='486'>
+         dummy_stdlon = stdlon<a name='487'>
+         IF ((ABS(dummy_stdlon) &gt; 180.).AND.(proj_code /= PROJ_MERC)) THEN<a name='488'>
+            iter = 0 <a name='489'>
+            DO WHILE (ABS(dummy_stdlon) &gt; 180. .AND. iter &lt; 10)<a name='490'>
+               IF (dummy_stdlon &lt; -180.) dummy_stdlon = dummy_stdlon + 360.<a name='491'>
+               IF (dummy_stdlon &gt; 180.) dummy_stdlon = dummy_stdlon - 360.<a name='492'>
+               iter = iter + 1<a name='493'>
+            END DO<a name='494'>
+            IF (abs(dummy_stdlon) &gt; 180.) THEN<a name='495'>
+               PRINT '(A)', 'Need orientation longitude (stdlon) as: '<a name='496'>
+               PRINT '(A)', '   -180E &lt;= stdlon &lt;= 180W' <a name='497'>
+               CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1419"> ( 'MAP_INIT' )<a name='498'>
+            ENDIF<a name='499'>
+         ENDIF<a name='500'>
+      ENDIF<a name='501'>
+  <a name='502'>
+      IF ( PRESENT(truelat1) ) THEN<a name='503'>
+         IF (ABS(truelat1).GT.90.) THEN<a name='504'>
+            PRINT '(A)', 'Set true latitude 1 for all projections'<a name='505'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1420"> ( 'MAP_INIT' )<a name='506'>
+         ENDIF<a name='507'>
+      ENDIF<a name='508'>
+     <a name='509'>
+      CALL <A href='../../html_code/share/module_llxy.F.html#MAP_INIT'>map_init</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAP_INIT_3">(proj) <a name='510'>
+      proj%code  = proj_code<a name='511'>
+      IF ( PRESENT(lat1) )     proj%lat1     = lat1<a name='512'>
+      IF ( PRESENT(lon1) )     proj%lon1     = dummy_lon1<a name='513'>
+      IF ( PRESENT(lat0) )     proj%lat0     = lat0<a name='514'>
+      IF ( PRESENT(lon0) )     proj%lon0     = dummy_lon0<a name='515'>
+      IF ( PRESENT(latinc) )   proj%latinc   = latinc<a name='516'>
+      IF ( PRESENT(loninc) )   proj%loninc   = loninc<a name='517'>
+      IF ( PRESENT(knowni) )   proj%knowni   = knowni<a name='518'>
+      IF ( PRESENT(knownj) )   proj%knownj   = knownj<a name='519'>
+      IF ( PRESENT(dx) )       proj%dx       = dx<a name='520'>
+      IF ( PRESENT(stdlon) )   proj%stdlon   = dummy_stdlon<a name='521'>
+      IF ( PRESENT(truelat1) ) proj%truelat1 = truelat1<a name='522'>
+      IF ( PRESENT(truelat2) ) proj%truelat2 = truelat2<a name='523'>
+      IF ( PRESENT(nlat) )     proj%nlat     = nlat<a name='524'>
+      IF ( PRESENT(nlon) )     proj%nlon     = nlon<a name='525'>
+      IF ( PRESENT(ixdim) )    proj%ixdim    = ixdim<a name='526'>
+      IF ( PRESENT(jydim) )    proj%jydim    = jydim<a name='527'>
+      IF ( PRESENT(stagger) )  proj%stagger  = stagger<a name='528'>
+      IF ( PRESENT(phi) )      proj%phi      = phi<a name='529'>
+      IF ( PRESENT(lambda) )   proj%lambda   = lambda<a name='530'>
+      IF ( PRESENT(r_earth) )  proj%re_m     = r_earth<a name='531'>
+  <a name='532'>
+      IF ( PRESENT(dx) ) THEN <a name='533'>
+         IF ( (proj_code == PROJ_LC) .OR. (proj_code == PROJ_PS) .OR. &amp;<a name='534'>
+              (proj_code == PROJ_PS_WGS84) .OR. (proj_code == PROJ_ALBERS_NAD83) .OR. &amp;<a name='535'>
+              (proj_code == PROJ_MERC) ) THEN<a name='536'>
+            proj%dx = dx<a name='537'>
+            IF (truelat1 .LT. 0.) THEN<a name='538'>
+               proj%hemi = -1.0 <a name='539'>
+            ELSE<a name='540'>
+               proj%hemi = 1.0<a name='541'>
+            ENDIF<a name='542'>
+            proj%rebydx = proj%re_m / dx<a name='543'>
+         ENDIF<a name='544'>
+      ENDIF<a name='545'>
+<a name='546'>
+      pick_proj: SELECT CASE(proj%code)<a name='547'>
+  <a name='548'>
+         CASE(PROJ_PS)<a name='549'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#SET_PS'>set_ps</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PS_1">(proj)<a name='550'>
+<a name='551'>
+         CASE(PROJ_PS_WGS84)<a name='552'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#SET_PS_WGS84'>set_ps_wgs84</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PS_WGS84_1">(proj)<a name='553'>
+<a name='554'>
+         CASE(PROJ_ALBERS_NAD83)<a name='555'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#SET_ALBERS_NAD83'>set_albers_nad83</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_ALBERS_NAD83_1">(proj)<a name='556'>
+   <a name='557'>
+         CASE(PROJ_LC)<a name='558'>
+            IF (ABS(proj%truelat2) .GT. 90.) THEN<a name='559'>
+               proj%truelat2=proj%truelat1<a name='560'>
+            ENDIF<a name='561'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#SET_LC'>set_lc</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_LC_1">(proj)<a name='562'>
+      <a name='563'>
+         CASE (PROJ_MERC)<a name='564'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#SET_MERC'>set_merc</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_MERC_1">(proj)<a name='565'>
+      <a name='566'>
+         CASE (PROJ_LATLON)<a name='567'>
+   <a name='568'>
+         CASE (PROJ_GAUSS)<a name='569'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#SET_GAUSS'>set_gauss</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_GAUSS_1">(proj)<a name='570'>
+      <a name='571'>
+         CASE (PROJ_CYL)<a name='572'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#SET_CYL'>set_cyl</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_CYL_1">(proj)<a name='573'>
+      <a name='574'>
+         CASE (PROJ_CASSINI)<a name='575'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#SET_CASSINI'>set_cassini</A><A href='../../html_code/share/module_llxy.F.html#MAP_SET' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_CASSINI_1">(proj)<a name='576'>
+      <a name='577'>
+         CASE (PROJ_ROTLL)<a name='578'>
+     <a name='579'>
+      END SELECT pick_proj<a name='580'>
+      proj%init = .TRUE.<a name='581'>
+<a name='582'>
+      RETURN<a name='583'>
+<a name='584'>
+   END SUBROUTINE map_set<a name='585'>
+<a name='586'>
+<a name='587'>
+<A NAME='LATLON_TO_IJ'><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='588'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>latlon_to_ij</font>(proj, lat, lon, i, j) <A href='../../call_to/LATLON_TO_IJ.html' TARGET='index'>7</A>,<A href='../../call_from/LATLON_TO_IJ.html' TARGET='index'>12</A><a name='589'>
+      <font color=#447700>! Converts input lat/lon values to the cartesian (i,j) value<a name='590'></font>
+      <font color=#447700>! for the given projection. <a name='591'></font>
+  <a name='592'>
+      IMPLICIT NONE<a name='593'>
+      TYPE(proj_info), INTENT(IN)          :: proj<a name='594'>
+      REAL, INTENT(IN)                     :: lat<a name='595'>
+      REAL, INTENT(IN)                     :: lon<a name='596'>
+      REAL, INTENT(OUT)                    :: i<a name='597'>
+      REAL, INTENT(OUT)                    :: j<a name='598'>
+  <a name='599'>
+      IF (.NOT.proj%init) THEN<a name='600'>
+         PRINT '(A)', 'You have not called map_set for this projection'<a name='601'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1421"> ( 'LATLON_TO_IJ' )<a name='602'>
+      ENDIF<a name='603'>
+  <a name='604'>
+      SELECT CASE(proj%code)<a name='605'>
+   <a name='606'>
+         CASE(PROJ_LATLON)<a name='607'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LLIJ_LATLON'>llij_latlon</A><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LLIJ_LATLON_1">(lat,lon,proj,i,j)<a name='608'>
+   <a name='609'>
+         CASE(PROJ_MERC)<a name='610'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LLIJ_MERC'>llij_merc</A><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LLIJ_MERC_1">(lat,lon,proj,i,j)<a name='611'>
+   <a name='612'>
+         CASE(PROJ_PS)<a name='613'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LLIJ_PS'>llij_ps</A><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LLIJ_PS_1">(lat,lon,proj,i,j)<a name='614'>
+<a name='615'>
+         CASE(PROJ_PS_WGS84)<a name='616'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LLIJ_PS_WGS84'>llij_ps_wgs84</A><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LLIJ_PS_WGS84_1">(lat,lon,proj,i,j)<a name='617'>
+         <a name='618'>
+         CASE(PROJ_ALBERS_NAD83)<a name='619'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LLIJ_ALBERS_NAD83'>llij_albers_nad83</A><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LLIJ_ALBERS_NAD83_1">(lat,lon,proj,i,j)<a name='620'>
+         <a name='621'>
+         CASE(PROJ_LC)<a name='622'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LLIJ_LC'>llij_lc</A><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LLIJ_LC_1">(lat,lon,proj,i,j)<a name='623'>
+   <a name='624'>
+         CASE(PROJ_GAUSS)<a name='625'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LLIJ_GAUSS'>llij_gauss</A><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LLIJ_GAUSS_1">(lat,lon,proj,i,j)<a name='626'>
+   <a name='627'>
+         CASE(PROJ_CYL)<a name='628'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LLIJ_CYL'>llij_cyl</A><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LLIJ_CYL_1">(lat,lon,proj,i,j)<a name='629'>
+<a name='630'>
+         CASE(PROJ_CASSINI)<a name='631'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LLIJ_CASSINI'>llij_cassini</A><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LLIJ_CASSINI_1">(lat,lon,proj,i,j)<a name='632'>
+<a name='633'>
+         CASE(PROJ_ROTLL)<a name='634'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LLIJ_ROTLATLON'>llij_rotlatlon</A><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LLIJ_ROTLATLON_1">(lat,lon,proj,i,j)<a name='635'>
+   <a name='636'>
+         CASE DEFAULT<a name='637'>
+            PRINT '(A,I2)', 'Unrecognized map projection code: ', proj%code<a name='638'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1422"> ( 'LATLON_TO_IJ' )<a name='639'>
+    <a name='640'>
+      END SELECT<a name='641'>
+<a name='642'>
+      RETURN<a name='643'>
+<a name='644'>
+   END SUBROUTINE latlon_to_ij<a name='645'>
+<a name='646'>
+<a name='647'>
+<A NAME='IJ_TO_LATLON'><A href='../../html_code/share/module_llxy.F.html#IJ_TO_LATLON' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='648'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ij_to_latlon</font>(proj, i, j, lat, lon) <A href='../../call_to/IJ_TO_LATLON.html' TARGET='index'>1</A>,<A href='../../call_from/IJ_TO_LATLON.html' TARGET='index'>11</A><a name='649'>
+      <font color=#447700>! Computes geographical latitude and longitude for a given (i,j) point<a name='650'></font>
+      <font color=#447700>! in a grid with a projection of proj<a name='651'></font>
+  <a name='652'>
+      IMPLICIT NONE<a name='653'>
+      TYPE(proj_info),INTENT(IN)          :: proj<a name='654'>
+      REAL, INTENT(IN)                    :: i<a name='655'>
+      REAL, INTENT(IN)                    :: j<a name='656'>
+      REAL, INTENT(OUT)                   :: lat<a name='657'>
+      REAL, INTENT(OUT)                   :: lon<a name='658'>
+  <a name='659'>
+      IF (.NOT.proj%init) THEN<a name='660'>
+         PRINT '(A)', 'You have not called map_set for this projection'<a name='661'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#IJ_TO_LATLON' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1423"> ( 'IJ_TO_LATLON' )<a name='662'>
+      ENDIF<a name='663'>
+      SELECT CASE (proj%code)<a name='664'>
+  <a name='665'>
+         CASE (PROJ_LATLON)<a name='666'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#IJLL_LATLON'>ijll_latlon</A><A href='../../html_code/share/module_llxy.F.html#IJ_TO_LATLON' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IJLL_LATLON_1">(i, j, proj, lat, lon)<a name='667'>
+   <a name='668'>
+         CASE (PROJ_MERC)<a name='669'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#IJLL_MERC'>ijll_merc</A><A href='../../html_code/share/module_llxy.F.html#IJ_TO_LATLON' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IJLL_MERC_1">(i, j, proj, lat, lon)<a name='670'>
+   <a name='671'>
+         CASE (PROJ_PS)<a name='672'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#IJLL_PS'>ijll_ps</A><A href='../../html_code/share/module_llxy.F.html#IJ_TO_LATLON' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IJLL_PS_1">(i, j, proj, lat, lon)<a name='673'>
+<a name='674'>
+         CASE (PROJ_PS_WGS84)<a name='675'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#IJLL_PS_WGS84'>ijll_ps_wgs84</A><A href='../../html_code/share/module_llxy.F.html#IJ_TO_LATLON' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IJLL_PS_WGS84_1">(i, j, proj, lat, lon)<a name='676'>
+   <a name='677'>
+         CASE (PROJ_ALBERS_NAD83)<a name='678'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#IJLL_ALBERS_NAD83'>ijll_albers_nad83</A><A href='../../html_code/share/module_llxy.F.html#IJ_TO_LATLON' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IJLL_ALBERS_NAD83_1">(i, j, proj, lat, lon)<a name='679'>
+   <a name='680'>
+         CASE (PROJ_LC)<a name='681'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#IJLL_LC'>ijll_lc</A><A href='../../html_code/share/module_llxy.F.html#IJ_TO_LATLON' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IJLL_LC_1">(i, j, proj, lat, lon)<a name='682'>
+   <a name='683'>
+         CASE (PROJ_CYL)<a name='684'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#IJLL_CYL'>ijll_cyl</A><A href='../../html_code/share/module_llxy.F.html#IJ_TO_LATLON' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IJLL_CYL_1">(i, j, proj, lat, lon)<a name='685'>
+   <a name='686'>
+         CASE (PROJ_CASSINI)<a name='687'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#IJLL_CASSINI'>ijll_cassini</A><A href='../../html_code/share/module_llxy.F.html#IJ_TO_LATLON' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IJLL_CASSINI_1">(i, j, proj, lat, lon)<a name='688'>
+   <a name='689'>
+         CASE (PROJ_ROTLL)<a name='690'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#IJLL_ROTLATLON'>ijll_rotlatlon</A><A href='../../html_code/share/module_llxy.F.html#IJ_TO_LATLON' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IJLL_ROTLATLON_1">(i, j, proj, lat, lon)<a name='691'>
+   <a name='692'>
+         CASE DEFAULT<a name='693'>
+            PRINT '(A,I2)', 'Unrecognized map projection code: ', proj%code<a name='694'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#IJ_TO_LATLON' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1424"> ( 'IJ_TO_LATLON' )<a name='695'>
+  <a name='696'>
+      END SELECT<a name='697'>
+      RETURN<a name='698'>
+   END SUBROUTINE ij_to_latlon<a name='699'>
+<a name='700'>
+<a name='701'>
+<A NAME='SET_PS'><A href='../../html_code/share/module_llxy.F.html#SET_PS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='702'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_ps</font>(proj) <A href='../../call_to/SET_PS.html' TARGET='index'>1</A><a name='703'>
+      <font color=#447700>! Initializes a polar-stereographic map projection from the partially<a name='704'></font>
+      <font color=#447700>! filled proj structure. This routine computes the radius to the<a name='705'></font>
+      <font color=#447700>! southwest corner and computes the i/j location of the pole for use<a name='706'></font>
+      <font color=#447700>! in llij_ps and ijll_ps.<a name='707'></font>
+      IMPLICIT NONE<a name='708'>
+   <a name='709'>
+      <font color=#447700>! Declare args<a name='710'></font>
+      TYPE(proj_info), INTENT(INOUT)    :: proj<a name='711'>
+  <a name='712'>
+      <font color=#447700>! Local vars<a name='713'></font>
+      REAL                              :: ala1<a name='714'>
+      REAL                              :: alo1<a name='715'>
+      REAL                              :: reflon<a name='716'>
+      REAL                              :: scale_top<a name='717'>
+  <a name='718'>
+      <font color=#447700>! Executable code<a name='719'></font>
+      reflon = proj%stdlon + 90.<a name='720'>
+  <a name='721'>
+      <font color=#447700>! Compute numerator term of map scale factor<a name='722'></font>
+      scale_top = 1. + proj%hemi * SIN(proj%truelat1 * rad_per_deg)<a name='723'>
+  <a name='724'>
+      <font color=#447700>! Compute radius to lower-left (SW) corner<a name='725'></font>
+      ala1 = proj%lat1 * rad_per_deg<a name='726'>
+      proj%rsw = proj%rebydx*COS(ala1)*scale_top/(1.+proj%hemi*SIN(ala1))<a name='727'>
+  <a name='728'>
+      <font color=#447700>! Find the pole point<a name='729'></font>
+      alo1 = (proj%lon1 - reflon) * rad_per_deg<a name='730'>
+      proj%polei = proj%knowni - proj%rsw * COS(alo1)<a name='731'>
+      proj%polej = proj%knownj - proj%hemi * proj%rsw * SIN(alo1)<a name='732'>
+<a name='733'>
+      RETURN<a name='734'>
+<a name='735'>
+   END SUBROUTINE set_ps<a name='736'>
+<a name='737'>
+<a name='738'>
+<A NAME='LLIJ_PS'><A href='../../html_code/share/module_llxy.F.html#LLIJ_PS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='739'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>llij_ps</font>(lat,lon,proj,i,j) <A href='../../call_to/LLIJ_PS.html' TARGET='index'>1</A><a name='740'>
+      <font color=#447700>! Given latitude (-90 to 90), longitude (-180 to 180), and the<a name='741'></font>
+      <font color=#447700>! standard polar-stereographic projection information via the <a name='742'></font>
+      <font color=#447700>! public proj structure, this routine returns the i/j indices which<a name='743'></font>
+      <font color=#447700>! if within the domain range from 1-&gt;nx and 1-&gt;ny, respectively.<a name='744'></font>
+  <a name='745'>
+      IMPLICIT NONE<a name='746'>
+  <a name='747'>
+      <font color=#447700>! Delcare input arguments<a name='748'></font>
+      REAL, INTENT(IN)               :: lat<a name='749'>
+      REAL, INTENT(IN)               :: lon<a name='750'>
+      TYPE(proj_info),INTENT(IN)     :: proj<a name='751'>
+  <a name='752'>
+      <font color=#447700>! Declare output arguments     <a name='753'></font>
+      REAL, INTENT(OUT)              :: i <font color=#447700>!(x-index)<a name='754'></font>
+      REAL, INTENT(OUT)              :: j <font color=#447700>!(y-index)<a name='755'></font>
+  <a name='756'>
+      <font color=#447700>! Declare local variables<a name='757'></font>
+      <a name='758'>
+      REAL                           :: reflon<a name='759'>
+      REAL                           :: scale_top<a name='760'>
+      REAL                           :: ala<a name='761'>
+      REAL                           :: alo<a name='762'>
+      REAL                           :: rm<a name='763'>
+  <a name='764'>
+      <font color=#447700>! BEGIN CODE<a name='765'></font>
+    <a name='766'>
+      reflon = proj%stdlon + 90.<a name='767'>
+     <a name='768'>
+      <font color=#447700>! Compute numerator term of map scale factor<a name='769'></font>
+  <a name='770'>
+      scale_top = 1. + proj%hemi * SIN(proj%truelat1 * rad_per_deg)<a name='771'>
+  <a name='772'>
+      <font color=#447700>! Find radius to desired point<a name='773'></font>
+      ala = lat * rad_per_deg<a name='774'>
+      rm = proj%rebydx * COS(ala) * scale_top/(1. + proj%hemi *SIN(ala))<a name='775'>
+      alo = (lon - reflon) * rad_per_deg<a name='776'>
+      i = proj%polei + rm * COS(alo)<a name='777'>
+      j = proj%polej + proj%hemi * rm * SIN(alo)<a name='778'>
+   <a name='779'>
+      RETURN<a name='780'>
+<a name='781'>
+   END SUBROUTINE llij_ps<a name='782'>
+<a name='783'>
+<a name='784'>
+<A NAME='IJLL_PS'><A href='../../html_code/share/module_llxy.F.html#IJLL_PS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='785'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ijll_ps</font>(i, j, proj, lat, lon) <A href='../../call_to/IJLL_PS.html' TARGET='index'>1</A><a name='786'>
+ <a name='787'>
+      <font color=#447700>! This is the inverse subroutine of llij_ps.  It returns the <a name='788'></font>
+      <font color=#447700>! latitude and longitude of an i/j point given the projection info <a name='789'></font>
+      <font color=#447700>! structure.  <a name='790'></font>
+  <a name='791'>
+      IMPLICIT NONE<a name='792'>
+  <a name='793'>
+      <font color=#447700>! Declare input arguments<a name='794'></font>
+      REAL, INTENT(IN)                    :: i    <font color=#447700>! Column<a name='795'></font>
+      REAL, INTENT(IN)                    :: j    <font color=#447700>! Row<a name='796'></font>
+      TYPE (proj_info), INTENT(IN)        :: proj<a name='797'>
+      <a name='798'>
+      <font color=#447700>! Declare output arguments<a name='799'></font>
+      REAL, INTENT(OUT)                   :: lat     <font color=#447700>! -90 -&gt; 90 north<a name='800'></font>
+      REAL, INTENT(OUT)                   :: lon     <font color=#447700>! -180 -&gt; 180 East<a name='801'></font>
+  <a name='802'>
+      <font color=#447700>! Local variables<a name='803'></font>
+      REAL                                :: reflon<a name='804'>
+      REAL                                :: scale_top<a name='805'>
+      REAL                                :: xx,yy<a name='806'>
+      REAL                                :: gi2, r2<a name='807'>
+      REAL                                :: arccos<a name='808'>
+  <a name='809'>
+      <font color=#447700>! Begin Code<a name='810'></font>
+  <a name='811'>
+      <font color=#447700>! Compute the reference longitude by rotating 90 degrees to the east<a name='812'></font>
+      <font color=#447700>! to find the longitude line parallel to the positive x-axis.<a name='813'></font>
+      reflon = proj%stdlon + 90.<a name='814'>
+     <a name='815'>
+      <font color=#447700>! Compute numerator term of map scale factor<a name='816'></font>
+      scale_top = 1. + proj%hemi * SIN(proj%truelat1 * rad_per_deg)<a name='817'>
+  <a name='818'>
+      <font color=#447700>! Compute radius to point of interest<a name='819'></font>
+      xx = i - proj%polei<a name='820'>
+      yy = (j - proj%polej) * proj%hemi<a name='821'>
+      r2 = xx**2 + yy**2<a name='822'>
+  <a name='823'>
+      <font color=#447700>! Now the magic code<a name='824'></font>
+      IF (r2 .EQ. 0.) THEN <a name='825'>
+         lat = proj%hemi * 90.<a name='826'>
+         lon = reflon<a name='827'>
+      ELSE<a name='828'>
+         gi2 = (proj%rebydx * scale_top)**2.<a name='829'>
+         lat = deg_per_rad * proj%hemi * ASIN((gi2-r2)/(gi2+r2))<a name='830'>
+         arccos = ACOS(xx/SQRT(r2))<a name='831'>
+         IF (yy .GT. 0) THEN<a name='832'>
+            lon = reflon + deg_per_rad * arccos<a name='833'>
+         ELSE<a name='834'>
+            lon = reflon - deg_per_rad * arccos<a name='835'>
+         ENDIF<a name='836'>
+      ENDIF<a name='837'>
+    <a name='838'>
+      <font color=#447700>! Convert to a -180 -&gt; 180 East convention<a name='839'></font>
+      IF (lon .GT. 180.) lon = lon - 360.<a name='840'>
+      IF (lon .LT. -180.) lon = lon + 360.<a name='841'>
+<a name='842'>
+      RETURN<a name='843'>
+   <a name='844'>
+   END SUBROUTINE ijll_ps<a name='845'>
+<a name='846'>
+<a name='847'>
+<A NAME='SET_PS_WGS84'><A href='../../html_code/share/module_llxy.F.html#SET_PS_WGS84' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='848'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_ps_wgs84</font>(proj) <A href='../../call_to/SET_PS_WGS84.html' TARGET='index'>1</A><a name='849'>
+      <font color=#447700>! Initializes a polar-stereographic map projection (WGS84 ellipsoid) <a name='850'></font>
+      <font color=#447700>! from the partially filled proj structure. This routine computes the <a name='851'></font>
+      <font color=#447700>! radius to the southwest corner and computes the i/j location of the <a name='852'></font>
+      <font color=#447700>! pole for use in llij_ps and ijll_ps.<a name='853'></font>
+<a name='854'>
+      IMPLICIT NONE<a name='855'>
+   <a name='856'>
+      <font color=#447700>! Arguments<a name='857'></font>
+      TYPE(proj_info), INTENT(INOUT)    :: proj<a name='858'>
+  <a name='859'>
+      <font color=#447700>! Local variables<a name='860'></font>
+      real :: h, mc, tc, t, rho<a name='861'>
+<a name='862'>
+      h = proj%hemi<a name='863'>
+<a name='864'>
+      mc = cos(h*proj%truelat1*rad_per_deg)/sqrt(1.0-(E_WGS84*sin(h*proj%truelat1*rad_per_deg))**2.0)<a name='865'>
+      tc = sqrt(((1.0-sin(h*proj%truelat1*rad_per_deg))/(1.0+sin(h*proj%truelat1*rad_per_deg)))* &amp;<a name='866'>
+                (((1.0+E_WGS84*sin(h*proj%truelat1*rad_per_deg))/(1.0-E_WGS84*sin(h*proj%truelat1*rad_per_deg)))**E_WGS84 ))<a name='867'>
+<a name='868'>
+      <font color=#447700>! Find the i/j location of reference lat/lon with respect to the pole of the projection<a name='869'></font>
+      t = sqrt(((1.0-sin(h*proj%lat1*rad_per_deg))/(1.0+sin(h*proj%lat1*rad_per_deg)))* &amp;<a name='870'>
+               (((1.0+E_WGS84*sin(h*proj%lat1*rad_per_deg))/(1.0-E_WGS84*sin(h*proj%lat1*rad_per_deg)) )**E_WGS84 ) )<a name='871'>
+      rho = h * (A_WGS84 / proj%dx) * mc * t / tc<a name='872'>
+      proj%polei = rho * sin((h*proj%lon1 - h*proj%stdlon)*rad_per_deg)<a name='873'>
+      proj%polej = -rho * cos((h*proj%lon1 - h*proj%stdlon)*rad_per_deg)<a name='874'>
+<a name='875'>
+      RETURN<a name='876'>
+<a name='877'>
+   END SUBROUTINE set_ps_wgs84<a name='878'>
+<a name='879'>
+<a name='880'>
+<A NAME='LLIJ_PS_WGS84'><A href='../../html_code/share/module_llxy.F.html#LLIJ_PS_WGS84' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='881'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>llij_ps_wgs84</font>(lat,lon,proj,i,j) <A href='../../call_to/LLIJ_PS_WGS84.html' TARGET='index'>1</A><a name='882'>
+      <font color=#447700>! Given latitude (-90 to 90), longitude (-180 to 180), and the<a name='883'></font>
+      <font color=#447700>! standard polar-stereographic projection information via the <a name='884'></font>
+      <font color=#447700>! public proj structure, this routine returns the i/j indices which<a name='885'></font>
+      <font color=#447700>! if within the domain range from 1-&gt;nx and 1-&gt;ny, respectively.<a name='886'></font>
+  <a name='887'>
+      IMPLICIT NONE<a name='888'>
+  <a name='889'>
+      <font color=#447700>! Arguments<a name='890'></font>
+      REAL, INTENT(IN)               :: lat<a name='891'>
+      REAL, INTENT(IN)               :: lon<a name='892'>
+      REAL, INTENT(OUT)              :: i <font color=#447700>!(x-index)<a name='893'></font>
+      REAL, INTENT(OUT)              :: j <font color=#447700>!(y-index)<a name='894'></font>
+      TYPE(proj_info),INTENT(IN)     :: proj<a name='895'>
+  <a name='896'>
+      <font color=#447700>! Local variables<a name='897'></font>
+      real :: h, mc, tc, t, rho<a name='898'>
+<a name='899'>
+      h = proj%hemi<a name='900'>
+<a name='901'>
+      mc = cos(h*proj%truelat1*rad_per_deg)/sqrt(1.0-(E_WGS84*sin(h*proj%truelat1*rad_per_deg))**2.0)<a name='902'>
+      tc = sqrt(((1.0-sin(h*proj%truelat1*rad_per_deg))/(1.0+sin(h*proj%truelat1*rad_per_deg)))* &amp;<a name='903'>
+                (((1.0+E_WGS84*sin(h*proj%truelat1*rad_per_deg))/(1.0-E_WGS84*sin(h*proj%truelat1*rad_per_deg)))**E_WGS84 ))<a name='904'>
+<a name='905'>
+      t = sqrt(((1.0-sin(h*lat*rad_per_deg))/(1.0+sin(h*lat*rad_per_deg))) * &amp;<a name='906'>
+               (((1.0+E_WGS84*sin(h*lat*rad_per_deg))/(1.0-E_WGS84*sin(h*lat*rad_per_deg)))**E_WGS84))<a name='907'>
+<a name='908'>
+      <font color=#447700>! Find the x/y location of the requested lat/lon with respect to the pole of the projection<a name='909'></font>
+      rho = (A_WGS84 / proj%dx) * mc * t / tc<a name='910'>
+      i = h *  rho * sin((h*lon - h*proj%stdlon)*rad_per_deg)<a name='911'>
+      j = h *(-rho)* cos((h*lon - h*proj%stdlon)*rad_per_deg)<a name='912'>
+<a name='913'>
+      <font color=#447700>! Get i/j relative to reference i/j<a name='914'></font>
+      i = proj%knowni + (i - proj%polei)<a name='915'>
+      j = proj%knownj + (j - proj%polej)<a name='916'>
+  <a name='917'>
+      RETURN<a name='918'>
+<a name='919'>
+   END SUBROUTINE llij_ps_wgs84<a name='920'>
+<a name='921'>
+<a name='922'>
+<A NAME='IJLL_PS_WGS84'><A href='../../html_code/share/module_llxy.F.html#IJLL_PS_WGS84' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='923'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ijll_ps_wgs84</font>(i, j, proj, lat, lon) <A href='../../call_to/IJLL_PS_WGS84.html' TARGET='index'>1</A><a name='924'>
+ <a name='925'>
+      <font color=#447700>! This is the inverse subroutine of llij_ps.  It returns the <a name='926'></font>
+      <font color=#447700>! latitude and longitude of an i/j point given the projection info <a name='927'></font>
+      <font color=#447700>! structure.  <a name='928'></font>
+  <a name='929'>
+      implicit none<a name='930'>
+  <a name='931'>
+      <font color=#447700>! Arguments<a name='932'></font>
+      REAL, INTENT(IN)                    :: i    <font color=#447700>! Column<a name='933'></font>
+      REAL, INTENT(IN)                    :: j    <font color=#447700>! Row<a name='934'></font>
+      REAL, INTENT(OUT)                   :: lat     <font color=#447700>! -90 -&gt; 90 north<a name='935'></font>
+      REAL, INTENT(OUT)                   :: lon     <font color=#447700>! -180 -&gt; 180 East<a name='936'></font>
+      TYPE (proj_info), INTENT(IN)        :: proj<a name='937'>
+<a name='938'>
+      <font color=#447700>! Local variables<a name='939'></font>
+      real :: h, mc, tc, t, rho, x, y<a name='940'>
+      real :: chi, a, b, c, d<a name='941'>
+<a name='942'>
+      h = proj%hemi<a name='943'>
+      x = (i - proj%knowni + proj%polei)<a name='944'>
+      y = (j - proj%knownj + proj%polej)<a name='945'>
+<a name='946'>
+      mc = cos(h*proj%truelat1*rad_per_deg)/sqrt(1.0-(E_WGS84*sin(h*proj%truelat1*rad_per_deg))**2.0)<a name='947'>
+      tc = sqrt(((1.0-sin(h*proj%truelat1*rad_per_deg))/(1.0+sin(h*proj%truelat1*rad_per_deg))) * &amp;<a name='948'>
+                (((1.0+E_WGS84*sin(h*proj%truelat1*rad_per_deg))/(1.0-E_WGS84*sin(h*proj%truelat1*rad_per_deg)))**E_WGS84 ))<a name='949'>
+<a name='950'>
+      rho = sqrt((x*proj%dx)**2.0 + (y*proj%dx)**2.0)<a name='951'>
+      t = rho * tc / (A_WGS84 * mc) <a name='952'>
+<a name='953'>
+      lon = h*proj%stdlon*rad_per_deg + h*atan2(h*x,h*(-y))<a name='954'>
+<a name='955'>
+      chi = PI/2.0-2.0*atan(t)<a name='956'>
+      a = 1./2.*E_WGS84**2. + 5./24.*E_WGS84**4. +  1./40.*E_WGS84**6.  +    73./2016.*E_WGS84**8.<a name='957'>
+      b =                     7./24.*E_WGS84**4. + 29./120.*E_WGS84**6. + 54113./40320.*E_WGS84**8.<a name='958'>
+      c =                                           7./30.*E_WGS84**6.  +    81./280.*E_WGS84**8.<a name='959'>
+      d =                                                                  4279./20160.*E_WGS84**8.<a name='960'>
+<a name='961'>
+      lat = chi + sin(2.*chi)*(a + cos(2.*chi)*(b + cos(2.*chi)*(c + d*cos(2.*chi))))<a name='962'>
+      lat = h * lat<a name='963'>
+<a name='964'>
+      lat = lat*deg_per_rad<a name='965'>
+      lon = lon*deg_per_rad<a name='966'>
+<a name='967'>
+      RETURN<a name='968'>
+   <a name='969'>
+   END SUBROUTINE ijll_ps_wgs84<a name='970'>
+<a name='971'>
+<a name='972'>
+<A NAME='SET_ALBERS_NAD83'><A href='../../html_code/share/module_llxy.F.html#SET_ALBERS_NAD83' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='973'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_albers_nad83</font>(proj) <A href='../../call_to/SET_ALBERS_NAD83.html' TARGET='index'>1</A><a name='974'>
+      <font color=#447700>! Initializes an Albers equal area map projection (NAD83 ellipsoid) <a name='975'></font>
+      <font color=#447700>! from the partially filled proj structure. This routine computes the <a name='976'></font>
+      <font color=#447700>! radius to the southwest corner and computes the i/j location of the <a name='977'></font>
+      <font color=#447700>! pole for use in llij_albers_nad83 and ijll_albers_nad83.<a name='978'></font>
+<a name='979'>
+      IMPLICIT NONE<a name='980'>
+   <a name='981'>
+      <font color=#447700>! Arguments<a name='982'></font>
+      TYPE(proj_info), INTENT(INOUT)    :: proj<a name='983'>
+  <a name='984'>
+      <font color=#447700>! Local variables<a name='985'></font>
+      real :: h, m1, m2, q1, q2, theta, q, sinphi<a name='986'>
+<a name='987'>
+      h = proj%hemi<a name='988'>
+<a name='989'>
+      m1 = cos(h*proj%truelat1*rad_per_deg)/sqrt(1.0-(E_NAD83*sin(h*proj%truelat1*rad_per_deg))**2.0)<a name='990'>
+      m2 = cos(h*proj%truelat2*rad_per_deg)/sqrt(1.0-(E_NAD83*sin(h*proj%truelat2*rad_per_deg))**2.0)<a name='991'>
+<a name='992'>
+      sinphi = sin(proj%truelat1*rad_per_deg)<a name='993'>
+      q1 = (1.0-E_NAD83**2.0) * &amp;<a name='994'>
+           ((sinphi/(1.0-(E_NAD83*sinphi)**2.0)) - 1.0/(2.0*E_NAD83) * log((1.0-E_NAD83*sinphi)/(1.0+E_NAD83*sinphi)))<a name='995'>
+<a name='996'>
+      sinphi = sin(proj%truelat2*rad_per_deg)<a name='997'>
+      q2 = (1.0-E_NAD83**2.0) * &amp;<a name='998'>
+           ((sinphi/(1.0-(E_NAD83*sinphi)**2.0)) - 1.0/(2.0*E_NAD83) * log((1.0-E_NAD83*sinphi)/(1.0+E_NAD83*sinphi)))<a name='999'>
+<a name='1000'>
+      if (proj%truelat1 == proj%truelat2) then<a name='1001'>
+         proj%nc = sin(proj%truelat1*rad_per_deg)<a name='1002'>
+      else<a name='1003'>
+         proj%nc = (m1**2.0 - m2**2.0) / (q2 - q1)<a name='1004'>
+      end if<a name='1005'>
+<a name='1006'>
+      proj%bigc = m1**2.0 + proj%nc*q1<a name='1007'>
+<a name='1008'>
+      <font color=#447700>! Find the i/j location of reference lat/lon with respect to the pole of the projection<a name='1009'></font>
+      sinphi = sin(proj%lat1*rad_per_deg)<a name='1010'>
+      q = (1.0-E_NAD83**2.0) * &amp;<a name='1011'>
+           ((sinphi/(1.0-(E_NAD83*sinphi)**2.0)) - 1.0/(2.0*E_NAD83) * log((1.0-E_NAD83*sinphi)/(1.0+E_NAD83*sinphi)))<a name='1012'>
+<a name='1013'>
+      proj%rho0 = h * (A_NAD83 / proj%dx) * sqrt(proj%bigc - proj%nc * q) / proj%nc <a name='1014'>
+      theta = proj%nc*(proj%lon1 - proj%stdlon)*rad_per_deg<a name='1015'>
+<a name='1016'>
+      proj%polei = proj%rho0 * sin(h*theta) <a name='1017'>
+      proj%polej = proj%rho0 - proj%rho0 * cos(h*theta)<a name='1018'>
+<a name='1019'>
+      RETURN<a name='1020'>
+<a name='1021'>
+   END SUBROUTINE set_albers_nad83<a name='1022'>
+<a name='1023'>
+<a name='1024'>
+<A NAME='LLIJ_ALBERS_NAD83'><A href='../../html_code/share/module_llxy.F.html#LLIJ_ALBERS_NAD83' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1025'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>llij_albers_nad83</font>(lat,lon,proj,i,j) <A href='../../call_to/LLIJ_ALBERS_NAD83.html' TARGET='index'>1</A><a name='1026'>
+      <font color=#447700>! Given latitude (-90 to 90), longitude (-180 to 180), and the<a name='1027'></font>
+      <font color=#447700>! standard projection information via the <a name='1028'></font>
+      <font color=#447700>! public proj structure, this routine returns the i/j indices which<a name='1029'></font>
+      <font color=#447700>! if within the domain range from 1-&gt;nx and 1-&gt;ny, respectively.<a name='1030'></font>
+  <a name='1031'>
+      IMPLICIT NONE<a name='1032'>
+  <a name='1033'>
+      <font color=#447700>! Arguments<a name='1034'></font>
+      REAL, INTENT(IN)               :: lat<a name='1035'>
+      REAL, INTENT(IN)               :: lon<a name='1036'>
+      REAL, INTENT(OUT)              :: i <font color=#447700>!(x-index)<a name='1037'></font>
+      REAL, INTENT(OUT)              :: j <font color=#447700>!(y-index)<a name='1038'></font>
+      TYPE(proj_info),INTENT(IN)     :: proj<a name='1039'>
+  <a name='1040'>
+      <font color=#447700>! Local variables<a name='1041'></font>
+      real :: h, q, rho, theta, sinphi<a name='1042'>
+<a name='1043'>
+      h = proj%hemi<a name='1044'>
+<a name='1045'>
+      sinphi = sin(h*lat*rad_per_deg)<a name='1046'>
+<a name='1047'>
+      <font color=#447700>! Find the x/y location of the requested lat/lon with respect to the pole of the projection<a name='1048'></font>
+      q = (1.0-E_NAD83**2.0) * &amp;<a name='1049'>
+           ((sinphi/(1.0-(E_NAD83*sinphi)**2.0)) - 1.0/(2.0*E_NAD83) * log((1.0-E_NAD83*sinphi)/(1.0+E_NAD83*sinphi)))<a name='1050'>
+<a name='1051'>
+      rho = h * (A_NAD83 / proj%dx) * sqrt(proj%bigc - proj%nc * q) / proj%nc<a name='1052'>
+      theta = proj%nc * (h*lon - h*proj%stdlon)*rad_per_deg<a name='1053'>
+<a name='1054'>
+      i = h*rho*sin(theta)<a name='1055'>
+      j = h*proj%rho0 - h*rho*cos(theta)<a name='1056'>
+<a name='1057'>
+      <font color=#447700>! Get i/j relative to reference i/j<a name='1058'></font>
+      i = proj%knowni + (i - proj%polei)<a name='1059'>
+      j = proj%knownj + (j - proj%polej)<a name='1060'>
+<a name='1061'>
+      RETURN<a name='1062'>
+<a name='1063'>
+   END SUBROUTINE llij_albers_nad83<a name='1064'>
+<a name='1065'>
+<a name='1066'>
+<A NAME='IJLL_ALBERS_NAD83'><A href='../../html_code/share/module_llxy.F.html#IJLL_ALBERS_NAD83' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1067'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ijll_albers_nad83</font>(i, j, proj, lat, lon) <A href='../../call_to/IJLL_ALBERS_NAD83.html' TARGET='index'>1</A><a name='1068'>
+ <a name='1069'>
+      <font color=#447700>! This is the inverse subroutine of llij_albers_nad83.  It returns the <a name='1070'></font>
+      <font color=#447700>! latitude and longitude of an i/j point given the projection info <a name='1071'></font>
+      <font color=#447700>! structure.  <a name='1072'></font>
+  <a name='1073'>
+      implicit none<a name='1074'>
+  <a name='1075'>
+      <font color=#447700>! Arguments<a name='1076'></font>
+      REAL, INTENT(IN)                    :: i    <font color=#447700>! Column<a name='1077'></font>
+      REAL, INTENT(IN)                    :: j    <font color=#447700>! Row<a name='1078'></font>
+      REAL, INTENT(OUT)                   :: lat     <font color=#447700>! -90 -&gt; 90 north<a name='1079'></font>
+      REAL, INTENT(OUT)                   :: lon     <font color=#447700>! -180 -&gt; 180 East<a name='1080'></font>
+      TYPE (proj_info), INTENT(IN)        :: proj<a name='1081'>
+<a name='1082'>
+      <font color=#447700>! Local variables<a name='1083'></font>
+      real :: h, q, rho, theta, beta, x, y<a name='1084'>
+      real :: a, b, c<a name='1085'>
+<a name='1086'>
+      h = proj%hemi<a name='1087'>
+<a name='1088'>
+      x = (i - proj%knowni + proj%polei)<a name='1089'>
+      y = (j - proj%knownj + proj%polej)<a name='1090'>
+<a name='1091'>
+      rho = sqrt(x**2.0 + (proj%rho0 - y)**2.0)<a name='1092'>
+      theta = atan2(x, proj%rho0-y)<a name='1093'>
+<a name='1094'>
+      q = (proj%bigc - (rho*proj%nc*proj%dx/A_NAD83)**2.0) / proj%nc<a name='1095'>
+<a name='1096'>
+      beta = asin(q/(1.0 - log((1.0-E_NAD83)/(1.0+E_NAD83))*(1.0-E_NAD83**2.0)/(2.0*E_NAD83)))<a name='1097'>
+      a = 1./3.*E_NAD83**2. + 31./180.*E_NAD83**4. + 517./5040.*E_NAD83**6.<a name='1098'>
+      b =                     23./360.*E_NAD83**4. + 251./3780.*E_NAD83**6.<a name='1099'>
+      c =                                            761./45360.*E_NAD83**6.<a name='1100'>
+<a name='1101'>
+      lat = beta + a*sin(2.*beta) + b*sin(4.*beta) + c*sin(6.*beta)<a name='1102'>
+<a name='1103'>
+      lat = h*lat*deg_per_rad<a name='1104'>
+      lon = proj%stdlon + theta*deg_per_rad/proj%nc<a name='1105'>
+<a name='1106'>
+      RETURN<a name='1107'>
+   <a name='1108'>
+   END SUBROUTINE ijll_albers_nad83<a name='1109'>
+<a name='1110'>
+<a name='1111'>
+<A NAME='SET_LC'><A href='../../html_code/share/module_llxy.F.html#SET_LC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1112'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_lc</font>(proj) <A href='../../call_to/SET_LC.html' TARGET='index'>1</A>,<A href='../../call_from/SET_LC.html' TARGET='index'>1</A><a name='1113'>
+      <font color=#447700>! Initialize the remaining items in the proj structure for a<a name='1114'></font>
+      <font color=#447700>! lambert conformal grid.<a name='1115'></font>
+  <a name='1116'>
+      IMPLICIT NONE<a name='1117'>
+      <a name='1118'>
+      TYPE(proj_info), INTENT(INOUT)     :: proj<a name='1119'>
+  <a name='1120'>
+      REAL                               :: arg<a name='1121'>
+      REAL                               :: deltalon1<a name='1122'>
+      REAL                               :: tl1r<a name='1123'>
+      REAL                               :: ctl1r<a name='1124'>
+  <a name='1125'>
+      <font color=#447700>! Compute cone factor<a name='1126'></font>
+      CALL <A href='../../html_code/share/module_llxy.F.html#LC_CONE'>lc_cone</A><A href='../../html_code/share/module_llxy.F.html#SET_LC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LC_CONE_1">(proj%truelat1, proj%truelat2, proj%cone)<a name='1127'>
+  <a name='1128'>
+      <font color=#447700>! Compute longitude differences and ensure we stay out of the<a name='1129'></font>
+      <font color=#447700>! forbidden "cut zone"<a name='1130'></font>
+      deltalon1 = proj%lon1 - proj%stdlon<a name='1131'>
+      IF (deltalon1 .GT. +180.) deltalon1 = deltalon1 - 360.<a name='1132'>
+      IF (deltalon1 .LT. -180.) deltalon1 = deltalon1 + 360.<a name='1133'>
+  <a name='1134'>
+      <font color=#447700>! Convert truelat1 to radian and compute COS for later use<a name='1135'></font>
+      tl1r = proj%truelat1 * rad_per_deg<a name='1136'>
+      ctl1r = COS(tl1r)<a name='1137'>
+  <a name='1138'>
+      <font color=#447700>! Compute the radius to our known lower-left (SW) corner<a name='1139'></font>
+      proj%rsw = proj%rebydx * ctl1r/proj%cone * &amp;<a name='1140'>
+             (TAN((90.*proj%hemi-proj%lat1)*rad_per_deg/2.) / &amp;<a name='1141'>
+              TAN((90.*proj%hemi-proj%truelat1)*rad_per_deg/2.))**proj%cone<a name='1142'>
+  <a name='1143'>
+      <font color=#447700>! Find pole point<a name='1144'></font>
+      arg = proj%cone*(deltalon1*rad_per_deg)<a name='1145'>
+      proj%polei = proj%hemi*proj%knowni - proj%hemi * proj%rsw * SIN(arg)<a name='1146'>
+      proj%polej = proj%hemi*proj%knownj + proj%rsw * COS(arg)  <a name='1147'>
+  <a name='1148'>
+      RETURN<a name='1149'>
+<a name='1150'>
+   END SUBROUTINE set_lc                             <a name='1151'>
+<a name='1152'>
+<a name='1153'>
+<A NAME='LC_CONE'><A href='../../html_code/share/module_llxy.F.html#LC_CONE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1154'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>lc_cone</font>(truelat1, truelat2, cone) <A href='../../call_to/LC_CONE.html' TARGET='index'>1</A><a name='1155'>
+ <a name='1156'>
+   <font color=#447700>! Subroutine to compute the cone factor of a Lambert Conformal projection<a name='1157'></font>
+ <a name='1158'>
+      IMPLICIT NONE<a name='1159'>
+      <a name='1160'>
+      <font color=#447700>! Input Args<a name='1161'></font>
+      REAL, INTENT(IN)             :: truelat1  <font color=#447700>! (-90 -&gt; 90 degrees N)<a name='1162'></font>
+      REAL, INTENT(IN)             :: truelat2  <font color=#447700>!   "   "  "   "     "<a name='1163'></font>
+  <a name='1164'>
+      <font color=#447700>! Output Args<a name='1165'></font>
+      REAL, INTENT(OUT)            :: cone<a name='1166'>
+  <a name='1167'>
+      <font color=#447700>! Locals<a name='1168'></font>
+  <a name='1169'>
+      <font color=#447700>! BEGIN CODE<a name='1170'></font>
+  <a name='1171'>
+      <font color=#447700>! First, see if this is a secant or tangent projection.  For tangent<a name='1172'></font>
+      <font color=#447700>! projections, truelat1 = truelat2 and the cone is tangent to the <a name='1173'></font>
+      <font color=#447700>! Earth's surface at this latitude.  For secant projections, the cone<a name='1174'></font>
+      <font color=#447700>! intersects the Earth's surface at each of the distinctly different<a name='1175'></font>
+      <font color=#447700>! latitudes<a name='1176'></font>
+      IF (ABS(truelat1-truelat2) .GT. 0.1) THEN<a name='1177'>
+         cone = ALOG10(COS(truelat1*rad_per_deg)) - &amp;<a name='1178'>
+                ALOG10(COS(truelat2*rad_per_deg))<a name='1179'>
+         cone = cone /(ALOG10(TAN((45.0 - ABS(truelat1)/2.0) * rad_per_deg)) - &amp;<a name='1180'>
+                ALOG10(TAN((45.0 - ABS(truelat2)/2.0) * rad_per_deg)))        <a name='1181'>
+      ELSE<a name='1182'>
+         cone = SIN(ABS(truelat1)*rad_per_deg )  <a name='1183'>
+      ENDIF<a name='1184'>
+<a name='1185'>
+      RETURN<a name='1186'>
+<a name='1187'>
+   END SUBROUTINE lc_cone<a name='1188'>
+<a name='1189'>
+<a name='1190'>
+<A NAME='IJLL_LC'><A href='../../html_code/share/module_llxy.F.html#IJLL_LC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1191'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ijll_lc</font>( i, j, proj, lat, lon) <A href='../../call_to/IJLL_LC.html' TARGET='index'>1</A><a name='1192'>
+ <a name='1193'>
+   <font color=#447700>! Subroutine to convert from the (i,j) cartesian coordinate to the <a name='1194'></font>
+   <font color=#447700>! geographical latitude and longitude for a Lambert Conformal projection.<a name='1195'></font>
+ <a name='1196'>
+   <font color=#447700>! History:<a name='1197'></font>
+   <font color=#447700>! 25 Jul 01: Corrected by B. Shaw, NOAA/FSL<a name='1198'></font>
+   <font color=#447700>! <a name='1199'></font>
+      IMPLICIT NONE<a name='1200'>
+  <a name='1201'>
+      <font color=#447700>! Input Args<a name='1202'></font>
+      REAL, INTENT(IN)              :: i        <font color=#447700>! Cartesian X coordinate<a name='1203'></font>
+      REAL, INTENT(IN)              :: j        <font color=#447700>! Cartesian Y coordinate<a name='1204'></font>
+      TYPE(proj_info),INTENT(IN)    :: proj     <font color=#447700>! Projection info structure<a name='1205'></font>
+  <a name='1206'>
+      <font color=#447700>! Output Args                 <a name='1207'></font>
+      REAL, INTENT(OUT)             :: lat      <font color=#447700>! Latitude (-90-&gt;90 deg N)<a name='1208'></font>
+      REAL, INTENT(OUT)             :: lon      <font color=#447700>! Longitude (-180-&gt;180 E)<a name='1209'></font>
+  <a name='1210'>
+      <font color=#447700>! Locals <a name='1211'></font>
+      REAL                          :: inew<a name='1212'>
+      REAL                          :: jnew<a name='1213'>
+      REAL                          :: r<a name='1214'>
+      REAL                          :: chi,chi1,chi2<a name='1215'>
+      REAL                          :: r2<a name='1216'>
+      REAL                          :: xx<a name='1217'>
+      REAL                          :: yy<a name='1218'>
+  <a name='1219'>
+      <font color=#447700>! BEGIN CODE<a name='1220'></font>
+  <a name='1221'>
+      chi1 = (90. - proj%hemi*proj%truelat1)*rad_per_deg<a name='1222'>
+      chi2 = (90. - proj%hemi*proj%truelat2)*rad_per_deg<a name='1223'>
+  <a name='1224'>
+      <font color=#447700>! See if we are in the southern hemispere and flip the indices<a name='1225'></font>
+      <font color=#447700>! if we are. <a name='1226'></font>
+      inew = proj%hemi * i<a name='1227'>
+      jnew = proj%hemi * j<a name='1228'>
+  <a name='1229'>
+      <font color=#447700>! Compute radius**2 to i/j location<a name='1230'></font>
+      xx = inew - proj%polei<a name='1231'>
+      yy = proj%polej - jnew<a name='1232'>
+      r2 = (xx*xx + yy*yy)<a name='1233'>
+      r = SQRT(r2)/proj%rebydx<a name='1234'>
+     <a name='1235'>
+      <font color=#447700>! Convert to lat/lon<a name='1236'></font>
+      IF (r2 .EQ. 0.) THEN<a name='1237'>
+         lat = proj%hemi * 90.<a name='1238'>
+         lon = proj%stdlon<a name='1239'>
+      ELSE<a name='1240'>
+         <a name='1241'>
+         <font color=#447700>! Longitude<a name='1242'></font>
+         lon = proj%stdlon + deg_per_rad * ATAN2(proj%hemi*xx,yy)/proj%cone<a name='1243'>
+         lon = MOD(lon+360., 360.)<a name='1244'>
+   <a name='1245'>
+         <font color=#447700>! Latitude.  Latitude determined by solving an equation adapted <a name='1246'></font>
+         <font color=#447700>! from:<a name='1247'></font>
+         <font color=#447700>!  Maling, D.H., 1973: Coordinate Systems and Map Projections<a name='1248'></font>
+         <font color=#447700>! Equations #20 in Appendix I.  <a name='1249'></font>
+           <a name='1250'>
+         IF (chi1 .EQ. chi2) THEN<a name='1251'>
+            chi = 2.0*ATAN( ( r/TAN(chi1) )**(1./proj%cone) * TAN(chi1*0.5) )<a name='1252'>
+         ELSE<a name='1253'>
+            chi = 2.0*ATAN( (r*proj%cone/SIN(chi1))**(1./proj%cone) * TAN(chi1*0.5)) <a name='1254'>
+         ENDIF<a name='1255'>
+         lat = (90.0-chi*deg_per_rad)*proj%hemi<a name='1256'>
+  <a name='1257'>
+      ENDIF<a name='1258'>
+  <a name='1259'>
+      IF (lon .GT. +180.) lon = lon - 360.<a name='1260'>
+      IF (lon .LT. -180.) lon = lon + 360.<a name='1261'>
+ <a name='1262'>
+      RETURN<a name='1263'>
+<a name='1264'>
+   END SUBROUTINE ijll_lc<a name='1265'>
+<a name='1266'>
+<a name='1267'>
+<A NAME='LLIJ_LC'><A href='../../html_code/share/module_llxy.F.html#LLIJ_LC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1268'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>llij_lc</font>( lat, lon, proj, i, j) <A href='../../call_to/LLIJ_LC.html' TARGET='index'>1</A><a name='1269'>
+ <a name='1270'>
+   <font color=#447700>! Subroutine to compute the geographical latitude and longitude values<a name='1271'></font>
+   <font color=#447700>! to the cartesian x/y on a Lambert Conformal projection.<a name='1272'></font>
+     <a name='1273'>
+      IMPLICIT NONE<a name='1274'>
+  <a name='1275'>
+      <font color=#447700>! Input Args<a name='1276'></font>
+      REAL, INTENT(IN)              :: lat      <font color=#447700>! Latitude (-90-&gt;90 deg N)<a name='1277'></font>
+      REAL, INTENT(IN)              :: lon      <font color=#447700>! Longitude (-180-&gt;180 E)<a name='1278'></font>
+      TYPE(proj_info),INTENT(IN)      :: proj     <font color=#447700>! Projection info structure<a name='1279'></font>
+  <a name='1280'>
+      <font color=#447700>! Output Args                 <a name='1281'></font>
+      REAL, INTENT(OUT)             :: i        <font color=#447700>! Cartesian X coordinate<a name='1282'></font>
+      REAL, INTENT(OUT)             :: j        <font color=#447700>! Cartesian Y coordinate<a name='1283'></font>
+  <a name='1284'>
+      <font color=#447700>! Locals <a name='1285'></font>
+      REAL                          :: arg<a name='1286'>
+      REAL                          :: deltalon<a name='1287'>
+      REAL                          :: tl1r<a name='1288'>
+      REAL                          :: rm<a name='1289'>
+      REAL                          :: ctl1r<a name='1290'>
+      <a name='1291'>
+  <a name='1292'>
+      <font color=#447700>! BEGIN CODE<a name='1293'></font>
+      <a name='1294'>
+      <font color=#447700>! Compute deltalon between known longitude and standard lon and ensure<a name='1295'></font>
+      <font color=#447700>! it is not in the cut zone<a name='1296'></font>
+      deltalon = lon - proj%stdlon<a name='1297'>
+      IF (deltalon .GT. +180.) deltalon = deltalon - 360.<a name='1298'>
+      IF (deltalon .LT. -180.) deltalon = deltalon + 360.<a name='1299'>
+      <a name='1300'>
+      <font color=#447700>! Convert truelat1 to radian and compute COS for later use<a name='1301'></font>
+      tl1r = proj%truelat1 * rad_per_deg<a name='1302'>
+      ctl1r = COS(tl1r)     <a name='1303'>
+     <a name='1304'>
+      <font color=#447700>! Radius to desired point<a name='1305'></font>
+      rm = proj%rebydx * ctl1r/proj%cone * &amp;<a name='1306'>
+           (TAN((90.*proj%hemi-lat)*rad_per_deg/2.) / &amp;<a name='1307'>
+            TAN((90.*proj%hemi-proj%truelat1)*rad_per_deg/2.))**proj%cone<a name='1308'>
+  <a name='1309'>
+      arg = proj%cone*(deltalon*rad_per_deg)<a name='1310'>
+      i = proj%polei + proj%hemi * rm * SIN(arg)<a name='1311'>
+      j = proj%polej - rm * COS(arg)<a name='1312'>
+  <a name='1313'>
+      <font color=#447700>! Finally, if we are in the southern hemisphere, flip the i/j<a name='1314'></font>
+      <font color=#447700>! values to a coordinate system where (1,1) is the SW corner<a name='1315'></font>
+      <font color=#447700>! (what we assume) which is different than the original NCEP<a name='1316'></font>
+      <font color=#447700>! algorithms which used the NE corner as the origin in the <a name='1317'></font>
+      <font color=#447700>! southern hemisphere (left-hand vs. right-hand coordinate?)<a name='1318'></font>
+      i = proj%hemi * i  <a name='1319'>
+      j = proj%hemi * j<a name='1320'>
+<a name='1321'>
+      RETURN<a name='1322'>
+   END SUBROUTINE llij_lc<a name='1323'>
+<a name='1324'>
+<a name='1325'>
+<A NAME='SET_MERC'><A href='../../html_code/share/module_llxy.F.html#SET_MERC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1326'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_merc</font>(proj) <A href='../../call_to/SET_MERC.html' TARGET='index'>1</A><a name='1327'>
+   <a name='1328'>
+      <font color=#447700>! Sets up the remaining basic elements for the mercator projection<a name='1329'></font>
+  <a name='1330'>
+      IMPLICIT NONE<a name='1331'>
+      TYPE(proj_info), INTENT(INOUT)       :: proj<a name='1332'>
+      REAL                                 :: clain<a name='1333'>
+  <a name='1334'>
+  <a name='1335'>
+      <font color=#447700>!  Preliminary variables<a name='1336'></font>
+  <a name='1337'>
+      clain = COS(rad_per_deg*proj%truelat1)<a name='1338'>
+      proj%dlon = proj%dx / (proj%re_m * clain)<a name='1339'>
+  <a name='1340'>
+      <font color=#447700>! Compute distance from equator to origin, and store in the <a name='1341'></font>
+      <font color=#447700>! proj%rsw tag.<a name='1342'></font>
+  <a name='1343'>
+      proj%rsw = 0.<a name='1344'>
+      IF (proj%lat1 .NE. 0.) THEN<a name='1345'>
+         proj%rsw = (ALOG(TAN(0.5*((proj%lat1+90.)*rad_per_deg))))/proj%dlon<a name='1346'>
+      ENDIF<a name='1347'>
+<a name='1348'>
+      RETURN<a name='1349'>
+<a name='1350'>
+   END SUBROUTINE set_merc<a name='1351'>
+<a name='1352'>
+<a name='1353'>
+<A NAME='LLIJ_MERC'><A href='../../html_code/share/module_llxy.F.html#LLIJ_MERC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1354'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>llij_merc</font>(lat, lon, proj, i, j) <A href='../../call_to/LLIJ_MERC.html' TARGET='index'>1</A><a name='1355'>
+ <a name='1356'>
+      <font color=#447700>! Compute i/j coordinate from lat lon for mercator projection<a name='1357'></font>
+    <a name='1358'>
+      IMPLICIT NONE<a name='1359'>
+      REAL, INTENT(IN)              :: lat<a name='1360'>
+      REAL, INTENT(IN)              :: lon<a name='1361'>
+      TYPE(proj_info),INTENT(IN)    :: proj<a name='1362'>
+      REAL,INTENT(OUT)              :: i<a name='1363'>
+      REAL,INTENT(OUT)              :: j<a name='1364'>
+      REAL                          :: deltalon<a name='1365'>
+  <a name='1366'>
+      deltalon = lon - proj%lon1<a name='1367'>
+      IF (deltalon .LT. -180.) deltalon = deltalon + 360.<a name='1368'>
+      IF (deltalon .GT. 180.) deltalon = deltalon - 360.<a name='1369'>
+      i = proj%knowni + (deltalon/(proj%dlon*deg_per_rad))<a name='1370'>
+      j = proj%knownj + (ALOG(TAN(0.5*((lat + 90.) * rad_per_deg)))) / &amp;<a name='1371'>
+             proj%dlon - proj%rsw<a name='1372'>
+  <a name='1373'>
+      RETURN<a name='1374'>
+<a name='1375'>
+   END SUBROUTINE llij_merc<a name='1376'>
+<a name='1377'>
+<a name='1378'>
+<A NAME='IJLL_MERC'><A href='../../html_code/share/module_llxy.F.html#IJLL_MERC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1379'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ijll_merc</font>(i, j, proj, lat, lon) <A href='../../call_to/IJLL_MERC.html' TARGET='index'>1</A><a name='1380'>
+ <a name='1381'>
+      <font color=#447700>! Compute the lat/lon from i/j for mercator projection<a name='1382'></font>
+  <a name='1383'>
+      IMPLICIT NONE<a name='1384'>
+      REAL,INTENT(IN)               :: i<a name='1385'>
+      REAL,INTENT(IN)               :: j    <a name='1386'>
+      TYPE(proj_info),INTENT(IN)    :: proj<a name='1387'>
+      REAL, INTENT(OUT)             :: lat<a name='1388'>
+      REAL, INTENT(OUT)             :: lon <a name='1389'>
+  <a name='1390'>
+  <a name='1391'>
+      lat = 2.0*ATAN(EXP(proj%dlon*(proj%rsw + j-proj%knownj)))*deg_per_rad - 90.<a name='1392'>
+      lon = (i-proj%knowni)*proj%dlon*deg_per_rad + proj%lon1<a name='1393'>
+      IF (lon.GT.180.) lon = lon - 360.<a name='1394'>
+      IF (lon.LT.-180.) lon = lon + 360.<a name='1395'>
+      RETURN<a name='1396'>
+<a name='1397'>
+   END SUBROUTINE ijll_merc<a name='1398'>
+<a name='1399'>
+<a name='1400'>
+<A NAME='LLIJ_LATLON'><A href='../../html_code/share/module_llxy.F.html#LLIJ_LATLON' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1401'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>llij_latlon</font>(lat, lon, proj, i, j) <A href='../../call_to/LLIJ_LATLON.html' TARGET='index'>1</A><a name='1402'>
+  <a name='1403'>
+      <font color=#447700>! Compute the i/j location of a lat/lon on a LATLON grid.<a name='1404'></font>
+      IMPLICIT NONE<a name='1405'>
+      REAL, INTENT(IN)             :: lat<a name='1406'>
+      REAL, INTENT(IN)             :: lon<a name='1407'>
+      TYPE(proj_info), INTENT(IN)  :: proj<a name='1408'>
+      REAL, INTENT(OUT)            :: i<a name='1409'>
+      REAL, INTENT(OUT)            :: j<a name='1410'>
+  <a name='1411'>
+      REAL                         :: deltalat<a name='1412'>
+      REAL                         :: deltalon<a name='1413'>
+  <a name='1414'>
+      <font color=#447700>! Compute deltalat and deltalon as the difference between the input <a name='1415'></font>
+      <font color=#447700>! lat/lon and the origin lat/lon<a name='1416'></font>
+      deltalat = lat - proj%lat1<a name='1417'>
+      deltalon = lon - proj%lon1      <a name='1418'>
+      <a name='1419'>
+      <font color=#447700>! Compute i/j<a name='1420'></font>
+      i = deltalon/proj%loninc<a name='1421'>
+      j = deltalat/proj%latinc<a name='1422'>
+<a name='1423'>
+      i = i + proj%knowni<a name='1424'>
+      j = j + proj%knownj<a name='1425'>
+  <a name='1426'>
+      RETURN<a name='1427'>
+<a name='1428'>
+   END SUBROUTINE llij_latlon<a name='1429'>
+<a name='1430'>
+<a name='1431'>
+<A NAME='IJLL_LATLON'><A href='../../html_code/share/module_llxy.F.html#IJLL_LATLON' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1432'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ijll_latlon</font>(i, j, proj, lat, lon) <A href='../../call_to/IJLL_LATLON.html' TARGET='index'>1</A><a name='1433'>
+  <a name='1434'>
+      <font color=#447700>! Compute the lat/lon location of an i/j on a LATLON grid.<a name='1435'></font>
+      IMPLICIT NONE<a name='1436'>
+      REAL, INTENT(IN)             :: i<a name='1437'>
+      REAL, INTENT(IN)             :: j<a name='1438'>
+      TYPE(proj_info), INTENT(IN)  :: proj<a name='1439'>
+      REAL, INTENT(OUT)            :: lat<a name='1440'>
+      REAL, INTENT(OUT)            :: lon<a name='1441'>
+  <a name='1442'>
+      REAL                         :: i_work, j_work<a name='1443'>
+      REAL                         :: deltalat<a name='1444'>
+      REAL                         :: deltalon<a name='1445'>
+  <a name='1446'>
+      i_work = i - proj%knowni<a name='1447'>
+      j_work = j - proj%knownj<a name='1448'>
+<a name='1449'>
+      <font color=#447700>! Compute deltalat and deltalon <a name='1450'></font>
+      deltalat = j_work*proj%latinc<a name='1451'>
+      deltalon = i_work*proj%loninc<a name='1452'>
+  <a name='1453'>
+      lat = proj%lat1 + deltalat<a name='1454'>
+      lon = proj%lon1 + deltalon<a name='1455'>
+  <a name='1456'>
+      RETURN<a name='1457'>
+<a name='1458'>
+   END SUBROUTINE ijll_latlon<a name='1459'>
+<a name='1460'>
+<a name='1461'>
+<A NAME='SET_CYL'><A href='../../html_code/share/module_llxy.F.html#SET_CYL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1462'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_cyl</font>(proj) <A href='../../call_to/SET_CYL.html' TARGET='index'>1</A><a name='1463'>
+<a name='1464'>
+      implicit none<a name='1465'>
+<a name='1466'>
+      <font color=#447700>! Arguments<a name='1467'></font>
+      type(proj_info), intent(inout) :: proj<a name='1468'>
+<a name='1469'>
+      proj%hemi = 1.0<a name='1470'>
+<a name='1471'>
+   END SUBROUTINE set_cyl<a name='1472'>
+<a name='1473'>
+<a name='1474'>
+<A NAME='LLIJ_CYL'><A href='../../html_code/share/module_llxy.F.html#LLIJ_CYL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1475'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>llij_cyl</font>(lat, lon, proj, i, j) <A href='../../call_to/LLIJ_CYL.html' TARGET='index'>2</A><a name='1476'>
+<a name='1477'>
+      implicit none<a name='1478'>
+    <a name='1479'>
+      <font color=#447700>! Arguments<a name='1480'></font>
+      real, intent(in) :: lat, lon<a name='1481'>
+      real, intent(out) :: i, j<a name='1482'>
+      type(proj_info), intent(in) :: proj<a name='1483'>
+<a name='1484'>
+      <font color=#447700>! Local variables<a name='1485'></font>
+      real :: deltalat<a name='1486'>
+      real :: deltalon<a name='1487'>
+<a name='1488'>
+      <font color=#447700>! Compute deltalat and deltalon as the difference between the input<a name='1489'></font>
+      <font color=#447700>! lat/lon and the origin lat/lon<a name='1490'></font>
+      deltalat = lat - proj%lat1<a name='1491'>
+<font color=#447700>!      deltalon = lon - proj%stdlon<a name='1492'></font>
+      deltalon = lon - proj%lon1<a name='1493'>
+<a name='1494'>
+      if (deltalon &lt;   0.) deltalon = deltalon + 360.<a name='1495'>
+      if (deltalon &gt; 360.) deltalon = deltalon - 360.<a name='1496'>
+<a name='1497'>
+      <font color=#447700>! Compute i/j<a name='1498'></font>
+      i = deltalon/proj%loninc<a name='1499'>
+      j = deltalat/proj%latinc<a name='1500'>
+<a name='1501'>
+      if (i &lt;= 0.)              i = i + 360./proj%loninc<a name='1502'>
+      if (i &gt; 360./proj%loninc) i = i - 360./proj%loninc<a name='1503'>
+<a name='1504'>
+      i = i + proj%knowni<a name='1505'>
+      j = j + proj%knownj<a name='1506'>
+<a name='1507'>
+   END SUBROUTINE llij_cyl<a name='1508'>
+<a name='1509'>
+<a name='1510'>
+<A NAME='IJLL_CYL'><A href='../../html_code/share/module_llxy.F.html#IJLL_CYL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1511'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ijll_cyl</font>(i, j, proj, lat, lon) <A href='../../call_to/IJLL_CYL.html' TARGET='index'>2</A><a name='1512'>
+   <a name='1513'>
+      implicit none<a name='1514'>
+    <a name='1515'>
+      <font color=#447700>! Arguments<a name='1516'></font>
+      real, intent(in) :: i, j<a name='1517'>
+      real, intent(out) :: lat, lon<a name='1518'>
+      type(proj_info), intent(in) :: proj<a name='1519'>
+<a name='1520'>
+      <font color=#447700>! Local variables<a name='1521'></font>
+      real :: deltalat<a name='1522'>
+      real :: deltalon<a name='1523'>
+      real :: i_work, j_work<a name='1524'>
+<a name='1525'>
+      i_work = i - proj%knowni <a name='1526'>
+      j_work = j - proj%knownj<a name='1527'>
+<a name='1528'>
+      if (i_work &lt; 0.)              i_work = i_work + 360./proj%loninc<a name='1529'>
+      if (i_work &gt;= 360./proj%loninc) i_work = i_work - 360./proj%loninc<a name='1530'>
+<a name='1531'>
+      <font color=#447700>! Compute deltalat and deltalon<a name='1532'></font>
+      deltalat = j_work*proj%latinc<a name='1533'>
+      deltalon = i_work*proj%loninc<a name='1534'>
+<a name='1535'>
+      lat = deltalat + proj%lat1<a name='1536'>
+<font color=#447700>!      lon = deltalon + proj%stdlon<a name='1537'></font>
+      lon = deltalon + proj%lon1<a name='1538'>
+<a name='1539'>
+      if (lon &lt; -180.) lon = lon + 360.<a name='1540'>
+      if (lon &gt;  180.) lon = lon - 360.<a name='1541'>
+<a name='1542'>
+   END SUBROUTINE ijll_cyl<a name='1543'>
+<a name='1544'>
+<a name='1545'>
+<A NAME='SET_CASSINI'><A href='../../html_code/share/module_llxy.F.html#SET_CASSINI' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1546'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_cassini</font>(proj) <A href='../../call_to/SET_CASSINI.html' TARGET='index'>1</A>,<A href='../../call_from/SET_CASSINI.html' TARGET='index'>1</A><a name='1547'>
+<a name='1548'>
+      implicit none<a name='1549'>
+<a name='1550'>
+      <font color=#447700>! Arguments<a name='1551'></font>
+      type(proj_info), intent(inout) :: proj<a name='1552'>
+<a name='1553'>
+      <font color=#447700>! Local variables<a name='1554'></font>
+      real :: comp_lat, comp_lon<a name='1555'>
+      logical :: global_domain<a name='1556'>
+<a name='1557'>
+      proj%hemi = 1.0<a name='1558'>
+<a name='1559'>
+      <font color=#447700>! Try to determine whether this domain has global coverage<a name='1560'></font>
+      if (abs(proj%lat1 - proj%latinc/2. + 90.) &lt; 0.001 .and. &amp;<a name='1561'>
+          abs(mod(proj%lon1 - proj%loninc/2. - proj%stdlon,360.)) &lt; 0.001) then<a name='1562'>
+         global_domain = .true.<a name='1563'>
+      else<a name='1564'>
+         global_domain = .false.<a name='1565'>
+      end if<a name='1566'>
+<a name='1567'>
+      if (abs(proj%lat0) /= 90. .and. .not.global_domain) then<a name='1568'>
+         call <A href='../../html_code/share/module_llxy.F.html#ROTATE_COORDS'>rotate_coords</A><A href='../../html_code/share/module_llxy.F.html#SET_CASSINI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ROTATE_COORDS_1">(proj%lat1,proj%lon1,comp_lat,comp_lon,proj%lat0,proj%lon0,proj%stdlon,-1)<a name='1569'>
+         proj%lat1 = comp_lat<a name='1570'>
+         proj%lon1 = comp_lon<a name='1571'>
+      end if<a name='1572'>
+<a name='1573'>
+   END SUBROUTINE set_cassini<a name='1574'>
+<a name='1575'>
+<a name='1576'>
+<A NAME='LLIJ_CASSINI'><A href='../../html_code/share/module_llxy.F.html#LLIJ_CASSINI' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1577'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>llij_cassini</font>(lat, lon, proj, i, j) <A href='../../call_to/LLIJ_CASSINI.html' TARGET='index'>1</A>,<A href='../../call_from/LLIJ_CASSINI.html' TARGET='index'>2</A><a name='1578'>
+<a name='1579'>
+      implicit none<a name='1580'>
+    <a name='1581'>
+      <font color=#447700>! Arguments<a name='1582'></font>
+      real, intent(in) :: lat, lon<a name='1583'>
+      real, intent(out) :: i, j<a name='1584'>
+      type(proj_info), intent(in) :: proj<a name='1585'>
+<a name='1586'>
+      <font color=#447700>! Local variables<a name='1587'></font>
+      real :: comp_lat, comp_lon<a name='1588'>
+<a name='1589'>
+      <font color=#447700>! Convert geographic to computational lat/lon<a name='1590'></font>
+      if (abs(proj%lat0) /= 90.) then<a name='1591'>
+         call <A href='../../html_code/share/module_llxy.F.html#ROTATE_COORDS'>rotate_coords</A><A href='../../html_code/share/module_llxy.F.html#LLIJ_CASSINI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ROTATE_COORDS_2">(lat,lon,comp_lat,comp_lon,proj%lat0,proj%lon0,proj%stdlon,-1)<a name='1592'>
+      else<a name='1593'>
+         comp_lat = lat<a name='1594'>
+         comp_lon = lon<a name='1595'>
+      end if<a name='1596'>
+<a name='1597'>
+      <font color=#447700>! Convert computational lat/lon to i/j<a name='1598'></font>
+      call <A href='../../html_code/share/module_llxy.F.html#LLIJ_CYL'>llij_cyl</A><A href='../../html_code/share/module_llxy.F.html#LLIJ_CASSINI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LLIJ_CYL_2">(comp_lat, comp_lon, proj, i, j)<a name='1599'>
+<a name='1600'>
+   END SUBROUTINE llij_cassini<a name='1601'>
+<a name='1602'>
+<a name='1603'>
+<A NAME='IJLL_CASSINI'><A href='../../html_code/share/module_llxy.F.html#IJLL_CASSINI' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1604'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ijll_cassini</font>(i, j, proj, lat, lon) <A href='../../call_to/IJLL_CASSINI.html' TARGET='index'>1</A>,<A href='../../call_from/IJLL_CASSINI.html' TARGET='index'>2</A><a name='1605'>
+   <a name='1606'>
+      implicit none<a name='1607'>
+    <a name='1608'>
+      <font color=#447700>! Arguments<a name='1609'></font>
+      real, intent(in) :: i, j<a name='1610'>
+      real, intent(out) :: lat, lon<a name='1611'>
+      type(proj_info), intent(in) :: proj<a name='1612'>
+<a name='1613'>
+      <font color=#447700>! Local variables<a name='1614'></font>
+      real :: comp_lat, comp_lon<a name='1615'>
+<a name='1616'>
+      <font color=#447700>! Convert i/j to computational lat/lon<a name='1617'></font>
+      call <A href='../../html_code/share/module_llxy.F.html#IJLL_CYL'>ijll_cyl</A><A href='../../html_code/share/module_llxy.F.html#IJLL_CASSINI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IJLL_CYL_2">(i, j, proj, comp_lat, comp_lon)<a name='1618'>
+<a name='1619'>
+      <font color=#447700>! Convert computational to geographic lat/lon<a name='1620'></font>
+      if (abs(proj%lat0) /= 90.) then<a name='1621'>
+         call <A href='../../html_code/share/module_llxy.F.html#ROTATE_COORDS'>rotate_coords</A><A href='../../html_code/share/module_llxy.F.html#IJLL_CASSINI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ROTATE_COORDS_3">(comp_lat,comp_lon,lat,lon,proj%lat0,proj%lon0,proj%stdlon,1)<a name='1622'>
+      else<a name='1623'>
+         lat = comp_lat<a name='1624'>
+         lon = comp_lon<a name='1625'>
+      end if<a name='1626'>
+<a name='1627'>
+   END SUBROUTINE ijll_cassini<a name='1628'>
+<a name='1629'>
+<a name='1630'>
+   <font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! <a name='1631'></font>
+   <font color=#447700>! Purpose: Converts between computational and geographic lat/lon for Cassini<a name='1632'></font>
+   <font color=#447700>!          <a name='1633'></font>
+   <font color=#447700>! Notes: This routine was provided by Bill Skamarock, 2007-03-27<a name='1634'></font>
+   <font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! <a name='1635'></font>
+<A NAME='ROTATE_COORDS'><A href='../../html_code/share/module_llxy.F.html#ROTATE_COORDS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1636'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>rotate_coords</font>(ilat,ilon,olat,olon,lat_np,lon_np,lon_0,direction) <A href='../../call_to/ROTATE_COORDS.html' TARGET='index'>3</A><a name='1637'>
+<a name='1638'>
+      IMPLICIT NONE<a name='1639'>
+<a name='1640'>
+      REAL, INTENT(IN   ) :: ilat, ilon<a name='1641'>
+      REAL, INTENT(  OUT) :: olat, olon<a name='1642'>
+      REAL, INTENT(IN   ) :: lat_np, lon_np, lon_0<a name='1643'>
+      INTEGER, INTENT(IN  ), OPTIONAL :: direction<a name='1644'>
+      <font color=#447700>! &gt;=0, default : computational -&gt; geographical<a name='1645'></font>
+      <font color=#447700>! &lt; 0          : geographical  -&gt; computational<a name='1646'></font>
+<a name='1647'>
+      REAL :: rlat, rlon<a name='1648'>
+      REAL :: phi_np, lam_np, lam_0, dlam<a name='1649'>
+      REAL :: sinphi, cosphi, coslam, sinlam<a name='1650'>
+<a name='1651'>
+      <font color=#447700>! Convert all angles to radians<a name='1652'></font>
+      phi_np = lat_np * rad_per_deg<a name='1653'>
+      lam_np = lon_np * rad_per_deg<a name='1654'>
+      lam_0  = lon_0  * rad_per_deg<a name='1655'>
+      rlat = ilat * rad_per_deg<a name='1656'>
+      rlon = ilon * rad_per_deg<a name='1657'>
+<a name='1658'>
+      IF ( PRESENT(direction) ) THEN<a name='1659'>
+         IF (direction &lt; 0) THEN<a name='1660'>
+            <font color=#447700>! The equations are exactly the same except for one small difference<a name='1661'></font>
+            <font color=#447700>! with respect to longitude ...<a name='1662'></font>
+            dlam = PI - lam_0<a name='1663'>
+         ELSE<a name='1664'>
+            dlam = lam_np<a name='1665'>
+         END IF<a name='1666'>
+      ELSE<a name='1667'>
+         dlam = lam_np<a name='1668'>
+      END IF<a name='1669'>
+      sinphi = COS(phi_np)*COS(rlat)*COS(rlon-dlam) + SIN(phi_np)*SIN(rlat)<a name='1670'>
+      cosphi = SQRT(1.-sinphi*sinphi)<a name='1671'>
+      coslam = SIN(phi_np)*COS(rlat)*COS(rlon-dlam) - COS(phi_np)*SIN(rlat)<a name='1672'>
+      sinlam = COS(rlat)*SIN(rlon-dlam)<a name='1673'>
+      IF ( cosphi /= 0. ) THEN<a name='1674'>
+         coslam = coslam/cosphi<a name='1675'>
+         sinlam = sinlam/cosphi<a name='1676'>
+      END IF<a name='1677'>
+      olat = deg_per_rad*ASIN(sinphi)<a name='1678'>
+      olon = deg_per_rad*(ATAN2(sinlam,coslam)-dlam-lam_0+lam_np)<a name='1679'>
+      <font color=#447700>! Both of my F90 text books prefer the DO-EXIT form, and claim it is faster<a name='1680'></font>
+      <font color=#447700>! when optimization is turned on (as we will always do...)<a name='1681'></font>
+      DO<a name='1682'>
+         IF (olon &gt;= -180.) EXIT<a name='1683'>
+         olon = olon + 360.<a name='1684'>
+      END DO<a name='1685'>
+      DO<a name='1686'>
+         IF (olon &lt;=  180.) EXIT<a name='1687'>
+         olon = olon - 360.<a name='1688'>
+      END DO<a name='1689'>
+<a name='1690'>
+   END SUBROUTINE rotate_coords<a name='1691'>
+<a name='1692'>
+<a name='1693'>
+<A NAME='LLIJ_ROTLATLON'><A href='../../html_code/share/module_llxy.F.html#LLIJ_ROTLATLON' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1694'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>llij_rotlatlon</font>(lat, lon, proj, i_real, j_real) <A href='../../call_to/LLIJ_ROTLATLON.html' TARGET='index'>1</A><a name='1695'>
+   <a name='1696'>
+      IMPLICIT NONE<a name='1697'>
+    <a name='1698'>
+      <font color=#447700>! Arguments<a name='1699'></font>
+      REAL, INTENT(IN) :: lat, lon<a name='1700'>
+      REAL             :: i, j<a name='1701'>
+      REAL, INTENT(OUT) :: i_real, j_real<a name='1702'>
+      TYPE (proj_info), INTENT(IN) :: proj<a name='1703'>
+      <a name='1704'>
+      <font color=#447700>! Local variables<a name='1705'></font>
+      INTEGER :: ii,imt,jj,jmt,k,krows,ncol,nrow,iri<a name='1706'>
+      REAL(KIND=HIGH) :: dphd,dlmd <font color=#447700>!Grid increments, degrees<a name='1707'></font>
+      REAL(KIND=HIGH) :: glatd  <font color=#447700>!Geographic latitude, positive north<a name='1708'></font>
+      REAL(KIND=HIGH) :: glond  <font color=#447700>!Geographic longitude, positive west<a name='1709'></font>
+      REAL(KIND=HIGH) :: col,d1,d2,d2r,dlm,dlm1,dlm2,dph,glat,glon,    &amp;<a name='1710'>
+                         pi,r2d,row,tlat,tlat1,tlat2,              &amp;<a name='1711'>
+                         tlon,tlon1,tlon2,tph0,tlm0,x,y,z<a name='1712'>
+<a name='1713'>
+      glatd = lat<a name='1714'>
+      glond = -lon<a name='1715'>
+  <a name='1716'>
+      dphd = proj%phi/REAL((proj%jydim-1)/2)<a name='1717'>
+      dlmd = proj%lambda/REAL(proj%ixdim-1)<a name='1718'>
+<a name='1719'>
+      pi = ACOS(-1.0)<a name='1720'>
+      d2r = pi/180.<a name='1721'>
+      r2d = 1./d2r<a name='1722'>
+  <a name='1723'>
+      imt = 2*proj%ixdim-1<a name='1724'>
+      jmt = proj%jydim/2+1<a name='1725'>
+<a name='1726'>
+      glat = glatd*d2r<a name='1727'>
+      glon = glond*d2r<a name='1728'>
+      dph = dphd*d2r<a name='1729'>
+      dlm = dlmd*d2r<a name='1730'>
+      tph0 = proj%lat1*d2r<a name='1731'>
+      tlm0 = -proj%lon1*d2r<a name='1732'>
+  <a name='1733'>
+      x = COS(tph0)*COS(glat)*COS(glon-tlm0)+SIN(tph0)*SIN(glat)<a name='1734'>
+      y = -COS(glat)*SIN(glon-tlm0)<a name='1735'>
+      z = COS(tph0)*SIN(glat)-SIN(tph0)*COS(glat)*COS(glon-tlm0)<a name='1736'>
+      tlat = r2d*ATAN(z/SQRT(x*x+y*y))<a name='1737'>
+      tlon = r2d*ATAN(y/x)<a name='1738'>
+<a name='1739'>
+      row = tlat/dphd+jmt<a name='1740'>
+      col = tlon/dlmd+proj%ixdim<a name='1741'>
+<a name='1742'>
+      if ( (row - INT(row)) .gt. 0.999) then<a name='1743'>
+         row = row + 0.0002<a name='1744'>
+      else if ( (col - INT(col)) .gt. 0.999) then<a name='1745'>
+         col = col + 0.0002<a name='1746'>
+      end if<a name='1747'>
+<a name='1748'>
+      nrow = INT(row)<a name='1749'>
+      ncol = INT(col)<a name='1750'>
+<a name='1751'>
+<font color=#447700>!      nrow = NINT(row)<a name='1752'></font>
+<font color=#447700>!      ncol = NINT(col)<a name='1753'></font>
+<a name='1754'>
+      tlat = tlat*d2r<a name='1755'>
+      tlon = tlon*d2r<a name='1756'>
+<a name='1757'>
+  <a name='1758'>
+      IF (proj%stagger == HH) THEN<a name='1759'>
+<a name='1760'>
+         IF (mod(nrow,2) .eq. 0) then<a name='1761'>
+            i_real = col / 2.0<a name='1762'>
+         ELSE<a name='1763'>
+            i_real = col / 2.0 + 0.5<a name='1764'>
+         ENDIF<a name='1765'>
+         j_real=row<a name='1766'>
+<a name='1767'>
+  <a name='1768'>
+         IF ((abs(MOD(nrow,2)) == 1 .AND. abs(MOD(ncol,2)) == 1) .OR. &amp;<a name='1769'>
+             (MOD(nrow,2) == 0 .AND. MOD(ncol,2) == 0)) THEN<a name='1770'>
+<a name='1771'>
+            tlat1 = (nrow-jmt)*dph<a name='1772'>
+            tlat2 = tlat1+dph<a name='1773'>
+            tlon1 = (ncol-proj%ixdim)*dlm<a name='1774'>
+            tlon2 = tlon1+dlm<a name='1775'>
+<a name='1776'>
+            dlm1 = tlon-tlon1<a name='1777'>
+            dlm2 = tlon-tlon2<a name='1778'>
+            d1 = ACOS(COS(tlat)*COS(tlat1)*COS(dlm1)+SIN(tlat)*SIN(tlat1))<a name='1779'>
+            d2 = ACOS(COS(tlat)*COS(tlat2)*COS(dlm2)+SIN(tlat)*SIN(tlat2))<a name='1780'>
+<a name='1781'>
+            IF (d1 &gt; d2) THEN<a name='1782'>
+               nrow = nrow+1<a name='1783'>
+               ncol = ncol+1<a name='1784'>
+            END IF<a name='1785'>
+   <a name='1786'>
+         ELSE<a name='1787'>
+            tlat1 = (nrow+1-jmt)*dph<a name='1788'>
+            tlat2 = tlat1-dph<a name='1789'>
+            tlon1 = (ncol-proj%ixdim)*dlm<a name='1790'>
+            tlon2 = tlon1+dlm<a name='1791'>
+            dlm1 = tlon-tlon1<a name='1792'>
+            dlm2 = tlon-tlon2<a name='1793'>
+            d1 = ACOS(COS(tlat)*COS(tlat1)*COS(dlm1)+SIN(tlat)*SIN(tlat1))<a name='1794'>
+            d2 = ACOS(COS(tlat)*COS(tlat2)*COS(dlm2)+SIN(tlat)*SIN(tlat2))<a name='1795'>
+<a name='1796'>
+            IF (d1 &lt; d2) THEN<a name='1797'>
+               nrow = nrow+1<a name='1798'>
+            ELSE<a name='1799'>
+               ncol = ncol+1<a name='1800'>
+            END IF<a name='1801'>
+         END IF<a name='1802'>
+  <a name='1803'>
+      ELSE IF (proj%stagger == VV) THEN<a name='1804'>
+<a name='1805'>
+         IF (mod(nrow,2) .eq. 0) then<a name='1806'>
+            i_real = col / 2.0 + 0.5<a name='1807'>
+         ELSE<a name='1808'>
+            i_real = col / 2.0 <a name='1809'>
+         ENDIF<a name='1810'>
+         j_real=row<a name='1811'>
+  <a name='1812'>
+         IF ((MOD(nrow,2) == 0 .AND. abs(MOD(ncol,2)) == 1) .OR. &amp;<a name='1813'>
+             (abs(MOD(nrow,2)) == 1 .AND. MOD(ncol,2) == 0)) THEN<a name='1814'>
+            tlat1 = (nrow-jmt)*dph<a name='1815'>
+            tlat2 = tlat1+dph<a name='1816'>
+            tlon1 = (ncol-proj%ixdim)*dlm<a name='1817'>
+            tlon2 = tlon1+dlm<a name='1818'>
+            dlm1 = tlon-tlon1<a name='1819'>
+            dlm2 = tlon-tlon2<a name='1820'>
+            d1 = ACOS(COS(tlat)*COS(tlat1)*COS(dlm1)+SIN(tlat)*SIN(tlat1))<a name='1821'>
+            d2 = ACOS(COS(tlat)*COS(tlat2)*COS(dlm2)+SIN(tlat)*SIN(tlat2))<a name='1822'>
+    <a name='1823'>
+            IF (d1 &gt; d2) THEN<a name='1824'>
+               nrow = nrow+1<a name='1825'>
+               ncol = ncol+1<a name='1826'>
+            END IF<a name='1827'>
+   <a name='1828'>
+         ELSE<a name='1829'>
+            tlat1 = (nrow+1-jmt)*dph<a name='1830'>
+            tlat2 = tlat1-dph<a name='1831'>
+            tlon1 = (ncol-proj%ixdim)*dlm<a name='1832'>
+            tlon2 = tlon1+dlm<a name='1833'>
+            dlm1 = tlon-tlon1<a name='1834'>
+            dlm2 = tlon-tlon2<a name='1835'>
+            d1 = ACOS(COS(tlat)*COS(tlat1)*COS(dlm1)+SIN(tlat)*SIN(tlat1))<a name='1836'>
+            d2 = ACOS(COS(tlat)*COS(tlat2)*COS(dlm2)+SIN(tlat)*SIN(tlat2))<a name='1837'>
+    <a name='1838'>
+            IF (d1 &lt; d2) THEN<a name='1839'>
+               nrow = nrow+1<a name='1840'>
+            ELSE<a name='1841'>
+               ncol = ncol+1<a name='1842'>
+            END IF<a name='1843'>
+         END IF<a name='1844'>
+      END IF<a name='1845'>
+  <a name='1846'>
+<a name='1847'>
+<font color=#447700>!!! Added next line as a Kludge - not yet understood why needed<a name='1848'></font>
+      if (ncol .le. 0) ncol=ncol-1<a name='1849'>
+<a name='1850'>
+      jj = nrow<a name='1851'>
+      ii = ncol/2<a name='1852'>
+<a name='1853'>
+      IF (proj%stagger == HH) THEN<a name='1854'>
+         IF (abs(MOD(jj,2)) == 1) ii = ii+1<a name='1855'>
+      ELSE IF (proj%stagger == VV) THEN<a name='1856'>
+         IF (MOD(jj,2) == 0) ii=ii+1<a name='1857'>
+      END IF<a name='1858'>
+<a name='1859'>
+      i = REAL(ii)<a name='1860'>
+      j = REAL(jj)<a name='1861'>
+<a name='1862'>
+   END SUBROUTINE llij_rotlatlon<a name='1863'>
+<a name='1864'>
+<a name='1865'>
+<A NAME='IJLL_ROTLATLON'><A href='../../html_code/share/module_llxy.F.html#IJLL_ROTLATLON' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1866'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>ijll_rotlatlon</font>(i, j, proj, lat,lon) <A href='../../call_to/IJLL_ROTLATLON.html' TARGET='index'>1</A><a name='1867'>
+   <a name='1868'>
+      IMPLICIT NONE<a name='1869'>
+    <a name='1870'>
+      <font color=#447700>! Arguments<a name='1871'></font>
+      REAL, INTENT(IN) :: i, j<a name='1872'>
+      REAL, INTENT(OUT) :: lat, lon<a name='1873'>
+      TYPE (proj_info), INTENT(IN) :: proj<a name='1874'>
+      <a name='1875'>
+      <font color=#447700>! Local variables<a name='1876'></font>
+      INTEGER :: ih,jh<a name='1877'>
+      INTEGER :: midcol,midrow,ncol,iadd1,iadd2,imt,jh2,knrow,krem,kv,nrow<a name='1878'>
+      REAL :: i_work, j_work<a name='1879'>
+      REAL :: dphd,dlmd <font color=#447700>!Grid increments, degrees<a name='1880'></font>
+      REAL(KIND=HIGH) :: arg1,arg2,d2r,fctr,glatr,glatd,glond,pi, &amp;<a name='1881'>
+              r2d,tlatd,tlond,tlatr,tlonr,tlm0,tph0<a name='1882'>
+      REAL :: col<a name='1883'>
+<a name='1884'>
+      i_work = i<a name='1885'>
+      j_work = j<a name='1886'>
+  <a name='1887'>
+      if ( (j - INT(j)) .gt. 0.999) then<a name='1888'>
+         j_work = j + 0.0002<a name='1889'>
+      endif<a name='1890'>
+<a name='1891'>
+      jh = INT(j_work)<a name='1892'>
+  <a name='1893'>
+      dphd = proj%phi/REAL((proj%jydim-1)/2)<a name='1894'>
+      dlmd = proj%lambda/REAL(proj%ixdim-1)<a name='1895'>
+    <a name='1896'>
+      pi = ACOS(-1.0)<a name='1897'>
+      d2r = pi/180.<a name='1898'>
+      r2d = 1./d2r<a name='1899'>
+      tph0 = proj%lat1*d2r<a name='1900'>
+      tlm0 = -proj%lon1*d2r<a name='1901'>
+<a name='1902'>
+      midrow = (proj%jydim+1)/2<a name='1903'>
+      midcol = proj%ixdim<a name='1904'>
+<a name='1905'>
+      col = 2*i_work-1+abs(MOD(jh+1,2))<a name='1906'>
+      tlatd = (j_work-midrow)*dphd<a name='1907'>
+      tlond = (col-midcol)*dlmd<a name='1908'>
+<a name='1909'>
+       IF (proj%stagger == VV) THEN<a name='1910'>
+          if (mod(jh,2) .eq. 0) then<a name='1911'>
+             tlond = tlond - DLMD<a name='1912'>
+          else<a name='1913'>
+             tlond = tlond + DLMD<a name='1914'>
+          end if<a name='1915'>
+       END IF<a name='1916'>
+    <a name='1917'>
+      tlatr = tlatd*d2r<a name='1918'>
+      tlonr = tlond*d2r<a name='1919'>
+      arg1 = SIN(tlatr)*COS(tph0)+COS(tlatr)*SIN(tph0)*COS(tlonr)<a name='1920'>
+      glatr = ASIN(arg1)<a name='1921'>
+     <a name='1922'>
+      glatd = glatr*r2d<a name='1923'>
+     <a name='1924'>
+      arg2 = COS(tlatr)*COS(tlonr)/(COS(glatr)*COS(tph0))-TAN(glatr)*TAN(tph0)<a name='1925'>
+      IF (ABS(arg2) &gt; 1.) arg2 = ABS(arg2)/arg2<a name='1926'>
+      fctr = 1.<a name='1927'>
+      IF (tlond &gt; 0.) fctr = -1.<a name='1928'>
+     <a name='1929'>
+      glond = tlm0*r2d+fctr*ACOS(arg2)*r2d<a name='1930'>
+<a name='1931'>
+      lat = glatd<a name='1932'>
+      lon = -glond<a name='1933'>
+<a name='1934'>
+      IF (lon .GT. +180.) lon = lon - 360.<a name='1935'>
+      IF (lon .LT. -180.) lon = lon + 360.<a name='1936'>
+   <a name='1937'>
+   END SUBROUTINE ijll_rotlatlon<a name='1938'>
+<a name='1939'>
+<a name='1940'>
+<A NAME='SET_GAUSS'><A href='../../html_code/share/module_llxy.F.html#SET_GAUSS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1941'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_gauss</font>(proj) <A href='../../call_to/SET_GAUSS.html' TARGET='index'>1</A>,<A href='../../call_from/SET_GAUSS.html' TARGET='index'>2</A><a name='1942'>
+    <a name='1943'>
+      IMPLICIT NONE<a name='1944'>
+ <a name='1945'>
+      <font color=#447700>! Argument<a name='1946'></font>
+      type (proj_info), intent(inout) :: proj<a name='1947'>
+ <a name='1948'>
+      <font color=#447700>!  Initialize the array that will hold the Gaussian latitudes.<a name='1949'></font>
+ <a name='1950'>
+      IF ( ASSOCIATED( proj%gauss_lat ) ) THEN<a name='1951'>
+         DEALLOCATE ( proj%gauss_lat )<a name='1952'>
+      END IF<a name='1953'>
+ <a name='1954'>
+      <font color=#447700>!  Get the needed space for our array.<a name='1955'></font>
+ <a name='1956'>
+      ALLOCATE ( proj%gauss_lat(proj%nlat*2) )<a name='1957'>
+ <a name='1958'>
+      <font color=#447700>!  Compute the Gaussian latitudes.<a name='1959'></font>
+ <a name='1960'>
+      CALL <A href='../../html_code/share/module_llxy.F.html#GAUSLL'>gausll</A><A href='../../html_code/share/module_llxy.F.html#SET_GAUSS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GAUSLL_1">( proj%nlat*2 , proj%gauss_lat )<a name='1961'>
+ <a name='1962'>
+      <font color=#447700>!  Now, these could be upside down from what we want, so let's check.<a name='1963'></font>
+      <font color=#447700>!  We take advantage of the equatorial symmetry to remove any sort of<a name='1964'></font>
+      <font color=#447700>!  array re-ordering.<a name='1965'></font>
+ <a name='1966'>
+      IF ( ABS(proj%gauss_lat(1) - proj%lat1) .GT. 0.01 ) THEN<a name='1967'>
+         proj%gauss_lat = -1. * proj%gauss_lat<a name='1968'>
+      END IF<a name='1969'>
+ <a name='1970'>
+      <font color=#447700>!  Just a sanity check.<a name='1971'></font>
+ <a name='1972'>
+      IF ( ABS(proj%gauss_lat(1) - proj%lat1) .GT. 0.01 ) THEN<a name='1973'>
+         PRINT '(A)','Oops, something is not right with the Gaussian latitude computation.'<a name='1974'>
+         PRINT '(A,F8.3,A)','The input data gave the starting latitude as ',proj%lat1,'.'<a name='1975'>
+         PRINT '(A,F8.3,A)','This routine computed the starting latitude as +-',ABS(proj%gauss_lat(1)),'.'<a name='1976'>
+         PRINT '(A,F8.3,A)','The difference is larger than 0.01 degrees, which is not expected.'<a name='1977'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#SET_GAUSS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1425"> ( 'Gaussian_latitude_computation' )<a name='1978'>
+      END IF<a name='1979'>
+ <a name='1980'>
+   END SUBROUTINE set_gauss<a name='1981'>
+<a name='1982'>
+<a name='1983'>
+<A NAME='GAUSLL'><A href='../../html_code/share/module_llxy.F.html#GAUSLL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1984'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>gausll</font> ( nlat , lat_sp ) <A href='../../call_to/GAUSLL.html' TARGET='index'>1</A>,<A href='../../call_from/GAUSLL.html' TARGET='index'>1</A><a name='1985'>
+ <a name='1986'>
+      IMPLICIT NONE<a name='1987'>
+   <a name='1988'>
+      INTEGER                            :: nlat , i<a name='1989'>
+      REAL (KIND=HIGH) , PARAMETER       :: pi = 3.141592653589793<a name='1990'>
+      REAL (KIND=HIGH) , DIMENSION(nlat) :: cosc , gwt , sinc , colat , wos2 , lat<a name='1991'>
+      REAL             , DIMENSION(nlat) :: lat_sp<a name='1992'>
+   <a name='1993'>
+      CALL <A href='../../html_code/share/module_llxy.F.html#LGGAUS'>lggaus</A><A href='../../html_code/share/module_llxy.F.html#GAUSLL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LGGAUS_1">(nlat, cosc, gwt, sinc, colat, wos2)<a name='1994'>
+   <a name='1995'>
+      DO i = 1, nlat<a name='1996'>
+         lat(i) = ACOS(sinc(i)) * 180._HIGH / pi<a name='1997'>
+         IF (i.gt.nlat/2) lat(i) = -lat(i)<a name='1998'>
+      END DO<a name='1999'>
+   <a name='2000'>
+      lat_sp = REAL(lat)<a name='2001'>
+ <a name='2002'>
+   END SUBROUTINE gausll<a name='2003'>
+<a name='2004'>
+<a name='2005'>
+<A NAME='LGGAUS'><A href='../../html_code/share/module_llxy.F.html#LGGAUS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2006'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>lggaus</font>( nlat, cosc, gwt, sinc, colat, wos2 ) <A href='../../call_to/LGGAUS.html' TARGET='index'>1</A>,<A href='../../call_from/LGGAUS.html' TARGET='index'>5</A><a name='2007'>
+ <a name='2008'>
+      IMPLICIT NONE<a name='2009'>
+ <a name='2010'>
+      <font color=#447700>!  LGGAUS finds the Gaussian latitudes by finding the roots of the<a name='2011'></font>
+      <font color=#447700>!  ordinary Legendre polynomial of degree NLAT using Newton's<a name='2012'></font>
+      <font color=#447700>!  iteration method.<a name='2013'></font>
+      <a name='2014'>
+      <font color=#447700>!  On entry:<a name='2015'></font>
+            integer NLAT <font color=#447700>! the number of latitudes (degree of the polynomial)<a name='2016'></font>
+      <a name='2017'>
+      <font color=#447700>!  On exit: for each Gaussian latitude<a name='2018'></font>
+      <font color=#447700>!     COSC   - cos(colatitude) or sin(latitude)<a name='2019'></font>
+      <font color=#447700>!     GWT    - the Gaussian weights<a name='2020'></font>
+      <font color=#447700>!     SINC   - sin(colatitude) or cos(latitude)<a name='2021'></font>
+      <font color=#447700>!     COLAT  - the colatitudes in radians<a name='2022'></font>
+      <font color=#447700>!     WOS2   - Gaussian weight over sin**2(colatitude)<a name='2023'></font>
+ <a name='2024'>
+      REAL (KIND=HIGH) , DIMENSION(nlat) :: cosc , gwt , sinc , colat  , wos2 <a name='2025'>
+      REAL (KIND=HIGH) , PARAMETER       :: pi = 3.141592653589793<a name='2026'>
+ <a name='2027'>
+      <font color=#447700>!  Convergence criterion for iteration of cos latitude<a name='2028'></font>
+ <a name='2029'>
+      REAL , PARAMETER :: xlim  = 1.0E-14<a name='2030'>
+ <a name='2031'>
+      INTEGER :: nzero, i, j<a name='2032'>
+      REAL (KIND=HIGH) :: fi, fi1, a, b, g, gm, gp, gt, delta, c, d<a name='2033'>
+ <a name='2034'>
+      <font color=#447700>!  The number of zeros between pole and equator<a name='2035'></font>
+ <a name='2036'>
+      nzero = nlat/2<a name='2037'>
+ <a name='2038'>
+      <font color=#447700>!  Set first guess for cos(colat)<a name='2039'></font>
+ <a name='2040'>
+      DO i=1,nzero<a name='2041'>
+         cosc(i) = SIN( (i-0.5)*pi/nlat + pi*0.5 )<a name='2042'>
+      END DO<a name='2043'>
+ <a name='2044'>
+      <font color=#447700>!  Constants for determining the derivative of the polynomial<a name='2045'></font>
+      fi  = nlat<a name='2046'>
+      fi1 = fi+1.0<a name='2047'>
+      a   = fi*fi1 / SQRT(4.0*fi1*fi1-1.0)<a name='2048'>
+      b   = fi1*fi / SQRT(4.0*fi*fi-1.0)<a name='2049'>
+ <a name='2050'>
+      <font color=#447700>!  Loop over latitudes, iterating the search for each root<a name='2051'></font>
+ <a name='2052'>
+      DO i=1,nzero<a name='2053'>
+         j=0<a name='2054'>
+ <a name='2055'>
+         <font color=#447700>!  Determine the value of the ordinary Legendre polynomial for<a name='2056'></font>
+         <font color=#447700>!  the current guess root<a name='2057'></font>
+ <a name='2058'>
+         DO<a name='2059'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LGORD'>lgord</A><A href='../../html_code/share/module_llxy.F.html#LGGAUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LGORD_1">( g, cosc(i), nlat )<a name='2060'>
+   <a name='2061'>
+            <font color=#447700>!  Determine the derivative of the polynomial at this point<a name='2062'></font>
+   <a name='2063'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LGORD'>lgord</A><A href='../../html_code/share/module_llxy.F.html#LGGAUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LGORD_2">( gm, cosc(i), nlat-1 )<a name='2064'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LGORD'>lgord</A><A href='../../html_code/share/module_llxy.F.html#LGGAUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LGORD_3">( gp, cosc(i), nlat+1 )<a name='2065'>
+            gt = (cosc(i)*cosc(i)-1.0) / (a*gp-b*gm)<a name='2066'>
+   <a name='2067'>
+            <font color=#447700>!  Update the estimate of the root<a name='2068'></font>
+   <a name='2069'>
+            delta   = g*gt<a name='2070'>
+            cosc(i) = cosc(i) - delta<a name='2071'>
+   <a name='2072'>
+            <font color=#447700>!  If convergence criterion has not been met, keep trying<a name='2073'></font>
+   <a name='2074'>
+            j = j+1<a name='2075'>
+            IF( ABS(delta).GT.xlim ) CYCLE<a name='2076'>
+   <a name='2077'>
+            <font color=#447700>!  Determine the Gaussian weights<a name='2078'></font>
+   <a name='2079'>
+            c      = 2.0 *( 1.0-cosc(i)*cosc(i) )<a name='2080'>
+            CALL <A href='../../html_code/share/module_llxy.F.html#LGORD'>lgord</A><A href='../../html_code/share/module_llxy.F.html#LGGAUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LGORD_4">( d, cosc(i), nlat-1 )<a name='2081'>
+            d      = d*d*fi*fi<a name='2082'>
+            gwt(i) = c *( fi-0.5 ) / d<a name='2083'>
+            EXIT<a name='2084'>
+ <a name='2085'>
+         END DO<a name='2086'>
+ <a name='2087'>
+      END DO<a name='2088'>
+ <a name='2089'>
+      <font color=#447700>!  Determine the colatitudes and sin(colat) and weights over sin**2<a name='2090'></font>
+ <a name='2091'>
+      DO i=1,nzero<a name='2092'>
+         colat(i)= ACOS(cosc(i))<a name='2093'>
+         sinc(i) = SIN(colat(i))<a name='2094'>
+         wos2(i) = gwt(i) /( sinc(i)*sinc(i) )<a name='2095'>
+      END DO<a name='2096'>
+ <a name='2097'>
+      <font color=#447700>!  If NLAT is odd, set values at the equator<a name='2098'></font>
+ <a name='2099'>
+      IF( MOD(nlat,2) .NE. 0 ) THEN<a name='2100'>
+         i       = nzero+1<a name='2101'>
+         cosc(i) = 0.0<a name='2102'>
+         c       = 2.0<a name='2103'>
+         CALL <A href='../../html_code/share/module_llxy.F.html#LGORD'>lgord</A><A href='../../html_code/share/module_llxy.F.html#LGGAUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LGORD_5">( d, cosc(i), nlat-1 )<a name='2104'>
+         d       = d*d*fi*fi<a name='2105'>
+         gwt(i)  = c *( fi-0.5 ) / d<a name='2106'>
+         colat(i)= pi*0.5<a name='2107'>
+         sinc(i) = 1.0<a name='2108'>
+         wos2(i) = gwt(i)<a name='2109'>
+      END IF<a name='2110'>
+ <a name='2111'>
+      <font color=#447700>!  Determine the southern hemisphere values by symmetry<a name='2112'></font>
+ <a name='2113'>
+      DO i=nlat-nzero+1,nlat<a name='2114'>
+         cosc(i) =-cosc(nlat+1-i)<a name='2115'>
+         gwt(i)  = gwt(nlat+1-i)<a name='2116'>
+         colat(i)= pi-colat(nlat+1-i)<a name='2117'>
+         sinc(i) = sinc(nlat+1-i)<a name='2118'>
+         wos2(i) = wos2(nlat+1-i)<a name='2119'>
+      END DO<a name='2120'>
+ <a name='2121'>
+   END SUBROUTINE lggaus<a name='2122'>
+<a name='2123'>
+<a name='2124'>
+<A NAME='LGORD'><A href='../../html_code/share/module_llxy.F.html#LGORD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2125'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>lgord</font>( f, cosc, n ) <A href='../../call_to/LGORD.html' TARGET='index'>5</A><a name='2126'>
+ <a name='2127'>
+      IMPLICIT NONE<a name='2128'>
+ <a name='2129'>
+      <font color=#447700>!  LGORD calculates the value of an ordinary Legendre polynomial at a<a name='2130'></font>
+      <font color=#447700>!  specific latitude.<a name='2131'></font>
+      <a name='2132'>
+      <font color=#447700>!  On entry:<a name='2133'></font>
+      <font color=#447700>!     cosc - COS(colatitude)<a name='2134'></font>
+      <font color=#447700>!     n      - the degree of the polynomial<a name='2135'></font>
+      <a name='2136'>
+      <font color=#447700>!  On exit:<a name='2137'></font>
+      <font color=#447700>!     f      - the value of the Legendre polynomial of degree N at<a name='2138'></font>
+      <font color=#447700>!              latitude ASIN(cosc)<a name='2139'></font>
+ <a name='2140'>
+      REAL (KIND=HIGH) :: s1, c4, a, b, fk, f, cosc, colat, c1, fn, ang<a name='2141'>
+      INTEGER :: n, k<a name='2142'>
+ <a name='2143'>
+      <font color=#447700>!  Determine the colatitude<a name='2144'></font>
+ <a name='2145'>
+      colat = ACOS(cosc)<a name='2146'>
+ <a name='2147'>
+      c1 = SQRT(2.0_HIGH)<a name='2148'>
+      DO k=1,n<a name='2149'>
+         c1 = c1 * SQRT( 1.0 - 1.0/(4*k*k) )<a name='2150'>
+      END DO<a name='2151'>
+ <a name='2152'>
+      fn = n<a name='2153'>
+      ang= fn * colat<a name='2154'>
+      s1 = 0.0<a name='2155'>
+      c4 = 1.0<a name='2156'>
+      a  =-1.0<a name='2157'>
+      b  = 0.0<a name='2158'>
+      DO k=0,n,2<a name='2159'>
+         IF (k.eq.n) c4 = 0.5 * c4<a name='2160'>
+         s1 = s1 + c4 * COS(ang)<a name='2161'>
+         a  = a + 2.0<a name='2162'>
+         b  = b + 1.0<a name='2163'>
+         fk = k<a name='2164'>
+         ang= colat * (fn-fk-2.0)<a name='2165'>
+         c4 = ( a * (fn-b+1.0) / ( b * (fn+fn-a) ) ) * c4<a name='2166'>
+      END DO <a name='2167'>
+ <a name='2168'>
+      f = s1 * c1<a name='2169'>
+ <a name='2170'>
+   END SUBROUTINE lgord<a name='2171'>
+<a name='2172'>
+<a name='2173'>
+<A NAME='LLIJ_GAUSS'><A href='../../html_code/share/module_llxy.F.html#LLIJ_GAUSS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2174'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>llij_gauss</font> (lat, lon, proj, i, j)  <A href='../../call_to/LLIJ_GAUSS.html' TARGET='index'>1</A>,<A href='../../call_from/LLIJ_GAUSS.html' TARGET='index'>1</A><a name='2175'>
+ <a name='2176'>
+      IMPLICIT NONE<a name='2177'>
+ <a name='2178'>
+      REAL    , INTENT(IN)  :: lat, lon<a name='2179'>
+      REAL    , INTENT(OUT) :: i, j<a name='2180'>
+      TYPE (proj_info), INTENT(IN) :: proj<a name='2181'>
+ <a name='2182'>
+      INTEGER :: n , n_low<a name='2183'>
+      LOGICAL :: found = .FALSE.<a name='2184'>
+      REAL    :: diff_1 , diff_nlat<a name='2185'>
+ <a name='2186'>
+      <font color=#447700>!  The easy one first, get the x location.  The calling routine has already made<a name='2187'></font>
+      <font color=#447700>!  sure that the necessary assumptions concerning the sign of the deltalon and the<a name='2188'></font>
+      <font color=#447700>!  relative east/west'ness of the longitude and the starting longitude are consistent<a name='2189'></font>
+      <font color=#447700>!  to allow this easy computation.<a name='2190'></font>
+ <a name='2191'>
+      i = ( lon - proj%lon1 ) / proj%loninc + 1.<a name='2192'>
+ <a name='2193'>
+      <font color=#447700>!  Since this is a global data set, we need to be concerned about wrapping the<a name='2194'></font>
+      <font color=#447700>!  fields around the globe.<a name='2195'></font>
+ <a name='2196'>
+<font color=#447700>!      IF      ( ( proj%loninc .GT. 0 ) .AND. &amp;<a name='2197'></font>
+<font color=#447700>!                ( FLOOR((lon-proj%lon1)/proj%loninc) + 1 .GE. proj%ixdim ) .AND. &amp;<a name='2198'></font>
+<font color=#447700>!                ( lon + proj%loninc .GE. proj%lon1 + 360 ) ) THEN<a name='2199'></font>
+<font color=#447700>!! BUG: We may need to set proj%wrap, but proj is intent(in)<a name='2200'></font>
+<font color=#447700>!! WHAT IS THIS USED FOR?<a name='2201'></font>
+<font color=#447700>!!        proj%wrap = .TRUE.<a name='2202'></font>
+<font color=#447700>!         i = proj%ixdim<a name='2203'></font>
+<font color=#447700>!      ELSE IF ( ( proj%loninc .LT. 0 ) .AND. &amp;<a name='2204'></font>
+<font color=#447700>!                ( FLOOR((lon-proj%lon1)/proj%loninc) + 1 .GE. proj%ixdim ) .AND. &amp;<a name='2205'></font>
+<font color=#447700>!                ( lon + proj%loninc .LE. proj%lon1 - 360 ) ) THEN<a name='2206'></font>
+<font color=#447700>! ! BUG: We may need to set proj%wrap, but proj is intent(in)<a name='2207'></font>
+<font color=#447700>! ! WHAT IS THIS USED FOR?<a name='2208'></font>
+<font color=#447700>! !        proj%wrap = .TRUE.<a name='2209'></font>
+<font color=#447700>!         i = proj%ixdim<a name='2210'></font>
+<font color=#447700>!      END IF<a name='2211'></font>
+ <a name='2212'>
+      <font color=#447700>!  Yet another quicky test, can we find bounding values?  If not, then we may be<a name='2213'></font>
+      <font color=#447700>!  dealing with putting data to a polar projection, so just give them them maximal<a name='2214'></font>
+      <font color=#447700>!  value for the location.  This is an OK assumption for the interpolation across the<a name='2215'></font>
+      <font color=#447700>!  top of the pole, given how close the longitude lines are.<a name='2216'></font>
+ <a name='2217'>
+      IF ( ABS(lat) .GT. ABS(proj%gauss_lat(1)) ) THEN<a name='2218'>
+ <a name='2219'>
+         diff_1    = lat - proj%gauss_lat(1)<a name='2220'>
+         diff_nlat = lat - proj%gauss_lat(proj%nlat*2)<a name='2221'>
+ <a name='2222'>
+         IF ( ABS(diff_1) .LT. ABS(diff_nlat) ) THEN<a name='2223'>
+            j = 1<a name='2224'>
+         ELSE<a name='2225'>
+            j = proj%nlat*2<a name='2226'>
+         END IF<a name='2227'>
+ <a name='2228'>
+      <font color=#447700>!  If the latitude is between the two bounding values, we have to search and interpolate.<a name='2229'></font>
+ <a name='2230'>
+      ELSE<a name='2231'>
+ <a name='2232'>
+         DO n = 1 , proj%nlat*2 -1<a name='2233'>
+            IF ( ( proj%gauss_lat(n) - lat ) * ( proj%gauss_lat(n+1) - lat ) .LE. 0 ) THEN<a name='2234'>
+               found = .TRUE.<a name='2235'>
+               n_low = n<a name='2236'>
+               EXIT<a name='2237'>
+            END IF<a name='2238'>
+         END DO<a name='2239'>
+ <a name='2240'>
+         <font color=#447700>!  Everything still OK?<a name='2241'></font>
+  <a name='2242'>
+         IF ( .NOT. found ) THEN<a name='2243'>
+            PRINT '(A)','Troubles in river city.  No bounding values of latitude found in the Gaussian routines.'<a name='2244'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/module_llxy.F.html#LLIJ_GAUSS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1426"> ( 'Gee_no_bounding_lats_Gaussian' )<a name='2245'>
+         END IF<a name='2246'>
+ <a name='2247'>
+         j = ( ( proj%gauss_lat(n_low) - lat                     ) * ( n_low + 1 ) + &amp;<a name='2248'>
+               ( lat                   - proj%gauss_lat(n_low+1) ) * ( n_low     ) ) / &amp;<a name='2249'>
+               ( proj%gauss_lat(n_low) - proj%gauss_lat(n_low+1) )<a name='2250'>
+ <a name='2251'>
+      END IF<a name='2252'>
+<a name='2253'>
+   END SUBROUTINE llij_gauss <a name='2254'>
+  <a name='2255'>
+END MODULE module_llxy<a name='2256'>
+</pre></body></html>

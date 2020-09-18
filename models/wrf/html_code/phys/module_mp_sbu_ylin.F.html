@@ -1,0 +1,1756 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:MODEL_LAYER:PHYSICS<a name='2'></font>
+<a name='3'>
+<font color=#447700>!--- The code is based on Lin and Colle (A New Bulk Microphysical Scheme <a name='4'></font>
+<font color=#447700>!             that Includes Riming Intensity and Temperature Dependent Ice Characteristics, 2011, MWR)<a name='5'></font>
+<font color=#447700>!             and Lin et al. (Parameterization of riming intensity and its impact on ice fall speed using ARM data, 2011, MWR)<a name='6'></font>
+<font color=#447700>!--- NOTE: 1) Prognose variables are: qi,PI(precipitating ice, qs, which includes snow, partially rimed snow and graupel),qw,qr<a name='7'></font>
+<font color=#447700>!---       2) Sedimentation flux is based on Prudue Lin scheme <a name='8'></font>
+<font color=#447700>!---       2) PI has varying properties depending on riming intensity (Ri, diagnosed currently following Lin et al. (2011, MWR) and T <a name='9'></font>
+<font color=#447700>!---       3) Autoconverion is based on Liu and Daum (2004)         <a name='10'></font>
+<font color=#447700>!---       4) PI size distribution assuming Gamma distribution, but mu_s=0 (Exponential) currently<a name='11'></font>
+<font color=#447700>!---       5) No density dependent fall speed since the V-D is derived using Best number approach, which already includes density effect <a name='12'></font>
+<font color=#447700>!---       6) Future work will include radar equivalent reflectivity using the new PI property (A-D, M-D, N(D)). If you use RIP for reflectivity <a name='13'></font>
+<font color=#447700>!---          computation, please note that snow is (1-Ri)*qs and graupel is Ri*qs. Otherwise, reflectivity will be underestimated.      <a name='14'></font>
+<font color=#447700>!---       7) The Liu and Daum autoconverion is quite sensitive on Nt_c. For mixed-phase cloud and marine environment, Nt_c of 10 or 20 is suggested.<a name='15'></font>
+<font color=#447700>!---          default value is 10E.6. Change accordingly for your use.<a name='16'></font>
+<a name='17'>
+<a name='18'>
+<A NAME='MODULE_MP_SBU_YLIN'><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#MODULE_MP_SBU_YLIN' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='19'>
+      <font color=#993300>MODULE </font><font color=#cc0000>module_mp_sbu_ylin</font> <A href='../../call_to/MODULE_MP_SBU_YLIN.html' TARGET='index'>1</A><a name='20'>
+      USE    <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#module_mp_sbu_ylin.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_65"><a name='21'>
+<font color=#447700>!<a name='22'></font>
+<font color=#447700>!..Parameters user might change based on their need<a name='23'></font>
+      REAL, PARAMETER, PRIVATE :: RH = 1.0<a name='24'>
+      REAL, PARAMETER, PRIVATE :: xnor = 8.0e6<a name='25'>
+      REAL, PARAMETER, PRIVATE :: Nt_c = 10.E6<a name='26'>
+<font color=#447700>!..Water vapor and air gas constants at constant pressure<a name='27'></font>
+      REAL, PARAMETER, PRIVATE :: Rvapor = 461.5<a name='28'>
+      REAL, PARAMETER, PRIVATE :: oRv    = 1./Rvapor<a name='29'>
+      REAL, PARAMETER, PRIVATE :: Rair   = 287.04<a name='30'>
+      REAL, PARAMETER, PRIVATE :: Cp     = 1004.0<a name='31'>
+      REAL, PARAMETER, PRIVATE :: grav   = 9.81<a name='32'>
+      REAL, PARAMETER, PRIVATE :: rhowater = 1000.0<a name='33'>
+      REAL, PARAMETER, PRIVATE :: rhosnow  = 100.0<a name='34'>
+<a name='35'>
+      REAL, PARAMETER, PRIVATE :: SVP1=0.6112<a name='36'>
+      REAL, PARAMETER, PRIVATE :: SVP2=17.67<a name='37'>
+      REAL, PARAMETER, PRIVATE :: SVP3=29.65<a name='38'>
+      REAL, PARAMETER, PRIVATE :: SVPT0=273.15<a name='39'>
+      REAL, PARAMETER, PRIVATE :: EP1=Rvapor/Rair-1.<a name='40'>
+      REAL, PARAMETER, PRIVATE :: EP2=Rair/Rvapor<a name='41'>
+<font color=#447700>!..Enthalpy of sublimation, vaporization, and fusion at 0C.<a name='42'></font>
+      REAL, PARAMETER, PRIVATE :: XLS = 2.834E6<a name='43'>
+      REAL, PARAMETER, PRIVATE :: XLV = 2.5E6<a name='44'>
+      REAL, PARAMETER, PRIVATE :: XLF = XLS - XLV<a name='45'>
+<a name='46'>
+<font color=#447700>!<a name='47'></font>
+      REAL, PARAMETER, PRIVATE ::                           &amp;<a name='48'>
+             qi0 = 1.0e-3,                                  &amp;   <font color=#447700>!--- ice aggregation to snow threshold<a name='49'></font>
+             xmi50 = 4.8e-10, xmi40 = 2.46e-10,             &amp;<a name='50'>
+             xni0 = 1.0e-2, xmnin = 1.05e-18, bni = 0.5,    &amp;<a name='51'>
+             di50 = 1.0e-4, xmi = 4.19e-13,                 &amp;   <font color=#447700>!--- parameters used in BF process<a name='52'></font>
+             bv_r = 0.8, bv_i = 0.25,                       &amp;<a name='53'>
+             o6 = 1./6.,  cdrag = 0.6,                      &amp;<a name='54'>
+             avisc = 1.49628e-6, adiffwv = 8.7602e-5,       &amp;<a name='55'>
+             axka = 1.4132e3, cw = 4.187e3,  ci = 2.093e3<a name='56'>
+CONTAINS<a name='57'>
+<a name='58'>
+<font color=#447700>!-------------------------------------------------------------------<a name='59'></font>
+<font color=#447700>!  Lin et al., 1983, JAM, 1065-1092, and<a name='60'></font>
+<font color=#447700>!  Rutledge and Hobbs, 1984, JAS, 2949-2972<a name='61'></font>
+<font color=#447700>!-------------------------------------------------------------------<a name='62'></font>
+<A NAME='SBU_YLIN'><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#SBU_YLIN' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='63'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>sbu_ylin</font>(th                                       &amp; <A href='../../call_to/SBU_YLIN.html' TARGET='index'>1</A>,<A href='../../call_from/SBU_YLIN.html' TARGET='index'>1</A><a name='64'>
+                      ,qv, ql, qr                                  &amp;<a name='65'>
+                      ,qi, qs, Ri3D                                &amp;<a name='66'>
+                      ,rho, pii, p                                 &amp;<a name='67'>
+                      ,dt_in                                       &amp;<a name='68'>
+                      ,z,ht, dz8w                                  &amp;<a name='69'>
+                      ,RAINNC, RAINNCV                             &amp;<a name='70'>
+                      ,ids,ide, jds,jde, kds,kde                   &amp;<a name='71'>
+                      ,ims,ime, jms,jme, kms,kme                   &amp;<a name='72'>
+                      ,its,ite, jts,jte, kts,kte                   &amp;<a name='73'>
+                                                                   )<a name='74'>
+<font color=#447700>!-------------------------------------------------------------------<a name='75'></font>
+      IMPLICIT NONE<a name='76'>
+<font color=#447700>!-------------------------------------------------------------------<a name='77'></font>
+<font color=#447700>!<a name='78'></font>
+<font color=#447700>!<a name='79'></font>
+     INTEGER,   INTENT(IN   )    ::   ids,ide, jds,jde, kds,kde , &amp;<a name='80'>
+                                      ims,ime, jms,jme, kms,kme , &amp;<a name='81'>
+                                      its,ite, jts,jte, kts,kte<a name='82'>
+<a name='83'>
+     REAL, DIMENSION( ims:ime , kms:kme , jms:jme ),              &amp;<a name='84'>
+        INTENT(INOUT) ::                                          &amp;<a name='85'>
+                                                              th, &amp;<a name='86'>
+                                                              qv, &amp;<a name='87'>
+                                                           qi,ql, &amp;<a name='88'>
+                                                           qs,qr<a name='89'>
+<a name='90'>
+<font color=#447700>! YLIN<a name='91'></font>
+<font color=#447700>! Adding RI3D as a variable to the interface<a name='92'></font>
+     REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                &amp;<a name='93'>
+        INTENT(INOUT) :: Ri3D<a name='94'>
+<a name='95'>
+<a name='96'>
+<font color=#447700>!<a name='97'></font>
+     REAL, DIMENSION( ims:ime , kms:kme , jms:jme ),              &amp;<a name='98'>
+        INTENT(IN   ) ::                                          &amp;<a name='99'>
+                                                             rho, &amp;<a name='100'>
+                                                             pii, &amp;<a name='101'>
+                                                             z,p, &amp;<a name='102'>
+                                                            dz8w<a name='103'>
+<a name='104'>
+<a name='105'>
+     REAL , DIMENSION( ims:ime , jms:jme ) , INTENT(IN) ::       ht<a name='106'>
+     REAL, INTENT(IN   ) ::                                   dt_in  <a name='107'>
+<a name='108'>
+     REAL, DIMENSION( ims:ime , jms:jme ),                           &amp;<a name='109'>
+        INTENT(INOUT) ::                                  RAINNC, &amp;<a name='110'>
+                                                          RAINNCV<a name='111'>
+<a name='112'>
+<font color=#447700>! LOCAL VAR<a name='113'></font>
+<a name='114'>
+     INTEGER             ::                            min_q, max_q<a name='115'>
+<a name='116'>
+     REAL, DIMENSION( its:ite , jts:jte )                            &amp;<a name='117'>
+                               ::        rain, snow,ice<a name='118'>
+<a name='119'>
+     REAL, DIMENSION( kts:kte )   ::                  qvz, qlz, qrz, &amp;<a name='120'>
+                                                      qiz, qsz, qgz, &amp;<a name='121'>
+                                                                thz, &amp;<a name='122'>
+                                                        tothz, rhoz, &amp;<a name='123'>
+                                                      orhoz, sqrhoz, &amp;<a name='124'>
+                                                           prez, zz, &amp;<a name='125'>
+                                                        dzw<a name='126'>
+<a name='127'>
+<font color=#447700>! Added vertical profile of Ri (riz) as a variable<a name='128'></font>
+     REAL, DIMENSION( kts:kte ) :: riz<a name='129'>
+<a name='130'>
+<font color=#447700>!<a name='131'></font>
+     REAL    ::         dt, pptice, pptrain, pptsnow, pptgraul, rhoe_s<a name='132'>
+<a name='133'>
+     INTEGER ::               i,j,k<a name='134'>
+<a name='135'>
+      dt=dt_in<a name='136'>
+      rhoe_s=1.29<a name='137'>
+  <a name='138'>
+      j_loop:  DO j = jts, jte<a name='139'>
+      i_loop:  DO i = its, ite<a name='140'>
+<font color=#447700>!<a name='141'></font>
+<font color=#447700>!- write data from 3-D to 1-D<a name='142'></font>
+<font color=#447700>!<a name='143'></font>
+      DO k = kts, kte<a name='144'>
+       qvz(k)=qv(i,k,j)<a name='145'>
+       qlz(k)=ql(i,k,j)<a name='146'>
+       qrz(k)=qr(i,k,j)<a name='147'>
+       qiz(k)=qi(i,k,j)<a name='148'>
+       qsz(k)=qs(i,k,j)<a name='149'>
+       thz(k)=th(i,k,j)<a name='150'>
+       rhoz(k)=rho(i,k,j)<a name='151'>
+       orhoz(k)=1./rhoz(k)<a name='152'>
+       prez(k)=p(i,k,j)<a name='153'>
+<font color=#447700>!       sqrhoz(k)=sqrt(rhoe_s*orhoz(k))<a name='154'></font>
+<font color=#447700>! no density dependence of fall speed as Note #5, you can turn it on to increase fall speed at low pressure.<a name='155'></font>
+       sqrhoz(k)=1.0<a name='156'>
+       tothz(k)=pii(i,k,j)<a name='157'>
+       zz(k)=z(i,k,j)<a name='158'>
+       dzw(k)=dz8w(i,k,j)<a name='159'>
+      END DO<a name='160'>
+<font color=#447700>!<a name='161'></font>
+      pptrain=0.<a name='162'>
+      pptsnow=0.<a name='163'>
+      pptice =0.<a name='164'>
+<a name='165'>
+<font color=#447700>!     CALL wrf_debug ( 100 , 'microphysics_driver: calling clphy1d_ylin' )<a name='166'></font>
+<a name='167'>
+     CALL <A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN'>clphy1d_ylin</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#SBU_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CLPHY1D_YLIN_1">(  dt, qvz, qlz, qrz, qiz, qsz,              &amp;<a name='168'>
+                         thz, tothz, rhoz, orhoz, sqrhoz,          &amp;<a name='169'>
+                         prez, zz, dzw, ht(I,J),                   &amp;<a name='170'>
+                         pptrain, pptsnow, pptice,                 &amp;<a name='171'>
+                         kts, kte, i, j, riz                       )<a name='172'>
+<a name='173'>
+<font color=#447700>!<a name='174'></font>
+<font color=#447700>! Precipitation from cloud microphysics -- only for one time step<a name='175'></font>
+<font color=#447700>!<a name='176'></font>
+<font color=#447700>! unit is transferred from m to mm<a name='177'></font>
+<font color=#447700>!<a name='178'></font>
+      rain(i,j)= pptrain<a name='179'>
+      snow(i,j)= pptsnow<a name='180'>
+      ice(i,j) = pptice<a name='181'>
+<font color=#447700>!<a name='182'></font>
+      RAINNCV(i,j)= pptrain + pptsnow + pptice<a name='183'>
+      RAINNC(i,j) = RAINNC(i,j) + pptrain + pptsnow + pptice<a name='184'>
+<a name='185'>
+<font color=#447700>!<a name='186'></font>
+<font color=#447700>!- update data from 1-D back to 3-D<a name='187'></font>
+<font color=#447700>!<a name='188'></font>
+      DO k = kts, kte<a name='189'>
+       qv(i,k,j)=qvz(k)<a name='190'>
+       ql(i,k,j)=qlz(k)<a name='191'>
+       qr(i,k,j)=qrz(k)<a name='192'>
+       th(i,k,j)=thz(k)<a name='193'>
+       qi(i,k,j)=qiz(k)<a name='194'>
+       qs(i,k,j)=qsz(k)<a name='195'>
+       ri3d(i,k,j)=riz(k)<a name='196'>
+      END DO<a name='197'>
+<font color=#447700>!<a name='198'></font>
+      ENDDO i_loop<a name='199'>
+      ENDDO j_loop<a name='200'>
+<a name='201'>
+      END SUBROUTINE sbu_ylin<a name='202'>
+<a name='203'>
+<a name='204'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='205'></font>
+<A NAME='CLPHY1D_YLIN'><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='206'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>clphy1d_ylin</font>(dt, qvz, qlz, qrz, qiz, qsz,             &amp; <A href='../../call_to/CLPHY1D_YLIN.html' TARGET='index'>1</A>,<A href='../../call_from/CLPHY1D_YLIN.html' TARGET='index'>12</A><a name='207'>
+                      thz, tothz, rho, orho, sqrho,                    &amp;<a name='208'>
+                      prez, zz, dzw, zsfc, pptrain, pptsnow,pptice,    &amp;<a name='209'>
+                      kts, kte, i, j,riz                               )<a name='210'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='211'></font>
+      IMPLICIT NONE<a name='212'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='213'></font>
+<font color=#447700>!  This program handles the vertical 1-D cloud micphysics<a name='214'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='215'></font>
+<font color=#447700>! avisc: constant in empirical formular for dynamic viscosity of air<a name='216'></font>
+<font color=#447700>!         =1.49628e-6 [kg/m/s] = 1.49628e-5 [g/cm/s]<a name='217'></font>
+<font color=#447700>! adiffwv: constant in empirical formular for diffusivity of water<a name='218'></font>
+<font color=#447700>!          vapor in air<a name='219'></font>
+<font color=#447700>!          = 8.7602e-5 [kgm/s3] = 8.7602 [gcm/s3]<a name='220'></font>
+<font color=#447700>! axka: constant in empirical formular for thermal conductivity of air<a name='221'></font>
+<font color=#447700>!       = 1.4132e3 [m2/s2/K] = 1.4132e7 [cm2/s2/K]<a name='222'></font>
+<font color=#447700>! qi0: mixing ratio threshold for cloud ice aggregation [kg/kg]<a name='223'></font>
+<font color=#447700>! xmi50: mass of a 50 micron ice crystal<a name='224'></font>
+<font color=#447700>!        = 4.8e-10 [kg] =4.8e-7 [g]<a name='225'></font>
+<font color=#447700>! xmi40: mass of a 40 micron ice crystal<a name='226'></font>
+<font color=#447700>!        = 2.46e-10 [kg] = 2.46e-7 [g]<a name='227'></font>
+<font color=#447700>! di50: diameter of a 50 micro (radius) ice crystal<a name='228'></font>
+<font color=#447700>!       =1.0e-4 [m]<a name='229'></font>
+<font color=#447700>! xmi: mass of one cloud ice crystal<a name='230'></font>
+<font color=#447700>!      =4.19e-13 [kg] = 4.19e-10 [g]<a name='231'></font>
+<font color=#447700>! oxmi=1.0/xmi<a name='232'></font>
+<font color=#447700>!<a name='233'></font>
+<font color=#447700>! xni0=1.0e-2 [m-3] The value given in Lin et al. is wrong.(see<a name='234'></font>
+<font color=#447700>!                   Hsie et al.(1980) and Rutledge and Hobbs(1983) )<a name='235'></font>
+<font color=#447700>! bni=0.5 [K-1]<a name='236'></font>
+<font color=#447700>! xmnin: mass of a natural ice nucleus<a name='237'></font>
+<font color=#447700>!    = 1.05e-18 [kg] = 1.05e-15 [g] This values is suggested by<a name='238'></font>
+<font color=#447700>!                    Hsie et al. (1980)<a name='239'></font>
+<font color=#447700>!    = 1.0e-12 [kg] suggested by Rutlegde and Hobbs (1983)<a name='240'></font>
+<a name='241'>
+<font color=#447700>! av_r: av_r in empirical formular for terminal<a name='242'></font>
+<font color=#447700>!         velocity of raindrop<a name='243'></font>
+<font color=#447700>!         =2115.0 [cm**(1-b)/s] = 2115.0*0.01**(1-b) [m**(1-b)/s]<a name='244'></font>
+<font color=#447700>! bv_r: bv_r in empirical formular for terminal<a name='245'></font>
+<font color=#447700>!         velocity of raindrop<a name='246'></font>
+<font color=#447700>!         =0.8<a name='247'></font>
+<font color=#447700>! av_i: av_i in empirical formular for terminal<a name='248'></font>
+<font color=#447700>!         velocity of snow<a name='249'></font>
+<font color=#447700>!         =152.93 [cm**(1-d)/s] = 152.93*0.01**(1-d) [m**(1-d)/s]<a name='250'></font>
+<font color=#447700>! bv_i: bv_i in empirical formular for terminal<a name='251'></font>
+<font color=#447700>!         velocity of snow<a name='252'></font>
+<font color=#447700>!         =0.25<a name='253'></font>
+<font color=#447700>! vf1r: ventilation factors for rain =0.78<a name='254'></font>
+<font color=#447700>! vf2r: ventilation factors for rain =0.31<a name='255'></font>
+<font color=#447700>! vf1s: ventilation factors for snow =0.65<a name='256'></font>
+<font color=#447700>! vf2s: ventilation factors for snow =0.44<a name='257'></font>
+<font color=#447700>!<a name='258'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='259'></font>
+<a name='260'>
+     INTEGER, INTENT(IN   )               :: kts, kte, i, j<a name='261'>
+<a name='262'>
+     REAL,    DIMENSION( kts:kte ),                                   &amp;<a name='263'>
+           INTENT(INOUT)               :: qvz, qlz, qrz, qiz, qsz,    &amp;<a name='264'>
+                                          thz<a name='265'>
+<a name='266'>
+     REAL,    DIMENSION( kts:kte ),                                   &amp;<a name='267'>
+           INTENT(IN   )               :: tothz, rho, orho, sqrho,    &amp;<a name='268'>
+                                          prez, zz, dzw<a name='269'>
+<a name='270'>
+<a name='271'>
+     REAL,    INTENT(INOUT)               :: pptrain, pptsnow, pptice<a name='272'>
+<a name='273'>
+     REAL,    INTENT(IN   )               :: dt, zsfc<a name='274'>
+<a name='275'>
+<font color=#447700>! local vars<a name='276'></font>
+<a name='277'>
+     REAL                                :: obp4, bp3, bp5, bp6, odp4,  &amp;<a name='278'>
+                                            dp3, dp5, dp5o2<a name='279'>
+<a name='280'>
+<font color=#447700>! temperary vars<a name='281'></font>
+<a name='282'>
+     REAL                              :: tmp, tmp0, tmp1, tmp2,tmp3,  &amp;<a name='283'>
+                                          tmp4, tmpa,tmpb,tmpc,tmpd,alpha1,  &amp;<a name='284'>
+                                          qic, abi,abr, abg, odtberg,  &amp;<a name='285'>
+                                          vti50,eiw,eri,esi,esr, esw,  &amp;<a name='286'>
+                                          erw,delrs,term0,term1,       &amp;<a name='287'>
+                                          Ap, Bp,                      &amp;<a name='288'>
+                                          factor, tmp_r, tmp_s,tmp_g,  &amp;<a name='289'>
+                                          qlpqi, rsat, a1, a2, xnin<a name='290'>
+<a name='291'>
+<font color=#447700>!<a name='292'></font>
+     REAL, DIMENSION( kts:kte )    ::  oprez, tem, temcc, theiz, qswz,    &amp;<a name='293'>
+                                       qsiz, qvoqswz, qvoqsiz, qvzodt,    &amp;<a name='294'>
+                                       qlzodt, qizodt, qszodt, qrzodt<a name='295'>
+<a name='296'>
+<font color=#447700>!--- microphysical processes<a name='297'></font>
+<a name='298'>
+     REAL, DIMENSION( kts:kte )    :: psnow, psaut, psfw,  psfi,  praci,  &amp;<a name='299'>
+                                      piacr, psaci, psacw, psdep, pssub,  &amp;<a name='300'>
+                                      pracs, psacr, psmlt, psmltevp,      &amp;<a name='301'>
+                                      prain, praut, pracw, prevp, pvapor, &amp;<a name='302'>
+                                      pclw,  pladj, pcli,  pimlt, pihom,  &amp;<a name='303'>
+                                      pidw,  piadj, pgfr,                 &amp;<a name='304'>
+                                      qschg<a name='305'>
+<font color=#447700>!<a name='306'></font>
+<a name='307'>
+     REAL, DIMENSION( kts:kte )    :: qvsbar, rs0, viscmu, visc, diffwv,  &amp;<a name='308'>
+                                      schmidt, xka<a name='309'>
+<font color=#447700>!---- new snow parameters<a name='310'></font>
+<a name='311'>
+     REAL, DIMENSION( kts:kte ):: ab_s,ab_r,ab_riming,lamc <a name='312'>
+     REAL, DIMENSION( kts:kte ):: cap_s       <font color=#447700>!---- capacitance of snow<a name='313'></font>
+ <a name='314'>
+     REAL, PARAMETER :: vf1s = 0.65, vf2s = 0.44, vf1r =0.78 , vf2r = 0.31 <a name='315'>
+<a name='316'>
+     REAL, PARAMETER :: am_c1=0.004, am_c2= 6e-5,    am_c3=0.15<a name='317'>
+     REAL, PARAMETER :: bm_c1=1.85,  bm_c2= 0.003,   bm_c3=1.25<a name='318'>
+     REAL, PARAMETER :: aa_c1=1.28,  aa_c2= -0.012,  aa_c3=-0.6<a name='319'>
+     REAL, PARAMETER :: ba_c1=1.5,   ba_c2= 0.0075,  ba_c3=0.5<a name='320'>
+<a name='321'>
+     REAL, PARAMETER :: best_a=1.08 ,  best_b = 0.499<a name='322'>
+     REAL, DIMENSION(kts:kte):: am_s,bm_s,av_s,bv_s,Ri,N0_s,tmp_ss,lams  <a name='323'>
+     REAL, DIMENSION(kts:kte):: aa_s,ba_s,tmp_sa  <a name='324'>
+     REAL, PARAMETER :: mu_s=0.,mu_i=0.,mu_r=0.<a name='325'>
+<a name='326'>
+     REAL :: tc0, disp, Dc_liu, eta, mu_c, R6c      <font color=#447700>!--- for Liu's autoconversion<a name='327'></font>
+<a name='328'>
+<font color=#447700>! Adding variable Riz, which will duplicate Ri but be a copy passed upward<a name='329'></font>
+<a name='330'>
+     REAL, DIMENSION(kts:kte) :: Riz<a name='331'>
+<a name='332'>
+     REAL, DIMENSION( kts:kte )    :: vtr, vts,                   &amp;<a name='333'>
+                                      vtrold, vtsold, vtiold,     &amp;<a name='334'>
+                                      xlambdar, xlambdas,            &amp;<a name='335'>
+                                      olambdar, olambdas<a name='336'>
+<a name='337'>
+     REAL                          :: episp0k, dtb, odtb, pi, pio4,       &amp;<a name='338'>
+                                      pio6, oxLf, xLvocp, xLfocp, av_r,   &amp;<a name='339'>
+                                      av_i, ocdrag, gambp4, gamdp4,       &amp;<a name='340'>
+                                      gam4pt5, Cpor, oxmi, gambp3, gamdp3,&amp;<a name='341'>
+                                      gambp6, gam3pt5, gam2pt75, gambp5o2,&amp;<a name='342'>
+                                      gamdp5o2, cwoxlf, ocp, xni50, es<a name='343'>
+<font color=#447700>!<a name='344'></font>
+     REAL                          :: qvmin=1.e-20<a name='345'>
+     REAL                          :: temc1,save1,save2,xni50mx<a name='346'>
+<a name='347'>
+<font color=#447700>! for terminal velocity flux<a name='348'></font>
+<a name='349'>
+     INTEGER                       :: min_q, max_q, max_ri_k, k<a name='350'>
+     REAL                          :: max_ri<a name='351'>
+     REAL                          :: t_del_tv, del_tv, flux, fluxin, fluxout ,tmpqrz<a name='352'>
+     LOGICAL                       :: notlast<a name='353'>
+<font color=#447700>!<a name='354'></font>
+      mu_c = AMIN1(15., (1000.E6/Nt_c + 2.))<a name='355'>
+      R6c  = 10.0E-6      <font color=#447700>!---- 10 micron, threshold radius of cloud droplet<a name='356'></font>
+      dtb=dt<a name='357'>
+      odtb=1./dtb<a name='358'>
+      pi  =acos(-1.)<a name='359'>
+      pio4=acos(-1.)/4.<a name='360'>
+      pio6=acos(-1.)/6.<a name='361'>
+      ocp=1./cp<a name='362'>
+      oxLf=1./xLf<a name='363'>
+      xLvocp=xLv/cp<a name='364'>
+      xLfocp=xLf/cp<a name='365'>
+      Cpor=cp/Rair<a name='366'>
+      oxmi=1.0/xmi<a name='367'>
+      cwoxlf=cw/xlf <a name='368'>
+      av_r=2115.0*0.01**(1-bv_r)<a name='369'>
+      av_i=152.93*0.01**(1-bv_i)<a name='370'>
+      ocdrag=1./Cdrag<a name='371'>
+      episp0k=RH*ep2*1000.*svp1<a name='372'>
+<font color=#447700>!<a name='373'></font>
+      gambp4=<A href='../../html_code/phys/module_mp_sbu_ylin.F.html#GGAMMA'>ggamma</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GGAMMA_15">(bv_r+4.)<a name='374'>
+      gamdp4=<A href='../../html_code/phys/module_mp_sbu_ylin.F.html#GGAMMA'>ggamma</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GGAMMA_16">(bv_i+4.)<a name='375'>
+      gambp3=<A href='../../html_code/phys/module_mp_sbu_ylin.F.html#GGAMMA'>ggamma</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GGAMMA_17">(bv_r+3.)<a name='376'>
+      gambp6=<A href='../../html_code/phys/module_mp_sbu_ylin.F.html#GGAMMA'>ggamma</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GGAMMA_18">(bv_r+6)<a name='377'>
+      gambp5o2=<A href='../../html_code/phys/module_mp_sbu_ylin.F.html#GGAMMA'>ggamma</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GGAMMA_19">((bv_r+5.)/2.)<a name='378'>
+      gamdp5o2=<A href='../../html_code/phys/module_mp_sbu_ylin.F.html#GGAMMA'>ggamma</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GGAMMA_20">((bv_i+5.)/2.)<a name='379'>
+<font color=#447700>!<a name='380'></font>
+<font color=#447700>!     oprez       1./prez ( prez : pressure)<a name='381'></font>
+<font color=#447700>!     qsw         saturated mixing ratio on water surface<a name='382'></font>
+<font color=#447700>!     qsi         saturated mixing ratio on ice surface<a name='383'></font>
+<font color=#447700>!     episp0k     RH*e*saturated pressure at 273.15 K  = 611.2 hPa (Rogers and Yau 1989)<a name='384'></font>
+<font color=#447700>!     qvoqsw      qv/qsw<a name='385'></font>
+<font color=#447700>!     qvoqsi      qv/qsi<a name='386'></font>
+<font color=#447700>!     qvzodt      qv/dt<a name='387'></font>
+<font color=#447700>!     qlzodt      ql/dt<a name='388'></font>
+<font color=#447700>!     qizodt      qi/dt<a name='389'></font>
+<font color=#447700>!     qszodt      qs/dt<a name='390'></font>
+<font color=#447700>!     qrzodt      qr/dt<a name='391'></font>
+<font color=#447700>!     temcc       temperature in dregee C<a name='392'></font>
+<font color=#447700>!<a name='393'></font>
+<a name='394'>
+      obp4=1.0/(bv_r+4.0)<a name='395'>
+      bp3=bv_r+3.0<a name='396'>
+      bp5=bv_r+5.0<a name='397'>
+      bp6=bv_r+6.0<a name='398'>
+      odp4=1.0/(bv_i+4.0)<a name='399'>
+      dp3=bv_i+3.0<a name='400'>
+      dp5=bv_i+5.0<a name='401'>
+      dp5o2=0.5*(bv_i+5.0)<a name='402'>
+<font color=#447700>!<a name='403'></font>
+      do k=kts,kte<a name='404'>
+         oprez(k)=1./prez(k)<a name='405'>
+         qlz(k)=amax1( 0.0,qlz(k) )<a name='406'>
+         qiz(k)=amax1( 0.0,qiz(k) )<a name='407'>
+         qvz(k)=amax1( qvmin,qvz(k) )<a name='408'>
+         qsz(k)=amax1( 0.0,qsz(k) )<a name='409'>
+         qrz(k)=amax1( 0.0,qrz(k) )<a name='410'>
+         tem(k)=thz(k)*tothz(k)<a name='411'>
+         temcc(k)=tem(k)-273.15<a name='412'>
+         es=1000.*svp1*exp( svp2*temcc(k)/(tem(k)-svp3) )  <font color=#447700>!--- RY89 Eq(2.17)<a name='413'></font>
+         qswz(k)=ep2*es/(prez(k)-es)<a name='414'>
+         if (tem(k) .lt. 273.15 ) then<a name='415'>
+            es=1000.*svp1*exp( 21.8745584*(tem(k)-273.16)/(tem(k)-7.66) )<a name='416'>
+            qsiz(k)=ep2*es/(prez(k)-es)<a name='417'>
+            if (temcc(k) .lt. -40.0) qswz(k)=qsiz(k)<a name='418'>
+         else<a name='419'>
+            qsiz(k)=qswz(k)<a name='420'>
+         endif<a name='421'>
+<font color=#447700>!<a name='422'></font>
+         qvoqswz(k)=qvz(k)/qswz(k)<a name='423'>
+         qvoqsiz(k)=qvz(k)/qsiz(k)<a name='424'>
+         qvzodt(k)=amax1( 0.0,odtb*qvz(k) )<a name='425'>
+         qlzodt(k)=amax1( 0.0,odtb*qlz(k) )<a name='426'>
+         qizodt(k)=amax1( 0.0,odtb*qiz(k) )<a name='427'>
+         qszodt(k)=amax1( 0.0,odtb*qsz(k) )<a name='428'>
+         qrzodt(k)=amax1( 0.0,odtb*qrz(k) )<a name='429'>
+         theiz(k)=thz(k)+(xlvocp*qvz(k)-xlfocp*qiz(k))/tothz(k)<a name='430'>
+      enddo<a name='431'>
+<a name='432'>
+      do k=kts,kte<a name='433'>
+<a name='434'>
+         psnow(k)=0.0<a name='435'>
+         psaut(k)=0.0<a name='436'>
+         psfw(k)=0.0<a name='437'>
+         psfi(k)=0.0<a name='438'>
+         praci(k)=0.0<a name='439'>
+         piacr(k)=0.0<a name='440'>
+         psaci(k)=0.0<a name='441'>
+         psacw(k)=0.0<a name='442'>
+         psdep(k)=0.0<a name='443'>
+         pssub(k)=0.0<a name='444'>
+         pracs(k)=0.0<a name='445'>
+         psacr(k)=0.0<a name='446'>
+         psmlt(k)=0.0<a name='447'>
+         psmltevp(k)=0.0<a name='448'>
+<a name='449'>
+         prain(k)=0.0<a name='450'>
+         praut(k)=0.0<a name='451'>
+         pracw(k)=0.0<a name='452'>
+         prevp(k)=0.0<a name='453'>
+         pgfr(k)=0.0<a name='454'>
+<a name='455'>
+         pvapor(k)=0.0<a name='456'>
+<a name='457'>
+         pclw(k)=0.0<a name='458'>
+         pladj(k)=0.0<a name='459'>
+<a name='460'>
+         pcli(k)=0.0<a name='461'>
+         pimlt(k)=0.0<a name='462'>
+         pihom(k)=0.0<a name='463'>
+         pidw(k)=0.0<a name='464'>
+         piadj(k)=0.0<a name='465'>
+<a name='466'>
+         qschg(k)=0.<a name='467'>
+<a name='468'>
+      enddo<a name='469'>
+<a name='470'>
+<font color=#447700>!***********************************************************************<a name='471'></font>
+<font color=#447700>!*****  compute viscosity,difusivity,thermal conductivity, and    ******<a name='472'></font>
+<font color=#447700>!*****  Schmidt number                                            ******<a name='473'></font>
+<font color=#447700>!***********************************************************************<a name='474'></font>
+<font color=#447700>!c------------------------------------------------------------------<a name='475'></font>
+<font color=#447700>!c      viscmu: dynamic viscosity of air kg/m/s<a name='476'></font>
+<font color=#447700>!c      visc: kinematic viscosity of air = viscmu/rho (m2/s)<a name='477'></font>
+<font color=#447700>!c      avisc=1.49628e-6 kg/m/s=1.49628e-5 g/cm/s<a name='478'></font>
+<font color=#447700>!c      viscmu=1.718e-5 kg/m/s in RH<a name='479'></font>
+<font color=#447700>!c      diffwv: Diffusivity of water vapor in air<a name='480'></font>
+<font color=#447700>!c      adiffwv = 8.7602e-5 (8.794e-5 in MM5) kgm/s3<a name='481'></font>
+<font color=#447700>!c              = 8.7602 (8.794 in MM5) gcm/s3<a name='482'></font>
+<font color=#447700>!c      diffwv(k)=2.26e-5 m2/s<a name='483'></font>
+<font color=#447700>!c      schmidt: Schmidt number=visc/diffwv<a name='484'></font>
+<font color=#447700>!c      xka: thermal conductivity of air J/m/s/K (Kgm/s3/K)<a name='485'></font>
+<font color=#447700>!c      xka(k)=2.43e-2 J/m/s/K in RH<a name='486'></font>
+<font color=#447700>!c      axka=1.4132e3 (1.414e3 in MM5) m2/s2/k = 1.4132e7 cm2/s2/k<a name='487'></font>
+<font color=#447700>!c------------------------------------------------------------------<a name='488'></font>
+      DO k=kts,kte<a name='489'>
+        viscmu(k)=avisc*tem(k)**1.5/(tem(k)+120.0)<a name='490'>
+        visc(k)=viscmu(k)*orho(k)<a name='491'>
+        diffwv(k)=adiffwv*tem(k)**1.81*oprez(k)<a name='492'>
+        schmidt(k)=visc(k)/diffwv(k)<a name='493'>
+        xka(k)=axka*viscmu(k)<a name='494'>
+        rs0(k)=ep2*1000.*svp1/(prez(k)-1000.*svp1)<a name='495'>
+      END DO<a name='496'>
+<font color=#447700>!<a name='497'></font>
+<font color=#447700>! ---- YLIN, set snow variables<a name='498'></font>
+<font color=#447700>!<a name='499'></font>
+<font color=#447700>!---- A+B in depositional growth, the first try just take from Rogers and Yau(1989)<a name='500'></font>
+<font color=#447700>!         ab_s(k) = lsub*lsub*orv/(tcond(k)*temp(k))+&amp;<a name='501'></font>
+<font color=#447700>!                   rv*temp(k)/(diffu(k)*qvsi(k))<a name='502'></font>
+<a name='503'>
+       do k = kts, kte<a name='504'>
+         tc0   = tem(k)-273.15       <a name='505'>
+        if (rho(k)*qlz(k) .gt. 1e-5 .AND. rho(k)*qsz(k) .gt. 1e-5) then <a name='506'>
+         Ri(k) = 1.0/(1.0+6e-5/(rho(k)**1.170*qlz(k)*qsz(k)**0.170))<a name='507'>
+        else<a name='508'>
+         Ri(k) = 0<a name='509'>
+        endif<a name='510'>
+       enddo<a name='511'>
+<font color=#447700>!<a name='512'></font>
+<font color=#447700>!--- make sure Ri does not decrease downward in a column<a name='513'></font>
+<font color=#447700>!<a name='514'></font>
+       max_ri_k = MAXLOC(Ri,dim=1)<a name='515'>
+       max_ri   = MAXVAL(Ri)<a name='516'>
+<a name='517'>
+       do k = kts, max_ri_k<a name='518'>
+         Ri(k) = max_ri<a name='519'>
+       enddo<a name='520'>
+<a name='521'>
+<font color=#447700>!--- YLIN, get PI properties<a name='522'></font>
+      do k = kts, kte<a name='523'>
+         Ri(k) = AMAX1(0.,AMIN1(Ri(k),1.0))      <a name='524'>
+<font color=#447700>! Store the value of Ri(k) as Riz(k)<a name='525'></font>
+         Riz(k) = Ri(k)<a name='526'>
+<a name='527'>
+         cap_s(k)= 0.25*(1+Ri(k))<a name='528'>
+         tc0     = AMIN1(-0.1, tem(k)-273.15)          <a name='529'>
+         N0_s(k) = amin1(2.0E8, 2.0E6*exp(-0.12*tc0))          <a name='530'>
+         am_s(k) = am_c1+am_c2*tc0+am_c3*Ri(k)*Ri(k)   <font color=#447700>!--- Heymsfield 2007<a name='531'></font>
+         am_s(k) = AMAX1(0.000023,am_s(k))             <font color=#447700>!--- use the a_min in table 1 of Heymsfield<a name='532'></font>
+         bm_s(k) = bm_c1+bm_c2*tc0+bm_c3*Ri(k)<a name='533'>
+         bm_s(k) = AMIN1(bm_s(k),3.0)                  <font color=#447700>!---- capped by 3<a name='534'></font>
+<font color=#447700>!---  converting from cgs to SI unit<a name='535'></font>
+         am_s(k) =  10**(2*bm_s(k)-3.0)*am_s(k)<a name='536'>
+         aa_s(k) = aa_c1 + aa_c2*tc0 + aa_c3*Ri(k)<a name='537'>
+         ba_s(k) = ba_c1 + ba_c2*tc0 + ba_c3*Ri(k)<a name='538'>
+<font color=#447700>!---  convert to SI unit as in paper<a name='539'></font>
+         aa_s(k) = (1e-2)**(2.0-ba_s(k))*aa_s(k)<a name='540'>
+<font color=#447700>!---- get v from Mitchell 1996<a name='541'></font>
+         av_s(k) = best_a*viscmu(k)*(2*grav*am_s(k)/rho(k)/aa_s(k)/(viscmu(k)**2))**best_b<a name='542'>
+         bv_s(k) = best_b*(bm_s(k)-ba_s(k)+2)-1<a name='543'>
+        <a name='544'>
+         tmp_ss(k)= bm_s(k)+mu_s+1<a name='545'>
+         tmp_sa(k)= ba_s(k)+mu_s+1<a name='546'>
+<a name='547'>
+      enddo <a name='548'>
+<a name='549'>
+<font color=#447700>!<a name='550'></font>
+<font color=#447700>!***********************************************************************<a name='551'></font>
+<font color=#447700>! Calculate precipitation fluxes due to terminal velocities.<a name='552'></font>
+<font color=#447700>!***********************************************************************<a name='553'></font>
+<font color=#447700>!<a name='554'></font>
+<font color=#447700>!- Calculate termianl velocity (vt?)  of precipitation q?z<a name='555'></font>
+<font color=#447700>!- Find maximum vt? to determine the small delta t<a name='556'></font>
+<font color=#447700>!<a name='557'></font>
+<font color=#447700>!-- rain<a name='558'></font>
+<font color=#447700>!<a name='559'></font>
+<font color=#447700>!       CALL wrf_debug ( 100 , 'module_ylin, start precip fluxes' )<a name='560'></font>
+<a name='561'>
+      t_del_tv=0.<a name='562'>
+      del_tv=dtb<a name='563'>
+      notlast=.true.<a name='564'>
+<a name='565'>
+      DO while (notlast)<a name='566'>
+<font color=#447700>!<a name='567'></font>
+       min_q=kte<a name='568'>
+       max_q=kts-1<a name='569'>
+<font color=#447700>!<a name='570'></font>
+      do k=kts,kte-1<a name='571'>
+         if (qrz(k) .gt. 1.0e-8) then<a name='572'>
+            min_q=min0(min_q,k)<a name='573'>
+            max_q=max0(max_q,k)<a name='574'>
+            tmp1=sqrt(pi*rhowater*xnor/rho(k)/qrz(k))<a name='575'>
+            tmp1=sqrt(tmp1)<a name='576'>
+            vtrold(k)=o6*av_r*gambp4*sqrho(k)/tmp1**bv_r<a name='577'>
+            if (k .eq. 1) then<a name='578'>
+               del_tv=amin1(del_tv,0.9*(zz(k)-zsfc)/vtrold(k))<a name='579'>
+            else<a name='580'>
+               del_tv=amin1(del_tv,0.9*(zz(k)-zz(k-1))/vtrold(k))<a name='581'>
+            endif<a name='582'>
+         else<a name='583'>
+            vtrold(k)=0.<a name='584'>
+         endif<a name='585'>
+      enddo<a name='586'>
+<a name='587'>
+      if (max_q .ge. min_q) then<a name='588'>
+<font color=#447700>!<a name='589'></font>
+<font color=#447700>!- Check if the summation of the small delta t &gt;=  big delta t<a name='590'></font>
+<font color=#447700>!             (t_del_tv)          (del_tv)             (dtb)<a name='591'></font>
+<a name='592'>
+         t_del_tv=t_del_tv+del_tv<a name='593'>
+<font color=#447700>!<a name='594'></font>
+         if ( t_del_tv .ge. dtb ) then<a name='595'>
+              notlast=.false.<a name='596'>
+              del_tv=dtb+del_tv-t_del_tv<a name='597'>
+         endif<a name='598'>
+<font color=#447700>!<a name='599'></font>
+         fluxin=0.<a name='600'>
+         do k=max_q,min_q,-1<a name='601'>
+            fluxout=rho(k)*vtrold(k)*qrz(k)<a name='602'>
+            flux=(fluxin-fluxout)/rho(k)/dzw(k)<a name='603'>
+            tmpqrz=qrz(k)<a name='604'>
+            qrz(k)=qrz(k)+del_tv*flux<a name='605'>
+            fluxin=fluxout<a name='606'>
+         enddo<a name='607'>
+         if (min_q .eq. 1) then<a name='608'>
+            pptrain=pptrain+fluxin*del_tv<a name='609'>
+         else<a name='610'>
+            qrz(min_q-1)=qrz(min_q-1)+del_tv*  &amp;<a name='611'>
+                          fluxin/rho(min_q-1)/dzw(min_q-1)<a name='612'>
+         endif<a name='613'>
+<font color=#447700>!<a name='614'></font>
+      else<a name='615'>
+         notlast=.false.<a name='616'>
+      endif<a name='617'>
+      ENDDO<a name='618'>
+<a name='619'>
+<font color=#447700>!<a name='620'></font>
+<font color=#447700>!-- snow<a name='621'></font>
+<font color=#447700>!<a name='622'></font>
+      t_del_tv=0.<a name='623'>
+      del_tv=dtb<a name='624'>
+      notlast=.true.<a name='625'>
+<a name='626'>
+      DO while (notlast)<a name='627'>
+<font color=#447700>!<a name='628'></font>
+       min_q=kte<a name='629'>
+       max_q=kts-1<a name='630'>
+<font color=#447700>!<a name='631'></font>
+      do k=kts,kte-1<a name='632'>
+         if (qsz(k) .gt. 1.0e-8) then<a name='633'>
+            min_q=min0(min_q,k)<a name='634'>
+            max_q=max0(max_q,k)<a name='635'>
+<a name='636'>
+            tmp1= (am_s(k)*N0_s(k)*ggamma(tmp_ss(k))*orho(k)/qsz(k))&amp;<a name='637'>
+                   **(1./tmp_ss(k))<a name='638'>
+<a name='639'>
+            vtsold(k)= sqrho(k)*av_s(k)*ggamma(bv_s(k)+tmp_ss(k))/ &amp;<a name='640'>
+                      ggamma(tmp_ss(k))/(tmp1**bv_s(k))<a name='641'>
+<a name='642'>
+            if (k .eq. 1) then<a name='643'>
+               del_tv=amin1(del_tv,0.9*(zz(k)-zsfc)/vtsold(k))<a name='644'>
+            else<a name='645'>
+               del_tv=amin1(del_tv,0.9*(zz(k)-zz(k-1))/vtsold(k))<a name='646'>
+            endif<a name='647'>
+         else<a name='648'>
+            vtsold(k)=0.<a name='649'>
+         endif<a name='650'>
+      enddo<a name='651'>
+<a name='652'>
+      if (max_q .ge. min_q) then<a name='653'>
+<font color=#447700>!<a name='654'></font>
+<font color=#447700>!<a name='655'></font>
+<font color=#447700>!- Check if the summation of the small delta t &gt;=  big delta t<a name='656'></font>
+<font color=#447700>!             (t_del_tv)          (del_tv)             (dtb)<a name='657'></font>
+<a name='658'>
+         t_del_tv=t_del_tv+del_tv<a name='659'>
+<a name='660'>
+         if ( t_del_tv .ge. dtb ) then<a name='661'>
+              notlast=.false.<a name='662'>
+              del_tv=dtb+del_tv-t_del_tv<a name='663'>
+         endif<a name='664'>
+<font color=#447700>!<a name='665'></font>
+         fluxin=0.<a name='666'>
+         do k=max_q,min_q,-1<a name='667'>
+            fluxout=rho(k)*vtsold(k)*qsz(k)<a name='668'>
+            flux=(fluxin-fluxout)/rho(k)/dzw(k)<a name='669'>
+            qsz(k)=qsz(k)+del_tv*flux<a name='670'>
+            qsz(k)=amax1(0.,qsz(k))<a name='671'>
+            fluxin=fluxout<a name='672'>
+         enddo<a name='673'>
+         if (min_q .eq. 1) then<a name='674'>
+            pptsnow=pptsnow+fluxin*del_tv<a name='675'>
+         else<a name='676'>
+            qsz(min_q-1)=qsz(min_q-1)+del_tv*  &amp;<a name='677'>
+                         fluxin/rho(min_q-1)/dzw(min_q-1)<a name='678'>
+         endif<a name='679'>
+<font color=#447700>!<a name='680'></font>
+      else<a name='681'>
+         notlast=.false.<a name='682'>
+      endif<a name='683'>
+<a name='684'>
+      ENDDO<a name='685'>
+<a name='686'>
+<font color=#447700>!<a name='687'></font>
+<font color=#447700>!-- cloud ice  (03/21/02) using Heymsfield and Donner (1990) Vi=3.29*qi^0.16<a name='688'></font>
+<font color=#447700>!<a name='689'></font>
+      t_del_tv=0.<a name='690'>
+      del_tv=dtb<a name='691'>
+      notlast=.true.<a name='692'>
+<font color=#447700>!<a name='693'></font>
+      DO while (notlast)<a name='694'>
+<font color=#447700>!<a name='695'></font>
+      min_q=kte<a name='696'>
+      max_q=kts-1<a name='697'>
+<font color=#447700>!<a name='698'></font>
+      do k=kts,kte-1<a name='699'>
+         if (qiz(k) .gt. 1.0e-8) then<a name='700'>
+            min_q=min0(min_q,k)<a name='701'>
+            max_q=max0(max_q,k)<a name='702'>
+            vtiold(k)= 3.29 * (rho(k)* qiz(k))** 0.16  <font color=#447700>! Heymsfield and Donner<a name='703'></font>
+            if (k .eq. 1) then<a name='704'>
+               del_tv=amin1(del_tv,0.9*(zz(k)-zsfc)/vtiold(k))<a name='705'>
+            else<a name='706'>
+               del_tv=amin1(del_tv,0.9*(zz(k)-zz(k-1))/vtiold(k))<a name='707'>
+            endif<a name='708'>
+         else<a name='709'>
+            vtiold(k)=0.<a name='710'>
+         endif<a name='711'>
+      enddo<a name='712'>
+<a name='713'>
+      if (max_q .ge. min_q) then<a name='714'>
+<font color=#447700>!<a name='715'></font>
+<font color=#447700>!- Check if the summation of the small delta t &gt;=  big delta t<a name='716'></font>
+<font color=#447700>!             (t_del_tv)          (del_tv)             (dtb)<a name='717'></font>
+<a name='718'>
+         t_del_tv=t_del_tv+del_tv<a name='719'>
+<a name='720'>
+         if ( t_del_tv .ge. dtb ) then<a name='721'>
+              notlast=.false.<a name='722'>
+              del_tv=dtb+del_tv-t_del_tv<a name='723'>
+         endif<a name='724'>
+<a name='725'>
+         fluxin=0.<a name='726'>
+         do k=max_q,min_q,-1<a name='727'>
+            fluxout=rho(k)*vtiold(k)*qiz(k)<a name='728'>
+            flux=(fluxin-fluxout)/rho(k)/dzw(k)<a name='729'>
+            qiz(k)=qiz(k)+del_tv*flux<a name='730'>
+            qiz(k)=amax1(0.,qiz(k))<a name='731'>
+            fluxin=fluxout<a name='732'>
+         enddo<a name='733'>
+         if (min_q .eq. 1) then<a name='734'>
+            pptice=pptice+fluxin*del_tv<a name='735'>
+         else<a name='736'>
+            qiz(min_q-1)=qiz(min_q-1)+del_tv*  &amp;<a name='737'>
+                         fluxin/rho(min_q-1)/dzw(min_q-1)<a name='738'>
+         endif<a name='739'>
+<font color=#447700>!<a name='740'></font>
+      else<a name='741'>
+         notlast=.false.<a name='742'>
+      endif<a name='743'>
+<font color=#447700>!<a name='744'></font>
+      ENDDO<a name='745'>
+<a name='746'>
+<font color=#447700>!     CALL wrf_debug ( 100 , 'module_ylin: end precip flux' )<a name='747'></font>
+<a name='748'>
+<font color=#447700>! Microphpysics processes<a name='749'></font>
+<a name='750'>
+      DO 2000 k=kts,kte<a name='751'>
+<font color=#447700>!<a name='752'></font>
+         qvzodt(k)=amax1( 0.0,odtb*qvz(k) )<a name='753'>
+         qlzodt(k)=amax1( 0.0,odtb*qlz(k) )<a name='754'>
+         qizodt(k)=amax1( 0.0,odtb*qiz(k) )<a name='755'>
+         qszodt(k)=amax1( 0.0,odtb*qsz(k) )<a name='756'>
+         qrzodt(k)=amax1( 0.0,odtb*qrz(k) )<a name='757'>
+<a name='758'>
+<font color=#447700>!***********************************************************************<a name='759'></font>
+<font color=#447700>!*****   diagnose mixing ratios (qrz,qsz), terminal                *****<a name='760'></font>
+<font color=#447700>!*****   velocities (vtr,vts), and slope parameters in size        *****<a name='761'></font>
+<font color=#447700>!*****   distribution(xlambdar,xlambdas) of rain and snow          *****<a name='762'></font>
+<font color=#447700>!*****   follows Nagata and Ogura, 1991, MWR, 1309-1337. Eq (A7)   *****<a name='763'></font>
+<font color=#447700>!***********************************************************************<a name='764'></font>
+<font color=#447700>!<a name='765'></font>
+<font color=#447700>!**** assuming no cloud water can exist in the top two levels due to<a name='766'></font>
+<font color=#447700>!**** radiation consideration<a name='767'></font>
+<font color=#447700>!<a name='768'></font>
+<font color=#447700>!!  if<a name='769'></font>
+<font color=#447700>!!     unsaturated,<a name='770'></font>
+<font color=#447700>!!     no cloud water, rain, ice, snow<a name='771'></font>
+<font color=#447700>!!  then<a name='772'></font>
+<font color=#447700>!!     skip these processes and jump to line 2000<a name='773'></font>
+<font color=#447700>!<a name='774'></font>
+<font color=#447700>!<a name='775'></font>
+        tmp=qiz(k)+qlz(k)+qsz(k)+qrz(k)<a name='776'>
+        if( qvz(k)+qlz(k)+qiz(k) .lt. qsiz(k)  &amp;<a name='777'>
+            .and. tmp .eq. 0.0 ) go to 2000<a name='778'>
+<font color=#447700>!<a name='779'></font>
+<font color=#447700>!! calculate terminal velocity of rain<a name='780'></font>
+<font color=#447700>!<a name='781'></font>
+        if (qrz(k) .gt. 1.0e-8) then<a name='782'>
+            tmp1=sqrt(pi*rhowater*xnor*orho(k)/qrz(k))<a name='783'>
+            xlambdar(k)=sqrt(tmp1)<a name='784'>
+            olambdar(k)=1.0/xlambdar(k)<a name='785'>
+            vtrold(k)=o6*av_r*gambp4*sqrho(k)*olambdar(k)**bv_r<a name='786'>
+        else<a name='787'>
+            vtrold(k)=0.<a name='788'>
+            olambdar(k)=0.<a name='789'>
+        endif<a name='790'>
+<font color=#447700>!<a name='791'></font>
+        if (qrz(k) .gt. 1.0e-8) then<a name='792'>
+            tmp1=sqrt(pi*rhowater*xnor*orho(k)/qrz(k))<a name='793'>
+            xlambdar(k)=sqrt(tmp1)<a name='794'>
+            olambdar(k)=1.0/xlambdar(k)<a name='795'>
+            vtr(k)=o6*av_r*gambp4*sqrho(k)*olambdar(k)**bv_r<a name='796'>
+        else<a name='797'>
+            vtr(k)=0.<a name='798'>
+            olambdar(k)=0.<a name='799'>
+        endif<a name='800'>
+<font color=#447700>!<a name='801'></font>
+<font color=#447700>!! calculate terminal velocity of snow<a name='802'></font>
+<font color=#447700>!<a name='803'></font>
+        if (qsz(k) .gt. 1.0e-8) then<a name='804'>
+            tmp1= (am_s(k)*N0_s(k)*ggamma(tmp_ss(k))*orho(k)/qsz(k))&amp;<a name='805'>
+                   **(1./tmp_ss(k))<a name='806'>
+            olambdas(k)=1.0/tmp1<a name='807'>
+            vtsold(k)= sqrho(k)*av_s(k)*ggamma(bv_s(k)+tmp_ss(k))/ &amp;<a name='808'>
+                      ggamma(tmp_ss(k))/(tmp1**bv_s(k))<a name='809'>
+<a name='810'>
+        else<a name='811'>
+            vtsold(k)=0.<a name='812'>
+            olambdas(k)=0.<a name='813'>
+        endif<a name='814'>
+<font color=#447700>!<a name='815'></font>
+        if (qsz(k) .gt. 1.0e-8) then<a name='816'>
+             tmp1= (am_s(k)*N0_s(k)*ggamma(tmp_ss(k))*orho(k)/qsz(k))&amp;<a name='817'>
+                   **(1./tmp_ss(k))<a name='818'>
+             olambdas(k)=1.0/tmp1<a name='819'>
+             vts(k)= sqrho(k)*av_s(k)*ggamma(bv_s(k)+tmp_ss(k))/ &amp;<a name='820'>
+                      ggamma(tmp_ss(k))/(tmp1**bv_s(k))<a name='821'>
+<a name='822'>
+        else<a name='823'>
+            vts(k)=0.<a name='824'>
+            olambdas(k)=0.<a name='825'>
+        endif<a name='826'>
+<a name='827'>
+<font color=#447700>!---------- start of snow/ice processes below freezing<a name='828'></font>
+<a name='829'>
+        if (tem(k) .lt. 273.15) then<a name='830'>
+<a name='831'>
+<font color=#447700>!<a name='832'></font>
+<font color=#447700>!***********************************************************************<a name='833'></font>
+<font color=#447700>!*********        snow production processes for T &lt; 0 C       **********<a name='834'></font>
+<font color=#447700>!***********************************************************************<a name='835'></font>
+<font color=#447700>!c<a name='836'></font>
+<font color=#447700>!c (1) ICE CRYSTAL AGGREGATION TO SNOW (Psaut): Lin (21)<a name='837'></font>
+<font color=#447700>!c!    psaut=alpha1*(qi-qi0)<a name='838'></font>
+<font color=#447700>!c!    alpha1=1.0e-3*exp(0.025*(T-T0))<a name='839'></font>
+<font color=#447700>!c<a name='840'></font>
+           alpha1=1.0e-3*exp( 0.025*temcc(k) )<a name='841'>
+<font color=#447700>!<a name='842'></font>
+           if(temcc(k) .lt. -20.0) then<a name='843'>
+             tmp1=-7.6+4.0*exp( -0.2443e-3*(abs(temcc(k))-20)**2.455 )<a name='844'>
+             qic=1.0e-3*exp(tmp1)*orho(k)<a name='845'>
+           else<a name='846'>
+             qic=qi0<a name='847'>
+           end if<a name='848'>
+<a name='849'>
+           tmp1=odtb*(qiz(k)-qic)*(1.0-exp(-alpha1*dtb))<a name='850'>
+           psaut(k)=amax1( 0.0,tmp1 )<a name='851'>
+<a name='852'>
+<font color=#447700>!c<a name='853'></font>
+<font color=#447700>!c (2) BERGERON PROCESS TRANSFER OF CLOUD WATER TO SNOW (Psfw)<a name='854'></font>
+<font color=#447700>!c     this process only considered when -31 C &lt; T &lt; 0 C<a name='855'></font>
+<font color=#447700>!c     Lin (33) and Hsie (17)<a name='856'></font>
+<font color=#447700>!c<a name='857'></font>
+<font color=#447700>!c!<a name='858'></font>
+<font color=#447700>!c!    parama1 and parama2 functions must be user supplied<a name='859'></font>
+<font color=#447700>!c!<a name='860'></font>
+<a name='861'>
+          if( qlz(k) .gt. 1.0e-10 ) then<a name='862'>
+            temc1=amax1(-30.99,temcc(k))<a name='863'>
+            a1=<A href='../../html_code/phys/module_mp_sbu_ylin.F.html#PARAMA1'>parama1</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PARAMA1_3">( temc1 )<a name='864'>
+            a2=<A href='../../html_code/phys/module_mp_sbu_ylin.F.html#PARAMA2'>parama2</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PARAMA2_3">( temc1 )<a name='865'>
+            tmp1=1.0-a2<a name='866'>
+<font color=#447700>!!   change unit from cgs to mks<a name='867'></font>
+            a1=a1*0.001**tmp1<a name='868'>
+<font color=#447700>!!   dtberg is the time needed for a crystal to grow from 40 to 50 um<a name='869'></font>
+<font color=#447700>!!   odtberg=1.0/dtberg<a name='870'></font>
+            odtberg=(a1*tmp1)/(xmi50**tmp1-xmi40**tmp1)<a name='871'>
+<font color=#447700>!<a name='872'></font>
+<font color=#447700>!!   compute terminal velocity of a 50 micron ice cystal<a name='873'></font>
+<font color=#447700>!<a name='874'></font>
+            vti50=av_i*di50**bv_i*sqrho(k)<a name='875'>
+<font color=#447700>!<a name='876'></font>
+            eiw=1.0<a name='877'>
+            save1=a1*xmi50**a2<a name='878'>
+            save2=0.25*pi*eiw*rho(k)*di50*di50*vti50<a name='879'>
+<font color=#447700>!<a name='880'></font>
+            tmp2=( save1 + save2*qlz(k) )<a name='881'>
+<font color=#447700>!<a name='882'></font>
+<font color=#447700>!!  maximum number of 50 micron crystals limited by the amount<a name='883'></font>
+<font color=#447700>!!  of supercool water<a name='884'></font>
+<font color=#447700>!<a name='885'></font>
+            xni50mx=qlzodt(k)/tmp2<a name='886'>
+<font color=#447700>!<a name='887'></font>
+<font color=#447700>!!   number of 50 micron crystals produced<a name='888'></font>
+<font color=#447700>!<a name='889'></font>
+            xni50=qiz(k)*( 1.0-exp(-dtb*odtberg) )/xmi50<a name='890'>
+            xni50=amin1(xni50,xni50mx)<a name='891'>
+<font color=#447700>!<a name='892'></font>
+            tmp3=odtb*tmp2/save2*( 1.0-exp(-save2*xni50*dtb) )<a name='893'>
+            psfw(k)=amin1( tmp3,qlzodt(k) )<a name='894'>
+<font color=#447700>!c<a name='895'></font>
+<font color=#447700>!c (3) REDUCTION OF CLOUD ICE BY BERGERON PROCESS (Psfi): Lin (34)<a name='896'></font>
+<font color=#447700>!c     this process only considered when -31 C &lt; T &lt; 0 C<a name='897'></font>
+<font color=#447700>!c<a name='898'></font>
+            tmp1=xni50*xmi50-psfw(k)<a name='899'>
+            psfi(k)=amin1(tmp1,qizodt(k))<a name='900'>
+          end if<a name='901'>
+<font color=#447700>!<a name='902'></font>
+<font color=#447700>!<a name='903'></font>
+          if(qrz(k) .le. 0.0) go to 1000<a name='904'>
+<font color=#447700>!<a name='905'></font>
+<font color=#447700>! Processes (4) and (5) only need when qrz &gt; 0.0<a name='906'></font>
+<font color=#447700>!<a name='907'></font>
+<font color=#447700>!c<a name='908'></font>
+<font color=#447700>!c (4) CLOUD ICE ACCRETION BY RAIN (Praci): Lin (25)<a name='909'></font>
+<font color=#447700>!c     produce PI<a name='910'></font>
+<font color=#447700>!c<a name='911'></font>
+          eri=1.0<a name='912'>
+          save1=pio4*eri*xnor*av_r*sqrho(k)<a name='913'>
+          tmp1=save1*gambp3*olambdar(k)**bp3<a name='914'>
+          praci(k)=qizodt(k)*( 1.0-exp(-tmp1*dtb) )<a name='915'>
+<a name='916'>
+<font color=#447700>!c<a name='917'></font>
+<font color=#447700>!c (5) RAIN ACCRETION BY CLOUD ICE (Piacr): Lin (26)<a name='918'></font>
+<font color=#447700>!c<a name='919'></font>
+          tmp2=qiz(k)*save1*rho(k)*pio6*rhowater*gambp6*oxmi* &amp;<a name='920'>
+                   olambdar(k)**bp6<a name='921'>
+          piacr(k)=amin1( tmp2,qrzodt(k) )<a name='922'>
+<a name='923'>
+<font color=#447700>!<a name='924'></font>
+1000      continue<a name='925'>
+<font color=#447700>!<a name='926'></font>
+          if(qsz(k) .le. 0.0) go to 1200<a name='927'>
+<font color=#447700>!<a name='928'></font>
+<font color=#447700>! Compute the following processes only when qsz &gt; 0.0<a name='929'></font>
+<font color=#447700>!<a name='930'></font>
+<font color=#447700>!c<a name='931'></font>
+<font color=#447700>!c (6) ICE CRYSTAL ACCRETION BY SNOW (Psaci): Lin (22)<a name='932'></font>
+<font color=#447700>!c<a name='933'></font>
+          esi=exp( 0.025*temcc(k) )<a name='934'>
+          save1 = aa_s(k)*sqrho(k)*N0_s(k)* &amp;<a name='935'>
+                  ggamma(bv_s(k)+tmp_sa(k))*olambdas(k)**(bv_s(k)+tmp_sa(k))<a name='936'>
+<a name='937'>
+          tmp1=esi*save1<a name='938'>
+          psaci(k)=qizodt(k)*( 1.0-exp(-tmp1*dtb) )<a name='939'>
+<a name='940'>
+<font color=#447700>!c<a name='941'></font>
+<font color=#447700>!c (7) CLOUD WATER ACCRETION BY SNOW (Psacw): Lin (24)<a name='942'></font>
+<font color=#447700>!c<a name='943'></font>
+          esw=1.0<a name='944'>
+          tmp1=esw*save1<a name='945'>
+          psacw(k)=qlzodt(K)*( 1.0-exp(-tmp1*dtb) )<a name='946'>
+<a name='947'>
+<font color=#447700>!c<a name='948'></font>
+<font color=#447700>!c (8) DEPOSITION/SUBLIMATION OF SNOW (Psdep/Pssub): Lin (31)<a name='949'></font>
+<font color=#447700>!c     includes consideration of ventilation effect<a name='950'></font>
+<font color=#447700>!c<a name='951'></font>
+          tmpa=rvapor*xka(k)*tem(k)*tem(k)<a name='952'>
+          tmpb=xls*xls*rho(k)*qsiz(k)*diffwv(k)<a name='953'>
+          tmpc=tmpa*qsiz(k)*diffwv(k)<a name='954'>
+          abi=4.0*pi*cap_s(k)*(qvoqsiz(k)-1.0)*tmpc/(tmpa+tmpb)<a name='955'>
+          tmp1=av_s(k)*sqrho(k)*olambdas(k)**(5+bv_s(k)+2*mu_s)/visc(k)<a name='956'>
+<a name='957'>
+<font color=#447700>!---- YLIN, here there is some approximation assuming mu_s =1, so gamma(2)=1, etc.<a name='958'></font>
+<a name='959'>
+          tmp2= abi*N0_s(k)*( vf1s*olambdas(k)*olambdas(k)+ &amp;<a name='960'>
+                vf2s*schmidt(k)**0.33334* &amp;<a name='961'>
+                ggamma(2.5+0.5*bv_s(k)+mu_s)*sqrt(tmp1) )<a name='962'>
+<a name='963'>
+          tmp3=odtb*( qvz(k)-qsiz(k) )<a name='964'>
+<font color=#447700>!<a name='965'></font>
+          if( tmp2 .le. 0.0) then<a name='966'>
+            tmp2=amax1( tmp2,tmp3)<a name='967'>
+            pssub(k)=amax1( tmp2,-qszodt(k) )<a name='968'>
+            psdep(k)=0.0<a name='969'>
+          else<a name='970'>
+            psdep(k)=amin1( tmp2,tmp3 )<a name='971'>
+            pssub(k)=0.0<a name='972'>
+          end if<a name='973'>
+<a name='974'>
+<font color=#447700>!<a name='975'></font>
+          if(qrz(k) .le. 0.0) go to 1200<a name='976'>
+<font color=#447700>!<a name='977'></font>
+<font color=#447700>! Compute processes (9) and (10) only when qsz &gt; 0.0 and qrz &gt; 0.0<a name='978'></font>
+<font color=#447700>! these two terms need to be refined in the future, they should be equal<a name='979'></font>
+<font color=#447700>!c<a name='980'></font>
+<font color=#447700>!c (9) ACCRETION OF SNOW BY RAIN (Pracs): Lin (27)<a name='981'></font>
+<font color=#447700>!c<a name='982'></font>
+          esr=1.0<a name='983'>
+          tmpa=olambdar(k)*olambdar(k)<a name='984'>
+          tmpb=olambdas(k)*olambdas(k)<a name='985'>
+          tmpc=olambdar(k)*olambdas(k)<a name='986'>
+          tmp1=pi*pi*esr*xnor*N0_s(k)*abs( vtr(k)-vts(k) )*orho(k)<a name='987'>
+          tmp2=tmpb*tmpb*olambdar(k)*(5.0*tmpb+2.0*tmpc+0.5*tmpa)<a name='988'>
+          tmp3=tmp1*rhosnow*tmp2<a name='989'>
+          pracs(k)=amin1( tmp3,qszodt(k) )<a name='990'>
+          pracs(k)=0.0<a name='991'>
+<font color=#447700>!c<a name='992'></font>
+<font color=#447700>!c (10) ACCRETION OF RAIN BY SNOW (Psacr): Lin (28)<a name='993'></font>
+<font color=#447700>!c<a name='994'></font>
+          tmp3=tmpa*tmpa*olambdas(k)*(5.0*tmpa+2.0*tmpc+0.5*tmpb)<a name='995'>
+          tmp4=tmp1*rhowater*tmp3<a name='996'>
+          psacr(k)=amin1( tmp4,qrzodt(k) )<a name='997'>
+<font color=#447700>!<a name='998'></font>
+<font color=#447700>!c<a name='999'></font>
+<font color=#447700>!c (2) FREEZING OF RAIN TO FORM GRAUPEL  (pgfr): Lin (45), added to PI<a name='1000'></font>
+<font color=#447700>!c     positive value<a name='1001'></font>
+<font color=#447700>!c     Constant in Bigg freezing Aplume=Ap=0.66 /k<a name='1002'></font>
+<font color=#447700>!c     Constant in raindrop freezing equ. Bplume=Bp=100./m/m/m/s<a name='1003'></font>
+<font color=#447700>!<a name='1004'></font>
+<a name='1005'>
+            if (qrz(k) .gt. 1.e-8 ) then<a name='1006'>
+               Bp=100.<a name='1007'>
+               Ap=0.66<a name='1008'>
+               tmp1=olambdar(k)*olambdar(k)*olambdar(k)<a name='1009'>
+               tmp2=20.*pi*pi*Bp*xnor*rhowater*orho(k)*  &amp;<a name='1010'>
+                    (exp(-Ap*temcc(k))-1.0)*tmp1*tmp1*olambdar(k)<a name='1011'>
+               pgfr(k)=amin1( tmp2,qrzodt(k) )<a name='1012'>
+            else<a name='1013'>
+               pgfr(k)=0<a name='1014'>
+            endif<a name='1015'>
+<a name='1016'>
+1200      continue<a name='1017'>
+<font color=#447700>!<a name='1018'></font>
+<a name='1019'>
+        else                        <a name='1020'>
+<a name='1021'>
+<font color=#447700>!<a name='1022'></font>
+<font color=#447700>!***********************************************************************<a name='1023'></font>
+<font color=#447700>!*********        snow production processes for T &gt; 0 C       **********<a name='1024'></font>
+<font color=#447700>!***********************************************************************<a name='1025'></font>
+<font color=#447700>!<a name='1026'></font>
+         if (qsz(k) .le. 0.0) go to 1400<a name='1027'>
+<font color=#447700>!c<a name='1028'></font>
+<font color=#447700>!c (1) CLOUD WATER ACCRETION BY SNOW (Psacw): Lin (24)<a name='1029'></font>
+<font color=#447700>!c<a name='1030'></font>
+            esw=1.0<a name='1031'>
+<a name='1032'>
+            save1 =aa_s(k)*sqrho(k)*N0_s(k)* &amp;<a name='1033'>
+                   ggamma(bv_s(k)+tmp_sa(k))*olambdas(k)**(bv_s(k)+tmp_sa(k))<a name='1034'>
+<a name='1035'>
+            tmp1=esw*save1<a name='1036'>
+            psacw(k)=qlzodt(k)*( 1.0-exp(-tmp1*dtb) )<a name='1037'>
+<a name='1038'>
+<font color=#447700>!c<a name='1039'></font>
+<font color=#447700>!c (2) ACCRETION OF RAIN BY SNOW (Psacr): Lin (28)<a name='1040'></font>
+<font color=#447700>!c<a name='1041'></font>
+            esr=1.0<a name='1042'>
+            tmpa=olambdar(k)*olambdar(k)<a name='1043'>
+            tmpb=olambdas(k)*olambdas(k)<a name='1044'>
+            tmpc=olambdar(k)*olambdas(k)<a name='1045'>
+            tmp1=pi*pi*esr*xnor*N0_s(k)*abs( vtr(k)-vts(k) )*orho(k)<a name='1046'>
+            tmp2=tmpa*tmpa*olambdas(k)*(5.0*tmpa+2.0*tmpc+0.5*tmpb)<a name='1047'>
+            tmp3=tmp1*rhowater*tmp2<a name='1048'>
+            psacr(k)=amin1( tmp3,qrzodt(k) )<a name='1049'>
+<font color=#447700>!c<a name='1050'></font>
+<font color=#447700>!c (3) MELTING OF SNOW (Psmlt): Lin (32)<a name='1051'></font>
+<font color=#447700>!c     Psmlt is negative value<a name='1052'></font>
+<font color=#447700>!<a name='1053'></font>
+            delrs=rs0(k)-qvz(k)<a name='1054'>
+            term1=2.0*pi*orho(k)*( xlv*diffwv(k)*rho(k)*delrs- &amp;<a name='1055'>
+                  xka(k)*temcc(k) )<a name='1056'>
+            tmp1= av_s(k)*sqrho(k)*olambdas(k)**(5+bv_s(k)+2*mu_s)/visc(k)<a name='1057'>
+            tmp2= N0_s(k)*( vf1s*olambdas(k)*olambdas(k)+ &amp;<a name='1058'>
+                  vf2s*schmidt(k)**0.33334* &amp;<a name='1059'>
+                  ggamma(2.5+0.5*bv_s(k)+mu_s)*sqrt(tmp1) )<a name='1060'>
+            tmp3=term1*oxlf*tmp2-cwoxlf*temcc(k)*( psacw(k)+psacr(k) )<a name='1061'>
+            tmp4=amin1(0.0,tmp3)<a name='1062'>
+            psmlt(k)=amax1( tmp4,-qszodt(k) )<a name='1063'>
+<font color=#447700>!c<a name='1064'></font>
+<font color=#447700>!c (4) EVAPORATION OF MELTING SNOW (Psmltevp): HR (A27)<a name='1065'></font>
+<font color=#447700>!c     but use Lin et al. coefficience<a name='1066'></font>
+<font color=#447700>!c     Psmltevp is a negative value<a name='1067'></font>
+<font color=#447700>!c<a name='1068'></font>
+            tmpa=rvapor*xka(k)*tem(k)*tem(k)<a name='1069'>
+            tmpb=xlv*xlv*rho(k)*qswz(k)*diffwv(k)<a name='1070'>
+            tmpc=tmpa*qswz(k)*diffwv(k)<a name='1071'>
+            tmpd=amin1( 0.0,(qvoqswz(k)-0.90)*qswz(k)*odtb )<a name='1072'>
+<a name='1073'>
+            abr=2.0*pi*(qvoqswz(k)-0.90)*tmpc/(tmpa+tmpb)<a name='1074'>
+<font color=#447700>!<a name='1075'></font>
+<font color=#447700>!**** allow evaporation to occur when RH less than 90%<a name='1076'></font>
+<font color=#447700>!**** here not using 100% because the evaporation cooling<a name='1077'></font>
+<font color=#447700>!**** of temperature is not taking into account yet; hence,<a name='1078'></font>
+<font color=#447700>!**** the qsw value is a little bit larger. This will avoid<a name='1079'></font>
+<font color=#447700>!**** evaporation can generate cloud.<a name='1080'></font>
+<font color=#447700>!<a name='1081'></font>
+            tmp1=av_s(k)*sqrho(k)*olambdas(k)**(5+bv_s(k)+2*mu_s)/visc(k)<a name='1082'>
+            tmp2= N0_s(k)*( vf1s*olambdas(k)*olambdas(k)+ &amp;<a name='1083'>
+                  vf2s*schmidt(k)**0.33334* &amp;<a name='1084'>
+                  ggamma(2.5+0.5*bv_s(k)+mu_s)*sqrt(tmp1) )<a name='1085'>
+            tmp3=amin1(0.0,tmp2)<a name='1086'>
+            tmp3=amax1( tmp3,tmpd )<a name='1087'>
+            psmltevp(k)=amax1( tmp3,-qszodt(k) )<a name='1088'>
+1400     continue<a name='1089'>
+<font color=#447700>!<a name='1090'></font>
+        end if      <font color=#447700>!---- end of snow/ice processes<a name='1091'></font>
+<a name='1092'>
+<font color=#447700>!         CALL wrf_debug ( 100 , 'module_ylin: finish ice/snow processes' )<a name='1093'></font>
+<a name='1094'>
+<a name='1095'>
+<font color=#447700>!***********************************************************************<a name='1096'></font>
+<font color=#447700>!*********           rain production processes                **********<a name='1097'></font>
+<font color=#447700>!***********************************************************************<a name='1098'></font>
+<a name='1099'>
+<font color=#447700>!c<a name='1100'></font>
+<font color=#447700>!c (1) AUTOCONVERSION OF RAIN (Praut): using Liu and Daum (2004)<a name='1101'></font>
+<font color=#447700>!c<a name='1102'></font>
+<a name='1103'>
+<font color=#447700>!---- YLIN, autoconversion use Liu and Daum (2004), unit = g cm-3 s-1, in the scheme kg/kg s-1, so<a name='1104'></font>
+<a name='1105'>
+       if (qlz(k) .gt. 1e-6) then<a name='1106'>
+           lamc(k) = (Nt_c*rhowater*pi*ggamma(4.+mu_c)/(6.*rho(k)*qlz(k))/ &amp;        <font color=#447700>!--- N(D) = N0*D^mu*exp(-lamc*D)<a name='1107'></font>
+                    ggamma(1+mu_c))**0.3333<a name='1108'>
+           Dc_liu  = (ggamma(6+1+mu_c)/ggamma(1+mu_c))**(1./6.)/lamc(k)             <font color=#447700>!----- R6 in m<a name='1109'></font>
+<a name='1110'>
+           if (Dc_liu .gt. R6c) then<a name='1111'>
+             disp = 1./(mu_c+1.)      <font color=#447700>!--- square of relative dispersion<a name='1112'></font>
+             eta  = (0.75/pi/(1e-3*rhowater))**2*1.9e11*((1+3*disp)*(1+4*disp)*&amp;<a name='1113'>
+                   (1+5*disp)/(1+disp)/(1+2*disp))<a name='1114'>
+             praut(k) = eta*(1e-3*rho(k)*qlz(k))**3/(1e-6*Nt_c)                      <font color=#447700>!--- g cm-3 s-1<a name='1115'></font>
+             praut(k) = praut(k)/(1e-3*rho(k))                                       <font color=#447700>!--- kg kg-1 s-1<a name='1116'></font>
+           else<a name='1117'>
+            praut(k) = 0.0<a name='1118'>
+           endif<a name='1119'>
+       else<a name='1120'>
+         praut(k) = 0.0<a name='1121'>
+       endif <a name='1122'>
+<a name='1123'>
+<font color=#447700>!c<a name='1124'></font>
+<font color=#447700>!c (2) ACCRETION OF CLOUD WATER BY RAIN (Pracw): Lin (51)<a name='1125'></font>
+<font color=#447700>!c<a name='1126'></font>
+        erw=1.0<a name='1127'>
+<a name='1128'>
+        tmp1=pio4*erw*xnor*av_r*sqrho(k)* &amp;<a name='1129'>
+             gambp3*olambdar(k)**bp3<a name='1130'>
+        pracw(k)=qlzodt(k)*( 1.0-exp(-tmp1*dtb) )<a name='1131'>
+<a name='1132'>
+<font color=#447700>!c<a name='1133'></font>
+<font color=#447700>!c (3) EVAPORATION OF RAIN (Prevp): Lin (52)<a name='1134'></font>
+<font color=#447700>!c     Prevp is negative value<a name='1135'></font>
+<font color=#447700>!c<a name='1136'></font>
+<font color=#447700>!c     Sw=qvoqsw : saturation ratio<a name='1137'></font>
+<font color=#447700>!c<a name='1138'></font>
+         tmpa=rvapor*xka(k)*tem(k)*tem(k)<a name='1139'>
+         tmpb=xlv*xlv*rho(k)*qswz(k)*diffwv(k)<a name='1140'>
+         tmpc=tmpa*qswz(k)*diffwv(k)<a name='1141'>
+         tmpd=amin1(0.0,(qvoqswz(k)-0.90)*qswz(k)*odtb)<a name='1142'>
+<a name='1143'>
+         abr=2.0*pi*(qvoqswz(k)-0.90)*tmpc/(tmpa+tmpb)<a name='1144'>
+         tmp1=av_r*sqrho(k)*olambdar(k)**bp5/visc(k)<a name='1145'>
+         tmp2=abr*xnor*( vf1r*olambdar(k)*olambdar(k)+  &amp;<a name='1146'>
+              vf2r*schmidt(k)**0.33334*gambp5o2*sqrt(tmp1) )<a name='1147'>
+         tmp3=amin1( 0.0,tmp2 )<a name='1148'>
+         tmp3=amax1( tmp3,tmpd )<a name='1149'>
+         prevp(k)=amax1( tmp3,-qrzodt(k) )<a name='1150'>
+<a name='1151'>
+<font color=#447700>!        CALL wrf_debug ( 100 , 'module_ylin: finish rain processes' )<a name='1152'></font>
+<a name='1153'>
+<font color=#447700>!c<a name='1154'></font>
+<font color=#447700>!c**********************************************************************<a name='1155'></font>
+<font color=#447700>!c*****     combine all processes together and avoid negative      *****<a name='1156'></font>
+<font color=#447700>!c*****     water substances<a name='1157'></font>
+<font color=#447700>!***********************************************************************<a name='1158'></font>
+<font color=#447700>!c<a name='1159'></font>
+      if ( temcc(k) .lt. 0.0) then<a name='1160'>
+<font color=#447700>!c<a name='1161'></font>
+<font color=#447700>!c  combined water vapor depletions<a name='1162'></font>
+<font color=#447700>!c<a name='1163'></font>
+           tmp=psdep(k)<a name='1164'>
+           if ( tmp .gt. qvzodt(k) ) then<a name='1165'>
+              factor=qvzodt(k)/tmp<a name='1166'>
+              psdep(k)=psdep(k)*factor<a name='1167'>
+           end if<a name='1168'>
+<font color=#447700>!c<a name='1169'></font>
+<font color=#447700>!c  combined cloud water depletions<a name='1170'></font>
+<font color=#447700>!c<a name='1171'></font>
+           tmp=praut(k)+psacw(k)+psfw(k)+pracw(k)<a name='1172'>
+           if ( tmp .gt. qlzodt(k) ) then<a name='1173'>
+              factor=qlzodt(k)/tmp<a name='1174'>
+              praut(k)=praut(k)*factor<a name='1175'>
+              psacw(k)=psacw(k)*factor<a name='1176'>
+              psfw(k)=psfw(k)*factor<a name='1177'>
+              pracw(k)=pracw(k)*factor<a name='1178'>
+           end if<a name='1179'>
+<font color=#447700>!c<a name='1180'></font>
+<font color=#447700>!c  combined cloud ice depletions<a name='1181'></font>
+<font color=#447700>!c<a name='1182'></font>
+           tmp=psaut(k)+psaci(k)+praci(k)+psfi(k)<a name='1183'>
+           if (tmp .gt. qizodt(k) ) then<a name='1184'>
+              factor=qizodt(k)/tmp<a name='1185'>
+              psaut(k)=psaut(k)*factor<a name='1186'>
+              psaci(k)=psaci(k)*factor<a name='1187'>
+              praci(k)=praci(k)*factor<a name='1188'>
+              psfi(k)=psfi(k)*factor<a name='1189'>
+           endif<a name='1190'>
+<font color=#447700>!c<a name='1191'></font>
+<font color=#447700>!c  combined all rain processes<a name='1192'></font>
+<font color=#447700>!c<a name='1193'></font>
+          tmp_r=piacr(k)+psacr(k)-prevp(k)-praut(k)-pracw(k)+pgfr(k) <a name='1194'>
+          if (tmp_r .gt. qrzodt(k) ) then<a name='1195'>
+             factor=qrzodt(k)/tmp_r<a name='1196'>
+             piacr(k)=piacr(k)*factor<a name='1197'>
+             psacr(k)=psacr(k)*factor<a name='1198'>
+             prevp(k)=prevp(k)*factor<a name='1199'>
+             pgfr(k)=pgfr(k)*factor<a name='1200'>
+          endif<a name='1201'>
+<font color=#447700>!c<a name='1202'></font>
+<font color=#447700>!c   combined all snow processes<a name='1203'></font>
+<font color=#447700>!c<a name='1204'></font>
+          tmp_s=-pssub(k)-(psaut(k)+psaci(k)+psacw(k)+psfw(k)+pgfr(k)+ &amp;<a name='1205'>
+                 psfi(k)+praci(k)+piacr(k)+ &amp;<a name='1206'>
+                 psdep(k)+psacr(k)-pracs(k))<a name='1207'>
+          if ( tmp_s .gt. qszodt(k) ) then<a name='1208'>
+             factor=qszodt(k)/tmp_s<a name='1209'>
+             pssub(k)=pssub(k)*factor<a name='1210'>
+             Pracs(k)=Pracs(k)*factor<a name='1211'>
+          endif<a name='1212'>
+<a name='1213'>
+<font color=#447700>!c<a name='1214'></font>
+<font color=#447700>!c  calculate new water substances, thetae, tem, and qvsbar<a name='1215'></font>
+<font color=#447700>!c<a name='1216'></font>
+<a name='1217'>
+         pvapor(k)=-pssub(k)-psdep(k)-prevp(k)<a name='1218'>
+         qvz(k)=amax1( qvmin,qvz(k)+dtb*pvapor(k) )<a name='1219'>
+         pclw(k)=-praut(k)-pracw(k)-psacw(k)-psfw(k)<a name='1220'>
+         qlz(k)=amax1( 0.0,qlz(k)+dtb*pclw(k) )<a name='1221'>
+         pcli(k)=-psaut(k)-psfi(k)-psaci(k)-praci(k)<a name='1222'>
+         qiz(k)=amax1( 0.0,qiz(k)+dtb*pcli(k) )<a name='1223'>
+         tmp_r=piacr(k)+psacr(k)-prevp(k)-praut(k)-pracw(k)+pgfr(k)-pracs(k) <a name='1224'>
+         prain(k)=-tmp_r<a name='1225'>
+         qrz(k)=amax1( 0.0,qrz(k)+dtb*prain(k) )<a name='1226'>
+         tmp_s=-pssub(k)-(psaut(k)+psaci(k)+psacw(k)+psfw(k)+pgfr(k)+  &amp;<a name='1227'>
+                psfi(k)+praci(k)+piacr(k)+  &amp;<a name='1228'>
+                psdep(k)+psacr(k)-pracs(k))<a name='1229'>
+         psnow(k)=-tmp_s<a name='1230'>
+         qsz(k)=amax1( 0.0,qsz(k)+dtb*psnow(k) )<a name='1231'>
+<a name='1232'>
+         qschg(k)=qschg(k)+psnow(k)<a name='1233'>
+         qschg(k)=psnow(k)<a name='1234'>
+<a name='1235'>
+         tmp=ocp/tothz(k)*xLf*qschg(k)<a name='1236'>
+         theiz(k)=theiz(k)+dtb*tmp<a name='1237'>
+         thz(k)=theiz(k)-(xLvocp*qvz(k)-xLfocp*qiz(k))/tothz(k)<a name='1238'>
+         tem(k)=thz(k)*tothz(k)<a name='1239'>
+<a name='1240'>
+         temcc(k)=tem(k)-273.15<a name='1241'>
+<a name='1242'>
+         if( temcc(k) .lt. -40.0 ) qswz(k)=qsiz(k)<a name='1243'>
+         qlpqi=qlz(k)+qiz(k)<a name='1244'>
+         if ( qlpqi .eq. 0.0 ) then<a name='1245'>
+            qvsbar(k)=qsiz(k)<a name='1246'>
+         else<a name='1247'>
+            qvsbar(k)=( qiz(k)*qsiz(k)+qlz(k)*qswz(k) )/qlpqi<a name='1248'>
+         endif<a name='1249'>
+<a name='1250'>
+<font color=#447700>!<a name='1251'></font>
+      else                  <font color=#447700>!&gt;0 C<a name='1252'></font>
+<font color=#447700>!c<a name='1253'></font>
+<font color=#447700>!c  combined cloud water depletions<a name='1254'></font>
+<font color=#447700>!c<a name='1255'></font>
+          tmp=praut(k)+psacw(k)+pracw(k)<a name='1256'>
+          if ( tmp .gt. qlzodt(k) ) then<a name='1257'>
+             factor=qlzodt(k)/tmp<a name='1258'>
+             praut(k)=praut(k)*factor<a name='1259'>
+             psacw(k)=psacw(k)*factor<a name='1260'>
+             pracw(k)=pracw(k)*factor<a name='1261'>
+          end if<a name='1262'>
+<font color=#447700>!c<a name='1263'></font>
+<font color=#447700>!c  combined all snow processes<a name='1264'></font>
+<font color=#447700>!c<a name='1265'></font>
+          tmp_s=-(psmlt(k)+psmltevp(k))<a name='1266'>
+          if (tmp_s .gt. qszodt(k) ) then<a name='1267'>
+             factor=qszodt(k)/tmp_s<a name='1268'>
+             psmlt(k)=psmlt(k)*factor<a name='1269'>
+             psmltevp(k)=psmltevp(k)*factor<a name='1270'>
+          endif<a name='1271'>
+<font color=#447700>!c<a name='1272'></font>
+<font color=#447700>!c  combined all rain processes<a name='1273'></font>
+<font color=#447700>!c<a name='1274'></font>
+          tmp_r=-prevp(k)-(praut(k)+pracw(k)+psacw(k)-psmlt(k)) <a name='1275'>
+          if (tmp_r .gt. qrzodt(k) ) then<a name='1276'>
+             factor=qrzodt(k)/tmp_r<a name='1277'>
+             prevp(k)=prevp(k)*factor<a name='1278'>
+          endif<a name='1279'>
+<font color=#447700>!c<a name='1280'></font>
+<font color=#447700>!c  calculate new water substances and thetae<a name='1281'></font>
+<font color=#447700>!c<a name='1282'></font>
+          pvapor(k)=-psmltevp(k)-prevp(k)<a name='1283'>
+          qvz(k)=amax1( qvmin,qvz(k)+dtb*pvapor(k))<a name='1284'>
+          pclw(k)=-praut(k)-pracw(k)-psacw(k)<a name='1285'>
+          qlz(k)=amax1( 0.0,qlz(k)+dtb*pclw(k) )<a name='1286'>
+          pcli(k)=0.0<a name='1287'>
+          qiz(k)=amax1( 0.0,qiz(k)+dtb*pcli(k) )<a name='1288'>
+          tmp_r=-prevp(k)-(praut(k)+pracw(k)+psacw(k)-psmlt(k)) <a name='1289'>
+          prain(k)=-tmp_r<a name='1290'>
+          tmpqrz=qrz(k)<a name='1291'>
+          qrz(k)=amax1( 0.0,qrz(k)+dtb*prain(k) )<a name='1292'>
+          tmp_s=-(psmlt(k)+psmltevp(k))<a name='1293'>
+          psnow(k)=-tmp_s<a name='1294'>
+          qsz(k)=amax1( 0.0,qsz(k)+dtb*psnow(k) )<a name='1295'>
+          qschg(k)=psnow(k)<a name='1296'>
+<font color=#447700>!<a name='1297'></font>
+          tmp=ocp/tothz(k)*xLf*qschg(k)<a name='1298'>
+          theiz(k)=theiz(k)+dtb*tmp<a name='1299'>
+          thz(k)=theiz(k)-(xLvocp*qvz(k)-xLfocp*qiz(k))/tothz(k)<a name='1300'>
+<a name='1301'>
+          tem(k)=thz(k)*tothz(k)<a name='1302'>
+          temcc(k)=tem(k)-273.15<a name='1303'>
+          es=1000.*svp1*exp( svp2*temcc(k)/(tem(k)-svp3) )<a name='1304'>
+          qswz(k)=ep2*es/(prez(k)-es)<a name='1305'>
+          qsiz(k)=qswz(k)<a name='1306'>
+          qvsbar(k)=qswz(k)<a name='1307'>
+<font color=#447700>!<a name='1308'></font>
+      end if<a name='1309'>
+<font color=#447700>!      CALL wrf_debug ( 100 , 'module_ylin: finish sum of all processes' )<a name='1310'></font>
+<a name='1311'>
+<font color=#447700>!<a name='1312'></font>
+<font color=#447700>!***********************************************************************<a name='1313'></font>
+<font color=#447700>!**********              saturation adjustment                **********<a name='1314'></font>
+<font color=#447700>!***********************************************************************<a name='1315'></font>
+<font color=#447700>!<a name='1316'></font>
+<font color=#447700>!    allow supersaturation exits linearly from 0% at 500 mb to 50%<a name='1317'></font>
+<font color=#447700>!    above 300 mb<a name='1318'></font>
+<font color=#447700>!    5.0e-5=1.0/(500mb-300mb)<a name='1319'></font>
+<font color=#447700>!<a name='1320'></font>
+         rsat=1.0<a name='1321'>
+         if( qvz(k)+qlz(k)+qiz(k) .lt. rsat*qvsbar(k) ) then<a name='1322'>
+<a name='1323'>
+<font color=#447700>!c<a name='1324'></font>
+<font color=#447700>!c   unsaturated<a name='1325'></font>
+<font color=#447700>!c<a name='1326'></font>
+          qvz(k)=qvz(k)+qlz(k)+qiz(k)<a name='1327'>
+          qlz(k)=0.0<a name='1328'>
+          qiz(k)=0.0<a name='1329'>
+<a name='1330'>
+          thz(k)=theiz(k)-(xLvocp*qvz(k)-xLfocp*qiz(k))/tothz(k)<a name='1331'>
+          tem(k)=thz(k)*tothz(k)<a name='1332'>
+          temcc(k)=tem(k)-273.15<a name='1333'>
+<a name='1334'>
+          go to 1800<a name='1335'>
+<font color=#447700>!<a name='1336'></font>
+        else<a name='1337'>
+<font color=#447700>!c<a name='1338'></font>
+<font color=#447700>!c   saturated<a name='1339'></font>
+<font color=#447700>!c<a name='1340'></font>
+          pladj(k)=qlz(k)<a name='1341'>
+          piadj(k)=qiz(k)<a name='1342'>
+<font color=#447700>!<a name='1343'></font>
+<a name='1344'>
+        CALL <A href='../../html_code/phys/module_mp_sbu_ylin.F.html#SATADJ'>satadj</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SATADJ_3">(qvz, qlz, qiz, prez, theiz, thz, tothz, kts, kte, &amp;<a name='1345'>
+                    k, xLvocp, xLfocp, episp0k, EP2,SVP1,SVP2,SVP3,SVPT0)<a name='1346'>
+<a name='1347'>
+<font color=#447700>!<a name='1348'></font>
+          pladj(k)=odtb*(qlz(k)-pladj(k))<a name='1349'>
+          piadj(k)=odtb*(qiz(k)-piadj(k))<a name='1350'>
+<font color=#447700>!<a name='1351'></font>
+          pclw(k)=pclw(k)+pladj(k)<a name='1352'>
+          pcli(k)=pcli(k)+piadj(k)<a name='1353'>
+          pvapor(k)=pvapor(k)-( pladj(k)+piadj(k) )<a name='1354'>
+<font color=#447700>!<a name='1355'></font>
+          thz(k)=theiz(k)-(xLvocp*qvz(k)-xLfocp*qiz(k))/tothz(k)<a name='1356'>
+          tem(k)=thz(k)*tothz(k)<a name='1357'>
+<a name='1358'>
+          temcc(k)=tem(k)-273.15<a name='1359'>
+<a name='1360'>
+          es=1000.*svp1*exp( svp2*temcc(k)/(tem(k)-svp3) )<a name='1361'>
+          qswz(k)=ep2*es/(prez(k)-es)<a name='1362'>
+          if (tem(k) .lt. 273.15 ) then<a name='1363'>
+             es=1000.*svp1*exp( 21.8745584*(tem(k)-273.16)/(tem(k)-7.66) )<a name='1364'>
+             qsiz(k)=ep2*es/(prez(k)-es)<a name='1365'>
+             if (temcc(k) .lt. -40.0) qswz(k)=qsiz(k)<a name='1366'>
+          else<a name='1367'>
+             qsiz(k)=qswz(k)<a name='1368'>
+          endif<a name='1369'>
+          qlpqi=qlz(k)+qiz(k)<a name='1370'>
+          if ( qlpqi .eq. 0.0 ) then<a name='1371'>
+             qvsbar(k)=qsiz(k)<a name='1372'>
+          else<a name='1373'>
+             qvsbar(k)=( qiz(k)*qsiz(k)+qlz(k)*qswz(k) )/qlpqi<a name='1374'>
+          endif<a name='1375'>
+<a name='1376'>
+        end if<a name='1377'>
+<a name='1378'>
+<font color=#447700>!<a name='1379'></font>
+<font color=#447700>!***********************************************************************<a name='1380'></font>
+<font color=#447700>!*****     melting and freezing of cloud ice and cloud water       *****<a name='1381'></font>
+<font color=#447700>!***********************************************************************<a name='1382'></font>
+        qlpqi=qlz(k)+qiz(k)<a name='1383'>
+        if(qlpqi .le. 0.0) go to 1800<a name='1384'>
+<font color=#447700>!<a name='1385'></font>
+<font color=#447700>!c<a name='1386'></font>
+<font color=#447700>!c (1)  HOMOGENEOUS NUCLEATION WHEN T&lt; -40 C (Pihom)<a name='1387'></font>
+<font color=#447700>!c<a name='1388'></font>
+        if(temcc(k) .lt. -40.0) pihom(k)=qlz(k)*odtb<a name='1389'>
+<font color=#447700>!c<a name='1390'></font>
+<font color=#447700>!c (2)  MELTING OF ICE CRYSTAL WHEN T&gt; 0 C (Pimlt)<a name='1391'></font>
+<font color=#447700>!c<a name='1392'></font>
+        if(temcc(k) .gt. 0.0) pimlt(k)=qiz(k)*odtb<a name='1393'>
+<font color=#447700>!c<a name='1394'></font>
+<font color=#447700>!c (3) PRODUCTION OF CLOUD ICE BY BERGERON PROCESS (Pidw): Hsie (p957)<a name='1395'></font>
+<font color=#447700>!c     this process only considered when -31 C &lt; T &lt; 0 C<a name='1396'></font>
+<font color=#447700>!c<a name='1397'></font>
+        if(temcc(k) .lt. 0.0 .and. temcc(k) .gt. -31.0) then<a name='1398'>
+<font color=#447700>!c!<a name='1399'></font>
+<font color=#447700>!c!   parama1 and parama2 functions must be user supplied<a name='1400'></font>
+<font color=#447700>!c!<a name='1401'></font>
+          a1=<A href='../../html_code/phys/module_mp_sbu_ylin.F.html#PARAMA1'>parama1</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PARAMA1_4">( temcc(k) )<a name='1402'>
+          a2=<A href='../../html_code/phys/module_mp_sbu_ylin.F.html#PARAMA2'>parama2</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PARAMA2_4">( temcc(k) )<a name='1403'>
+<font color=#447700>!! change unit from cgs to mks<a name='1404'></font>
+          a1=a1*0.001**(1.0-a2)<a name='1405'>
+          xnin=xni0*exp(-bni*temcc(k))<a name='1406'>
+          pidw(k)=xnin*orho(k)*(a1*xmnin**a2)<a name='1407'>
+        end if<a name='1408'>
+<font color=#447700>!<a name='1409'></font>
+        pcli(k)=pcli(k)+pihom(k)-pimlt(k)+pidw(k)<a name='1410'>
+        pclw(k)=pclw(k)-pihom(k)+pimlt(k)-pidw(k)<a name='1411'>
+        qlz(k)=amax1( 0.0,qlz(k)+dtb*(-pihom(k)+pimlt(k)-pidw(k)) )<a name='1412'>
+        qiz(k)=amax1( 0.0,qiz(k)+dtb*(pihom(k)-pimlt(k)+pidw(k)) )<a name='1413'>
+<a name='1414'>
+<font color=#447700>!<a name='1415'></font>
+        CALL <A href='../../html_code/phys/module_mp_sbu_ylin.F.html#SATADJ'>satadj</A><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#CLPHY1D_YLIN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SATADJ_4">(qvz, qlz, qiz, prez, theiz, thz, tothz, kts, kte, &amp;<a name='1416'>
+                    k, xLvocp, xLfocp, episp0k ,EP2,SVP1,SVP2,SVP3,SVPT0)<a name='1417'>
+<a name='1418'>
+        thz(k)=theiz(k)-(xLvocp*qvz(k)-xLfocp*qiz(k))/tothz(k)<a name='1419'>
+        tem(k)=thz(k)*tothz(k)<a name='1420'>
+<a name='1421'>
+        temcc(k)=tem(k)-273.15<a name='1422'>
+<a name='1423'>
+        es=1000.*svp1*exp( svp2*temcc(k)/(tem(k)-svp3) )<a name='1424'>
+        qswz(k)=ep2*es/(prez(k)-es)<a name='1425'>
+<a name='1426'>
+        if (tem(k) .lt. 273.15 ) then<a name='1427'>
+           es=1000.*svp1*exp( 21.8745584*(tem(k)-273.16)/(tem(k)-7.66) )<a name='1428'>
+           qsiz(k)=ep2*es/(prez(k)-es)<a name='1429'>
+           if (temcc(k) .lt. -40.0) qswz(k)=qsiz(k)<a name='1430'>
+        else<a name='1431'>
+           qsiz(k)=qswz(k)<a name='1432'>
+        endif<a name='1433'>
+        qlpqi=qlz(k)+qiz(k)<a name='1434'>
+<a name='1435'>
+        if ( qlpqi .eq. 0.0 ) then<a name='1436'>
+           qvsbar(k)=qsiz(k)<a name='1437'>
+        else<a name='1438'>
+           qvsbar(k)=( qiz(k)*qsiz(k)+qlz(k)*qswz(k) )/qlpqi<a name='1439'>
+        endif<a name='1440'>
+<a name='1441'>
+1800  continue<a name='1442'>
+<font color=#447700>!<a name='1443'></font>
+<font color=#447700>!***********************************************************************<a name='1444'></font>
+<font color=#447700>!**********    integrate the productions of rain and snow     **********<a name='1445'></font>
+<font color=#447700>!***********************************************************************<a name='1446'></font>
+<font color=#447700>!<a name='1447'></font>
+2000  continue<a name='1448'>
+<a name='1449'>
+<font color=#447700>!<a name='1450'></font>
+<font color=#447700>!**** below if qv &lt; qvmin then qv=qvmin, ql=0.0, and qi=0.0<a name='1451'></font>
+<font color=#447700>!<a name='1452'></font>
+      do k=kts+1,kte<a name='1453'>
+         if ( qvz(k) .lt. qvmin ) then<a name='1454'>
+            qlz(k)=0.0<a name='1455'>
+            qiz(k)=0.0<a name='1456'>
+            qvz(k)=amax1( qvmin,qvz(k)+qlz(k)+qiz(k) )<a name='1457'>
+         end if<a name='1458'>
+      enddo<a name='1459'>
+<font color=#447700>!<a name='1460'></font>
+<a name='1461'>
+<font color=#447700>!      CALL wrf_debug ( 100 , 'module_ylin: finish saturation adjustment' )<a name='1462'></font>
+<a name='1463'>
+      END SUBROUTINE clphy1d_ylin<a name='1464'>
+<a name='1465'>
+<a name='1466'>
+<a name='1467'>
+<a name='1468'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1469'></font>
+<font color=#447700>!                         SATURATED ADJUSTMENT<a name='1470'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1471'></font>
+<A NAME='SATADJ'><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#SATADJ' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1472'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>satadj</font>(qvz, qlz, qiz, prez, theiz, thz, tothz,      &amp; <A href='../../call_to/SATADJ.html' TARGET='index'>4</A><a name='1473'>
+                        kts, kte, k, xLvocp, xLfocp, episp0k, EP2,SVP1,SVP2,SVP3,SVPT0)<a name='1474'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1475'></font>
+      IMPLICIT NONE<a name='1476'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1477'></font>
+<font color=#447700>!  This program use Newton's method for finding saturated temperature<a name='1478'></font>
+<font color=#447700>!  and saturation mixing ratio.<a name='1479'></font>
+<font color=#447700>!<a name='1480'></font>
+<font color=#447700>! In this saturation adjustment scheme we assume<a name='1481'></font>
+<font color=#447700>! (1)  the saturation mixing ratio is the mass weighted average of<a name='1482'></font>
+<font color=#447700>!      saturation values over liquid water (qsw), and ice (qsi)<a name='1483'></font>
+<font color=#447700>!      following Lord et al., 1984 and Tao, 1989<a name='1484'></font>
+<font color=#447700>!<a name='1485'></font>
+<font color=#447700>! (2) the percentage of cloud liquid and cloud ice will<a name='1486'></font>
+<font color=#447700>!      be fixed during the saturation calculation<a name='1487'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1488'></font>
+<font color=#447700>!<a name='1489'></font>
+<a name='1490'>
+     INTEGER, INTENT(IN   )             :: kts, kte, k<a name='1491'>
+<a name='1492'>
+     REAL,      DIMENSION( kts:kte ),                                   &amp;<a name='1493'>
+                       INTENT(INOUT) :: qvz, qlz, qiz<a name='1494'>
+<font color=#447700>!<a name='1495'></font>
+     REAL,      DIMENSION( kts:kte ),                                   &amp;<a name='1496'>
+                       INTENT(IN   ) :: prez, theiz, tothz<a name='1497'>
+<a name='1498'>
+     REAL,     INTENT(IN   )            :: xLvocp, xLfocp, episp0k<a name='1499'>
+     REAL,     INTENT(IN   )            :: EP2,SVP1,SVP2,SVP3,SVPT0<a name='1500'>
+<a name='1501'>
+<font color=#447700>! LOCAL VARS<a name='1502'></font>
+<a name='1503'>
+     INTEGER                            :: n<a name='1504'>
+<a name='1505'>
+     REAL, DIMENSION( kts:kte )         :: thz, tem, temcc, qsiz,       &amp;<a name='1506'>
+                                        qswz, qvsbar<a name='1507'>
+<a name='1508'>
+     REAL :: qsat, qlpqi, ratql, t0, t1, tmp1, ratqi, tsat, absft,    &amp;<a name='1509'>
+             denom1, denom2, dqvsbar, ftsat, dftsat, qpz,es             <a name='1510'>
+<font color=#447700>!<a name='1511'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1512'></font>
+<a name='1513'>
+      thz(k)=theiz(k)-(xLvocp*qvz(k)-xLfocp*qiz(k))/tothz(k)<a name='1514'>
+<a name='1515'>
+      tem(k)=tothz(k)*thz(k)<a name='1516'>
+      if (tem(k) .gt. 273.15) then<a name='1517'>
+<font color=#447700>!        qsat=episp0k/prez(k)*  &amp;<a name='1518'></font>
+<font color=#447700>!            exp( svp2*(tem(k)-273.15)/(tem(k)-svp3) )<a name='1519'></font>
+         es=1000.*svp1*exp( svp2*(tem(k)-svpt0)/(tem(k)-svp3) )<a name='1520'>
+         qsat=ep2*es/(prez(k)-es)<a name='1521'>
+      else<a name='1522'>
+        qsat=episp0k/prez(k)*  &amp;<a name='1523'>
+             exp( 21.8745584*(tem(k)-273.15)/(tem(k)-7.66) )<a name='1524'>
+      end if<a name='1525'>
+      qpz=qvz(k)+qlz(k)+qiz(k)<a name='1526'>
+      if (qpz .lt. qsat) then<a name='1527'>
+         qvz(k)=qpz<a name='1528'>
+         qiz(k)=0.0<a name='1529'>
+         qlz(k)=0.0<a name='1530'>
+         go to 400<a name='1531'>
+      end if<a name='1532'>
+      qlpqi=qlz(k)+qiz(k)<a name='1533'>
+      if( qlpqi .ge. 1.0e-5) then<a name='1534'>
+        ratql=qlz(k)/qlpqi<a name='1535'>
+        ratqi=qiz(k)/qlpqi<a name='1536'>
+      else<a name='1537'>
+        t0=273.15<a name='1538'>
+<font color=#447700>!       t1=233.15<a name='1539'></font>
+        t1=248.15<a name='1540'>
+        tmp1=( t0-tem(k) )/(t0-t1)<a name='1541'>
+        tmp1=amin1(1.0,tmp1)<a name='1542'>
+        tmp1=amax1(0.0,tmp1)<a name='1543'>
+        ratqi=tmp1<a name='1544'>
+        ratql=1.0-tmp1<a name='1545'>
+      end if<a name='1546'>
+<font color=#447700>!<a name='1547'></font>
+<font color=#447700>!<a name='1548'></font>
+<font color=#447700>!--  saturation mixing ratios over water and ice<a name='1549'></font>
+<font color=#447700>!--  at the outset we will follow Bolton 1980 MWR for<a name='1550'></font>
+<font color=#447700>!--  the water and Murray JAS 1967 for the ice<a name='1551'></font>
+<font color=#447700>!<a name='1552'></font>
+<font color=#447700>!-- dqvsbar=d(qvsbar)/dT<a name='1553'></font>
+<font color=#447700>!-- ftsat=F(Tsat)<a name='1554'></font>
+<font color=#447700>!-- dftsat=d(F(T))/dT<a name='1555'></font>
+<font color=#447700>!<a name='1556'></font>
+<font color=#447700>!  First guess of tsat<a name='1557'></font>
+<a name='1558'>
+      tsat=tem(k)<a name='1559'>
+      absft=1.0<a name='1560'>
+<font color=#447700>!<a name='1561'></font>
+      do 200 n=1,20<a name='1562'>
+         denom1=1.0/(tsat-svp3)<a name='1563'>
+         denom2=1.0/(tsat-7.66)<a name='1564'>
+<font color=#447700>!        qswz(k)=episp0k/prez(k)*  &amp;<a name='1565'></font>
+<font color=#447700>!                exp( svp2*denom1*(tsat-273.15) )<a name='1566'></font>
+         es=1000.*svp1*exp( svp2*denom1*(tsat-svpt0) )<a name='1567'>
+         qswz(k)=ep2*es/(prez(k)-es)<a name='1568'>
+         if (tem(k) .lt. 273.15) then<a name='1569'>
+<font color=#447700>!           qsiz(k)=episp0k/prez(k)*  &amp;<a name='1570'></font>
+<font color=#447700>!                   exp( 21.8745584*denom2*(tsat-273.15) )<a name='1571'></font>
+            es=1000.*svp1*exp( 21.8745584*denom2*(tsat-273.15) )<a name='1572'>
+            qsiz(k)=ep2*es/(prez(k)-es)<a name='1573'>
+            if (tem(k) .lt. 233.15) qswz(k)=qsiz(k)<a name='1574'>
+         else<a name='1575'>
+            qsiz(k)=qswz(k)<a name='1576'>
+         endif<a name='1577'>
+         qvsbar(k)=ratql*qswz(k)+ratqi*qsiz(k)<a name='1578'>
+<font color=#447700>!<a name='1579'></font>
+<font color=#447700>!        if( absft .lt. 0.01 .and. n .gt. 3 ) go to 300<a name='1580'></font>
+         if( absft .lt. 0.01 ) go to 300<a name='1581'>
+<font color=#447700>!<a name='1582'></font>
+         dqvsbar=ratql*qswz(k)*svp2*243.5*denom1*denom1+  &amp;<a name='1583'>
+                 ratqi*qsiz(k)*21.8745584*265.5*denom2*denom2<a name='1584'>
+         ftsat=tsat+(xlvocp+ratqi*xlfocp)*qvsbar(k)-  &amp;<a name='1585'>
+               tothz(k)*theiz(k)-xlfocp*ratqi*(qvz(k)+qlz(k)+qiz(k))<a name='1586'>
+         dftsat=1.0+(xlvocp+ratqi*xlfocp)*dqvsbar<a name='1587'>
+         tsat=tsat-ftsat/dftsat<a name='1588'>
+         absft=abs(ftsat)<a name='1589'>
+<a name='1590'>
+200   continue<a name='1591'>
+9020  format(1x,'point can not converge, absft,n=',e12.5,i5)<a name='1592'>
+300   continue<a name='1593'>
+<a name='1594'>
+      if( qpz .gt. qvsbar(k) ) then<a name='1595'>
+        qvz(k)=qvsbar(k)<a name='1596'>
+        qiz(k)=ratqi*( qpz-qvz(k) )<a name='1597'>
+        qlz(k)=ratql*( qpz-qvz(k) )<a name='1598'>
+      else<a name='1599'>
+        qvz(k)=qpz<a name='1600'>
+        qiz(k)=0.0<a name='1601'>
+        qlz(k)=0.0<a name='1602'>
+      end if<a name='1603'>
+400  continue<a name='1604'>
+<a name='1605'>
+      END SUBROUTINE satadj<a name='1606'>
+<a name='1607'>
+<a name='1608'>
+<font color=#447700>!----------------------------------------------------------------<a name='1609'></font>
+<A NAME='PARAMA1'><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#PARAMA1' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1610'>
+     REAL <font color=#993300>FUNCTION </font><font color=#cc0000>parama1</font>(temp) <A href='../../call_to/PARAMA1.html' TARGET='index'>4</A><a name='1611'>
+<font color=#447700>!----------------------------------------------------------------<a name='1612'></font>
+      IMPLICIT NONE<a name='1613'>
+<font color=#447700>!----------------------------------------------------------------<a name='1614'></font>
+<font color=#447700>!  This program calculate the parameter for crystal growth rate<a name='1615'></font>
+<font color=#447700>!  in Bergeron process<a name='1616'></font>
+<font color=#447700>!----------------------------------------------------------------<a name='1617'></font>
+<a name='1618'>
+      REAL, INTENT (IN   )   :: temp<a name='1619'>
+      REAL, DIMENSION(32)    :: a1<a name='1620'>
+      INTEGER                :: i1, i1p1<a name='1621'>
+      REAL                   :: ratio<a name='1622'>
+<a name='1623'>
+      data a1/0.100e-10,0.7939e-7,0.7841e-6,0.3369e-5,0.4336e-5, &amp;<a name='1624'>
+              0.5285e-5,0.3728e-5,0.1852e-5,0.2991e-6,0.4248e-6, &amp;<a name='1625'>
+              0.7434e-6,0.1812e-5,0.4394e-5,0.9145e-5,0.1725e-4, &amp;<a name='1626'>
+              0.3348e-4,0.1725e-4,0.9175e-5,0.4412e-5,0.2252e-5, &amp;<a name='1627'>
+              0.9115e-6,0.4876e-6,0.3473e-6,0.4758e-6,0.6306e-6, &amp;<a name='1628'>
+              0.8573e-6,0.7868e-6,0.7192e-6,0.6513e-6,0.5956e-6, &amp;<a name='1629'>
+              0.5333e-6,0.4834e-6/<a name='1630'>
+<a name='1631'>
+      i1=int(-temp)+1<a name='1632'>
+      i1p1=i1+1<a name='1633'>
+      ratio=-(temp)-float(i1-1)<a name='1634'>
+      parama1=a1(i1)+ratio*( a1(i1p1)-a1(i1) )<a name='1635'>
+<a name='1636'>
+      END FUNCTION parama1<a name='1637'>
+<a name='1638'>
+<font color=#447700>!----------------------------------------------------------------<a name='1639'></font>
+<A NAME='PARAMA2'><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#PARAMA2' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1640'>
+      REAL <font color=#993300>FUNCTION </font><font color=#cc0000>parama2</font>(temp) <A href='../../call_to/PARAMA2.html' TARGET='index'>4</A><a name='1641'>
+<font color=#447700>!----------------------------------------------------------------<a name='1642'></font>
+      IMPLICIT NONE<a name='1643'>
+<font color=#447700>!----------------------------------------------------------------<a name='1644'></font>
+<font color=#447700>!  This program calculate the parameter for crystal growth rate<a name='1645'></font>
+<font color=#447700>!  in Bergeron process<a name='1646'></font>
+<font color=#447700>!----------------------------------------------------------------<a name='1647'></font>
+<a name='1648'>
+      REAL, INTENT (IN   )   :: temp<a name='1649'>
+      REAL, DIMENSION(32)    :: a2<a name='1650'>
+      INTEGER                :: i1, i1p1<a name='1651'>
+      REAL                   :: ratio<a name='1652'>
+<a name='1653'>
+      data a2/0.0100,0.4006,0.4831,0.5320,0.5307,0.5319,0.5249, &amp;<a name='1654'>
+              0.4888,0.3849,0.4047,0.4318,0.4771,0.5183,0.5463, &amp;<a name='1655'>
+              0.5651,0.5813,0.5655,0.5478,0.5203,0.4906,0.4447, &amp;<a name='1656'>
+              0.4126,0.3960,0.4149,0.4320,0.4506,0.4483,0.4460, &amp;<a name='1657'>
+              0.4433,0.4413,0.4382,0.4361/<a name='1658'>
+      i1=int(-temp)+1<a name='1659'>
+      i1p1=i1+1<a name='1660'>
+      ratio=-(temp)-float(i1-1)<a name='1661'>
+      parama2=a2(i1)+ratio*( a2(i1p1)-a2(i1) )<a name='1662'>
+<a name='1663'>
+      END FUNCTION parama2<a name='1664'>
+<a name='1665'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='1666'></font>
+<font color=#447700>! THIS FUNCTION CALCULATES THE LIQUID SATURATION VAPOR MIXING RATIO AS<a name='1667'></font>
+<font color=#447700>! A FUNCTION OF TEMPERATURE AND PRESSURE<a name='1668'></font>
+<font color=#447700>!<a name='1669'></font>
+<A NAME='RSLF'><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#RSLF' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1670'>
+      REAL <font color=#993300>FUNCTION </font><font color=#cc0000>RSLF</font>(P,T) <A href='../../call_to/RSLF.html' TARGET='index'>9</A><a name='1671'>
+<a name='1672'>
+      IMPLICIT NONE<a name='1673'>
+      REAL, INTENT(IN):: P, T<a name='1674'>
+      REAL:: ESL,X<a name='1675'>
+      REAL, PARAMETER:: C0= .611583699E03<a name='1676'>
+      REAL, PARAMETER:: C1= .444606896E02<a name='1677'>
+      REAL, PARAMETER:: C2= .143177157E01<a name='1678'>
+      REAL, PARAMETER:: C3= .264224321E-1<a name='1679'>
+      REAL, PARAMETER:: C4= .299291081E-3<a name='1680'>
+      REAL, PARAMETER:: C5= .203154182E-5<a name='1681'>
+      REAL, PARAMETER:: C6= .702620698E-8<a name='1682'>
+      REAL, PARAMETER:: C7= .379534310E-11<a name='1683'>
+      REAL, PARAMETER:: C8=-.321582393E-13<a name='1684'>
+<a name='1685'>
+      X=MAX(-80.,T-273.16)<a name='1686'>
+<a name='1687'>
+<font color=#447700>!      ESL=612.2*EXP(17.67*X/(T-29.65))<a name='1688'></font>
+      ESL=C0+X*(C1+X*(C2+X*(C3+X*(C4+X*(C5+X*(C6+X*(C7+X*C8)))))))<a name='1689'>
+      RSLF=.622*ESL/(P-ESL)<a name='1690'>
+<a name='1691'>
+      END FUNCTION RSLF<a name='1692'>
+<font color=#447700>!<a name='1693'></font>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='1694'></font>
+<font color=#447700>! THIS FUNCTION CALCULATES THE ICE SATURATION VAPOR MIXING RATIO AS A<a name='1695'></font>
+<font color=#447700>! FUNCTION OF TEMPERATURE AND PRESSURE<a name='1696'></font>
+<font color=#447700>!<a name='1697'></font>
+<A NAME='RSIF'><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#RSIF' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1698'>
+      REAL <font color=#993300>FUNCTION </font><font color=#cc0000>RSIF</font>(P,T) <A href='../../call_to/RSIF.html' TARGET='index'>4</A><a name='1699'>
+<a name='1700'>
+      IMPLICIT NONE<a name='1701'>
+      REAL, INTENT(IN):: P, T<a name='1702'>
+      REAL:: ESI,X<a name='1703'>
+      REAL, PARAMETER:: C0= .609868993E03<a name='1704'>
+      REAL, PARAMETER:: C1= .499320233E02<a name='1705'>
+      REAL, PARAMETER:: C2= .184672631E01<a name='1706'>
+      REAL, PARAMETER:: C3= .402737184E-1<a name='1707'>
+      REAL, PARAMETER:: C4= .565392987E-3<a name='1708'>
+      REAL, PARAMETER:: C5= .521693933E-5<a name='1709'>
+      REAL, PARAMETER:: C6= .307839583E-7<a name='1710'>
+      REAL, PARAMETER:: C7= .105785160E-9<a name='1711'>
+      REAL, PARAMETER:: C8= .161444444E-12<a name='1712'>
+<a name='1713'>
+      X=MAX(-80.,T-273.16)<a name='1714'>
+      ESI=C0+X*(C1+X*(C2+X*(C3+X*(C4+X*(C5+X*(C6+X*(C7+X*C8)))))))<a name='1715'>
+      RSIF=.622*ESI/(P-ESI)<a name='1716'>
+<a name='1717'>
+      END FUNCTION RSIF<a name='1718'>
+<font color=#447700>!+---+-----------------------------------------------------------------+<a name='1719'></font>
+<a name='1720'>
+<font color=#447700>!----------------------------------------------------------------<a name='1721'></font>
+<A NAME='GGAMMA'><A href='../../html_code/phys/module_mp_sbu_ylin.F.html#GGAMMA' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1722'>
+      REAL <font color=#993300>FUNCTION </font><font color=#cc0000>ggamma</font>(X) <A href='../../call_to/GGAMMA.html' TARGET='index'>20</A>,<A href='../../call_from/GGAMMA.html' TARGET='index'>2</A><a name='1723'>
+<font color=#447700>!----------------------------------------------------------------<a name='1724'></font>
+      IMPLICIT NONE<a name='1725'>
+<font color=#447700>!----------------------------------------------------------------<a name='1726'></font>
+      REAL, INTENT(IN   ) :: x<a name='1727'>
+      REAL, DIMENSION(8)  :: B<a name='1728'>
+      INTEGER             ::j, K1<a name='1729'>
+      REAL                ::PF, G1TO2 ,TEMP<a name='1730'>
+<a name='1731'>
+      DATA B/-.577191652,.988205891,-.897056937,.918206857,  &amp;<a name='1732'>
+             -.756704078,.482199394,-.193527818,.035868343/<a name='1733'>
+<a name='1734'>
+      PF=1.<a name='1735'>
+      TEMP=X<a name='1736'>
+      DO 10 J=1,200<a name='1737'>
+      IF (TEMP .LE. 2) GO TO 20<a name='1738'>
+      TEMP=TEMP-1.<a name='1739'>
+   10 PF=PF*TEMP<a name='1740'>
+<font color=#447700>!  100 FORMAT(//,5X,'module_mp_lin: INPUT TO GAMMA FUNCTION TOO LARGE, X=',E12.5)<a name='1741'></font>
+<font color=#447700>!      WRITE(wrf_err_message,100)X<a name='1742'></font>
+<font color=#447700>!      CALL wrf_error_fatal(wrf_err_message)<a name='1743'></font>
+   20 G1TO2=1.<a name='1744'>
+      TEMP=TEMP - 1.<a name='1745'>
+      DO 30 K1=1,8<a name='1746'>
+   30 G1TO2=G1TO2 + B(K1)*TEMP**K1<a name='1747'>
+      ggamma=PF*G1TO2<a name='1748'>
+<a name='1749'>
+      END FUNCTION ggamma<a name='1750'>
+<a name='1751'>
+<font color=#447700>!----------------------------------------------------------------<a name='1752'></font>
+<a name='1753'>
+      END MODULE module_mp_sbu_ylin<a name='1754'>
+<a name='1755'>
+</pre></body></html>

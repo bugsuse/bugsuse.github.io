@@ -1,0 +1,1421 @@
+<HTML> <BODY BGCOLOR=#bbeeee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_STATS_FOR_MOVE'><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#MODULE_STATS_FOR_MOVE' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>module </font><font color=#cc0000>module_stats_for_move</font> <A href='../../call_to/MODULE_STATS_FOR_MOVE.html' TARGET='index'>2</A><a name='3'>
+  implicit none<a name='4'>
+  private<a name='5'>
+#if ( NMM_NEST == 1 )<a name='6'>
+  public :: stats_for_move, vorttrak_init<a name='7'>
+<a name='8'>
+  <font color=#447700>! Tuning parameters for the PDYN-following algorithm:<a name='9'></font>
+<a name='10'>
+  <font color=#447700>! Maximum, minimum and initial search radii:<a name='11'></font>
+  real, parameter :: vt5_max_radius=250000.0<a name='12'>
+  real, parameter :: vt5_min_radius=100000.0<a name='13'>
+  real, parameter :: vt5_start_radius=vt5_max_radius<a name='14'>
+<a name='15'>
+  <font color=#447700>! How much to increase or decrease search radius after a move or<a name='16'></font>
+  <font color=#447700>! non-move (but it will never exceed the prescribed min/max):<a name='17'></font>
+  real, parameter :: vt5_move_factor=1.1<a name='18'>
+  real, parameter :: vt5_nomove_factor=0.8<a name='19'>
+<a name='20'>
+contains<a name='21'>
+<a name='22'>
+<A NAME='VORTTRAK_INIT'><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='23'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>VORTTRAK_INIT</font>(grid,config_flags,init,  &amp; <A href='../../call_to/VORTTRAK_INIT.html' TARGET='index'>1</A>,<A href='../../call_from/VORTTRAK_INIT.html' TARGET='index'>12</A><a name='24'>
+                           IDS,IDE,JDS,JDE,KDS,KDE, &amp;<a name='25'>
+                           IMS,IME,JMS,JME,KMS,KME, &amp;<a name='26'>
+                           ITS,ITE,JTS,JTE,KTS,KTE)<a name='27'>
+    USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>MODULE_CONFIGURE</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_28">, ONLY : grid_config_rec_type<a name='28'>
+    USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>MODULE_DOMAIN</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_48">, ONLY : domain<a name='29'>
+#if ( HWRF == 1 )<a name='30'>
+    USE <A href='../../html_code/dyn_nmm/module_tracker.F.html#MODULE_TRACKER'>module_tracker</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_TRACKER_1">, only: ncep_tracker_init<a name='31'>
+#endif<a name='32'>
+    IMPLICIT NONE<a name='33'>
+    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE<a name='34'>
+    integer, intent(in) :: IMS,IME,JMS,JME,KMS,KME<a name='35'>
+    integer, intent(in) :: ITS,ITE,JTS,JTE,KTS,KTE<a name='36'>
+    type(domain), intent(inout) :: grid<a name='37'>
+    type(grid_config_rec_type), intent(in) :: config_flags<a name='38'>
+    integer :: vortex_tracker<a name='39'>
+    character*255 :: message<a name='40'>
+    logical, intent(in) :: init <font color=#447700>! True if this is the simulation start<a name='41'></font>
+<a name='42'>
+    <font color=#447700>! For vortex_tracker==4 option:<a name='43'></font>
+    integer :: cx,cy <font color=#447700>! center x,y<a name='44'></font>
+    real :: xfar,yfar,far <font color=#447700>! distance from center: x,y components and dist^2<a name='45'></font>
+    integer :: xshift <font color=#447700>! for handling grid staggering<a name='46'></font>
+    integer :: i,j<a name='47'>
+    <a name='48'>
+#if ( HWRF == 1 )<a name='49'>
+    vortex_tracker=grid%vortex_tracker<a name='50'>
+    if(vortex_tracker&lt;1 .or. vortex_tracker&gt;7) then<a name='51'>
+31     format('Domain ',I0,' has invalid value ',I0,' for vortex_tracker: it must be an integer from 1-7')<a name='52'>
+       write(message,31) grid%id,vortex_tracker<a name='53'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_93">(message)<a name='54'>
+    endif<a name='55'>
+<a name='56'>
+    if(grid%swath_mode==1) then<a name='57'>
+      <font color=#447700>! Check swath area of interest configuration, correct errors and<a name='58'></font>
+      <font color=#447700>! give meaningful error messages:<a name='59'></font>
+       if(grid%interest_storms/=0 .and. vortex_tracker/=6 .and. vortex_tracker/=7) then<a name='60'>
+          grid%interest_storms=0<a name='61'>
+          if(vortex_tracker==2) then<a name='62'>
+             if(grid%interest_kids/=0) then<a name='63'>
+                <font color=#447700>! User set up vortex_tracker 2 and is requesting a storm<a name='64'></font>
+                <font color=#447700>! area of interest, and not a kid area of interest.<a name='65'></font>
+                <font color=#447700>! Switch to kid interest and warn them:<a name='66'></font>
+                grid%interest_kids=1<a name='67'>
+39              format('Grid ',I0,' switching from interest_storms to interest_kids due to vortex_tracker==2 (nest following)')<a name='68'>
+                write(message,39) grid%id<a name='69'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_121">(message)<a name='70'>
+             else<a name='71'>
+                <font color=#447700>! User set things up correctly: vortex_tracker==2, and<a name='72'></font>
+                <font color=#447700>! it has interest_kids, but they also turned on<a name='73'></font>
+                <font color=#447700>! interest_storms, probably because it is on by<a name='74'></font>
+                <font color=#447700>! default in the registry.  Disable interest_storms<a name='75'></font>
+                <font color=#447700>! and warn them in a level 2 debug message:<a name='76'></font>
+37              format('Grid ',I0,' using nest area of interest (already enabled) instead of storm area of interest due to vortex_tracker==2 (nest following).')<a name='77'>
+                write(message,37) grid%id<a name='78'>
+                call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_52">(2,message)<a name='79'>
+             endif<a name='80'>
+          elseif(grid%interest_self==0) then<a name='81'>
+             <font color=#447700>! User requested a tracker other than 2, 6 and 7, but wants<a name='82'></font>
+             <font color=#447700>! a storm area of interest.  Not possible.  Switch to<a name='83'></font>
+             <font color=#447700>! interest_kids if there are nests, and interest_self<a name='84'></font>
+             <font color=#447700>! otherwise.<a name='85'></font>
+             if(grid%num_nests&lt;1) then<a name='86'>
+                grid%interest_self=1<a name='87'>
+                grid%interest_rad_self=grid%interest_rad_storm<a name='88'>
+38              format('Grid ',I0,' switching from interest_storm to interest_self due to lack of vortex information.  You must use vortex tracker 6 or 7 to get a storm area of interest.')<a name='89'>
+                write(message,38) grid%id<a name='90'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_122">(message)<a name='91'>
+             else<a name='92'>
+                grid%interest_kids=1<a name='93'>
+35              format('Grid ',I0,' switching from interest_storm to interest_kids due to lack of vortex information, and presence of nests.  You must use vortex tracker 6 and 7 to get a storm area of interest.')<a name='94'>
+                write(message,35) grid%id<a name='95'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_123">(message)<a name='96'>
+             endif<a name='97'>
+          endif<a name='98'>
+       endif<a name='99'>
+    endif<a name='100'>
+<a name='101'>
+    <font color=#447700>! Signify that the pdyn smooth and parent smooth are invalid in<a name='102'></font>
+    <font color=#447700>! this domain:<a name='103'></font>
+    grid%pdyn_parent_age=0<a name='104'>
+    grid%pdyn_smooth_age=0<a name='105'>
+<a name='106'>
+    if(size(grid%pdyn_smooth)&gt;1) then<a name='107'>
+       <font color=#447700>!write(0,*) 'in start domain, call update_pdyn_mslp for grid ',grid%id<a name='108'></font>
+       CALL <A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#UPDATE_PDYN_MSLP'>UPDATE_PDYN_MSLP</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="UPDATE_PDYN_MSLP_1">(grid,config_flags, &amp;<a name='109'>
+                            IDS,IDE,JDS,JDE,KDS,KDE, &amp;<a name='110'>
+                            IMS,IME,JMS,JME,KMS,KME, &amp;<a name='111'>
+                            ITS,ITE,JTS,JTE,KTS,KTE )<a name='112'>
+       <a name='113'>
+    end if<a name='114'>
+<a name='115'>
+    is_vt45: if(vortex_tracker==4 .or. vortex_tracker==5) then<a name='116'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_124">('in VORTTRAK_INIT for vortex tracker 4 or 5')<a name='117'>
+       if(vortex_tracker==4) then<a name='118'>
+          if(.not.(grid%vt4_pmax&lt;0.0)) then<a name='119'>
+             if(grid%vt4_pmax&lt;100000.0 .or. grid%vt4_pmax&gt;107000) then<a name='120'>
+                write(message,'("vt4_pmax bad: vt4_pmax must be either &lt;0 or within [1e5,1.07e5], but it is ",F15.5,".  We recommend -1.")') grid%vt4_pmax<a name='121'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_94">(message)<a name='122'>
+             endif<a name='123'>
+          endif<a name='124'>
+       endif<a name='125'>
+<a name='126'>
+       if(vortex_tracker==5) then<a name='127'>
+          if(init) then <a name='128'>
+             grid%vt5searchrad=vt5_start_radius<a name='129'>
+13011        format("Search radius now ",F0.3,"km for domain ",I0)<a name='130'>
+             <font color=#447700>!write(message,13011) grid%vt5searchrad/1000.0,grid%id<a name='131'></font>
+             <font color=#447700>!call wrf_debug(1,message)<a name='132'></font>
+          endif<a name='133'>
+       endif<a name='134'>
+    endif is_vt45<a name='135'>
+<a name='136'>
+    distsq: if(size(grid%distsq)&gt;1) then<a name='137'>
+       cx=ide/2<a name='138'>
+       cy=jde/2<a name='139'>
+       <font color=#447700>! Calculate distance of various points from the domain center:<a name='140'></font>
+       jdo: do j = jts, min(jte,jde)<a name='141'>
+          if(mod(j,2)==1) then<a name='142'>
+             xshift=1.<a name='143'>
+          else<a name='144'>
+             xshift=-1.<a name='145'>
+          endif<a name='146'>
+          do i = its, min(ite,ide)<a name='147'>
+             xfar=(i-cx)*grid%dx_nmm(i,j)*2<a name='148'>
+             yfar=(j-cy)*grid%dy_nmm<a name='149'>
+             if(mod(cy-j,2) /= 0) then<a name='150'>
+                xfar=xfar + grid%dx_nmm(i,j)*xshift<a name='151'>
+             endif<a name='152'>
+             far = xfar*xfar + yfar*yfar<a name='153'>
+             GRID%distsq(i,j)=far<a name='154'>
+          enddo<a name='155'>
+       enddo jdo<a name='156'>
+    endif distsq<a name='157'>
+#endif<a name='158'>
+<a name='159'>
+#if ( HWRF == 1 )<a name='160'>
+    if(init .and. (vortex_tracker==6 .or. vortex_tracker==7) ) then<a name='161'>
+       call <A href='../../html_code/dyn_nmm/module_tracker.F.html#NCEP_TRACKER_INIT'>ncep_tracker_init</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VORTTRAK_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NCEP_TRACKER_INIT_1">(grid)<a name='162'>
+    endif<a name='163'>
+#endif<a name='164'>
+<a name='165'>
+  END SUBROUTINE VORTTRAK_INIT<a name='166'>
+<a name='167'>
+#if ( HWRF == 1 )<a name='168'>
+  <font color=#447700>!----------------------------------------------------------------------<a name='169'></font>
+  <font color=#447700>!<a name='170'></font>
+<A NAME='UPDATE_PDYN_MSLP'><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#UPDATE_PDYN_MSLP' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='171'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>UPDATE_PDYN_MSLP</font>(grid,config_flags, &amp; <A href='../../call_to/UPDATE_PDYN_MSLP.html' TARGET='index'>2</A>,<A href='../../call_from/UPDATE_PDYN_MSLP.html' TARGET='index'>7</A><a name='172'>
+                            IDS,IDE,JDS,JDE,KDS,KDE, &amp;<a name='173'>
+                            IMS,IME,JMS,JME,KMS,KME, &amp;<a name='174'>
+                            IPS,IPE,JPS,JPE,KPS,KPE )<a name='175'>
+    USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>MODULE_CONFIGURE</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#UPDATE_PDYN_MSLP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_29">, ONLY : grid_config_rec_type<a name='176'>
+    USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>MODULE_DOMAIN</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#UPDATE_PDYN_MSLP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_49">, ONLY : domain,get_ijk_from_grid<a name='177'>
+#ifdef DM_PARALLEL<a name='178'>
+    USE <A href='../../html_code/frame/module_comm_dm.F.html#MODULE_COMM_DM'>MODULE_COMM_DM</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#UPDATE_PDYN_MSLP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_COMM_DM_18">, ONLY : HALO_NMM_TRACK_sub<a name='179'>
+    USE <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>MODULE_DM</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#UPDATE_PDYN_MSLP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_38">, ONLY: ntasks_x, ntasks_y, mytask, ntasks, local_communicator<a name='180'>
+#endif<a name='181'>
+    use <A href='../../html_code/dyn_nmm/module_membrane_mslp.F.html#MODULE_MEMBRANE_MSLP'>module_membrane_mslp</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#UPDATE_PDYN_MSLP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MEMBRANE_MSLP_1"><a name='182'>
+    implicit none<a name='183'>
+    type(domain), intent(inout) :: grid<a name='184'>
+    type(grid_config_rec_type), intent(in) :: config_flags<a name='185'>
+    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE<a name='186'>
+    integer, intent(in) :: IMS,IME,JMS,JME,KMS,KME<a name='187'>
+    integer, intent(in) :: IPS,IPE,JPS,JPE,KPS,KPE<a name='188'>
+    integer :: i,j<a name='189'>
+    logical bad<a name='190'>
+<a name='191'>
+    <font color=#447700>! Update pdyn, mslp and sqws:<a name='192'></font>
+    CALL <A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_MAKE_MSLP'>STATS_MAKE_MSLP</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#UPDATE_PDYN_MSLP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="STATS_MAKE_MSLP_1"> (grid%PDYN,grid%membrane_MSLP,grid%MSLP,grid%SQWS,         &amp;<a name='193'>
+                          grid%PINT,grid%T,grid%Q,grid%U,grid%V, &amp;<a name='194'>
+                          grid%FIS,grid%PD,grid%SM,              &amp;<a name='195'>
+                          grid%PDTOP,grid%PT,                    &amp;<a name='196'>
+                          grid%DETA1,grid%DETA2,grid%ETA2,       &amp;<a name='197'>
+                          IDS,IDE,JDS,JDE,KDS,KDE,               &amp;<a name='198'>
+                          IMS,IME,JMS,JME,KMS,KME,               &amp;<a name='199'>
+                          IPS,IPE,JPS,JPE,KPS,KPE)<a name='200'>
+<a name='201'>
+    <font color=#447700>! Store average of parent pdyn_smooth and my pdyn in pdyn_smooth<a name='202'></font>
+    <font color=#447700>! to send to child for its tracking for vortex tracker 5<a name='203'></font>
+    if(size(grid%pdyn_smooth)&gt;1) then<a name='204'>
+       if(grid%id==1) then<a name='205'>
+          <font color=#447700>! No parent, so pdyn_smooth==pdyn and pdyn_parent is ignored<a name='206'></font>
+          <font color=#447700>!write(0,*) 'no parent (gid=1) so storing pdyn in pdyn_smooth'<a name='207'></font>
+          do j=max(jds,jps),min(jpe,jde-1)<a name='208'>
+             do i=max(ids,ips),min(ipe,ide-1)<a name='209'>
+                grid%pdyn_smooth(i,j)=grid%pdyn(i,j)<a name='210'>
+             enddo<a name='211'>
+          enddo<a name='212'>
+       else<a name='213'>
+          <font color=#447700>!write(0,*) 'grid ',grid%id,' storing average of pdyn and pdyn_parent in pdyn_smooth'<a name='214'></font>
+          do j=max(jds,jps),min(jpe,jde-1)<a name='215'>
+             do i=max(ids,ips),min(ipe,ide-1)<a name='216'>
+                grid%pdyn_smooth(i,j) = &amp;<a name='217'>
+                     0.5*grid%pdyn(i,j) + &amp;<a name='218'>
+                     0.5*grid%pdyn_parent(i,j)<a name='219'>
+             enddo<a name='220'>
+          enddo<a name='221'>
+       endif<a name='222'>
+<a name='223'>
+       grid%pdyn_smooth_age=max(1,grid%pdyn_smooth_age+1)<a name='224'>
+    else<a name='225'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#UPDATE_PDYN_MSLP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_95">('pdyn_smooth not allocated')<a name='226'>
+    endif<a name='227'>
+<a name='228'>
+#ifdef DM_PARALLEL<a name='229'>
+#   include "<A href='../../html_code/include/HALO_NMM_TRACK.inc.html'>HALO_NMM_TRACK.inc</A>"<A NAME="HALO_NMM_TRACK.inc_1"><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#UPDATE_PDYN_MSLP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='230'>
+#endif<a name='231'>
+<a name='232'>
+  END SUBROUTINE UPDATE_PDYN_MSLP<a name='233'>
+<a name='234'>
+#endif<a name='235'>
+<a name='236'>
+  <font color=#447700>!----------------------------------------------------------------------<a name='237'></font>
+  <font color=#447700>!<a name='238'></font>
+<A NAME='STATS_FOR_MOVE'><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='239'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>STATS_FOR_MOVE</font>(grid,config_flags, &amp; <A href='../../call_to/STATS_FOR_MOVE.html' TARGET='index'>1</A>,<A href='../../call_from/STATS_FOR_MOVE.html' TARGET='index'>18</A><a name='240'>
+                            IDS,IDE,JDS,JDE,KDS,KDE, &amp;<a name='241'>
+                            IMS,IME,JMS,JME,KMS,KME, &amp;<a name='242'>
+                            IPS,IPE,JPS,JPE,KPS,KPE, &amp;<a name='243'>
+                            ITS,ITE,JTS,JTE,KTS,KTE )<a name='244'>
+    <font color=#447700>! STATS_FOR_MOVE<a name='245'></font>
+    <font color=#447700>!<a name='246'></font>
+    <font color=#447700>! PURPOSE: If it is time to consider the possibility of nest<a name='247'></font>
+    <font color=#447700>! motion, then this routine calculates certain nest motion<a name='248'></font>
+    <font color=#447700>! dynamical fields (PDYN, MSLP, SQWS), locates the vortex in those<a name='249'></font>
+    <font color=#447700>! fields and then decides if the domain needs to be moved to<a name='250'></font>
+    <font color=#447700>! recenter on the vortex.<a name='251'></font>
+    <font color=#447700>!<a name='252'></font>
+    <font color=#447700>! Several vortex tracking methods are implemented, and are<a name='253'></font>
+    <font color=#447700>! chosen using the vortex_tracker namelist parameter:<a name='254'></font>
+    <font color=#447700>!<a name='255'></font>
+    <font color=#447700>!   vortex_tracker=1 -- old pre-2012 HWRF method: center on minimum MSLP<a name='256'></font>
+    <font color=#447700>!   vortex_tracker=2 -- not a vortex tracker.  Instead, it tracks<a name='257'></font>
+    <font color=#447700>!       its child domain.  This is used in the 9km domain of the 27:9:3<a name='258'></font>
+    <font color=#447700>!   vortex_tracker=3 -- old HWRF-X algorithm.  This is a mass-based<a name='259'></font>
+    <font color=#447700>!       centroid algorithm.  It works well for strong storms.  With <a name='260'></font>
+    <font color=#447700>!       weaker storms, it can be fooled by other nearby high- or<a name='261'></font>
+    <font color=#447700>!       low-pressure systems, or noise in the MSLP field due to <a name='262'></font>
+    <font color=#447700>!       explicitly resolved gravity waves near sharp terrain changes.<a name='263'></font>
+    <font color=#447700>!   vortex_tracker=4 -- new centroid algorithm.  This is similar to<a name='264'></font>
+    <font color=#447700>!       option 3, but uses the dynamic pressure PDYN and includes PDYN<a name='265'></font>
+    <font color=#447700>!       noise removal.  Plus, it only searches within X km of the nest<a name='266'></font>
+    <font color=#447700>!       center to avoid other nearby systems.<a name='267'></font>
+    <font color=#447700>!   vortex_tracker=5 -- track average of parent and grandparent PDYN<a name='268'></font>
+    <font color=#447700>!   vortex_tracker=6 -- simplified version of Tim Marchok's tracker<a name='269'></font>
+    <font color=#447700>!<a name='270'></font>
+    <font color=#447700>!   vortex_tracker=7 -- nearly the full storm tracking algorithm<a name='271'></font>
+    <font color=#447700>!       from Tim Marchok's tracker.  The only part that is missing<a name='272'></font>
+    <font color=#447700>!       is the part that gives up when the storm dissipates.  That<a name='273'></font>
+    <font color=#447700>!       is left out intentionally.<a name='274'></font>
+    <font color=#447700>!<a name='275'></font>
+    <font color=#447700>! HISTORY:<a name='276'></font>
+    <font color=#447700>!   2004?       - initial implementation by gopal<a name='277'></font>
+    <font color=#447700>!   2004-2010   - gopal, xuejin, young added vortex tracker changes<a name='278'></font>
+    <font color=#447700>!   late  2010  - sam added vortex_tracker variable to switch between trackers<a name='279'></font>
+    <font color=#447700>!   late  2010  - sam added a new child tracker (vortex_tracker=2)<a name='280'></font>
+    <font color=#447700>!   Nov 08 2011 - sam split implementation into several functions and<a name='281'></font>
+    <font color=#447700>!                 added the vortex_tracker=4 option<a name='282'></font>
+    <font color=#447700>!   Mar 2013    - sam added options 5 &amp; 6<a name='283'></font>
+    <font color=#447700>!   Sep 2013    - sam added option 7<a name='284'></font>
+    <font color=#447700>!   Feb 2014    - sam added hooks for area of interest<a name='285'></font>
+#if ( HWRF == 1 )<a name='286'>
+    USE <A href='../../html_code/dyn_nmm/module_tracker.F.html#MODULE_TRACKER'>module_tracker</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_TRACKER_2">, only: ncep_tracker_center<a name='287'>
+#endif<a name='288'>
+    USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>MODULE_CONFIGURE</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_30">, ONLY : grid_config_rec_type<a name='289'>
+    USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>MODULE_DOMAIN</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_50">, ONLY : domain,get_ijk_from_grid<a name='290'>
+    use <A href='../../html_code/dyn_nmm/module_membrane_mslp.F.html#MODULE_MEMBRANE_MSLP'>module_membrane_mslp</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MEMBRANE_MSLP_2"><a name='291'>
+#ifdef DM_PARALLEL<a name='292'>
+# if ( HWRF == 1 )<a name='293'>
+    USE <A href='../../html_code/frame/module_comm_dm.F.html#MODULE_COMM_DM'>MODULE_COMM_DM</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_COMM_DM_19">, ONLY : HALO_NMM_VT4_NOISE_sub, HALO_NMM_VT4_MSLP_sub<a name='294'>
+    USE <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>MODULE_DM</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_39">, ONLY: ntasks_x, ntasks_y, mytask, ntasks, local_communicator<a name='295'>
+# endif<a name='296'>
+#endif<a name='297'>
+    IMPLICIT NONE<a name='298'>
+    type(domain), intent(inout) :: grid<a name='299'>
+    type(grid_config_rec_type), intent(in) :: config_flags<a name='300'>
+    integer :: i,movefreq<a name='301'>
+    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE<a name='302'>
+    integer, intent(in) :: IMS,IME,JMS,JME,KMS,KME<a name='303'>
+    integer, intent(in) :: IPS,IPE,JPS,JPE,KPS,KPE<a name='304'>
+    integer, intent(in) :: ITS,ITE,JTS,JTE,KTS,KTE<a name='305'>
+    integer :: vortex_tracker,j<a name='306'>
+    character*255 :: message<a name='307'>
+    logical :: skip_nest_motion<a name='308'>
+<a name='309'>
+    <font color=#447700>!     KEEP NEST MOTION IN SINK WITH PHYSICS TIME STEPS<a name='310'></font>
+<a name='311'>
+#if ( NMM_NEST == 1 )<a name='312'>
+#if ( HWRF == 1 )<a name='313'>
+    MOVEFREQ=grid%ntrack*grid%nphs<a name='314'>
+    vortex_tracker=grid%vortex_tracker<a name='315'>
+#else<a name='316'>
+    MOVEFREQ=grid%nphs<a name='317'>
+    vortex_tracker=-1<a name='318'>
+#endif<a name='319'>
+    skip_nest_motion=.false.<a name='320'>
+    IF(MOD(grid%NTSD+1,MOVEFREQ)/=0 .or. grid%id==1)THEN<a name='321'>
+#if ( HWRF == 1 )<a name='322'>
+       IF(grid%MOVED .and. grid%id/=1) then<a name='323'>
+          grid%NTIME0=grid%NTSD             <font color=#447700>!FOR UPDATING NTIM0<a name='324'></font>
+       ENDIF<a name='325'>
+#endif<a name='326'>
+       grid%MVNEST=.FALSE.<a name='327'>
+       skip_nest_motion=.true.<a name='328'>
+    ENDIF<a name='329'>
+<a name='330'>
+#if ( HWRF == 1 )<a name='331'>
+    if(skip_nest_motion .and. ( grid%pdyn_smooth_age/=0 .or. size(grid%pdyn_smooth)&lt;=1)) then<a name='332'>
+       <font color=#447700>! Pdyn_smooth is up to date and it is not yet time to move the<a name='333'></font>
+       <font color=#447700>! nest, so we can return now.<a name='334'></font>
+       <font color=#447700>!write(0,*) 'skipping pdyn_smooth in grid ',grid%id<a name='335'></font>
+       return<a name='336'>
+    else<a name='337'>
+       <font color=#447700>! Either we need to move the nest, or the pdyn values are<a name='338'></font>
+       <font color=#447700>! invalid due to nest initialization or recent nest motion, so<a name='339'></font>
+       <font color=#447700>! we cannot return yet.<a name='340'></font>
+    endif<a name='341'>
+<a name='342'>
+    <font color=#447700>! Update membrane_mslp:<a name='343'></font>
+    call <A href='../../html_code/dyn_nmm/module_membrane_mslp.F.html#MAKE_MEMBRANE_MSLP'>make_membrane_mslp</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAKE_MEMBRANE_MSLP_1">(grid)<a name='344'>
+<a name='345'>
+<a name='346'>
+    <font color=#447700>! Update regular mslp:<a name='347'></font>
+    CALL <A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#UPDATE_PDYN_MSLP'>UPDATE_PDYN_MSLP</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="UPDATE_PDYN_MSLP_2">(grid,config_flags, &amp;<a name='348'>
+                          IDS,IDE,JDS,JDE,KDS,KDE, &amp;<a name='349'>
+                          IMS,IME,JMS,JME,KMS,KME, &amp;<a name='350'>
+                          IPS,IPE,JPS,JPE,KPS,KPE)<a name='351'>
+<a name='352'>
+    if(skip_nest_motion) then<a name='353'>
+       <font color=#447700>! We get here if we had to update pdyn_smooth, but it is not<a name='354'></font>
+       <font color=#447700>! yet time to move the nest.<a name='355'></font>
+       return<a name='356'>
+    endif<a name='357'>
+#endif<a name='358'>
+<a name='359'>
+    <font color=#447700>!     HAND OFF CONTROL TO STATS_FOR_MOVE_123 FOR TRACKERS 1, 2 and 3<a name='360'></font>
+    oldmove: if(vortex_tracker&lt;4) then<a name='361'>
+       <font color=#447700>! PDYN causes noise in the presence of strong vorticity variations,<a name='362'></font>
+       <font color=#447700>! so it is not used by HWRF for nest tracking.<a name='363'></font>
+       CALL <A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123'>STATS_FOR_MOVE_123</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="STATS_FOR_MOVE_123_1"> (grid%XLOC_2,grid%YLOC_2                   &amp;<a name='364'>
+#if ( HWRF == 1 )<a name='365'>
+                                ,grid%MSLP                                &amp;<a name='366'>
+#else<a name='367'>
+                                ,grid%PDYN                                &amp;<a name='368'>
+#endif<a name='369'>
+            ,grid%sm							  &amp;<a name='370'>
+#if ( HWRF == 1 )<a name='371'>
+            ,GRID%RESTART,grid%NTIME0                                     &amp;<a name='372'>
+            ,GRID%MOVED,grid%MVNEST,grid%ntsd,GRID%NPHS,GRID%NTRACK      &amp;<a name='373'>
+#else<a name='374'>
+            ,GRID%MOVED,grid%MVNEST,grid%ntsd,GRID%NPHS                   &amp;<a name='375'>
+#endif<a name='376'>
+            ,GRID%VORTEX_TRACKER                                          &amp;<a name='377'>
+            ,IDS,IDE-1,JDS,JDE-1,KDS,KDE                                  &amp;<a name='378'>
+            ,IMS,IME,JMS,JME,KMS,KME                                      &amp;<a name='379'>
+            ,ITS,ITE,JTS,JTE,KTS,KTE)<a name='380'>
+       RETURN<a name='381'>
+#if ( HWRF == 1 )<a name='382'>
+    elseif(vortex_tracker==6 .or. vortex_tracker==7) then<a name='383'>
+       <font color=#447700>! Tracker #6 and #7: do whatever the inline NCEP Tracker says<a name='384'></font>
+       call <A href='../../html_code/dyn_nmm/module_tracker.F.html#NCEP_TRACKER_CENTER'>ncep_tracker_center</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NCEP_TRACKER_CENTER_1">(grid)<a name='385'>
+       call <A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT67_MOVE'>vt67_move</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VT67_MOVE_1">(grid%tracker_ifix,grid%tracker_jfix,  &amp;<a name='386'>
+                     grid%tracker_gave_up,grid%tracker_havefix, &amp;<a name='387'>
+                     grid%xloc_2,grid%yloc_2, grid%id,     &amp;<a name='388'>
+                     grid%xloc_1,grid%yloc_1, grid%mvnest, &amp;<a name='389'>
+                     IDS,IDE,JDS,JDE,KDS,KDE,              &amp;<a name='390'>
+                     IMS,IME,JMS,JME,KMS,KME,              &amp;<a name='391'>
+                     ITS,ITE,JTS,JTE,KTS,KTE)<a name='392'>
+<a name='393'>
+       <font color=#447700>! Update area of interest after storm moves if the storm is an<a name='394'></font>
+       <font color=#447700>! area of interest:<a name='395'></font>
+       if(grid%interest_storms/=0) then<a name='396'>
+38        format('grid ',I2,' updating area of interest due to storm motion')<a name='397'>
+          write(message,38) grid%id<a name='398'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_125">(trim(message))<a name='399'>
+          grid%update_interest=.true.<a name='400'>
+       else<a name='401'>
+39        format('grid ',I2,' not updating area of interest after storm motion because grid%interest_storms is 0')<a name='402'>
+          write(message,39) grid%id<a name='403'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_126">(trim(message))<a name='404'>
+       endif<a name='405'>
+    elseif(vortex_tracker==5) then<a name='406'>
+       <font color=#447700>! Tracker #5: follow average of grandparent and parent PDYN<a name='407'></font>
+       call <A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT5_MOVE'>vt5_move</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VT5_MOVE_1">(grid%pdyn_parent,grid%distsq,grid%vt5searchrad, &amp;<a name='408'>
+                     grid%xloc_2,grid%yloc_2, grid%id,     &amp;<a name='409'>
+                     grid%xloc_1,grid%yloc_1, grid%mvnest, &amp;<a name='410'>
+                     IDS,IDE,JDS,JDE,KDS,KDE,              &amp;<a name='411'>
+                     IMS,IME,JMS,JME,KMS,KME,              &amp;<a name='412'>
+                     ITS,ITE,JTS,JTE,KTS,KTE)<a name='413'>
+<a name='414'>
+       <font color=#447700>! Adjust nest movement search radius for the next timestep<a name='415'></font>
+       <font color=#447700>! based on whether we moved this timestep or not.<a name='416'></font>
+       if(grid%mvnest) then<a name='417'>
+          grid%vt5searchrad=max(vt5_min_radius,min(vt5_max_radius, &amp;<a name='418'>
+               grid%vt5searchrad*vt5_move_factor))<a name='419'>
+       else<a name='420'>
+          grid%vt5searchrad=max(vt5_min_radius,min(vt5_max_radius, &amp;<a name='421'>
+               grid%vt5searchrad*vt5_nomove_factor))<a name='422'>
+       endif<a name='423'>
+13011  format("Search radius now ",F0.3,"km for domain ",I0)<a name='424'>
+       write(message,13011) grid%vt5searchrad/1000.0,grid%id<a name='425'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_53">(1,message)<a name='426'>
+    else<a name='427'>
+    <font color=#447700>!     HANDLE VORTEX TRACKER 4 HERE<a name='428'></font>
+<a name='429'>
+       <font color=#447700>! (we only get here in HWRF mode)<a name='430'></font>
+       if(config_flags%vt4_noise_iter&lt;0) then<a name='431'>
+          grid%mslp_noisy=0<a name='432'>
+       else<a name='433'>
+# ifdef DM_PARALLEL<a name='434'>
+#         include "<A href='../../html_code/include/HALO_NMM_VT4_MSLP.inc.html'>HALO_NMM_VT4_MSLP.inc</A>"<A NAME="HALO_NMM_VT4_MSLP.inc_2"><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='435'>
+# endif<a name='436'>
+          call <A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_NOISE_DETECT'>vt4_noise_detect</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VT4_NOISE_DETECT_1">(grid%mslp,grid%mslp_noisy,   &amp;<a name='437'>
+                                config_flags%vt4_noise_pmax, &amp;<a name='438'>
+                                config_flags%vt4_noise_pmin, &amp;<a name='439'>
+                                config_flags%vt4_noise_dpdr, &amp;<a name='440'>
+                                grid%dx_nmm,grid%dy_nmm,     &amp;<a name='441'>
+                                IDS,IDE,JDS,JDE,KDS,KDE,     &amp;<a name='442'>
+                                IMS,IME,JMS,JME,KMS,KME,     &amp;<a name='443'>
+                                ITS,ITE,JTS,JTE,KTS,KTE)<a name='444'>
+          do i=1,config_flags%vt4_noise_iter          <a name='445'>
+# ifdef DM_PARALLEL<a name='446'>
+#         include "<A href='../../html_code/include/HALO_NMM_VT4_NOISE.inc.html'>HALO_NMM_VT4_NOISE.inc</A>"<A NAME="HALO_NMM_VT4_NOISE.inc_3"><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='447'>
+# endif<a name='448'>
+             call <A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_NOISE_ITER'>vt4_noise_iter</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VT4_NOISE_ITER_1">(grid%mslp_noisy,             &amp;<a name='449'>
+                                 IDS,IDE,JDS,JDE,KDS,KDE,     &amp;<a name='450'>
+                                 IMS,IME,JMS,JME,KMS,KME,     &amp;<a name='451'>
+                                 ITS,ITE,JTS,JTE,KTS,KTE)<a name='452'>
+          enddo<a name='453'>
+       endif<a name='454'>
+       call <A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE'>vt4_move</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VT4_MOVE_1">(grid%mslp,grid%weightout,grid%distsq, &amp;<a name='455'>
+                     grid%mslp_noisy, grid%dx_nmm,         &amp;<a name='456'>
+                     grid%dy_nmm,grid%xloc_2,grid%yloc_2,  &amp;<a name='457'>
+                     grid%xloc_1,grid%yloc_1,grid%mvnest,  &amp;<a name='458'>
+                     config_flags%vt4_radius,              &amp;<a name='459'>
+                     config_flags%vt4_weightexp,           &amp;<a name='460'>
+                     config_flags%vt4_pmax,                &amp;<a name='461'>
+                     IDS,IDE,JDS,JDE,KDS,KDE,              &amp;<a name='462'>
+                     IMS,IME,JMS,JME,KMS,KME,              &amp;<a name='463'>
+                     IPS,IPE,JPS,JPE,KPS,KPE,              &amp;<a name='464'>
+                     ITS,ITE,JTS,JTE,KTS,KTE)<a name='465'>
+#endif<a name='466'>
+    endif oldmove<a name='467'>
+#endif<a name='468'>
+  END SUBROUTINE STATS_FOR_MOVE<a name='469'>
+<a name='470'>
+<A NAME='VT4_NOISE_ITER'><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_NOISE_ITER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='471'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>vt4_noise_iter</font>(NOISY,                   &amp; <A href='../../call_to/VT4_NOISE_ITER.html' TARGET='index'>1</A><a name='472'>
+                            IDS,IDE,JDS,JDE,KDS,KDE, &amp;<a name='473'>
+                            IMS,IME,JMS,JME,KMS,KME, &amp;<a name='474'>
+                            ITS,ITE,JTS,JTE,KTS,KTE)<a name='475'>
+    <font color=#447700>! VT4_NOISE_DETECT<a name='476'></font>
+    <font color=#447700>!<a name='477'></font>
+    <font color=#447700>! PURPOSE: Takes in a "NOISY" array, finds all points where<a name='478'></font>
+    <font color=#447700>! NOISY(I,J)/=01, and marks all surrounding points with a 1.<a name='479'></font>
+    <font color=#447700>! With repeated calls, this will produce diamond-shaped <a name='480'></font>
+    <font color=#447700>! areas of 1s around areas that originally had a 1.<a name='481'></font>
+    <font color=#447700>!<a name='482'></font>
+    <font color=#447700>! The first and last row and column are not modified.<a name='483'></font>
+    <font color=#447700>!<a name='484'></font>
+    <font color=#447700>! HISTORY:<a name='485'></font>
+    <font color=#447700>!   Nov 08 2011 - written by Sam Trahan<a name='486'></font>
+    IMPLICIT NONE<a name='487'>
+    integer,dimension(ims:ime,jms:jme), intent(inout) :: noisy<a name='488'>
+    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE, &amp;<a name='489'>
+                           IMS,IME,JMS,JME,KMS,KME, &amp;<a name='490'>
+                           ITS,ITE,JTS,JTE,KTS,KTE<a name='491'>
+    integer :: i,j,iadd<a name='492'>
+    <a name='493'>
+#if ( HWRF == 1 )<a name='494'>
+    do j = max(jds+1,jts), min(jte,jde-2)<a name='495'>
+       iadd=mod(j,2)-1<a name='496'>
+       do i = max(ids+1,its), min(ite,ide-2)<a name='497'>
+          if(       noisy(i+1+iadd,j+1)/=0 &amp;<a name='498'>
+               .or. noisy(i+1+iadd,j-1)/=0 &amp;<a name='499'>
+               .or. noisy(i+iadd,j+1)/=0 &amp;<a name='500'>
+               .or. noisy(i+iadd,j-1)/=0) then<a name='501'>
+             noisy(i,j)=1<a name='502'>
+          endif<a name='503'>
+       enddo<a name='504'>
+    enddo<a name='505'>
+#endif<a name='506'>
+  END SUBROUTINE vt4_noise_iter<a name='507'>
+<A NAME='VT4_NOISE_DETECT'><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_NOISE_DETECT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='508'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>vt4_noise_detect</font>(MSLP,NOISY,PMAX,PMIN,DPDR, &amp; <A href='../../call_to/VT4_NOISE_DETECT.html' TARGET='index'>1</A>,<A href='../../call_from/VT4_NOISE_DETECT.html' TARGET='index'>6</A><a name='509'>
+                              DX_NMM, DY_NMM,            &amp;<a name='510'>
+                              IDS,IDE,JDS,JDE,KDS,KDE,   &amp;<a name='511'>
+                              IMS,IME,JMS,JME,KMS,KME,   &amp;<a name='512'>
+                              ITS,ITE,JTS,JTE,KTS,KTE)<a name='513'>
+    <font color=#447700>! VT4_NOISE_DETECT<a name='514'></font>
+    <font color=#447700>!<a name='515'></font>
+    <font color=#447700>! PURPOSE: Finds "noisy" MSLP values and marks a "1" in the <a name='516'></font>
+    <font color=#447700>! "NOISY" array wherever such noisy values occur.  An MSLP<a name='517'></font>
+    <font color=#447700>! value is "noisy" if it meets one of these criteria:<a name='518'></font>
+    <font color=#447700>!<a name='519'></font>
+    <font color=#447700>!   MSLP &gt; PMAX<a name='520'></font>
+    <font color=#447700>!   MSLP &lt; PMIN<a name='521'></font>
+    <font color=#447700>!   |d(MSLP)/d(northwest-southeast)| &gt; DPDR<a name='522'></font>
+    <font color=#447700>!   |d(MSLP)/d(southwest-northeast)| &gt; DPDR<a name='523'></font>
+    <font color=#447700>!<a name='524'></font>
+    <font color=#447700>! HISTORY:<a name='525'></font>
+    <font color=#447700>!   Nov 08 2011 - written by Sam Trahan<a name='526'></font>
+    IMPLICIT NONE<a name='527'>
+    real,dimension(ims:ime,jms:jme), intent(in) :: mslp,dx_nmm<a name='528'>
+    real, intent(in) :: dy_nmm,pmax,pmin,dpdr<a name='529'>
+    integer,dimension(ims:ime,jms:jme), intent(out) :: noisy<a name='530'>
+    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE, &amp;<a name='531'>
+                           IMS,IME,JMS,JME,KMS,KME, &amp;<a name='532'>
+                           ITS,ITE,JTS,JTE,KTS,KTE<a name='533'>
+    real :: dp2,dy2,dx2,pdiff,dp2max<a name='534'>
+    integer :: i,j<a name='535'>
+    integer :: iadd<a name='536'>
+<a name='537'>
+#ifdef EXPENSIVE_HWRF_DEBUG_STUFF<a name='538'>
+    character*255 :: message<a name='539'>
+    integer :: nprint<a name='540'>
+<a name='541'>
+    nprint=10<a name='542'>
+#endif<a name='543'>
+    <a name='544'>
+#if ( HWRF == 1 )<a name='545'>
+    dy2=dy_nmm*dy_nmm*4<a name='546'>
+    dp2max=dpdr*dpdr<a name='547'>
+<a name='548'>
+<a name='549'>
+    do j=jts,min(jte,jde-1)<a name='550'>
+       iadd=mod(j,2)-1<a name='551'>
+       do i=its,min(ite,ide-1)<a name='552'>
+          noisetype: if(mslp(i,j)&gt;pmax) then<a name='553'>
+#ifdef EXPENSIVE_HWRF_DEBUG_STUFF<a name='554'>
+             if(nprint&gt;0) then<a name='555'>
+3088            format('MSLP(',I0,',',I0,') = ',F0.3,' &gt; pmax = ',F0.3)<a name='556'>
+                write(message,3088) i,j,mslp(i,j),pmax<a name='557'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_NOISE_DETECT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_127">(message)<a name='558'>
+                nprint=nprint-1<a name='559'>
+             endif<a name='560'>
+#endif<a name='561'>
+             noisy(i,j)=1<a name='562'>
+          elseif(mslp(i,j)&lt;pmin) then<a name='563'>
+#ifdef EXPENSIVE_HWRF_DEBUG_STUFF<a name='564'>
+             if(nprint&gt;0) then<a name='565'>
+3089            format('MSLP(',I0,',',I0,') = ',F0.3,' &lt; pmin = ',F0.3)<a name='566'>
+                write(message,3089) i,j,mslp(i,j),pmin<a name='567'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_NOISE_DETECT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_128">(message)<a name='568'>
+                nprint=nprint-1<a name='569'>
+             endif<a name='570'>
+#endif<a name='571'>
+             noisy(i,j)=1<a name='572'>
+          else<a name='573'>
+             dx2=dx_nmm(i,j)*dx_nmm(i,j)*4<a name='574'>
+             <a name='575'>
+             notbdy: if(i&gt;ids .and. i&lt;ide-1 .and. j&gt;jds .and. j&lt;jde-1) then<a name='576'>
+                <font color=#447700>! northeast-southwest direction:<a name='577'></font>
+                pdiff=<A href='../../html_code/phys/module_diag_afwa.F.html#MSLP'>mslp</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_NOISE_DETECT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MSLP_4">(i+1+iadd,j+1)-mslp(i+iadd,j-1)<a name='578'>
+                dp2=pdiff*pdiff/(dx2+dy2)<a name='579'>
+                if(dp2&gt;dp2max) then<a name='580'>
+                   noisy(i,j)=1<a name='581'>
+#ifdef EXPENSIVE_HWRF_DEBUG_STUFF<a name='582'>
+                   if(nprint&gt;0) then<a name='583'>
+3091                  format('dpdr(',I0,',',I0,') in NE-SW dir = ',F0.5,' &gt; dpdrmax = ',F0.5)<a name='584'>
+                      write(message,3091) i,j,sqrt(dp2),sqrt(dp2max)<a name='585'>
+                      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_NOISE_DETECT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_129">(message)<a name='586'>
+                      nprint=nprint-1<a name='587'>
+                   endif<a name='588'>
+#endif<a name='589'>
+                   cycle<a name='590'>
+                endif<a name='591'>
+<a name='592'>
+                <font color=#447700>! southeast-northwest direction:<a name='593'></font>
+                pdiff=<A href='../../html_code/phys/module_diag_afwa.F.html#MSLP'>mslp</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_NOISE_DETECT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MSLP_5">(i+1+iadd,j-1)-mslp(i+iadd,j+1)<a name='594'>
+                dp2=pdiff*pdiff/(dx2+dy2)<a name='595'>
+                if(dp2&gt;dp2max) then<a name='596'>
+                   noisy(i,j)=1<a name='597'>
+#ifdef EXPENSIVE_HWRF_DEBUG_STUFF<a name='598'>
+                   if(nprint&gt;0) then<a name='599'>
+3092                  format('dpdr(',I0,',',I0,') in SE-NW dir = ',F0.5,' &gt; dpdrmax = ',F0.5)<a name='600'>
+                      write(message,3092) i,j,sqrt(dp2),sqrt(dp2max)<a name='601'>
+                      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_NOISE_DETECT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_130">(message)<a name='602'>
+                      nprint=nprint-1<a name='603'>
+                   endif<a name='604'>
+#endif<a name='605'>
+                   cycle<a name='606'>
+                endif<a name='607'>
+             endif notbdy<a name='608'>
+<a name='609'>
+             <font color=#447700>! We get here if the point and its surroudings are not<a name='610'></font>
+             <font color=#447700>! "noisy"<a name='611'></font>
+             noisy(i,j)=0<a name='612'>
+          endif noisetype<a name='613'>
+       enddo<a name='614'>
+    enddo<a name='615'>
+#endif<a name='616'>
+  END SUBROUTINE vt4_noise_detect<a name='617'>
+<a name='618'>
+#if ( HWRF == 1 )<a name='619'>
+<A NAME='VT5_MOVE'><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT5_MOVE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='620'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>vt5_move</font>(PDYN,distsq,searchrad,xloc,yloc,gridid,cx,cy,mvnest, &amp; <A href='../../call_to/VT5_MOVE.html' TARGET='index'>1</A>,<A href='../../call_from/VT5_MOVE.html' TARGET='index'>5</A><a name='621'>
+                      IDS,IDE,JDS,JDE,KDS,KDE,                   &amp;<a name='622'>
+                      IMS,IME,JMS,JME,KMS,KME,                   &amp;<a name='623'>
+                      ITS,ITE,JTS,JTE,KTS,KTE)<a name='624'>
+    use <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>module_dm</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT5_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_40">, only: wrf_dm_minval_real<a name='625'>
+    implicit none<a name='626'>
+    real, intent(in) :: PDYN(ims:ime,jms:jme)<a name='627'>
+    real, intent(in) :: distsq(ims:ime,jms:jme)<a name='628'>
+    real, intent(in) :: searchrad<a name='629'>
+    integer, intent(inout) :: xloc,yloc<a name='630'>
+    integer, intent(in) :: cx,cy,gridid<a name='631'>
+    logical, intent(out) :: mvnest <a name='632'>
+    integer :: &amp;<a name='633'>
+                      IDS,IDE,JDS,JDE,KDS,KDE,                   &amp;<a name='634'>
+                      IMS,IME,JMS,JME,KMS,KME,                   &amp;<a name='635'>
+                      ITS,ITE,JTS,JTE,KTS,KTE<a name='636'>
+   <a name='637'>
+    real, parameter :: big_pdyn=999999.9<a name='638'>
+    integer i,j,iloc,jloc<a name='639'>
+    real pdynloc,xdiff,ydiff,radsq<a name='640'>
+    character*255 message<a name='641'>
+<a name='642'>
+    if(gridid==1) then <font color=#447700>! Do nothing for MOAD<a name='643'></font>
+       <font color=#447700>!write(0,*) 'Grid 1 (MOAD): skipping vt5_move'<a name='644'></font>
+       mvnest=.false.<a name='645'>
+       xloc=cx<a name='646'>
+       yloc=cy<a name='647'>
+       return<a name='648'>
+    endif<a name='649'>
+<a name='650'>
+201 format("Search for minimum PDYN (&lt;",F10.2,") within searchrad=",F0.3,"km of domain center cx=",I0," cy=",I0)<a name='651'>
+    <font color=#447700>!write(message,201) big_pdyn,searchrad/1000.0,cx,cy<a name='652'></font>
+<a name='653'>
+    radsq=searchrad*searchrad<a name='654'>
+    iloc=-1<a name='655'>
+    jloc=-1<a name='656'>
+    pdynloc=big_pdyn<a name='657'>
+    do j=jts,min(jde-1,jte)<a name='658'>
+       do i=its,min(ide-1,ite)<a name='659'>
+          if(distsq(i,j)&lt;radsq .and. PDYN(i,j)&lt;pdynloc) then<a name='660'>
+             pdynloc=PDYN(i,j)<a name='661'>
+             iloc=i<a name='662'>
+             jloc=j<a name='663'>
+          endif<a name='664'>
+       enddo<a name='665'>
+    enddo<a name='666'>
+<a name='667'>
+303 format("local loc: pdyn=",F0.3," i=",I0," j=",I0)<a name='668'>
+    <font color=#447700>!write(0,303) pdynloc,iloc,jloc<a name='669'></font>
+<a name='670'>
+#ifdef DM_PARALLEL<a name='671'>
+    call <A href='../../html_code/frame/module_dm.F.html#WRF_DM_MINVAL_REAL'>wrf_dm_minval_real</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT5_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_MINVAL_REAL_2">(pdynloc,iloc,jloc)<a name='672'>
+#endif<a name='673'>
+<a name='674'>
+304 format("global loc: pdyn=",F0.3," i=",I0," j=",I0)<a name='675'>
+    <font color=#447700>!write(0,304) pdynloc,iloc,jloc<a name='676'></font>
+<a name='677'>
+    if(iloc==-1) then<a name='678'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT5_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_96">('ERROR: cannot find min PDYN.  Either distsq or searchrad are erroneous, or your resolution is worse than 100km.')<a name='679'>
+    endif<a name='680'>
+<a name='681'>
+    xdiff=abs(iloc-real(cx))/3.0<a name='682'>
+    ydiff=abs(jloc-real(cy))/6.0<a name='683'>
+    if(xdiff&gt;=1. .or. ydiff&gt;=1.) then<a name='684'>
+       <font color=#447700>! We have moved &gt;1 parent gridpoints in X or &gt;2 parent<a name='685'></font>
+       <font color=#447700>! gridpoints in Y, so trigger a nest move:<a name='686'></font>
+       mvnest=.true.<a name='687'>
+       xloc=iloc<a name='688'>
+       yloc=jloc<a name='689'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT5_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_54">(1,'Moving: PDYN minimum left nest center')<a name='690'>
+    else<a name='691'>
+       mvnest=.false.<a name='692'>
+       xloc=cx<a name='693'>
+       yloc=cy<a name='694'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT5_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_55">(1,'Not moving: PDYN minimum is near nest center')<a name='695'>
+    endif<a name='696'>
+  END SUBROUTINE vt5_move<a name='697'>
+<A NAME='VT67_MOVE'><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT67_MOVE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='698'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>vt67_move</font>(ifix,jfix,gaveup,havefix, &amp; <A href='../../call_to/VT67_MOVE.html' TARGET='index'>1</A>,<A href='../../call_from/VT67_MOVE.html' TARGET='index'>5</A><a name='699'>
+                      xloc,yloc,gridid,cx,cy,mvnest, &amp;<a name='700'>
+                      IDS,IDE,JDS,JDE,KDS,KDE,                   &amp;<a name='701'>
+                      IMS,IME,JMS,JME,KMS,KME,                   &amp;<a name='702'>
+                      ITS,ITE,JTS,JTE,KTS,KTE)<a name='703'>
+    <font color=#447700>! This is for trackers 6 &amp; 7, which just do what the NCEP tracker<a name='704'></font>
+    <font color=#447700>! (module_tracker) tell us to do.<a name='705'></font>
+    use <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>module_dm</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT67_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_41">, only: wrf_dm_minval_real<a name='706'>
+    implicit none<a name='707'>
+    integer, intent(in) :: ifix,jfix<a name='708'>
+    logical, intent(in) :: gaveup,havefix<a name='709'>
+    integer, intent(inout) :: xloc,yloc<a name='710'>
+    integer, intent(in) :: cx,cy,gridid<a name='711'>
+    logical, intent(out) :: mvnest <a name='712'>
+    integer :: &amp;<a name='713'>
+                      IDS,IDE,JDS,JDE,KDS,KDE,                   &amp;<a name='714'>
+                      IMS,IME,JMS,JME,KMS,KME,                   &amp;<a name='715'>
+                      ITS,ITE,JTS,JTE,KTS,KTE<a name='716'>
+   <a name='717'>
+    real, parameter :: big_pdyn=999999.9<a name='718'>
+    integer i,j,iloc,jloc<a name='719'>
+    real pdynloc,xdiff,ydiff,radsq<a name='720'>
+    character*255 message<a name='721'>
+<a name='722'>
+    mvnest=.false.<a name='723'>
+    xloc=cx<a name='724'>
+    yloc=cy<a name='725'>
+    <a name='726'>
+    if(gridid==1) then <font color=#447700>! Do nothing for MOAD<a name='727'></font>
+       return<a name='728'>
+    endif<a name='729'>
+<a name='730'>
+    if(gaveup) then<a name='731'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT67_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_56">(1,'Not moving: tracker decided the storm dissapated')<a name='732'>
+       return<a name='733'>
+    endif<a name='734'>
+<a name='735'>
+    if(.not.havefix) then<a name='736'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT67_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_57">(1,'Not moving: tracker did not find a storm')<a name='737'>
+       return<a name='738'>
+    endif<a name='739'>
+<a name='740'>
+    xdiff=abs(ifix-real(cx))/3.0<a name='741'>
+    ydiff=abs(jfix-real(cy))/6.0<a name='742'>
+    if(xdiff&gt;=1. .or. ydiff&gt;=1.) then<a name='743'>
+       <font color=#447700>! We have moved &gt;1 parent gridpoints in X or &gt;2 parent<a name='744'></font>
+       <font color=#447700>! gridpoints in Y, so trigger a nest move:<a name='745'></font>
+       mvnest=.true.<a name='746'>
+       xloc=ifix<a name='747'>
+       yloc=jfix<a name='748'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT67_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_58">(1,'Moving: tracker center left nest center')<a name='749'>
+    else<a name='750'>
+       mvnest=.false.<a name='751'>
+       xloc=cx<a name='752'>
+       yloc=cy<a name='753'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT67_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_59">(1,'Not moving: tracker center is near nest center')<a name='754'>
+    endif<a name='755'>
+  END SUBROUTINE vt67_move<a name='756'>
+<A NAME='VT4_MOVE'><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='757'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>vt4_move</font>(MSLP,WEIGHTOUT,DISTSQ,NOISY,DX_NMM,DY_NMM, &amp; <A href='../../call_to/VT4_MOVE.html' TARGET='index'>1</A>,<A href='../../call_from/VT4_MOVE.html' TARGET='index'>14</A><a name='758'>
+                      xloc,yloc,cx,cy,mvnest,                    &amp;<a name='759'>
+                      searchrad,searchpow,searchpmax,            &amp;<a name='760'>
+                      IDS,IDE,JDS,JDE,KDS,KDE,                   &amp;<a name='761'>
+                      IMS,IME,JMS,JME,KMS,KME,                   &amp;<a name='762'>
+                      IPS,IPE,JPS,JPE,KPS,KPE,                   &amp;<a name='763'>
+                      ITS,ITE,JTS,JTE,KTS,KTE)<a name='764'>
+    <font color=#447700>! VT4_MOVE<a name='765'></font>
+    <font color=#447700>!<a name='766'></font>
+    <font color=#447700>! PURPOSE: Searches the MSLP field to find the center of the<a name='767'></font>
+    <font color=#447700>! cyclone vortex.  This is done by first discarding points that<a name='768'></font>
+    <font color=#447700>! don't match certain conditions, and then doing a weighted<a name='769'></font>
+    <font color=#447700>! average of the point locations to find a centroid.  <a name='770'></font>
+    <font color=#447700>!<a name='771'></font>
+    <font color=#447700>! Several conditions are used to eliminate points.  The "NOISY"<a name='772'></font>
+    <font color=#447700>! field is used to mask out areas where the MSLP may be<a name='773'></font>
+    <font color=#447700>! questionable.  This frequently happens due to terrain-induced<a name='774'></font>
+    <font color=#447700>! gravity waves.  Points more than SEARCHRAD away from the nest<a name='775'></font>
+    <font color=#447700>! center are ignored.  Lastly, points with MSLP&gt;PMAX are ignored,<a name='776'></font>
+    <font color=#447700>! where PMAX is either the maximum pressure in the non-noisy MSLP<a name='777'></font>
+    <font color=#447700>! if SEARCHPMAX&lt;0, or SEARCHPMAX if SEARCHPMAX&gt;=0.<a name='778'></font>
+    <font color=#447700>!<a name='779'></font>
+    <font color=#447700>! The center is found using a weighted average of point I and J<a name='780'></font>
+    <font color=#447700>! locations for all points that survive the above conditions.<a name='781'></font>
+    <font color=#447700>!<a name='782'></font>
+    <font color=#447700>! HISTORY:<a name='783'></font>
+    <font color=#447700>!   Nov 08 2011 - written by Sam Trahan<a name='784'></font>
+<a name='785'>
+#if defined(DM_PARALLEL) &amp;&amp; <font color=#447700>!defined(STUBMPI)<a name='786'></font>
+    USE <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>module_dm</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_42">, only: wrf_dm_maxval_real, wrf_dm_sum_real, &amp;<a name='787'>
+         local_communicator_y, local_communicator_x<a name='788'>
+    IMPLICIT NONE<a name='789'>
+    INCLUDE 'mpif.h'<a name='790'>
+#else<a name='791'>
+    IMPLICIT NONE<a name='792'>
+#endif<a name='793'>
+    character*512 :: message<a name='794'>
+    integer, intent(out) :: xloc,yloc<a name='795'>
+    integer, intent(in) :: cx,cy<a name='796'>
+    real,dimension(ims:ime,jms:jme), intent(in) :: mslp,distsq,dx_nmm<a name='797'>
+    real, intent(in) :: dy_nmm,searchrad,searchpow,searchpmax<a name='798'>
+    real,dimension(ims:ime,jms:jme), intent(out) :: weightout<a name='799'>
+    integer,dimension(ims:ime,jms:jme), intent(inout) :: noisy<a name='800'>
+    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE, &amp;<a name='801'>
+                           IMS,IME,JMS,JME,KMS,KME, &amp;<a name='802'>
+                           IPS,IPE,JPS,JPE,KPS,KPE, &amp;<a name='803'>
+                           ITS,ITE,JTS,JTE,KTS,KTE<a name='804'>
+    logical, intent(out) :: mvnest<a name='805'>
+    real :: pmax,sr2,weight,xsum,ysum,xwsum,ywsum<a name='806'>
+    real :: centroid_x, centroid_y, xdiff, ydiff<a name='807'>
+    real :: xweight,yweight,maxweight<a name='808'>
+    integer :: i,j,idum,jdum,ierr,ctx,cty<a name='809'>
+    integer :: xcount(jps:jpe),ycount(ips:ipe)<a name='810'>
+    integer :: myxcount(jps:jpe),myycount(ips:ipe)<a name='811'>
+<a name='812'>
+<a name='813'>
+    <font color=#447700>! NOTE: cx and cy MUST match the domain center used in<a name='814'></font>
+    <font color=#447700>! direction_of_move2 in mediation_nest_move.F<a name='815'></font>
+    <a name='816'>
+    if(searchrad&lt;dy_nmm*4) then<a name='817'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_97">('increase searchrad: searchrad&lt;dy_nmm*4')<a name='818'>
+    endif<a name='819'>
+    sr2=searchrad*searchrad<a name='820'>
+<a name='821'>
+    <font color=#447700>! Final noisiness pass: mark all values outside of sr2 as noisy=2<a name='822'></font>
+    <font color=#447700>! so we don't use far away points in the vortex search.  Also,<a name='823'></font>
+    <font color=#447700>! mark points near the boundaries as 3 (within 9 points of J<a name='824'></font>
+    <font color=#447700>! boundary or within 6 of I boundary), even if they are within<a name='825'></font>
+    <font color=#447700>! the search radius.<a name='826'></font>
+    <font color=#447700>!<a name='827'></font>
+    <font color=#447700>! In situations where noisy is already 1, we retain the value of<a name='828'></font>
+    <font color=#447700>! 1, except at the boundaries where it is set to 3.  This allows<a name='829'></font>
+    <font color=#447700>! us to see where, outside the search area, there is noise.<a name='830'></font>
+    <font color=#447700>! Having "3" at the boundary avoids regions where there is <a name='831'></font>
+    <font color=#447700>! noise from prior moves, and also allows us to see where the<a name='832'></font>
+    <font color=#447700>! boundary was after the nest moves.<a name='833'></font>
+<a name='834'>
+    do j=jts,min(jte,jde-1)<a name='835'>
+       if(j&lt;jds+10 .or. j&gt;jde-11) then<a name='836'>
+          noisy(its:ite,j)=3<a name='837'>
+       else<a name='838'>
+          do i=its,min(ite,ide-1)<a name='839'>
+             if(i&lt;ids+7 .or. i&gt;ide-8) then<a name='840'>
+                noisy(i,j)=3<a name='841'>
+             elseif(distsq(i,j)&gt;sr2 .and. noisy(i,j)/=1) then<a name='842'>
+                noisy(i,j)=2<a name='843'>
+             endif<a name='844'>
+          enddo<a name='845'>
+       endif<a name='846'>
+    enddo<a name='847'>
+<a name='848'>
+    <font color=#447700>! Get the number of points in the X and Y directions along each<a name='849'></font>
+    <font color=#447700>! row and column.<a name='850'></font>
+    myxcount=0<a name='851'>
+    myycount=0<a name='852'>
+    do j=jps,min(jpe,jde-1)<a name='853'>
+       do i=ips,min(ipe,ide-1)<a name='854'>
+          if(noisy(i,j)==0) then<a name='855'>
+             myxcount(j)=myxcount(j)+1<a name='856'>
+          endif<a name='857'>
+       enddo<a name='858'>
+    enddo<a name='859'>
+    do j=jps,min(jpe,jde-1)<a name='860'>
+       do i=ips,min(ipe,ide-1)<a name='861'>
+          if(noisy(i,j)==0) then<a name='862'>
+             myycount(i)=myycount(i)+1<a name='863'>
+          endif<a name='864'>
+       enddo<a name='865'>
+    enddo<a name='866'>
+#ifdef DM_PARALLEL<a name='867'>
+    call MPI_Allreduce(myxcount,xcount,jpe-jps+1,MPI_INTEGER,MPI_SUM,local_communicator_x,ierr)<a name='868'>
+    call MPI_Allreduce(myycount,ycount,ipe-ips+1,MPI_INTEGER,MPI_SUM,local_communicator_y,ierr)<a name='869'>
+#else<a name='870'>
+      xcount=myxcount<a name='871'>
+      ycount=myycount<a name='872'>
+#endif<a name='873'>
+#ifdef EXPENSIVE_HWRF_DEBUG_STUFF<a name='874'>
+    do j=jps,min(jpe,jde-1)<a name='875'>
+       write(message,'("xcount(",I0,") = ",I0)') j,xcount(j)<a name='876'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_60">(5,message)<a name='877'>
+    enddo<a name='878'>
+    do i=ips,min(ipe,ide-1)<a name='879'>
+       write(message,'("ycount(",I0,") = ",I0)') i,ycount(i)<a name='880'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_61">(5,message)<a name='881'>
+    enddo<a name='882'>
+#endif<a name='883'>
+<a name='884'>
+    <font color=#447700>! Find maximum pressure if requested<a name='885'></font>
+    findpmax: if(searchpmax&lt;0.0) then<a name='886'>
+       pmax=-9e9<a name='887'>
+       do j = max(jds+2,jts), min(jte,jde-3)<a name='888'>
+          do i = max(ids+1,its), min(ite,ide-2)<a name='889'>
+             if(noisy(i,j)==0 .and. mslp(i,j)&gt;pmax) then<a name='890'>
+                pmax=<A href='../../html_code/phys/module_diag_afwa.F.html#MSLP'>mslp</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MSLP_6">(i,j)<a name='891'>
+             endif<a name='892'>
+          enddo<a name='893'>
+       enddo<a name='894'>
+<a name='895'>
+       idum=-99 ; jdum=-99 <font color=#447700>! to keep debug modes happy<a name='896'></font>
+       call <A href='../../html_code/frame/module_dm.F.html#WRF_DM_MAXVAL_REAL'>wrf_dm_maxval_real</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_MAXVAL_REAL_1">(pmax,idum,jdum)<a name='897'>
+       pmax=min(105000.0,pmax)<a name='898'>
+    else<a name='899'>
+       pmax=searchpmax<a name='900'>
+    endif findpmax<a name='901'>
+    <font color=#447700>! Find vortex location.<a name='902'></font>
+<a name='903'>
+    xsum=0.0 ; ysum=0.0 ; xwsum=0.0 ; ywsum=0.0<a name='904'>
+    maxweight=-99.<a name='905'>
+<a name='906'>
+    if_pow_1: if(abs(searchpow-1.0)&lt;1e-5) then<a name='907'>
+       <font color=#447700>! Special copy of loop for exponent of 1, for efficiency<a name='908'></font>
+       <font color=#447700>!call wrf_debug(10,'got into pow=1 loop')<a name='909'></font>
+       do j = max(jds+2,jts), min(jte,jde-3)<a name='910'>
+          do i = max(ids+1,its), min(ite,ide-2)<a name='911'>
+             if(noisy(i,j)==0) then<a name='912'>
+                weight = pmax - mslp(i,j)<a name='913'>
+                if(weight&gt;0) then<a name='914'>
+                   if(weight&gt;maxweight) maxweight=weight<a name='915'>
+                   weight=weight/pmax<a name='916'>
+                   weightout(i,j)=weight<a name='917'>
+                   xweight=weight/ycount(i)<a name='918'>
+                   yweight=weight/xcount(j)<a name='919'>
+                   xsum=xsum + i*xweight<a name='920'>
+                   ysum=ysum + j*yweight<a name='921'>
+                   xwsum=xwsum + xweight<a name='922'>
+                   ywsum=ywsum + yweight<a name='923'>
+                else<a name='924'>
+                   weightout(i,j)=0<a name='925'>
+                end if<a name='926'>
+             else<a name='927'>
+                weightout(i,j)=0<a name='928'>
+             endif<a name='929'>
+          enddo<a name='930'>
+       enddo<a name='931'>
+    else<a name='932'>
+       if_sqrt: if(abs(searchpow-0.5)&lt;1e-5) then<a name='933'>
+          <font color=#447700>!call wrf_debug(10,'got into pow=0.5 loop')<a name='934'></font>
+          do j = max(jds+2,jts), min(jte,jde-3)<a name='935'>
+             do i = max(ids+1,its), min(ite,ide-2)<a name='936'>
+                if(noisy(i,j)==0) then<a name='937'>
+                   weight = pmax - mslp(i,j)<a name='938'>
+                   if(weight&gt;0) then<a name='939'>
+                      if(weight&gt;maxweight) maxweight=weight<a name='940'>
+                      weight=sqrt(weight/pmax)<a name='941'>
+                      weightout(i,j)=weight<a name='942'>
+                      xweight=weight/ycount(i)<a name='943'>
+                      yweight=weight/xcount(j)<a name='944'>
+                      xsum=xsum + i*xweight<a name='945'>
+                      ysum=ysum + j*yweight<a name='946'>
+                      xwsum=xwsum + xweight<a name='947'>
+                      ywsum=ywsum + yweight<a name='948'>
+                   else<a name='949'>
+                      weightout(i,j)=0<a name='950'>
+                   end if<a name='951'>
+                else<a name='952'>
+                   weightout(i,j)=0<a name='953'>
+                endif<a name='954'>
+             enddo<a name='955'>
+          enddo<a name='956'>
+       else<a name='957'>
+          <font color=#447700>! General loop for exponents other than 1:<a name='958'></font>
+          do j = max(jds+2,jts), min(jte,jde-3)<a name='959'>
+             do i = max(ids+1,its), min(ite,ide-2)<a name='960'>
+                if(noisy(i,j)==0) then<a name='961'>
+                   weight = pmax - mslp(i,j)<a name='962'>
+                   if(weight&gt;0) then<a name='963'>
+                      if(weight&gt;maxweight) maxweight=weight<a name='964'>
+                      weight=(weight/pmax)**searchpow<a name='965'>
+                      weightout(i,j)=weight<a name='966'>
+                      xweight=weight/ycount(i)<a name='967'>
+                      yweight=weight/xcount(j)<a name='968'>
+                      xsum=xsum + i*xweight<a name='969'>
+                      ysum=ysum + j*yweight<a name='970'>
+                      xwsum=xwsum + xweight<a name='971'>
+                      ywsum=ywsum + yweight<a name='972'>
+                   else<a name='973'>
+                      weightout(i,j)=0<a name='974'>
+                   end if<a name='975'>
+                else<a name='976'>
+                   weightout(i,j)=0<a name='977'>
+                endif<a name='978'>
+             enddo<a name='979'>
+          enddo<a name='980'>
+       endif if_sqrt<a name='981'>
+    endif if_pow_1<a name='982'>
+<a name='983'>
+    if(maxweight&lt;=0) then<a name='984'>
+       <font color=#447700>!call wrf_debug(1,'No valid points found in this tile.')<a name='985'></font>
+    else<a name='986'>
+       <font color=#447700>!write(message,'("Max weight was ",F0.3)') maxweight<a name='987'></font>
+       <font color=#447700>!call wrf_debug(1,message)<a name='988'></font>
+    endif<a name='989'>
+<a name='990'>
+    xwsum = <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_SUM_REAL'>wrf_dm_sum_real</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_SUM_REAL_2">(xwsum)<a name='991'>
+    <a name='992'>
+    no_vortex: if(xwsum &lt;= 0) then<a name='993'>
+       <font color=#447700>! All pressures are &gt;= pmax so disable move by<a name='994'></font>
+       <font color=#447700>! specifying the vortex center at the domain center.<a name='995'></font>
+       centroid_x=cx<a name='996'>
+       centroid_y=cy<a name='997'>
+<a name='998'>
+       write(message,*) 'Lost the storm.  Search rad,pmax,pow = ', &amp;<a name='999'>
+            searchrad,pmax,searchpow<a name='1000'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_131">(message)<a name='1001'>
+       mvnest=.false.<a name='1002'>
+       return<a name='1003'>
+    else <a name='1004'>
+       ywsum = <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_SUM_REAL'>wrf_dm_sum_real</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_SUM_REAL_3">(ywsum)<a name='1005'>
+       xsum = <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_SUM_REAL'>wrf_dm_sum_real</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_SUM_REAL_4">(xsum)<a name='1006'>
+       ysum = <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_SUM_REAL'>wrf_dm_sum_real</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_SUM_REAL_5">(ysum)<a name='1007'>
+       centroid_x = xsum/xwsum<a name='1008'>
+       centroid_y = ysum/ywsum<a name='1009'>
+<a name='1010'>
+ 383   format("XSUM=",F0.3," YSUM=",F0.3," XWSUM=",F0.3," YWSUM=",F0.3, &amp;<a name='1011'>
+       " Center=(",I0,",",I0,")", &amp;<a name='1012'>
+       " Centroid=(",F0.3,",",F0.3,")")<a name='1013'>
+       write(message,383) xsum,ysum,xwsum,ywsum,cx,cy,centroid_x,centroid_y<a name='1014'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_132">(message)<a name='1015'>
+    endif no_vortex<a name='1016'>
+<a name='1017'>
+    <font color=#447700>! Place a plus at the centroid in the "noisy" array<a name='1018'></font>
+    ctx=nint(centroid_x)<a name='1019'>
+    cty=nint(centroid_y)<a name='1020'>
+    do j=cty-1,cty+1<a name='1021'>
+       do i=ctx-4,ctx+4<a name='1022'>
+          if(i&gt;=its .and. i&lt;=ite .and. j&gt;=jts .and. j&lt;=jte) then<a name='1023'>
+             noisy(i,j)=noisy(i,j)-6<a name='1024'>
+          endif<a name='1025'>
+       enddo<a name='1026'>
+    enddo<a name='1027'>
+    do j=cty-4,cty+4<a name='1028'>
+       do i=ctx-1,ctx+1<a name='1029'>
+          if(i&gt;=its .and. i&lt;=ite .and. j&gt;=jts .and. j&lt;=jte) then<a name='1030'>
+             noisy(i,j)=noisy(i,j)-6<a name='1031'>
+          endif<a name='1032'>
+       enddo<a name='1033'>
+    enddo<a name='1034'>
+<a name='1035'>
+    xdiff=abs(centroid_x-real(cx))/3.0<a name='1036'>
+    ydiff=abs(centroid_y-real(cy))/6.0<a name='1037'>
+    if(xdiff&gt;=1. .or. ydiff&gt;=1.) then<a name='1038'>
+       <font color=#447700>! We have moved &gt;1 parent gridpoints in X or &gt;2 parent<a name='1039'></font>
+       <font color=#447700>! gridpoints in Y, so trigger a nest move:<a name='1040'></font>
+       mvnest=.true.<a name='1041'>
+       xloc=nint(centroid_x)<a name='1042'>
+       yloc=nint(centroid_y)<a name='1043'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_62">(1,'Centroid is far enough from nest center to trigger a move.')<a name='1044'>
+    else<a name='1045'>
+       mvnest=.false.<a name='1046'>
+       xloc=cx<a name='1047'>
+       yloc=cy<a name='1048'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#VT4_MOVE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_63">(1,'Nest has not moved far enough yet.')<a name='1049'>
+    endif<a name='1050'>
+  END SUBROUTINE vt4_move<a name='1051'>
+#endif<a name='1052'>
+<a name='1053'>
+<A NAME='STATS_MAKE_MSLP'><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_MAKE_MSLP' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1054'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>STATS_MAKE_MSLP</font>(PDYN,MEMBRANE_MSLP,MSLP,SQWS          &amp; <A href='../../call_to/STATS_MAKE_MSLP.html' TARGET='index'>1</A>,<A href='../../call_from/STATS_MAKE_MSLP.html' TARGET='index'>1</A><a name='1055'>
+                          ,PINT,T,Q,U,V              &amp;<a name='1056'>
+                          ,FIS,PD,SM,PDTOP,PTOP      &amp;<a name='1057'>
+                          ,DETA1,DETA2,ETA2          &amp;<a name='1058'>
+                          ,IDS,IDE,JDS,JDE,KDS,KDE   &amp;<a name='1059'>
+                          ,IMS,IME,JMS,JME,KMS,KME   &amp;<a name='1060'>
+                          ,ITS,ITE,JTS,JTE,KTS,KTE)<a name='1061'>
+    <font color=#447700>! STATS_MAKE_MSLP<a name='1062'></font>
+    <font color=#447700>!<a name='1063'></font>
+    <font color=#447700>! PURPOSE: Calculates the PDYN, MSLP and SQWS fields needed<a name='1064'></font>
+    <font color=#447700>! by the vortex trackers.  This code was taken from the old<a name='1065'></font>
+    <font color=#447700>! STATS_FOR_MOVE routine.<a name='1066'></font>
+    <font color=#447700>!<a name='1067'></font>
+    <font color=#447700>! HISTORY:<a name='1068'></font>
+    <font color=#447700>!   2004?    : written by gopal<a name='1069'></font>
+    <font color=#447700>! 2004-2011  : various modifications by gopal, xuejin, young, sam<a name='1070'></font>
+    <font color=#447700>! Nov 08 2011: moved code into a seperate STATS_MAKE_MSLP routine<a name='1071'></font>
+    <a name='1072'>
+    USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>MODULE_MODEL_CONSTANTS</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_MAKE_MSLP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_30"><a name='1073'>
+    IMPLICIT NONE<a name='1074'>
+    INTEGER,INTENT(IN)  :: IDS,IDE,JDS,JDE,KDS,KDE   &amp;<a name='1075'>
+                          ,IMS,IME,JMS,JME,KMS,KME   &amp;<a name='1076'>
+                          ,ITS,ITE,JTS,JTE,KTS,KTE<a name='1077'>
+<a name='1078'>
+    REAL, DIMENSION(KMS:KME),                 INTENT(IN)  :: DETA1,DETA2,ETA2<a name='1079'>
+    REAL,                                     INTENT(IN)  :: PDTOP,PTOP<a name='1080'>
+    REAL, DIMENSION(IMS:IME,JMS:JME),         INTENT(IN)  :: FIS,PD,SM<a name='1081'>
+    REAL, DIMENSION(IMS:IME,JMS:JME,KMS:KME), INTENT(IN)  :: PINT,T,Q,U,V<a name='1082'>
+    REAL, DIMENSION(IMS:IME,JMS:JME),         INTENT(OUT) :: PDYN,MSLP,SQWS<a name='1083'>
+    REAL, DIMENSION(IMS:IME,JMS:JME),         INTENT(IN)  :: MEMBRANE_MSLP<a name='1084'>
+<a name='1085'>
+    INTEGER :: ITF,JTF, i,j,k<a name='1086'>
+    REAL :: DZ,RTOPP,APELP,A,TSFC<a name='1087'>
+<a name='1088'>
+    REAL, PARAMETER :: LAPSR=6.5E-3, GI=1./G,D608=0.608<a name='1089'>
+    REAL, PARAMETER :: COEF3=287.05*GI*LAPSR, COEF2=-1./COEF3<a name='1090'>
+    REAL, PARAMETER :: TRG=2.0*R_D*GI,LAPSI=1.0/LAPSR<a name='1091'>
+<a name='1092'>
+    REAL, DIMENSION(IMS:IME,JMS:JME,KMS:KME)              :: Z<a name='1093'>
+<a name='1094'>
+    REAL :: densum,presum,density,pdyntemp,vpres<a name='1095'>
+<a name='1096'>
+    ITF=MIN(ITE,IDE-1)<a name='1097'>
+    JTF=MIN(JTE,JDE-1)<a name='1098'>
+<a name='1099'>
+    <font color=#447700>!     DETERMINE THE HEIGHTS ON THE PARENT DOMAIN<a name='1100'></font>
+<a name='1101'>
+    DO J = JTS, MIN(JTE,JDE-1)<a name='1102'>
+       DO I = ITS, MIN(ITE,IDE-1)<a name='1103'>
+          Z(I,J,1)=FIS(I,J)*GI<a name='1104'>
+       ENDDO<a name='1105'>
+    ENDDO<a name='1106'>
+    <font color=#447700>!<a name='1107'></font>
+    <font color=#447700>!write(0,*) 'kde=',kde,' kte=',kte<a name='1108'></font>
+    DO K = KTS,min(kde-1,KTE)<a name='1109'>
+       DO J = JTS, MIN(JTE,JDE-1)<a name='1110'>
+          DO I = ITS, MIN(ITE,IDE-1)<a name='1111'>
+             APELP      = (PINT(I,J,K+1)+PINT(I,J,K))<a name='1112'>
+             RTOPP      = TRG*T(I,J,K)*(1.0+Q(I,J,K)*P608)/APELP<a name='1113'>
+             DZ         = RTOPP*(DETA1(K)*PDTOP+DETA2(K)*PD(I,J))<a name='1114'>
+             Z(I,J,K+1) = Z(I,J,K) + DZ<a name='1115'>
+          ENDDO<a name='1116'>
+       ENDDO<a name='1117'>
+    ENDDO<a name='1118'>
+<a name='1119'>
+    <font color=#447700>!     DETERMINE THE MEAN SEA LEVEL PRESSURE, THE VERTICALLY AVERAGED WIND<a name='1120'></font>
+    <font color=#447700>!     SPEED AT ABOUT LEVELS 9 10 AND 11 AND THE DYNAMIC PRESSURES DEFINED<a name='1121'></font>
+    <font color=#447700>!     FROM BASIC BERNOULLI's THEOREM<a name='1122'></font>
+<a name='1123'>
+    DO J = JTS, MIN(JTE,JDE-1)<a name='1124'>
+       DO I = ITS, MIN(ITE,IDE-1)<a name='1125'>
+          TSFC      = T(I,J,1)*(1.+D608*Q(I,J,1)) + LAPSR*(Z(I,J,1)+Z(I,J,2))*0.5<a name='1126'>
+          A         = LAPSR*Z(I,J,1)/TSFC<a name='1127'>
+          MSLP(I,J) = PINT(I,J,1)*(1-A)**COEF2<a name='1128'>
+<a name='1129'>
+          SQWS(I,J) =  (U(I,J,9)*U(I,J,9) + V(I,J,9)*V(I,J,9)           &amp;<a name='1130'>
+              +   U(I,J,10)*U(I,J,10) + V(I,J,10)*V(I,J,10)       &amp;<a name='1131'>
+              +   U(I,J,11)*U(I,J,11) + V(I,J,11)*V(I,J,11))/3.0<a name='1132'>
+<a name='1133'>
+          PDYN(I,J) = 1.1*SQWS(I,J)/2.0 + MEMBRANE_MSLP(I,J)<a name='1134'>
+       ENDDO<a name='1135'>
+    ENDDO<a name='1136'>
+<a name='1137'>
+  END SUBROUTINE STATS_MAKE_MSLP<a name='1138'>
+<a name='1139'>
+  <font color=#447700>!----------------------------------------------------------------------<a name='1140'></font>
+  <font color=#447700>!<a name='1141'></font>
+<A NAME='STATS_FOR_MOVE_123'><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1142'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>STATS_FOR_MOVE_123</font> (XLOC,YLOC,PRES,SM &amp; <A href='../../call_to/STATS_FOR_MOVE_123.html' TARGET='index'>1</A>,<A href='../../call_from/STATS_FOR_MOVE_123.html' TARGET='index'>18</A><a name='1143'>
+#if ( HWRF == 1 )<a name='1144'>
+       ,RESTART,NTIME0                        &amp; <font color=#447700>! zhang's doing<a name='1145'></font>
+       ,MOVED,MVNEST,NTSD,NPHS,CFREQ          &amp; <font color=#447700>! CFREQ*DT*NPHS=540s<a name='1146'></font>
+#else<a name='1147'>
+       ,MOVED,MVNEST,NTSD,NPHS                &amp;<a name='1148'>
+#endif<a name='1149'>
+       ,vortex_tracker                        &amp;<a name='1150'>
+       ,IDS,IDE,JDS,JDE,KDS,KDE               &amp;<a name='1151'>
+       ,IMS,IME,JMS,JME,KMS,KME               &amp;<a name='1152'>
+       ,ITS,ITE,JTS,JTE,KTS,KTE               )<a name='1153'>
+<a name='1154'>
+    <font color=#447700>!**********************************************************************<a name='1155'></font>
+    <font color=#447700>!$$$  SUBPROGRAM DOCUMENTATION BLOCK<a name='1156'></font>
+    <font color=#447700>!                .      .    .<a name='1157'></font>
+    <font color=#447700>! SUBPROGRAM:  STATS_FOR_MOVE_123<a name='1158'></font>
+    <font color=#447700>!   PRGRMMR: gopal<a name='1159'></font>
+    <font color=#447700>!<a name='1160'></font>
+    <font color=#447700>! ABSTRACT:<a name='1161'></font>
+    <font color=#447700>!         THIS ROUTINE COMPUTES SOME STATS REQUIRED FOR AUTOMATIC GRID MOTION <a name='1162'></font>
+    <font color=#447700>!         THERE ARE THREE DIFFERENT MODES:<a name='1163'></font>
+    <font color=#447700>!             vortex_tracker=1 -- follow vortex using pre-2012 HWRF algorithm<a name='1164'></font>
+    <font color=#447700>!             vortex_tracker=2 -- follow child<a name='1165'></font>
+    <font color=#447700>!             vortex_tracker=3 -- follow vortex using HWRF-X algorithm<a name='1166'></font>
+    <font color=#447700>!         NOTE: This routine does not handle vortex_tracker==4.  The<a name='1167'></font>
+    <font color=#447700>!             stats_for_move routine handles that vortex tracker.<a name='1168'></font>
+    <font color=#447700>! PROGRAM HISTORY LOG:<a name='1169'></font>
+    <font color=#447700>!   (inbetween) : gopal, xuejin, young added vortex tracker changes<a name='1170'></font>
+    <font color=#447700>!   late  2010  : sam added vortex_tracker variable to switch between trackers<a name='1171'></font>
+    <font color=#447700>!   late  2010  : sam added a new child tracker (vortex_tracker=2)<a name='1172'></font>
+    <font color=#447700>!   11-08-2011  : renamed to stats_for_move_123, and moved all PRES<a name='1173'></font>
+    <font color=#447700>!                 calculation stuff to another routine.<a name='1174'></font>
+    <font color=#447700>!<a name='1175'></font>
+    <font color=#447700>! USAGE: CALL STATS_FOR_MOVE FROM SUBROUTINE SOLVE_RUNSTREAM FOR NESTED DOMAIN ONLY<a name='1176'></font>
+    <font color=#447700>!<a name='1177'></font>
+    <font color=#447700>! ATTRIBUTES:<a name='1178'></font>
+    <font color=#447700>!   LANGUAGE: FORTRAN 90<a name='1179'></font>
+    <font color=#447700>!   MACHINE : IBM SP<a name='1180'></font>
+    <font color=#447700>!$$$<a name='1181'></font>
+    <font color=#447700>!**********************************************************************<a name='1182'></font>
+    <a name='1183'>
+    USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>MODULE_MODEL_CONSTANTS</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_31"><a name='1184'>
+    USE <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>MODULE_DM</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_43"><a name='1185'>
+    USE <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>MODULE_WRF_ERROR</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_10"><a name='1186'>
+<a name='1187'>
+    IMPLICIT NONE<a name='1188'>
+    <font color=#447700>!<a name='1189'></font>
+    LOGICAL,INTENT(INOUT)                                 :: MVNEST  <font color=#447700>! NMM SWITCH FOR GRID MOTION<a name='1190'></font>
+    LOGICAL,INTENT(IN)                                    :: MOVED<a name='1191'>
+    INTEGER,INTENT(IN)                                    :: vortex_tracker<a name='1192'>
+    INTEGER,INTENT(IN)                                    :: IDS,IDE,JDS,JDE,KDS,KDE   &amp;<a name='1193'>
+         ,IMS,IME,JMS,JME,KMS,KME   &amp;<a name='1194'>
+         ,ITS,ITE,JTS,JTE,KTS,KTE   &amp;<a name='1195'>
+#if ( HWRF == 1 )<a name='1196'>
+    ,NTSD,NPHS,CFREQ<a name='1197'>
+#else<a name='1198'>
+    ,NTSD,NPHS<a name='1199'>
+#endif<a name='1200'>
+    <font color=#447700>!<a name='1201'></font>
+    INTEGER, INTENT(OUT)                                  :: XLOC,YLOC<a name='1202'>
+    INTEGER                                               :: NXLOC,NYLOC<a name='1203'>
+    REAL                                                  :: NSUM1,NSUM2,NSUM3<a name='1204'>
+    REAL, DIMENSION(IMS:IME,JMS:JME),         INTENT(IN)  :: SM,PRES<a name='1205'>
+<a name='1206'>
+    <font color=#447700>!<a name='1207'></font>
+    <font color=#447700>!     LOCAL<a name='1208'></font>
+<a name='1209'>
+    character*256                                         :: message<a name='1210'>
+#if ( HWRF == 1 )<a name='1211'>
+    <font color=#447700>!zhang's doing<a name='1212'></font>
+    INTEGER,INTENT(INOUT)                                 :: NTIME0<a name='1213'>
+    LOGICAL,INTENT(IN)                                    :: RESTART<a name='1214'>
+    REAL :: far,weight,sr2,pmax,xfar,yfar,xshift,yshift<a name='1215'>
+    integer :: cx,cy<a name='1216'>
+#else<a name='1217'>
+    INTEGER,SAVE                                          :: NTIME0<a name='1218'>
+#endif<a name='1219'>
+    INTEGER                                               :: IM,JM,IP,JP<a name='1220'>
+    INTEGER                                               :: I,K,J,XR,YR,DTMOVE,IDUM,JDUM,ITF,JTF<a name='1221'>
+    REAL                                                  :: STMP0,STMP1<a name='1222'>
+    REAL                                                  :: SMSUM,SMOUT,XDIFF,YDIFF,PCUT,PGR<a name='1223'>
+    REAL                                                  :: MINGBL_PRES,MAXGBL_PRES,MAXGBL_SQWS<a name='1224'>
+    REAL                                                  :: MINGBL_MIJ<a name='1225'>
+    REAL, DIMENSION(IMS:IME,JMS:JME)                      :: MIJ<a name='1226'>
+<a name='1227'>
+    <font color=#447700>! Bug in the original code that is intentionally preserved:<a name='1228'></font>
+    <font color=#447700>! IDE is already IDE-1, but the code subtracts 1 again and<a name='1229'></font>
+    <font color=#447700>! uses ITF<a name='1230'></font>
+    ITF=min(ITE,IDE-1)<a name='1231'>
+    JTF=min(JTE,JDE-1)<a name='1232'>
+<a name='1233'>
+    <font color=#447700>!     FILTER OUT PRES AND STORE THAT IN MIJ. THE MAXIMUM VALUE OF<a name='1234'></font>
+    <font color=#447700>!     MIJ GIVES THE STORM CENTER ALSO DO THAT WITHIN A SUB DOMAIN<a name='1235'></font>
+    MAXGBL_PRES=MAXVAL(PRES(ITS:ITF,JTS:JTF))<a name='1236'>
+    CALL <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_MAXVAL'>WRF_DM_MAXVAL</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_MAXVAL_5">(MAXGBL_PRES,IDUM,JDUM)<a name='1237'>
+    MINGBL_PRES=MINVAL(PRES(ITS:ITF,JTS:JTF))<a name='1238'>
+    CALL <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_MINVAL'>WRF_DM_MINVAL</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_MINVAL_2">(MINGBL_PRES,IDUM,JDUM)<a name='1239'>
+    PCUT = 0.5*(MAXGBL_PRES + MINGBL_PRES)<a name='1240'>
+    <font color=#447700>!<a name='1241'></font>
+    IM=IDE/2 - IDE/6<a name='1242'>
+    IP=IDE/2 + IDE/6<a name='1243'>
+    JM=JDE/2 - JDE/4<a name='1244'>
+    JP=JDE/2 + JDE/4<a name='1245'>
+    <font color=#447700>!<a name='1246'></font>
+    DO J = JTS, MIN(JTE,JDE)<a name='1247'>
+       DO I = ITS, MIN(ITE,IDE)<a name='1248'>
+          IF(I .GE. IM .AND. I .LE. IP .AND. J .GE. JM .AND. J .LE. JP  &amp;<a name='1249'>
+               .AND. PCUT .GT. PRES(I,J))THEN<a name='1250'>
+             MIJ(I,J) = PRES(I,J)<a name='1251'>
+          ELSE<a name='1252'>
+             MIJ(I,J) = 105000.0<a name='1253'>
+          ENDIF<a name='1254'>
+       ENDDO<a name='1255'>
+    ENDDO<a name='1256'>
+<a name='1257'>
+    <font color=#447700>!   BEGIN OLD TRACKER CODE ----------------------------------------------------<a name='1258'></font>
+    old_tracker_1: if(vortex_tracker == 1) then<a name='1259'>
+       <font color=#447700>!<a name='1260'></font>
+       <font color=#447700>!     DETERMINE THE LOCATION OF CENTER OF THE CIRCULATION DEFINED BY MIJ AND FIND THE CORRESPONDING PRES <a name='1261'></font>
+       <font color=#447700>!<a name='1262'></font>
+       STMP0=MAXGBL_PRES*100.                 <font color=#447700>! define arbitrary maximum<a name='1263'></font>
+       MINGBL_MIJ=MINVAL(MIJ(ITS:ITF,JTS:JTF))<a name='1264'>
+       DO J = JTS, MIN(JTE,JDE)<a name='1265'>
+          DO I = ITS, MIN(ITE,IDE)<a name='1266'>
+             IF(MIJ(I,J) .EQ. MINGBL_MIJ)THEN<a name='1267'>
+                XLOC=I<a name='1268'>
+                YLOC=J<a name='1269'>
+                STMP0=PRES(I,J)<a name='1270'>
+             ENDIF<a name='1271'>
+          ENDDO<a name='1272'>
+       ENDDO<a name='1273'>
+<a name='1274'>
+       CALL <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_MINVAL'>WRF_DM_MINVAL</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_MINVAL_3">(MINGBL_MIJ,XLOC,YLOC)<a name='1275'>
+       CALL <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_MINVAL'>WRF_DM_MINVAL</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_MINVAL_4">(STMP0,IDUM,JDUM)<a name='1276'>
+    endif old_tracker_1<a name='1277'>
+    <font color=#447700>!   END OLD TRACKER CODE ------------------------------------------------------<a name='1278'></font>
+<a name='1279'>
+<a name='1280'>
+    <font color=#447700>!   BEGIN HWRF-X TRACKER CODE -------------------------------------------------<a name='1281'></font>
+    hwrfx_tracker: if(vortex_tracker == 3) then<a name='1282'>
+       <font color=#447700>!     USE CENTROID TO FIND THE CENTER    Xuejin's doing<a name='1283'></font>
+<a name='1284'>
+       NSUM1=0.0<a name='1285'>
+       NSUM2=0.0<a name='1286'>
+       NSUM3=0.0<a name='1287'>
+       DO J = JTS, MIN(JTE,JDE)<a name='1288'>
+          DO I = ITS, MIN(ITE,IDE)<a name='1289'>
+             IF(I .GE. IM .AND. I .LE. IP .AND. J .GE. JM .AND. J .LE. JP )THEN<a name='1290'>
+                <font color=#447700>!       IF(I .EQ. IM .AND. J .EQ. JM)THEN<a name='1291'></font>
+                NSUM1 = NSUM1 + I*(105000.1 - MIJ(I,J))<a name='1292'>
+                NSUM2 = NSUM2 + J*(105000.1 - MIJ(I,J))<a name='1293'>
+                NSUM3 = NSUM3 + (105000.1 - MIJ(I,J))<a name='1294'>
+                <font color=#447700>!         WRITE(0,*)'TEST',NSUM1,I,J,0.01*(105000.0 - MIJ(I,J)),MIJ(I,J) <a name='1295'></font>
+             ENDIF<a name='1296'>
+          ENDDO<a name='1297'>
+       ENDDO<a name='1298'>
+       NSUM1 = <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_SUM_REAL'>WRF_DM_SUM_REAL</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_SUM_REAL_6">(NSUM1)<a name='1299'>
+       NSUM2 = <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_SUM_REAL'>WRF_DM_SUM_REAL</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_SUM_REAL_7">(NSUM2)<a name='1300'>
+       NSUM3 = <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_SUM_REAL'>WRF_DM_SUM_REAL</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_SUM_REAL_8">(NSUM3)<a name='1301'>
+       NXLOC = NINT(NSUM1/NSUM3)<a name='1302'>
+       NYLOC = NINT(NSUM2/NSUM3)<a name='1303'>
+<a name='1304'>
+       XLOC = NXLOC<a name='1305'>
+       YLOC = NYLOC<a name='1306'>
+<a name='1307'>
+       <font color=#447700>!WRITE(message,*)'NEW CALC',NSUM1,NSUM2,NSUM3<a name='1308'></font>
+       <font color=#447700>!call wrf_debug(1,message)<a name='1309'></font>
+       <font color=#447700>!WRITE(message,*)'XLOC,YLOC',NXLOC,XLOC,NYLOC,YLOC<a name='1310'></font>
+       <font color=#447700>!call wrf_debug(1,message)<a name='1311'></font>
+<a name='1312'>
+    endif hwrfx_tracker<a name='1313'>
+    <font color=#447700>!   END HWRF-X TRACKER CODE ---------------------------------------------------<a name='1314'></font>
+<a name='1315'>
+    <font color=#447700>!   BEGIN OLD TRACKER CODE ----------------------------------------------------<a name='1316'></font>
+    <font color=#447700>!     DETERMINE THE MAXIMUM MIJ AT ABOUT 18 GRID POINTS AWAY FROM THE STORM CENTER <a name='1317'></font>
+    old_tracker_2: if ( vortex_tracker == 1 ) then<a name='1318'>
+<a name='1319'>
+       STMP1=0.0<a name='1320'>
+       DO J = JTS, MIN(JTE,JDE)<a name='1321'>
+          DO I = ITS, MIN(ITE,IDE)<a name='1322'>
+             IF(I .EQ. XLOC+18)THEN<a name='1323'>
+                XR=I<a name='1324'>
+                YR=J<a name='1325'>
+                STMP1=MIJ(I,J)<a name='1326'>
+             ENDIF<a name='1327'>
+          ENDDO<a name='1328'>
+       ENDDO<a name='1329'>
+<a name='1330'>
+       CALL <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_MAXVAL'>WRF_DM_MAXVAL</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_MAXVAL_6">(STMP1,XR,YR)<a name='1331'>
+<a name='1332'>
+       <font color=#447700>!<a name='1333'></font>
+       <font color=#447700>!     DETERMINE IF THE ENTIRE NESTED DOMAIN IS OVER LAND (SM=0)<a name='1334'></font>
+       <font color=#447700>!<a name='1335'></font>
+<a name='1336'>
+       SMSUM = 0.0<a name='1337'>
+       DO J = JTS, MIN(JTE,JDE)<a name='1338'>
+          DO I = ITS, MIN(ITE,IDE)<a name='1339'>
+             SMSUM = SMSUM + SM(I,J)<a name='1340'>
+          ENDDO<a name='1341'>
+       ENDDO<a name='1342'>
+<a name='1343'>
+       SMOUT=<A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_SUM_REAL'>WRF_DM_SUM_REAL</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_SUM_REAL_9">(SMSUM)/(IDE*JDE)<a name='1344'>
+<a name='1345'>
+       <font color=#447700>!     STOP GRID MOTION. AVOID MOVING TOO RAPID GRID MOTION, SAY SOMETHING LIKE EVERY<a name='1346'></font>
+       <font color=#447700>!     OTHER TIME STEP OR SO  <a name='1347'></font>
+<a name='1348'>
+       PGR=STMP1-STMP0<a name='1349'>
+    endif old_tracker_2<a name='1350'>
+    <font color=#447700>!   END OLD TRACKER CODE ------------------------------------------------<a name='1351'></font>
+<a name='1352'>
+<a name='1353'>
+    XDIFF=ABS(XLOC - IDE/2)<a name='1354'>
+    YDIFF=ABS(YLOC - JDE/2)<a name='1355'>
+#if ( HWRF == 1 )<a name='1356'>
+    <font color=#447700>!zhang's doing<a name='1357'></font>
+    IF((.NOT.RESTART .AND. NTSD==0) .OR. MOVED)NTIME0=NTSD<a name='1358'>
+#else<a name='1359'>
+    IF(NTSD==0 .OR. MOVED)NTIME0=NTSD<a name='1360'>
+#endif<a name='1361'>
+    DTMOVE=NTSD-NTIME0                    <font color=#447700>! TIME INTERVAL SINCE THE PREVIOUS MOVE<a name='1362'></font>
+    <font color=#447700>!<a name='1363'></font>
+    <font color=#447700>!    DECIDE IF NEST MOTION SHOULD HAPPEN<a name='1364'></font>
+    <font color=#447700>!<a name='1365'></font>
+    if(vortex_tracker == 3) then<a name='1366'>
+       <font color=#447700>! Using HWRF-X tracker.  Move if centroid moved.<a name='1367'></font>
+       IF(XDIFF .GE. 1 .OR. YDIFF .GE. 2) THEN<a name='1368'>
+          MVNEST=.TRUE.<a name='1369'>
+          NTIME0=NTSD<a name='1370'>
+       ELSE<a name='1371'>
+          <font color=#447700>! Centroid has not moved one parent gridpoint yet.<a name='1372'></font>
+          MVNEST=.FALSE.<a name='1373'>
+       ENDIF<a name='1374'>
+    elseif(vortex_tracker==2) then<a name='1375'>
+       <font color=#447700>! Tracking child domain.  Nest motion check happens in<a name='1376'></font>
+       <font color=#447700>! direction_of_move2, but we MUST set mvnest=true here:<a name='1377'></font>
+       MVNEST=.TRUE.<a name='1378'>
+    elseif(vortex_tracker==1) then<a name='1379'>
+       <font color=#447700>! Using old HWRF tracker.  Decide if it wants to move.<a name='1380'></font>
+       IF(DTMOVE .LE. 45 .OR. PGR .LE. 200.)THEN<a name='1381'>
+          WRITE(message,*)'SUSPEND MOTION: SMALL DTMOVE OR WEAK PGF:','DTMOVE=',DTMOVE,'PGR=',PGR<a name='1382'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_64">(1,message)<a name='1383'>
+          MVNEST=.FALSE.                               <font color=#447700>! SET STATIC GRID<a name='1384'></font>
+       ELSE IF(STMP0 .GE. STMP1)THEN<a name='1385'>
+          WRITE(message,*)'SUSPEND MOTION: THERE IS NO VORTEX IN THE DOMAIN:','STMP0=',STMP0,'STMP1=',STMP1<a name='1386'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_65">(1,message)<a name='1387'>
+          MVNEST=.FALSE.<a name='1388'>
+       ELSE IF(XDIFF .GT. 24 .OR. YDIFF .GT. 24)THEN<a name='1389'>
+          WRITE(message,*)'SUSPEND MOTION: LOST VORTEX ','DTMOVE=',DTMOVE,'XDIFF=',XDIFF,'YDIFF=',YDIFF<a name='1390'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_66">(1,message)<a name='1391'>
+          MVNEST=.FALSE.<a name='1392'>
+       ELSE IF(SMOUT .LE. 0.2 .AND. XDIFF .GT. 12 .AND. YDIFF .GT. 12)THEN<a name='1393'>
+          WRITE(message,*)'SUSPEND MOTION: VORTEX LOST OVER LAND ','DTMOVE=',DTMOVE,'XDIFF=',XDIFF,'YDIFF=',YDIFF<a name='1394'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_67">(1,message)<a name='1395'>
+          MVNEST=.FALSE.<a name='1396'>
+       ELSE IF(SMOUT .LE. 0.2 .AND. PGR .LE. 400.)THEN<a name='1397'>
+          WRITE(message,*)'SUSPEND MOTION: VORTEX WEAK OVER LAND ','SMOUT=',SMOUT,'PGR=',PGR<a name='1398'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_68">(1,message)<a name='1399'>
+          MVNEST=.FALSE.<a name='1400'>
+       ELSE IF(SMOUT .LE. 0.2 .AND. DTMOVE .GE. 1500)THEN<a name='1401'>
+          WRITE(message,*)'SUSPEND MOTION: STOP MOTION  OVER LAND','SMOUT=',SMOUT,'DTMOVE=',DTMOVE<a name='1402'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_nmm/module_STATS_FOR_MOVE.F.html#STATS_FOR_MOVE_123' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_69">(1,message)<a name='1403'>
+          MVNEST=.FALSE.<a name='1404'>
+       ELSE<a name='1405'>
+          MVNEST=.TRUE.<a name='1406'>
+       ENDIF<a name='1407'>
+    else<a name='1408'>
+       <font color=#447700>! Not using any valid trackers, so set MVNEST to false.<a name='1409'></font>
+       MVNEST=.false.<a name='1410'>
+    endif<a name='1411'>
+<a name='1412'>
+    RETURN<a name='1413'>
+<a name='1414'>
+  END SUBROUTINE STATS_FOR_MOVE_123<a name='1415'>
+<a name='1416'>
+<font color=#447700>! End "if NMM_NEST == 1"<a name='1417'></font>
+#endif<a name='1418'>
+<a name='1419'>
+END module module_stats_for_move<a name='1420'>
+</pre></body></html>

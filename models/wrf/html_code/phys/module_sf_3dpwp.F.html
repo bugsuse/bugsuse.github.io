@@ -1,0 +1,996 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:MODEL_LAYER:PHYSICS<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<A NAME='MODULE_SF_3DPWP'><A href='../../html_code/phys/module_sf_3dpwp.F.html#MODULE_SF_3DPWP' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='4'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_sf_3dpwp</font> <A href='../../call_to/MODULE_SF_3DPWP.html' TARGET='index'>1</A><a name='5'>
+<a name='6'>
+CONTAINS<a name='7'>
+<a name='8'>
+<font color=#447700>!-------------------------------------------------------------------          <a name='9'></font>
+<font color=#447700>! cyl: Implemented a three-dimensional ocean model (DPWP)    Chiaying Lee RSMAS/UM        <a name='10'></font>
+<font color=#447700>!---------------------------------------------------------------------------          <a name='11'></font>
+<A NAME='DPWP'><A href='../../html_code/phys/module_sf_3dpwp.F.html#DPWP' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='12'>
+       <font color=#993300>SUBROUTINE </font><font color=#cc0000>DPWP</font>   (ims,ime, jms,jme, kms,kme,its,ite, jts,jte, kts,kte, &amp; <A href='../../call_to/DPWP.html' TARGET='index'>1</A>,<A href='../../call_from/DPWP.html' TARGET='index'>3</A><a name='13'>
+                          ids,ide, jds,jde, kds,kde,okms, okme,                &amp;<a name='14'>
+                          om_tmp,om_s,om_u, om_v, om_density, om_depth, om_ml,   &amp;<a name='15'>
+                          om_lat, om_lon,                                      &amp;<a name='16'>
+                          HFX, QFX, GSW, GLW, UST, U_PHY, V_PHY,               &amp;<a name='17'>
+                          STBOLT, DELTSM, TSK, LH, XLAND,                      &amp;<a name='18'>
+                          rdx, rdy, msfu, msfv, msft,xtime,om_tini,om_sini,id,omdt)<a name='19'>
+<font color=#447700>!----------------------------------------------------------------------------<a name='20'></font>
+        implicit none<a name='21'>
+<font color=#447700>!----------------------------------------------------------------------------<a name='22'></font>
+<font color=#447700>! Subroutine DPWP is a three-dimensional full physics ocean circulation model based <a name='23'></font>
+<font color=#447700>! on Price et al. (1994, JPO). This ocean model is coupled with WRF    <a name='24'></font>
+<font color=#447700>! at every ocean time step. It is developed as a part of the University of Miami Coupled Model <a name='25'></font>
+<font color=#447700>! (UMCM, Chen et al. 2012, JAS). A detailed description of the coupling process can<a name='26'></font>
+<font color=#447700>! be found in Lee and Chen (2013, MWR). <a name='27'></font>
+<font color=#447700>!<a name='28'></font>
+<font color=#447700>! This ocean model can be used with multi-nested grids the same manner as in WRF. It is recommended <a name='29'></font>
+<font color=#447700>! to use grid spacing &gt; 3 km for the ocean model while WRF can be configured at smaller    <a name='30'></font>
+<font color=#447700>! grid spacing then the ocean model.<a name='31'></font>
+<font color=#447700>!<a name='32'></font>
+<font color=#447700>! The ocean model can be initialized with observed satellite SST or global model analyzed SST. <a name='33'></font>
+<font color=#447700>! The and upper ocean temperature and sanility profiles can be initialized from climatology, <a name='34'></font>
+<font color=#447700>! in-situ observations, and global ocean model analysis fields.<a name='35'></font>
+<font color=#447700>!<a name='36'></font>
+<font color=#447700>!-- om_tmp	3-dimensional ocean temperature (k)<a name='37'></font>
+<font color=#447700>!-- om_s	3-dimensional ocean salinity (psu) <a name='38'></font>
+<font color=#447700>!-- om_u	3-dimensional ocean current in x-direction (ms-1)<a name='39'></font>
+<font color=#447700>!-- om_v	3-dimensional ocean current in y-direction (ms-1)<a name='40'></font>
+<font color=#447700>!-- om_depth	3-dimensional ocean depth (m)<a name='41'></font>
+<font color=#447700>!-- om_ml	ocean mixed layer depth (m)<a name='42'></font>
+<font color=#447700>!-- om_tini	temperature reference profile based on ocean initial condition (k)<a name='43'></font>
+<font color=#447700>!-- om_sini	salinity reference profile based on ocean initial condition (psu)<a name='44'></font>
+<font color=#447700>!-- om_dt 	ocean timestep (s)<a name='45'></font>
+<font color=#447700>!-------------------------------------------------------------------------------   <a name='46'></font>
+<a name='47'>
+        <font color=#447700>!logical number to control the dynamics of ocean model<a name='48'></font>
+        integer :: noasym, nonlcl, nodeep, nopg, idia<a name='49'>
+        <font color=#447700>! spatial variables<a name='50'></font>
+        INTEGER , INTENT(IN)        :: id<a name='51'>
+        INTEGER,  INTENT(IN ) ::    ids,ide, jds,jde, kds,kde,  &amp;<a name='52'>
+                                    ims,ime, jms,jme, kms,kme,  &amp;<a name='53'>
+                                    its,ite, jts,jte, kts,kte<a name='54'>
+        REAL ,                                        INTENT(IN   ) :: rdx,  &amp;<a name='55'>
+                                                                  rdy,xtime<a name='56'>
+        integer :: i_start, i_end, j_start, j_end<a name='57'>
+        <font color=#447700>!physical variables from WRF<a name='58'></font>
+        REAL , DIMENSION( ims:ime , jms:jme ) ,         INTENT(IN   ) :: msfu,  &amp;<a name='59'>
+                                                                    msfv,  &amp;<a name='60'>
+                                                                    msft<a name='61'>
+        real    :: mrdx, mrdy<a name='62'>
+        real    :: pscale, hascale, vascale<a name='63'>
+        REAL , DIMENSION( ims:ime , jms:jme ) , INTENT(IN   ) ::HFX, QFX, LH, GSW, GLW, UST,&amp;<a name='64'>
+                                                               XLAND<a name='65'>
+        REAL , DIMENSION( ims:ime , jms:jme ) , INTENT(INOUT) :: TSK<a name='66'>
+        REAL, INTENT(IN   ) :: STBOLT, DELTSM<a name='67'>
+        REAL , DIMENSION( ims:ime ,kms:kme, jms:jme ),INTENT(IN   ) :: U_PHY, V_PHY<a name='68'>
+        <font color=#447700>!constant variables<a name='69'></font>
+        real    :: cp, crbc, cadv, ddx, g<a name='70'>
+        real    :: d2r, ro, rhoair, cpw,  rb, rg, udrag, ucon<a name='71'>
+        real , dimension (ims:ime, jms:jme) :: f, dml, tr, sr<a name='72'>
+        real :: beta1,beta2<a name='73'>
+        real    , dimension (ims:ime, jms:jme) :: dr, alpha, beta<a name='74'>
+        integer :: i, j, k, im, ip,jm,jp,km,kp,kk<a name='75'>
+        integer :: ii, ntss<a name='76'>
+        <font color=#447700>!ocean variables ::<a name='77'></font>
+        integer, intent(in) :: okms, okme<a name='78'>
+        real, dimension(ims:ime, okms:okme, jms:jme), INTENT(INOUT):: OM_TMP,OM_S,OM_U,OM_V,OM_DEPTH<a name='79'>
+        real, dimension(ims:ime, okms:okme, jms:jme), INTENT(IN):: OM_TINI,OM_SINI<a name='80'>
+        real, dimension(ims:ime, okms:okme, jms:jme), INTENT(INOUT):: OM_DENSITY<a name='81'>
+        real, dimension(ims:ime, okms:okme, jms:jme):: OM_W<a name='82'>
+        real, dimension(ims:ime, jms:jme),INTENT(INOUT):: OM_ML, OM_LAT, OM_LON<a name='83'>
+        real, dimension(ims:ime, okms:okme, jms:jme):: tt, st, ut, vt, t9, s9, u9,v9<a name='84'>
+        real, dimension(ims:ime, okms:okme, jms:jme):: pp, tentm, t0, s0, u0,v0<a name='85'>
+        real, dimension(ims:ime, okms:okme, jms:jme):: dz, tham, tvam<a name='86'>
+        real :: divu, divv, tha, sha, uha, vha, tva, vva, sva, uva, pgx, pgy<a name='87'>
+        real, dimension(okms:okme) :: tb5, sb5, ub5, vb5, tb4, sb4, ub4, vb4<a name='88'>
+        real, dimension(ims:ime,okms:okme, jms:jme) :: trr, srr<a name='89'>
+        real, dimension(ims:ime, okms:okme, jms:jme)::bbeta, aalpha,sg<a name='90'>
+        <font color=#447700>! other variables<a name='91'></font>
+        real :: dt,  dti,dt7,vs, us,omdt<a name='92'>
+        real :: dtdy, dtdx, dsdy, dsdx, dudy, dudx, dvdy, dvdx, wavg, &amp;<a name='93'>
+                dtdz, dsdz, dudz, dvdz<a name='94'>
+        integer :: iupw, kvs, kus, ia, ja<a name='95'>
+<a name='96'>
+        i_start = max(its,ids+1)<a name='97'>
+        i_end   = min(ite,ide-2)<a name='98'>
+        j_start = max(jts,jds+1)<a name='99'>
+        j_end   = min(jte,jde-2)<a name='100'>
+<a name='101'>
+<a name='102'>
+       print*,'3DPWP domain',id,' run ocean'<a name='103'>
+<a name='104'>
+       dtdy = 0.0<a name='105'>
+       dtdx = 0.0<a name='106'>
+       dsdy = 0.0<a name='107'>
+       dudy = 0.0<a name='108'>
+       dudx = 0.0<a name='109'>
+       dsdx = 0.0<a name='110'>
+       dvdy = 0.0<a name='111'>
+       dvdx = 0.0<a name='112'>
+       wavg = 0.0<a name='113'>
+       dtdz = 0.0<a name='114'>
+       dsdz = 0.0<a name='115'>
+       dudz = 0.0<a name='116'>
+       dvdz = 0.0<a name='117'>
+       divu = 0.0<a name='118'>
+       divv = 0.0<a name='119'>
+       tha = 0.0<a name='120'>
+       sha = 0.0<a name='121'>
+       uha = 0.0<a name='122'>
+       vha = 0.0<a name='123'>
+       tva = 0.0<a name='124'>
+       vva = 0.0<a name='125'>
+       sva = 0.0<a name='126'>
+       uva = 0.0<a name='127'>
+       pgx = 0.0<a name='128'>
+       pgy = 0.0 <a name='129'>
+       <font color=#447700>!----------------------------------------------------------------<a name='130'></font>
+       <font color=#447700>!  these flags control the dynamics of the model:<a name='131'></font>
+       <font color=#447700>!<a name='132'></font>
+       <font color=#447700>!  noasym = 1 shuts off the asymmetry of the storm winds<a name='133'></font>
+       <font color=#447700>!         = 2 also shuts off radial wind component of storm winds<a name='134'></font>
+       <font color=#447700>!  nonlcl = 1 shuts off horizontal advection,<a name='135'></font>
+       <font color=#447700>!         = 2 shuts off horizontal and vertical advection,<a name='136'></font>
+       <font color=#447700>!         = 3 above plus applies spatially constant wind stress<a name='137'></font>
+       <font color=#447700>!                (useful for testing 1-d dynamics)<a name='138'></font>
+       <font color=#447700>!  nodeep = 1 shuts off ml deepening by entrainment<a name='139'></font>
+       <font color=#447700>!  nopg = 1 shuts off pressure gradients<a name='140'></font>
+       <font color=#447700>!  idia = 1 turns on diagnostics<a name='141'></font>
+       <font color=#447700>! to calculate 1D pwp just choose nonlcl = 2, and nopg = 1<a name='142'></font>
+       <font color=#447700>!<a name='143'></font>
+       <font color=#447700>!  set flags to default values<a name='144'></font>
+       noasym = 0<a name='145'>
+       nonlcl = 0<a name='146'>
+       nodeep = 0<a name='147'>
+       nopg = 0<a name='148'>
+       idia = 0<a name='149'>
+       <font color=#447700>!  set some scales that are used for diagnostics -  be careful with these !!<a name='150'></font>
+       pscale = 1.0<a name='151'>
+       if(nopg.eq.1) pscale = 0.<a name='152'>
+       hascale = 1.0<a name='153'>
+       if(nonlcl.ge.1) hascale = 0.<a name='154'>
+       vascale = 1.0<a name='155'>
+       if(nonlcl.ge.2) then<a name='156'>
+         vascale = 0.<a name='157'>
+         hascale = 0.<a name='158'>
+       end if<a name='159'>
+       <font color=#447700>!------------------------------------------------------------------<a name='160'></font>
+<a name='161'>
+       <font color=#447700>! calculate the expansion coefficient<a name='162'></font>
+       d2r = 2*3.14159/360.<a name='163'>
+       g = 9.8<a name='164'>
+       ro = 1.024e3   <font color=#447700>! kg/m3<a name='165'></font>
+       rhoair = 1<a name='166'>
+       cpw = 4183.3<a name='167'>
+       beta1 = .6<a name='168'>
+       beta2 = 20.0<a name='169'>
+       rb = 0.65<a name='170'>
+       rg = 0.25<a name='171'>
+       cp = 1.5<a name='172'>
+  <a name='173'>
+       do i = i_start-1, i_end+1<a name='174'>
+         do j = j_start-1, j_end+1<a name='175'>
+          f (i,j)= 2.0*7.29e-5*sin(om_lat(i,j)*d2r)<a name='176'>
+          if (om_tmp(i,1,j) .gt. 0.0) then<a name='177'>
+            do k = 1,okme<a name='178'>
+               trr(i,k,j) = om_tini(i,k,j)<a name='179'>
+               srr(i,k,j) = om_sini(i,k,j)<a name='180'>
+               aalpha(i,k,j) = <A href='../../html_code/phys/module_sf_3dpwp.F.html#SGT'>sgt</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#DPWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SGT_1">(trr(i,k,j)+0.5, srr(i,k,j), sg(i,k,j))- &amp;<a name='181'>
+               sgt(trr(i,k,j)-0.5,srr(i,k,j), sg(i,k,j))<a name='182'>
+               bbeta(i,k,j) = <A href='../../html_code/phys/module_sf_3dpwp.F.html#SGT'>sgt</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#DPWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SGT_2">(trr(i,k,j), srr(i,k,j)+0.5, sg(i,k,j) )-sgt(trr(i,k,j),srr(i,k,j)-0.5, sg(i,k,j))<a name='183'>
+            enddo<a name='184'>
+          endif<a name='185'>
+         enddo<a name='186'>
+       enddo<a name='187'>
+<a name='188'>
+       udrag = 9999.<a name='189'>
+       ucon = 0.<a name='190'>
+       <font color=#447700>!set time step<a name='191'></font>
+       dt =omdt*60.0<a name='192'>
+       dti = 2.*dt<a name='193'>
+       ntss =2<a name='194'>
+       do  1111 ii = 1, ntss<a name='195'>
+         if (ii .eq. 2) go to 88<a name='196'>
+         do i= i_start-1, i_end+1<a name='197'>
+          do j = j_start-1, j_end+1<a name='198'>
+           do k = 1, okme<a name='199'>
+              tt(i,k,j) = 0.0<a name='200'>
+              ut(i,k,j) = 0.0<a name='201'>
+              vt(i,k,j) = 0.0<a name='202'>
+              st(i,k,j) = 0.0<a name='203'>
+              t9(i,k,j) = om_tmp(i,k,j)<a name='204'>
+              u9(i,k,j) = om_u(i,k,j)<a name='205'>
+              v9(i,k,j) = om_v(i,k,j)<a name='206'>
+              s9(i,k,j) = om_s(i,k,j)<a name='207'>
+              t0(i,k,j) = om_tmp(i,k,j)<a name='208'>
+              u0(i,k,j) = om_u(i,k,j)<a name='209'>
+              v0(i,k,j) = om_v(i,k,j)<a name='210'>
+              s0(i,k,j) = om_s(i,k,j)<a name='211'>
+              om_w(i,k,j) = 0.0<a name='212'>
+              pp(i,k,j) = 0.0<a name='213'>
+              tham(i,k,j) = 0.0<a name='214'>
+              tentm(i,k,j) = 0.0<a name='215'>
+            enddo<a name='216'>
+          enddo<a name='217'>
+         enddo<a name='218'>
+<a name='219'>
+        go to 89<a name='220'>
+<font color=#447700>!second iteration<a name='221'></font>
+     88 continue<a name='222'>
+        dti = dt/2.<a name='223'>
+         do i = i_start-1, i_end+1<a name='224'>
+          do j = j_start-1, j_end+1<a name='225'>
+           do k = 1, okme<a name='226'>
+              t0(i,k,j) = t9(i,k,j)<a name='227'>
+              u0(i,k,j) = u9(i,k,j)<a name='228'>
+              v0(i,k,j) = v9(i,k,j)<a name='229'>
+              s0(i,k,j) = s9(i,k,j)<a name='230'>
+              om_w(i,k,j) = 0.0<a name='231'>
+              pp(i,k,j) = 0.0<a name='232'>
+              tham(i,k,j) = 0.0<a name='233'>
+              tentm(i,k,j) = 0.0<a name='234'>
+           enddo<a name='235'>
+          enddo<a name='236'>
+         enddo<a name='237'>
+<a name='238'>
+    89 continue<a name='239'>
+      do 635 j = j_start, j_end<a name='240'>
+        do 635 i = i_start, i_end<a name='241'>
+                                                                                                      <a name='242'>
+         jp = j + 1<a name='243'>
+         jm = j - 1<a name='244'>
+         ip = i + 1<a name='245'>
+         im = i - 1<a name='246'>
+<a name='247'>
+       if (om_tmp(ip,1,j) .le. 0 .or. om_tmp(im,1,j) .le. 0 .or. om_tmp(i,1,jp) .le. 0 .or. om_tmp(i,1,jm) .le.0 ) then<a name='248'>
+<a name='249'>
+         do k = 1, okme<a name='250'>
+          om_w(i,k,j) = 0.0<a name='251'>
+         enddo<a name='252'>
+       else<a name='253'>
+         <a name='254'>
+         do 6381 k = 1, okme<a name='255'>
+           mrdx = rdx* msfu(i,j)<a name='256'>
+           mrdy = rdy* msfv(i,j)<a name='257'>
+           if (k .eq. 1) then<a name='258'>
+            dz(i,k,j) = om_depth(i,k,j)<a name='259'>
+           else<a name='260'>
+            dz(i,k,j) = om_depth(i,k,j)-om_depth(i,k-1,j)<a name='261'>
+           endif<a name='262'>
+           divu  = dz(i,k,j)*(om_u(ip,k,j)-om_u(im,k,j))*mrdx/2.0<a name='263'>
+           divv  = dz(i,k,j)*(om_v(i,k,jp)-om_v(i,k,jm))*mrdy/2.0<a name='264'>
+           om_w(i,k,j) = divu+divv<a name='265'>
+    6381 continue<a name='266'>
+          do k = 2, okme<a name='267'>
+           om_w(i,k,j) = om_w(i,k,j)+om_w(i,k-1,j)<a name='268'>
+          enddo<a name='269'>
+                                                                                                      <a name='270'>
+       endif<a name='271'>
+  635 continue<a name='272'>
+      do 6328 k = 1, okme<a name='273'>
+        if (jts .eq. jds) then<a name='274'>
+          do  i = its, ite<a name='275'>
+             om_w(i,k,jts) = om_w(i,k,jts+1)<a name='276'>
+          enddo<a name='277'>
+        endif<a name='278'>
+        if (jte .eq. jde-1) then<a name='279'>
+          do  i = its, ite<a name='280'>
+            om_w(i,k,jte) =  om_w(i,k,jte-1)<a name='281'>
+          enddo<a name='282'>
+        endif<a name='283'>
+        if (its .eq. ids) then<a name='284'>
+          do  j = jts, jte<a name='285'>
+             om_w(its,k,j) = om_w(its+1,k,j)<a name='286'>
+          enddo<a name='287'>
+        endif<a name='288'>
+        if (ite.eq. ide-1) then<a name='289'>
+          do  j = jts, jte<a name='290'>
+            om_w(ite,k,j) = om_w(ite-1,k,j)<a name='291'>
+          enddo<a name='292'>
+        endif<a name='293'>
+        if(its.eq. ids.and.jts .eq. jds) then<a name='294'>
+          om_w(its,k,jts) = om_w(its+1,k,jts+1)<a name='295'>
+        endif<a name='296'>
+        if(its.eq. ids.and.jte .eq. jde-1) then<a name='297'>
+          om_w(its,k,jte) = om_w(its+1,k,jte-1)<a name='298'>
+        endif<a name='299'>
+        if(ite.eq. ide-1.and.jte .eq. jde-1) then<a name='300'>
+          om_w(ite,k,jte) = om_w(ite-1,k,jte-1)<a name='301'>
+        endif<a name='302'>
+        if(ite.eq. ide-1.and.jts .eq. jds) then<a name='303'>
+          om_w(ite,k,jts) = om_w(ite-1,k,jts+1)<a name='304'>
+        endif<a name='305'>
+<a name='306'>
+<a name='307'>
+ 6328 continue<a name='308'>
+<font color=#447700>! compute the pressure perturbation by integrating<a name='309'></font>
+      do 6327 i = i_start-1, i_end+1<a name='310'>
+      do 6327 j = j_start-1, j_end+1<a name='311'>
+        do k = 1, okme<a name='312'>
+           if (k .eq. 1) then<a name='313'>
+             dz(i,k,j) = om_depth(i,k,j)<a name='314'>
+           else<a name='315'>
+             dz(i,k,j) = om_depth(i,k,j)-om_depth(i,k-1,j)<a name='316'>
+           endif<a name='317'>
+        enddo<a name='318'>
+<a name='319'>
+        if (om_tmp(i,1,j) .gt. 0) then <a name='320'>
+           pp (i,okme,j) = -g*dz(i,okme,j)*(aalpha(i,okme,j)*(om_tmp(i,okme,j)-trr(i,okme,j))+ &amp;<a name='321'>
+                           bbeta(i,okme,j)*(om_s(i,okme,j)-srr(i,okme,j)))<a name='322'>
+<a name='323'>
+           do 632 k = 1,okme-1<a name='324'>
+             kk = okme - k<a name='325'>
+             pp(i,kk,j) = -g*dz(i,kk,j)*(aalpha(i,kk,j)*(om_tmp(i,kk,j)-trr(i,kk,j))+ &amp;<a name='326'>
+                          bbeta(i,kk,j)*(om_s(i,kk,j)-srr(i,kk,j)))+pp(i,kk+1,j)<a name='327'>
+<a name='328'>
+   632     continue<a name='329'>
+        endif <a name='330'>
+<a name='331'>
+<a name='332'>
+ 6327 continue<a name='333'>
+        do 410 j = j_start, j_end<a name='334'>
+           jp = j+1<a name='335'>
+           jm = j-1<a name='336'>
+           do 410 i = i_start, i_end<a name='337'>
+              ip = i + 1<a name='338'>
+              im = i - 1<a name='339'>
+              do 420 k = 1 ,okme<a name='340'>
+                 mrdx = rdx* msfu(i,j)<a name='341'>
+                 mrdy = rdy* msfv(i,j)<a name='342'>
+                 tha = 0.<a name='343'>
+                 sha = 0.<a name='344'>
+                 uha = 0.<a name='345'>
+                 vha = 0.<a name='346'>
+<a name='347'>
+                 tva = 0.<a name='348'>
+                 sva = 0.<a name='349'>
+                 vva = 0.<a name='350'>
+                 uva = 0.<a name='351'>
+<a name='352'>
+                 pgx = 0.<a name='353'>
+                 pgy = 0.<a name='354'>
+<font color=#447700>! estimate the tendencies due to horizontal advection<a name='355'></font>
+                 IUPW = 1<a name='356'>
+                 if (IUPW .eq. 1) then<a name='357'>
+                    vs = sign(1.,om_v(i,k,j))<a name='358'>
+                    kvs = -1* nint(vs)<a name='359'>
+                    us = sign(1.,om_u(i,k,j))<a name='360'>
+                    kus = -1* nint(us)<a name='361'>
+                    dtdy = vs*(om_tmp(i,k,j)-om_tmp(i,k,j+kvs))*mrdy<a name='362'>
+                    dtdx = us*(om_tmp(i,k,j)-om_tmp(i+kus,k,j))*mrdx<a name='363'>
+<a name='364'>
+<a name='365'>
+                    dsdy = vs*(om_s(i,k,j)-om_s(i,k,j+kvs))*mrdy<a name='366'>
+                    dsdx = us*(om_s(i,k,j)-om_s(i+kus,k,j))*mrdx<a name='367'>
+<a name='368'>
+<a name='369'>
+                    dudy = vs*(om_u(i,k,j)-om_u(i,k,j+kvs))*mrdy<a name='370'>
+                    dudx = us*(om_u(i,k,j)-om_u(i+kus,k,j))*mrdx<a name='371'>
+<a name='372'>
+<a name='373'>
+                    dvdy = vs*(om_v(i,k,j)-om_v(i,k,j+kvs))*mrdy<a name='374'>
+                    dvdx = us*(om_v(i,k,j)-om_v(i+kus,k,j))*mrdx<a name='375'>
+<a name='376'>
+                    tha =-(om_v(i,k,j)*dtdy + om_u(i,k,j)*dtdx)<a name='377'>
+                    sha =-(om_v(i,k,j)*dsdy + om_u(i,k,j)*dsdx)<a name='378'>
+                    uha =-(om_v(i,k,j)*dudy + om_u(i,k,j)*dudx)<a name='379'>
+                    vha =-(om_v(i,k,j)*dvdy + om_u(i,k,j)*dvdx)<a name='380'>
+                 endif<a name='381'>
+<font color=#447700>! estimate the tendencies due to vertical advection<a name='382'></font>
+<font color=#447700>! skip if k = 1, assume that there is no vertical advection at surface<a name='383'></font>
+<a name='384'>
+                 if ( k .eq. 1) go to 3323<a name='385'>
+                    wavg = 0.5*(om_w(i,k-1,j) + om_w(i,k,j))<a name='386'>
+                                                                                                      <a name='387'>
+                    km = k - 1<a name='388'>
+                    kp = k + 1<a name='389'>
+                    if (k .eq. okme) kp = k<a name='390'>
+                       dtdz = (om_tmp(i,km,j)-om_tmp(i,kp,j))/(om_depth(i,km,j)-om_depth(i,kp,j))<a name='391'>
+                       dsdz = (om_s(i,km,j)-om_s(i,kp,j))/(om_depth(i,km,j)-om_depth(i,kp,j))<a name='392'>
+                       dudz = (om_u(i,km,j)-om_u(i,kp,j))/(om_depth(i,km,j)-om_depth(i,kp,j))<a name='393'>
+                       dvdz = (om_v(i,km,j)-om_v(i,kp,j))/(om_depth(i,km,j)-om_depth(i,kp,j))<a name='394'>
+<a name='395'>
+<a name='396'>
+                       tva =wavg*dtdz<a name='397'>
+                       sva =wavg*dsdz<a name='398'>
+                       uva =wavg*dudz<a name='399'>
+                       vva =wavg*dvdz<a name='400'>
+  3323           continue<a name='401'>
+<a name='402'>
+<a name='403'>
+<font color=#447700>!calculate pressure gradient<a name='404'></font>
+                 pgx = (pp(ip,k,j) - pp(im,k,j))*mrdx/2.0<a name='405'>
+                 pgy = (pp(i,k,jp) - pp(i,k,jm))*mrdy/2.0<a name='406'>
+<a name='407'>
+                 if (( i .eq. its .and. its .eq. ids) .or. (i .eq. ite .and. ite .eq. ide-1) .or.    &amp;<a name='408'>
+                    ( j .eq. jts .and. jts .eq. jds) .or. (j .eq. jte .and. jte .eq. jde-1))  then<a name='409'>
+<a name='410'>
+<a name='411'>
+                     tt(i,k,j) = tt(i,k,j)<a name='412'>
+                     st(i,k,j) = st(i,k,j)<a name='413'>
+                     ut(i,k,j) = ut(i,k,j)<a name='414'>
+                     vt(i,k,j) = vt(i,k,j)<a name='415'>
+                 else<a name='416'>
+<a name='417'>
+<a name='418'>
+                     tt(i,k,j) = tt(i,k,j) + tha*hascale + tva*vascale<a name='419'>
+                     st(i,k,j) = st(i,k,j) + sha*hascale + sva*vascale<a name='420'>
+                     ut(i,k,j) = ut(i,k,j) + uha*hascale + uva*vascale  - pgx*pscale/1023.0<a name='421'>
+                     vt(i,k,j) = vt(i,k,j) + vha*hascale + vva*vascale  - pgy*pscale/1023.0<a name='422'>
+                 endif                                                                                           <a name='423'>
+    420       continue<a name='424'>
+<a name='425'>
+    410 continue<a name='426'>
+                                                                                                      <a name='427'>
+<a name='428'>
+<a name='429'>
+        do 700 k = 1, okme<a name='430'>
+           if (jts .eq. jds)then<a name='431'>
+              ja = 1<a name='432'>
+              do 794 i = its, ite<a name='433'>
+                crbc = -cp*rdy*msfv(i,j)<a name='434'>
+                j = jts<a name='435'>
+                tt(i,k,j) = tt(i,k,j) + crbc*(om_tmp(i,k,j) - om_tmp(i, k, j+ja))<a name='436'>
+                st(i,k,j) = st(i,k,j) + crbc*(om_s(i,k,j) - om_s(i, k, j+ja))<a name='437'>
+                ut(i,k,j) = ut(i,k,j) + crbc*(om_u(i,k,j) - om_u(i, k, j+ja))<a name='438'>
+                vt(i,k,j) = vt(i,k,j) + crbc*(om_v(i,k,j) - om_v(i, k, j+ja))<a name='439'>
+    794       continue<a name='440'>
+           endif<a name='441'>
+           ja = -1<a name='442'>
+           if (jte .eq. jde-1)then<a name='443'>
+              do 795 i = its, ite<a name='444'>
+                 crbc = -cp*rdy*msfv(i,j)<a name='445'>
+                 j = jte<a name='446'>
+                 tt(i,k,j) = tt(i,k,j) + crbc*(om_tmp(i,k,j) - om_tmp(i, k, j+ja))<a name='447'>
+                 st(i,k,j) = st(i,k,j) + crbc*(om_s(i,k,j) - om_s(i, k, j+ja))<a name='448'>
+                 ut(i,k,j) = ut(i,k,j) + crbc*(om_u(i,k,j) - om_u(i, k, j+ja))<a name='449'>
+                 vt(i,k,j) = vt(i,k,j) + crbc*(om_v(i,k,j) - om_v(i, k, j+ja))<a name='450'>
+    795       continue<a name='451'>
+           endif<a name='452'>
+           if (its .eq. ids)then<a name='453'>
+              do 796 j = jts , jte<a name='454'>
+                 ia = 1<a name='455'>
+                 crbc = -cp*(rdx*msfu(i,j))<a name='456'>
+                 i = its<a name='457'>
+                 tt(i,k,j) = tt(i,k,j) + crbc*(om_tmp(i,k,j) - om_tmp(i+ia, k, j))<a name='458'>
+                 st(i,k,j) = st(i,k,j) + crbc*(om_s(i,k,j) - om_s(i+ia, k, j))<a name='459'>
+                 ut(i,k,j) = ut(i,k,j) + crbc*(om_u(i,k,j) - om_u(i+ia, k, j))<a name='460'>
+                 vt(i,k,j) = vt(i,k,j) + crbc*(om_v(i,k,j) - om_v(i+ia, k, j))<a name='461'>
+    796       continue<a name='462'>
+           endif<a name='463'>
+           if (ite .eq. ide-1)then<a name='464'>
+              do 797 j = jts , jte<a name='465'>
+                 ia = -1<a name='466'>
+                 crbc = -cp*(rdx*msfu(i,j))<a name='467'>
+                 i = ite<a name='468'>
+                 tt(i,k,j) = tt(i,k,j) + crbc*(om_tmp(i,k,j) - om_tmp(i+ia, k, j))<a name='469'>
+                 st(i,k,j) = st(i,k,j) + crbc*(om_s(i,k,j) - om_s(i+ia, k, j))<a name='470'>
+                 ut(i,k,j) = ut(i,k,j) + crbc*(om_u(i,k,j) - om_u(i+ia, k, j))<a name='471'>
+                 vt(i,k,j) = vt(i,k,j) + crbc*(om_v(i,k,j) - om_v(i+ia, k, j))<a name='472'>
+    797       continue<a name='473'>
+           endif<a name='474'>
+<a name='475'>
+           if (its .eq. ids .and. jts .eq. jds) then<a name='476'>
+              tt(its,k,jts) = tt(its+1,k,jts+1)<a name='477'>
+           endif<a name='478'>
+           if (its .eq. ids .and. jte .eq. jde-1) then<a name='479'>
+              tt(its,k,jte) = tt(its+1,k,jte-1)<a name='480'>
+           endif<a name='481'>
+           if (ite .eq. ide-1 .and. jte .eq. jde-1) then<a name='482'>
+              tt(ite,k,jte) = tt(ite-1,k,jte-1)<a name='483'>
+           endif<a name='484'>
+           if (ite .eq. ide-1 .and. jts .eq. jds) then<a name='485'>
+              tt(ite,k,jts) = tt(ite-1,k,jts+1)<a name='486'>
+           endif<a name='487'>
+<a name='488'>
+     700  enddo<a name='489'>
+<a name='490'>
+<a name='491'>
+                                                                                                      <a name='492'>
+<font color=#447700>!!end radiation bc<a name='493'></font>
+<font color=#447700>! apply the wind stress and air-sea heat hluxes, and deepen the mixed layer by 1Dpwp<a name='494'></font>
+                                                                                                      <a name='495'>
+<font color=#447700>!  do 510 i = i_start, i_end<a name='496'></font>
+<font color=#447700>!        do 510 j = j_start, j_end<a name='497'></font>
+  do 510 i = its, ite<a name='498'>
+        do 510 j = jts, jte<a name='499'>
+         if (ii .eq. 1) then<a name='500'>
+           do k = 1, okme<a name='501'>
+           tb5(k) = om_tmp(i,k,j)<a name='502'>
+            sb5(k) = om_s(i,k,j)<a name='503'>
+            ub5(k) = om_u(i,k,j)<a name='504'>
+            vb5(k) = om_v(i,k,j)<a name='505'>
+            tb4(k) = tb5(k)<a name='506'>
+            sb4(k) = sb5(k)<a name='507'>
+            ub4(k) = ub5(k)<a name='508'>
+            vb4(k) = vb5(k)<a name='509'>
+           enddo<a name='510'>
+         endif<a name='511'>
+         if (ii .eq. 2) then<a name='512'>
+          do k = 1, okme<a name='513'>
+           tb5(k) =t0(i,k,j)<a name='514'>
+           sb5(k) =s0(i,k,j)<a name='515'>
+           ub5(k) =u0(i,k,j)<a name='516'>
+           vb5(k) =v0(i,k,j)<a name='517'>
+           tb4(k) = tb5(k)<a name='518'>
+           sb4(k) = sb5(k)<a name='519'>
+           ub4(k) = ub5(k)<a name='520'>
+           vb4(k) = vb5(k)<a name='521'>
+          enddo<a name='522'>
+         endif<a name='523'>
+<a name='524'>
+<font color=#447700>! vertical mixing<a name='525'></font>
+          call <A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP'>PWP</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#DPWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PWP_1">(i,j,k,ims, ime, jms, jme, okms,okme,tb4,&amp;<a name='526'>
+            sb4,om_density(i,:,j),om_depth(i,:,j),ub4,&amp;<a name='527'>
+            vb4,om_ml(i,j),om_lat(i,j),&amp;<a name='528'>
+            om_lon(i,j),HFX(i,j), QFX(i,j),LH(i,j), GSW(i,j),&amp;<a name='529'>
+            GLW(i,j), UST(i,j),U_PHY(i,kts,j),V_PHY(i,kts,j),&amp;<a name='530'>
+            STBOLT,DELTSM,aalpha(i,:,j),bbeta(i,:,j),om_tini(i,:,j),&amp;<a name='531'>
+            om_sini(i,:,j),trr(i,:,j),srr(i,:,j),omdt)<a name='532'>
+<font color=#447700>! add mixing tendencies<a name='533'></font>
+       do  k = 1 , okme<a name='534'>
+         tt(i,k,j) = tt(i,k,j) + (tb4(k)-tb5(k))/dt<a name='535'>
+         st(i,k,j) = st(i,k,j) + (sb4(k)-sb5(k))/dt<a name='536'>
+         ut(i,k,j) = ut(i,k,j) + (ub4(k)-ub5(k))/dt<a name='537'>
+         vt(i,k,j) = vt(i,k,j) + (vb4(k)-vb5(k))/dt<a name='538'>
+<a name='539'>
+<a name='540'>
+       enddo<a name='541'>
+<a name='542'>
+   510 continue<a name='543'>
+       do 24 i = its, ite<a name='544'>
+       do 24 j = jts, jte<a name='545'>
+       do 24 k = 1, okme<a name='546'>
+        om_tmp(i,k,j) = t0(i,k,j) + dti*tt(i,k,j)<a name='547'>
+        om_s(i,k,j) = s0(i,k,j) + dti*st(i,k,j)<a name='548'>
+        om_u(i,k,j) = u0(i,k,j) + dti*ut(i,k,j)<a name='549'>
+        om_v(i,k,j) = v0(i,k,j) + dti*vt(i,k,j)<a name='550'>
+    24 continue<a name='551'>
+<a name='552'>
+      do  i = its, ite<a name='553'>
+       do  j = jts, jte<a name='554'>
+<a name='555'>
+<a name='556'>
+        if (XLAND(i,j).GE.1.5)then<a name='557'>
+<a name='558'>
+<a name='559'>
+         TSK(i,j) = om_tmp(i, 1, j)<a name='560'>
+        endif<a name='561'>
+<a name='562'>
+<a name='563'>
+       enddo<a name='564'>
+       enddo<a name='565'>
+ 1111 enddo<a name='566'>
+      return<a name='567'>
+<a name='568'>
+    END subroutine DPWP<a name='569'>
+<font color=#447700>! cyl: end 3D PWP <a name='570'></font>
+<font color=#447700>!------------------------------------------------------------------<a name='571'></font>
+<font color=#447700>! cyl: add 1D PWP <a name='572'></font>
+<A NAME='PWP'><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='573'>
+        <font color=#993300>SUBROUTINE </font><font color=#cc0000>PWP</font>(i,j,k,ims, ime, jms, jme, okms,okme,om_tmp,om_s, &amp; <A href='../../call_to/PWP.html' TARGET='index'>1</A>,<A href='../../call_from/PWP.html' TARGET='index'>21</A><a name='574'>
+        om_density, om_depth,om_u, om_v,om_ml,om_lat, om_lon,    &amp;<a name='575'>
+         HFX, QFX,LH, GSW, GLW, UST,UAIR,VAIR,STBOLT,DELTSM,aalpha,bbeta,&amp;<a name='576'>
+         om_tini, om_sini,trr,srr,omdt)<a name='577'>
+        implicit none<a name='578'>
+<font color=#447700>!----------------------------------------------------------------------------<a name='579'></font>
+<font color=#447700>! Subroutine PWP is a one-dimensional vertical mixing scheme used in DPWP <a name='580'></font>
+<font color=#447700>! based on on Price et al. (1994, JPO).   <a name='581'></font>
+<font color=#447700>!----------------------------------------------------------------------------<a name='582'></font>
+<a name='583'>
+<a name='584'>
+        integer i, j, k                                  <a name='585'>
+        integer ,intent(in) ::ims, ime, jms, jme, okms,okme            <font color=#447700>!dimensions<a name='586'></font>
+        integer ::ml,kml,mml                               <a name='587'>
+        real, dimension(okms:okme), intent(inout):: om_tmp, om_s,                &amp;<a name='588'>
+              om_density,om_depth<a name='589'>
+        real, dimension(okms:okme),intent(inout):: om_u, om_v<a name='590'>
+                                                      <a name='591'>
+        real,intent(inout) :: om_ml         <a name='592'>
+        real,intent(inout) :: om_lat, om_lon<a name='593'>
+        real TSK<a name='594'>
+        real,intent(in) :: HFX, QFX,LH, GSW, GLW, ust,STBOLT,DELTSM<a name='595'>
+                                                      <a name='596'>
+        real, dimension(okms:okme)::absrb,u,v<a name='597'>
+        real dt, dz                                      <a name='598'>
+        real  :: tauxair, tauyair, taux, tauy,                     &amp;<a name='599'>
+              wspd<a name='600'>
+                                                      <a name='601'>
+        real d2r, g, hcon, f, tr, sr, dr, alpha, beta, energy, sg, &amp;<a name='602'>
+            ang,dml<a name='603'>
+                                                     <a name='604'>
+        real ro, rhoair, cpw                             <a name='605'>
+        real beta1, beta2, ql, qi<a name='606'>
+        real sipe<a name='607'>
+        real rb,rv, rvc, delr, duv,rg,du,dv<a name='608'>
+        real sa,ca,uair,vair,rc<a name='609'>
+        real udrag, ucon<a name='610'>
+        real, intent(in) :: omdt<a name='611'>
+        real,  dimension(okms:okme),intent(in)::aalpha,bbeta, om_tini,om_sini,trr,srr<a name='612'>
+<a name='613'>
+<a name='614'>
+        dt = omdt*60.0<a name='615'>
+        d2r = 2*3.14159/360.<a name='616'>
+        g = 9.8<a name='617'>
+        ro = 1.024e3   <font color=#447700>! kg/m3<a name='618'></font>
+        rhoair = 1<a name='619'>
+        cpw = 4183.3<a name='620'>
+        f = 2*7.29e-5*sin(om_lat*d2r)<a name='621'>
+        beta1 = .6<a name='622'>
+        beta2 = 20.0<a name='623'>
+        rb = 0.65<a name='624'>
+        rg = 0.25<a name='625'>
+        dml = om_ml<a name='626'>
+        tr = trr(1)<a name='627'>
+        sr = srr(1)<a name='628'>
+        dr = <A href='../../html_code/phys/module_sf_3dpwp.F.html#SGT'>sgt</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SGT_3">(tr,sr,sg)  <font color=#447700>! unit of density is sigma<a name='629'></font>
+        alpha = <A href='../../html_code/phys/module_sf_3dpwp.F.html#SGT'>sgt</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SGT_4">(tr+0.5, sr, sg )-sgt(tr-0.5,sr, sg)<a name='630'>
+        beta = <A href='../../html_code/phys/module_sf_3dpwp.F.html#SGT'>sgt</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SGT_5">(tr, sr+0.5, sg )-sgt(tr,sr-0.5, sg)<a name='631'>
+        udrag = 9999.<a name='632'>
+        ucon = 0.<a name='633'>
+        if (udrag .lt. 100) ucon = 1./(86400*udrag)<a name='634'>
+           call <A href='../../html_code/phys/module_sf_3dpwp.F.html#ABSORB'>absorb</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ABSORB_1">(i,j, ims, ime,jms,jme,okms,okme, beta1,beta2, &amp;<a name='635'>
+                       absrb, om_depth,GSW,GLW)<a name='636'>
+           ql = -1.*(LH+HFX+STBOLT*om_tmp(1)**4)         <font color=#447700>! corrected V3.8<a name='637'></font>
+           qi = GLW+GSW<a name='638'>
+           ql = ql+absrb(1)*qi<a name='639'>
+           om_tmp(1) = om_tmp(1) + dt*ql/(om_depth(1)*ro*cpw)<a name='640'>
+           om_s(1)=om_s(1)+om_s(1)*QFX*dt/ro/om_depth(1) <font color=#447700>! corrected V3.8<a name='641'></font>
+           do k =  2, okme<a name='642'>
+              dz = om_depth(k)-om_depth(k-1)<a name='643'>
+              om_tmp(k) = om_tmp(k) + dt*qi*absrb(k)/(dz*ro*cpw)<a name='644'>
+           enddo<a name='645'>
+           do k = 1,  okme<a name='646'>
+              om_density(k) = (dr+1000.0) +alpha*(om_tmp(k)-tr)+      &amp;<a name='647'>
+                              beta*(om_s(k)-sr)<a name='648'>
+           enddo<a name='649'>
+           ml = 0<a name='650'>
+           call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MLDEP'>mldep</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MLDEP_1">(i,j,k,ims,ime,jms,jme,okms,okme, om_density, &amp;<a name='651'>
+                     om_depth, ml)<a name='652'>
+           if (dml .gt. 100) print*,'mldep1',dml<a name='653'>
+           call <A href='../../html_code/phys/module_sf_3dpwp.F.html#SI'>si</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SI_1"> (i, j, ims,ime,jms,jme,okms,okme,om_density,    &amp;<a name='654'>
+                   om_depth,sipe, ml)<a name='655'>
+<a name='656'>
+          if (ml .gt. 1) then<a name='657'>
+             call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MIX1'>mix1</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIX1_1">(om_tmp, ml, i, j,ims,ime,jms,jme,okms,okme,om_depth)<a name='658'>
+             call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MIX1'>mix1</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIX1_2">(om_s, ml, i, j,ims,ime,jms,jme,okms,okme,om_depth)<a name='659'>
+             call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MIX1'>mix1</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIX1_3">(om_u, ml, i, j,ims,ime,jms,jme,okms,okme,om_depth)<a name='660'>
+             call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MIX1'>mix1</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIX1_4">(om_v, ml, i, j,ims,ime,jms,jme,okms,okme,om_depth)<a name='661'>
+             call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MIX1'>mix1</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIX1_5">(om_density, ml, i, j,ims,ime,jms,jme,okms,okme,om_depth)<a name='662'>
+          endif<a name='663'>
+           <font color=#447700>! above this, should be statically stable <a name='664'></font>
+<a name='665'>
+          ang = f*dt/2.<a name='666'>
+          sa = sin(ang)<a name='667'>
+          ca = cos(ang)<a name='668'>
+          do k = 1, okme<a name='669'>
+             call <A href='../../html_code/phys/module_sf_3dpwp.F.html#ROT'>rot</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ROT_1">(i, j,ims,ime,jms,jme,okms,okme, om_u(k), om_v(k), sa, ca)<a name='670'>
+          enddo<a name='671'>
+          call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MLDEP'>mldep</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MLDEP_2">(i,j,k, ims,ime,jms,jme,okms,okme, om_density, &amp;<a name='672'>
+                    om_depth, ml)<a name='673'>
+          if (ml .eq. 1 ) then<a name='674'>
+             om_ml = om_depth(ml)<a name='675'>
+          else<a name='676'>
+             om_ml = om_depth(ml)+(om_depth(ml) - om_depth(ml-1))/2.<a name='677'>
+          endif<a name='678'>
+          dml = om_ml<a name='679'>
+          wspd = max(sqrt(uair*uair+vair*vair), 0.1)<a name='680'>
+          tauxair = ust*ust*uair/wspd<a name='681'>
+          taux = rhoair/ro*tauxair<a name='682'>
+          tauyair = ust*ust*vair/wspd<a name='683'>
+          tauy = rhoair/ro*tauyair<a name='684'>
+          du = taux*dt/dml<a name='685'>
+          dv = tauy*dt/dml<a name='686'>
+          do k = 1,ml<a name='687'>
+             om_u(k) = om_u(k) + du<a name='688'>
+             om_v(k) = om_v(k) + dv<a name='689'>
+          enddo<a name='690'>
+          if(ucon .gt. 1.e-10) then<a name='691'>
+            do k = 1,okme<a name='692'>
+               om_u(k) = om_u(k)*(1. - dt*ucon)<a name='693'>
+               om_v(k) = om_v(k)*(1. - dt*ucon)<a name='694'>
+            enddo<a name='695'>
+          endif<a name='696'>
+<font color=#447700>! In pwp origional code, Dr. Price turns off the diffusion<a name='697'></font>
+<font color=#447700>! To use it, check the diffusion parameter in subroutine first<a name='698'></font>
+<font color=#447700>!         call diffusion(okms,okme,dt,om_tmp,om_depth)<a name='699'></font>
+<font color=#447700>!         call diffusion(okms,okme,dt,om_s,om_depth)<a name='700'></font>
+<font color=#447700>!         call diffusion(okms,okme,dt,om_u,om_depth)<a name='701'></font>
+<font color=#447700>!         call diffusion(okms,okme,dt,om_v,om_depth)<a name='702'></font>
+<font color=#447700>!         call diffusion(okms,okme,dt,om_density,om_depth)<a name='703'></font>
+<font color=#447700>!         print*,'ca,sa',ca,sa<a name='704'></font>
+         if(rb .le. 0.00001) go to 50<a name='705'>
+          rvc = rb<a name='706'>
+         do 40 k = ml, okme-1<a name='707'>
+           if (k .eq. 1) then<a name='708'>
+           dz = om_depth(k)<a name='709'>
+           else<a name='710'>
+           dz =  om_depth(k) + (om_depth(k) - om_depth(k-1))/2.<a name='711'>
+           endif<a name='712'>
+           delr = (om_density(k+1)-om_density(k))/ro<a name='713'>
+           duv =(om_u(k+1)-om_u(k))**2+(om_v(k+1)             &amp;<a name='714'>
+               -om_v(k))**2 + 1.e-8<a name='715'>
+           rv = g*delr*dz/duv<a name='716'>
+           if (rv .gt. rvc) go to 41<a name='717'>
+           mml=k+1<a name='718'>
+           call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MIX1'>mix1</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIX1_6">(om_tmp, mml, i, j,ims,ime,jms,jme,okms,okme,om_depth)<a name='719'>
+           call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MIX1'>mix1</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIX1_7">(om_s, mml, i, j,ims,ime,jms,jme,okms,okme,om_depth)<a name='720'>
+           call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MIX1'>mix1</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIX1_8">(om_u, mml, i, j,ims,ime,jms,jme,okms,okme,om_depth)<a name='721'>
+           call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MIX1'>mix1</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIX1_9">(om_v, mml, i, j,ims,ime,jms,jme,okms,okme,om_depth)<a name='722'>
+           call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MIX1'>mix1</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIX1_10">(om_density, mml, i, j,ims,ime,jms,jme,okms,okme,om_depth)<a name='723'>
+  40  continue<a name='724'>
+  41  continue<a name='725'>
+  50  continue<a name='726'>
+      if (rg .gt. 1.e-4) call <A href='../../html_code/phys/module_sf_3dpwp.F.html#RIMIX'>rimix</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RIMIX_1">(i,j,k,ims,ime,jms,jme,okms,    &amp;<a name='727'>
+       okme,rc,                                                &amp;<a name='728'>
+         rg,om_density,om_depth, om_u, om_v, om_s, om_tmp)<a name='729'>
+         do k = 1, okme<a name='730'>
+          call <A href='../../html_code/phys/module_sf_3dpwp.F.html#ROT'>rot</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ROT_2">(i,j,ims,ime,jms,jme,okms,okme, om_u(k), om_v(k), &amp;<a name='731'>
+           sa, ca)<a name='732'>
+         enddo<a name='733'>
+      call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MLDEP'>mldep</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#PWP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MLDEP_3">(i,j,k, ims,ime,jms,jme,okms,okme, om_density, &amp;<a name='734'>
+       om_depth, ml)<a name='735'>
+      if (ml .eq. 1) then<a name='736'>
+       om_ml = om_depth(ml)<a name='737'>
+      else<a name='738'>
+      om_ml = om_depth(ml)+ (om_depth(ml) - om_depth(ml-1))/2.<a name='739'>
+      endif<a name='740'>
+<font color=#447700>!      TSK = om_tmp(1)<a name='741'></font>
+      return<a name='742'>
+      END SUBROUTINE PWP<a name='743'>
+<font color=#447700>! cyl : end PWP<a name='744'></font>
+<font color=#447700>! cyl : PWP's subrouting  <a name='745'></font>
+<font color=#447700>! cyl--------------------<a name='746'></font>
+<A NAME='ABSORB'><A href='../../html_code/phys/module_sf_3dpwp.F.html#ABSORB' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='747'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>absorb</font>(i,j, ims, ime, jms, jme, okms,okme,beta1, &amp; <A href='../../call_to/ABSORB.html' TARGET='index'>1</A><a name='748'>
+       beta2, absrb, om_depth,GSW,GLW)<a name='749'>
+      implicit none<a name='750'>
+      integer i,j,k<a name='751'>
+      integer ims, ime, jms, jme, okms, okme<a name='752'>
+      real, dimension(okms:okme),intent(inout)::absrb, om_depth<a name='753'>
+      real abss, rs1, rs2, beta1, beta2, z1b1, z2b1, z2b2, z1b2,&amp;<a name='754'>
+          z1,z2,GSW,GLW<a name='755'>
+      abss = 0.<a name='756'>
+      rs1 = GSW/(GSW+GLW)<a name='757'>
+      rs2 = 1.0 - rs1<a name='758'>
+      do k = 1, okme<a name='759'>
+       absrb(k) = 0.<a name='760'>
+      enddo<a name='761'>
+      do k =1, okme<a name='762'>
+       if (k .eq. 1) then<a name='763'>
+        z1 = 0<a name='764'>
+       else<a name='765'>
+       z1 = om_depth(k-1)<a name='766'>
+       endif<a name='767'>
+      z2 = om_depth(k)<a name='768'>
+      z1b1 = z1/beta1<a name='769'>
+      z2b1 = z2/beta1<a name='770'>
+      z1b2 = z1/beta2<a name='771'>
+      z2b2 = z2/beta2<a name='772'>
+      if (z2b1 .lt. 70) absrb(k) = absrb(k) +          &amp;<a name='773'>
+          rs1*(exp(-z1b1)-exp(-z2b1))<a name='774'>
+      if (z2b2 .lt. 70) absrb(k) = absrb(k) +          &amp;<a name='775'>
+          rs2*(exp(-z1b2)-exp(-z2b2))<a name='776'>
+      abss = abss + absrb(k)<a name='777'>
+      enddo<a name='778'>
+      return<a name='779'>
+      END SUBROUTINE absorb<a name='780'>
+<font color=#447700>!cyl--------------------<a name='781'></font>
+<A NAME='MLDEP'><A href='../../html_code/phys/module_sf_3dpwp.F.html#MLDEP' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='782'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>mldep</font> (i,j,k, ims,ime,jms,jme,okms,okme, om_density, &amp; <A href='../../call_to/MLDEP.html' TARGET='index'>3</A><a name='783'>
+                    om_depth, ml)<a name='784'>
+      integer i,j,k,kk, ims,ime,jms,jme,okms,okme<a name='785'>
+      real deps, dml, dd<a name='786'>
+      integer ml<a name='787'>
+      real, dimension(okms:okme),intent(inout)::om_density,om_depth<a name='788'>
+      deps = 1.e-5<a name='789'>
+      do 70 k = 1, okme-1<a name='790'>
+       dd = abs(om_density(k+1) - om_density(k))<a name='791'>
+        if (dd .gt. deps) go to 71<a name='792'>
+   70 continue<a name='793'>
+   71 continue<a name='794'>
+        ml = k<a name='795'>
+      return<a name='796'>
+      END SUBROUTINE mldep<a name='797'>
+<font color=#447700>!cyl--------------------<a name='798'></font>
+<A NAME='SI'><A href='../../html_code/phys/module_sf_3dpwp.F.html#SI' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='799'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>si</font>(i, j, ims,ime,jms,jme,okms,okme,om_density, &amp; <A href='../../call_to/SI.html' TARGET='index'>1</A>,<A href='../../call_from/SI.html' TARGET='index'>1</A><a name='800'>
+             om_depth,                                          &amp;<a name='801'>
+             sipe, ml)<a name='802'>
+      integer i, j, k, ims,ime,jms,jme,okms,okme, mml,ml<a name='803'>
+      real, dimension(okms:okme),intent(inout)::om_density, om_depth<a name='804'>
+      real,  dimension(okms:okme) :: temp_density<a name='805'>
+      real pesum, sipe<a name='806'>
+      do k = 1, okme<a name='807'>
+       temp_density(k) = om_density(k)<a name='808'>
+      enddo<a name='809'>
+      mml = 1<a name='810'>
+      do 80 k = 2, okme<a name='811'>
+      if (om_density(k) .gt. om_density(k-1)) go to 81<a name='812'>
+      if (om_density(k) .lt. om_density(k-1))then<a name='813'>
+      mml = k<a name='814'>
+      call <A href='../../html_code/phys/module_sf_3dpwp.F.html#MIX1'>mix1</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#SI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MIX1_11">(om_density, mml, i, j,ims,ime,jms,jme,okms,okme,om_depth)<a name='815'>
+      endif<a name='816'>
+  80  continue<a name='817'>
+  81  continue<a name='818'>
+      ml = mml<a name='819'>
+<a name='820'>
+      return<a name='821'>
+      END SUBROUTINE si<a name='822'>
+<font color=#447700>!cyl--------------------<a name='823'></font>
+<A NAME='MIX1'><A href='../../html_code/phys/module_sf_3dpwp.F.html#MIX1' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='824'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>mix1</font>(b,mml, i, j,ims,ime,jms,jme,okms,okme,om_depth) <A href='../../call_to/MIX1.html' TARGET='index'>11</A><a name='825'>
+      integer  i, j, k, ims,ime,jms,jme,okms,okme, mml<a name='826'>
+      real,dimension(okms:okme),intent(inout) :: b<a name='827'>
+      real,dimension(okms:okme),intent(in) :: om_depth<a name='828'>
+      real,dimension(okms:okme) :: dz<a name='829'>
+      real bs,zs<a name='830'>
+      do k = 1, okme<a name='831'>
+       if (k .eq. 1) then<a name='832'>
+            dz(k) = om_depth(k)<a name='833'>
+           else<a name='834'>
+            dz(k) = om_depth(k)-om_depth(k-1)<a name='835'>
+       endif<a name='836'>
+      enddo<a name='837'>
+      bs = 0.<a name='838'>
+      zs = 0.<a name='839'>
+      do k = 1, mml<a name='840'>
+       bs = bs + b(k)*dz(k)<a name='841'>
+       zs = zs + dz(k)<a name='842'>
+      enddo<a name='843'>
+      bs = bs/zs<a name='844'>
+      do k = 1, mml<a name='845'>
+       b(k) = bs<a name='846'>
+      enddo<a name='847'>
+      return<a name='848'>
+      END SUBROUTINE mix1<a name='849'>
+<font color=#447700>!cyl--------------------<a name='850'></font>
+<A NAME='ROT'><A href='../../html_code/phys/module_sf_3dpwp.F.html#ROT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='851'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>rot</font>(i, j,ims,ime,jms,jme,okms,okme, om_u, om_v, sa, ca) <A href='../../call_to/ROT.html' TARGET='index'>2</A><a name='852'>
+      integer i, j, k, ims,ime,jms,jme,okms,okme<a name='853'>
+      real,intent(inout)::om_u, om_v<a name='854'>
+      real:: u0, v0<a name='855'>
+      real sa, ca<a name='856'>
+       u0= om_u<a name='857'>
+       v0= om_v<a name='858'>
+       om_u = u0*ca+v0*sa<a name='859'>
+       om_v = v0*ca-u0*sa<a name='860'>
+      return<a name='861'>
+      END SUBROUTINE rot<a name='862'>
+<font color=#447700>!cyl--------------------<a name='863'></font>
+<A NAME='RIMIX'><A href='../../html_code/phys/module_sf_3dpwp.F.html#RIMIX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='864'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>rimix</font>(i,j,k,ims,ime,jms,jme,okms,okme,rc, rg,  &amp; <A href='../../call_to/RIMIX.html' TARGET='index'>1</A>,<A href='../../call_from/RIMIX.html' TARGET='index'>5</A><a name='865'>
+          om_density,om_depth, om_u, om_v, om_s, om_tmp)<a name='866'>
+      implicit none<a name='867'>
+      integer i,j,k,ims,ime,jms,jme,okms,okme,kcd,nmix,k1,k2,ks<a name='868'>
+      real rc, rg,dd,g,dz,dv,ro,rs<a name='869'>
+      real,dimension(okms:okme) :: r<a name='870'>
+      real, dimension(okms:okme),intent(inout)::om_density, om_u,             &amp;<a name='871'>
+             om_depth,om_v, om_s, om_tmp<a name='872'>
+      ro = 1000.<a name='873'>
+      rc = rg<a name='874'>
+      g = 9.8<a name='875'>
+      kcd = 0<a name='876'>
+      nmix = 0<a name='877'>
+      k1 = 1<a name='878'>
+      k2 = okme - 1<a name='879'>
+<a name='880'>
+<a name='881'>
+   10 continue<a name='882'>
+      do 1 k = k1, k2<a name='883'>
+       dd = om_density(k+1)-om_density(k)<a name='884'>
+       if (dd .lt. 1.e-3) dd = 1.e-3<a name='885'>
+        dv = (om_u(k+1)-om_u(k))**2 + (om_v(k+1)-om_v(k))**2<a name='886'>
+       if(dv .lt. 1.e-6) dv = 1.e-6<a name='887'>
+       if (k .eq. 1) then<a name='888'>
+        dz = (om_depth(1) + om_depth(2) - om_depth(1))/2.<a name='889'>
+       else<a name='890'>
+        dz = (om_depth(k)-om_depth(k-1) + om_depth(k+1) - om_depth(k))/2.<a name='891'>
+       endif<a name='892'>
+       r(k) = g*dz*dd/(dv*ro)<a name='893'>
+   1  continue<a name='894'>
+      rs = r(1)<a name='895'>
+      ks = 1<a name='896'>
+      do 2 k = 2, okme-1<a name='897'>
+      if (r(k) .lt. rs) go to 3<a name='898'>
+      go to 2<a name='899'>
+   3  continue<a name='900'>
+      rs =r(k)<a name='901'>
+      ks = k<a name='902'>
+   2  continue<a name='903'>
+      if (rs .ge. rc) go to 99<a name='904'>
+      if (ks .ge. kcd ) kcd = ks + 1<a name='905'>
+      call <A href='../../html_code/phys/module_sf_3dpwp.F.html#STIR'>stir</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#RIMIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="STIR_1">(i,j,ims,ime,jms,jme,okms,okme,rc,rs, om_tmp, ks,om_depth)<a name='906'>
+      call <A href='../../html_code/phys/module_sf_3dpwp.F.html#STIR'>stir</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#RIMIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="STIR_2">(i,j,ims,ime,jms,jme,okms,okme,rc,rs, om_s, ks,om_depth)<a name='907'>
+      call <A href='../../html_code/phys/module_sf_3dpwp.F.html#STIR'>stir</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#RIMIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="STIR_3">(i,j,ims,ime,jms,jme,okms,okme,rc,rs, om_density, ks,om_depth)<a name='908'>
+      call <A href='../../html_code/phys/module_sf_3dpwp.F.html#STIR'>stir</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#RIMIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="STIR_4">(i,j,ims,ime,jms,jme,okms,okme,rc,rs, om_u, ks,om_depth)<a name='909'>
+      call <A href='../../html_code/phys/module_sf_3dpwp.F.html#STIR'>stir</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#RIMIX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="STIR_5">(i,j,ims,ime,jms,jme,okms,okme,rc,rs, om_v, ks,om_depth)<a name='910'>
+      nmix = nmix +1<a name='911'>
+      k1 = ks - 2<a name='912'>
+      if (k1 .lt. 1) k1 = 1<a name='913'>
+      k2 = ks +2<a name='914'>
+      if (k2 .gt. okme-1) k2 = okme -1<a name='915'>
+      go to 10<a name='916'>
+   99 continue<a name='917'>
+<a name='918'>
+<a name='919'>
+      return<a name='920'>
+      END SUBROUTINE rimix<a name='921'>
+<font color=#447700>!cyl--------------------<a name='922'></font>
+<A NAME='DIFFUSION'><A href='../../html_code/phys/module_sf_3dpwp.F.html#DIFFUSION' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='923'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>diffusion</font>(okms,okme,dt,a,om_depth)<a name='924'>
+      implicit none<a name='925'>
+      integer okms,okme,k<a name='926'>
+      real dt,rkz,dz<a name='927'>
+      real, dimension(okms:okme):: a, work,dconst,om_depth<a name='928'>
+       rkz =0.3<a name='929'>
+       do k = okms, okme<a name='930'>
+       if (k .eq. 1) then<a name='931'>
+        dz = om_depth(1)<a name='932'>
+       else<a name='933'>
+        dz = om_depth(k)-om_depth(k-1)<a name='934'>
+       endif<a name='935'>
+       dconst(k) = dt*rkz/dz**2<a name='936'>
+       enddo<a name='937'>
+      do k = 2, okme-1<a name='938'>
+        work(k) = dconst(k)*(a(k-1)+a(k+1)-2.*a(k))<a name='939'>
+      enddo<a name='940'>
+      do k = 2, okme-1<a name='941'>
+       a(k) = a(k) + work(k)<a name='942'>
+      enddo<a name='943'>
+      return<a name='944'>
+      END SUBROUTINE diffusion<a name='945'>
+<font color=#447700>!cyl--------------------<a name='946'></font>
+<A NAME='STIR'><A href='../../html_code/phys/module_sf_3dpwp.F.html#STIR' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='947'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>stir</font>(i,j,ims,ime,jms,jme,okms,okme,rc,rs,a,ks,depth) <A href='../../call_to/STIR.html' TARGET='index'>5</A><a name='948'>
+      implicit none<a name='949'>
+      integer i,j,k,ims,ime,jms,jme,okms,okme,ks,b<a name='950'>
+      real, dimension(okms:okme),intent(inout)::a<a name='951'>
+      real, dimension(okms:okme),intent(in)::depth<a name='952'>
+      real, dimension(okms:okme)::dz<a name='953'>
+      real rcon,rc,rs,ff,rnew,da<a name='954'>
+       rnew = 0.3<a name='955'>
+       ff = 1. - rs/rnew<a name='956'>
+       do k = 1,okme<a name='957'>
+         if (k.eq. 1) then<a name='958'>
+          dz(k) = depth(1)<a name='959'>
+         else<a name='960'>
+          dz(k) = depth(k) -depth(k-1)<a name='961'>
+         endif<a name='962'>
+       enddo<a name='963'>
+       da = (a(ks+1)- a(ks))*ff/2.<a name='964'>
+       b=2./(1.+dz(ks)/dz(ks+1))<a name='965'>
+       a(ks+1)= a(ks+1)-da*b*dz(ks)/dz(ks+1)<a name='966'>
+       a(ks) = a(ks)+da*b<a name='967'>
+<font color=#447700>!       print*,'da',da<a name='968'></font>
+<font color=#447700>!       print*,'a',a(ks+1),a(ks)<a name='969'></font>
+       return<a name='970'>
+      END SUBROUTINE stir<a name='971'>
+<font color=#447700>!cyl--------------------<a name='972'></font>
+<A NAME='SG0'><A href='../../html_code/phys/module_sf_3dpwp.F.html#SG0' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='973'>
+      <font color=#993300>FUNCTION </font><font color=#cc0000>sg0</font>(s) <A href='../../call_to/SG0.html' TARGET='index'>1</A><a name='974'>
+      implicit none<a name='975'>
+      real s,sg0<a name='976'>
+      sg0 = ((6.76786136e-6*s-4.8249614e-4)*s+0.814876577)*s         &amp;<a name='977'>
+            -0.0934458632<a name='978'>
+      return<a name='979'>
+      END FUNCTION sg0<a name='980'>
+<A NAME='SGT'><A href='../../html_code/phys/module_sf_3dpwp.F.html#SGT' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='981'>
+      <font color=#993300>FUNCTION </font><font color=#cc0000>sgt</font>(tt,s,sg) <A href='../../call_to/SGT.html' TARGET='index'>5</A>,<A href='../../call_from/SGT.html' TARGET='index'>1</A><a name='982'>
+      implicit none<a name='983'>
+      real tt,t, s, sg,sgt<a name='984'>
+      t=tt-273.0<a name='985'>
+      sg = <A href='../../html_code/phys/module_sf_3dpwp.F.html#SG0'>sg0</A><A href='../../html_code/phys/module_sf_3dpwp.F.html#SGT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SG0_1">(s)<a name='986'>
+   20 sgt = ((((-1.43803061e-7*t-1.98248399e-3)*t-0.545939111)*t      &amp;<a name='987'>
+             +4.53168426)*t)/(t+67.26)+((((1.667e-8*t-8.164e-7)*t     &amp;<a name='988'>
+            +1.803e-5)*t)*sg+((-1.0843e-6*t+9.8185e-5)*t-4.7867e-3)*t &amp;<a name='989'>
+            +1.0)*sg<a name='990'>
+      return<a name='991'>
+      END FUNCTION sgt<a name='992'>
+<a name='993'>
+<font color=#447700>!--------------------<a name='994'></font>
+END MODULE module_sf_3dpwp<a name='995'>
+</pre></body></html>

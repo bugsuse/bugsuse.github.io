@@ -1,0 +1,412 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#define WRF_PORT<a name='2'>
+#define MODAL_AERO<a name='3'>
+<font color=#447700>! Updated to CESM1.0.3 (CAM5.1.01) by Balwinder.Singh@pnnl.gov<a name='4'></font>
+<A NAME='MOLEC_DIFF'><A href='../../html_code/phys/module_cam_molec_diff.F.html#MOLEC_DIFF' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='5'>
+  <font color=#993300>module </font><font color=#cc0000>molec_diff</font> <A href='../../call_to/MOLEC_DIFF.html' TARGET='index'>2</A>,<A href='../../call_from/MOLEC_DIFF.html' TARGET='index'>1</A><a name='6'>
+<a name='7'>
+  <font color=#447700>!------------------------------------------------------------------------------------------------- !<a name='8'></font>
+  <font color=#447700>! Module to compute molecular diffusivity for various constituents                                 !<a name='9'></font>
+  <font color=#447700>!                                                                                                  !    <a name='10'></font>
+  <font color=#447700>! Public interfaces :                                                                              !<a name='11'></font>
+  <font color=#447700>!                                                                                                  !<a name='12'></font>
+  <font color=#447700>!    init_molec_diff           Initializes time independent coefficients                           !<a name='13'></font>
+  <font color=#447700>!    init_timestep_molec_diff  Time-step initialization for molecular diffusivity                  ! <a name='14'></font>
+  <font color=#447700>!    compute_molec_diff        Computes constituent-independent terms for moleculuar diffusivity   !<a name='15'></font>
+  <font color=#447700>!    vd_lu_qdecomp             Computes constituent-dependent terms for moleculuar diffusivity and !<a name='16'></font>
+  <font color=#447700>!                              updates terms in the triadiagonal matrix used for the implicit      !<a name='17'></font>
+  <font color=#447700>!                              solution of the diffusion equation                                  !<a name='18'></font>
+  <font color=#447700>!                                                                                                  !<a name='19'></font>
+  <font color=#447700>!---------------------------Code history---------------------------------------------------------- !<a name='20'></font>
+  <font color=#447700>! Modularized     :  J. McCaa, September 2004                                                      !<a name='21'></font>
+  <font color=#447700>! Lastly Arranged :  S. Park,  January.  2010                                                      !<a name='22'></font>
+  <font color=#447700>!------------------------------------------------------------------------------------------------- !<a name='23'></font>
+#ifndef WRF_PORT <a name='24'>
+  use perf_mod<a name='25'>
+  use cam_logfile,  only : iulog<a name='26'>
+#else<a name='27'>
+  use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_molec_diff.F.html#MOLEC_DIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_12">,   only: iulog, t_stopf, t_startf<a name='28'>
+#endif<a name='29'>
+  implicit none<a name='30'>
+  private       <a name='31'>
+  save<a name='32'>
+<a name='33'>
+  public init_molec_diff <a name='34'>
+#ifndef WRF_PORT    <a name='35'>
+  public init_timestep_molec_diff<a name='36'>
+#endif<a name='37'>
+  public compute_molec_diff <a name='38'>
+  public vd_lu_qdecomp<a name='39'>
+<a name='40'>
+  <font color=#447700>! ---------- !<a name='41'></font>
+  <font color=#447700>! Parameters ! <a name='42'></font>
+  <font color=#447700>! ---------- !<a name='43'></font>
+<a name='44'>
+  integer,  parameter   :: r8 = selected_real_kind(12) <font color=#447700>! 8 byte real<a name='45'></font>
+  <a name='46'>
+  real(r8), parameter   :: km_fac = 3.55E-7_r8         <font color=#447700>! Molecular viscosity constant [ unit ? ]<a name='47'></font>
+  real(r8), parameter   :: pr_num = 1._r8              <font color=#447700>! Prandtl number [ no unit ]<a name='48'></font>
+  real(r8), parameter   :: pwr    = 2._r8/3._r8        <font color=#447700>! Exponentiation factor [ unit ? ]<a name='49'></font>
+  real(r8), parameter   :: d0     = 1.52E20_r8         <font color=#447700>! Diffusion factor [ m-1 s-1 ] molec sqrt(kg/kmol/K) [ unit ? ]<a name='50'></font>
+                                                       <font color=#447700>! Aerononmy, Part B, Banks and Kockarts (1973), p39<a name='51'></font>
+                                                       <font color=#447700>! Note text cites 1.52E18 cm-1 ...<a name='52'></font>
+<a name='53'>
+  real(r8)              :: rair                        <font color=#447700>! Gas constant for dry air<a name='54'></font>
+  real(r8)              :: mw_dry                      <font color=#447700>! Molecular weight of dry air<a name='55'></font>
+  real(r8)              :: n_avog                      <font color=#447700>! Avogadro's number [ molec/kmol ]<a name='56'></font>
+  real(r8)              :: gravit     <a name='57'>
+  real(r8)              :: cpair<a name='58'>
+  real(r8)              :: kbtz                        <font color=#447700>! Boltzman constant<a name='59'></font>
+<a name='60'>
+  integer               :: ntop_molec                  <font color=#447700>! Top    interface level to which molecular vertical diffusion is applied ( = 1 )<a name='61'></font>
+  integer               :: nbot_molec                  <font color=#447700>! Bottom interface level to which molecular vertical diffusion is applied ( = pver )<a name='62'></font>
+  real(r8), allocatable :: mw_fac(:)                   <font color=#447700>! sqrt(1/M_q + 1/M_d) in constituent diffusivity [  unit ? ]<a name='63'></font>
+  <a name='64'>
+  contains<a name='65'>
+<a name='66'>
+  <font color=#447700>!============================================================================ !<a name='67'></font>
+  <font color=#447700>!                                                                             !<a name='68'></font>
+  <font color=#447700>!============================================================================ !<a name='69'></font>
+<a name='70'>
+<A NAME='INIT_MOLEC_DIFF'><A href='../../html_code/phys/module_cam_molec_diff.F.html#INIT_MOLEC_DIFF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='71'>
+  <font color=#993300>subroutine </font><font color=#cc0000>init_molec_diff</font>( kind, ncnst, rair_in, ntop_molec_in, nbot_molec_in, &amp;,<A href='../../call_from/INIT_MOLEC_DIFF.html' TARGET='index'>4</A><a name='72'>
+                              mw_dry_in, n_avog_in, gravit_in, cpair_in, kbtz_in )<a name='73'>
+    <a name='74'>
+    use <A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS'>constituents</A><A href='../../html_code/phys/module_cam_molec_diff.F.html#INIT_MOLEC_DIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTITUENTS_4">,     only : cnst_mw<a name='75'>
+    use <A href='../../html_code/phys/module_cam_upper_bc.F.html#UPPER_BC'>upper_bc</A><A href='../../html_code/phys/module_cam_molec_diff.F.html#INIT_MOLEC_DIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="UPPER_BC_1">,         only : ubc_init<a name='76'>
+    <a name='77'>
+    integer,  intent(in)  :: kind           <font color=#447700>! Kind of reals being passed in<a name='78'></font>
+    integer,  intent(in)  :: ncnst          <font color=#447700>! Number of constituents<a name='79'></font>
+    integer,  intent(in)  :: ntop_molec_in  <font color=#447700>! Top interface level to which molecular vertical diffusion is applied ( = 1 )<a name='80'></font>
+    integer,  intent(in)  :: nbot_molec_in  <font color=#447700>! Bottom interface level to which molecular vertical diffusion is applied.<a name='81'></font>
+    real(r8), intent(in)  :: rair_in<a name='82'>
+    real(r8), intent(in)  :: mw_dry_in      <font color=#447700>! Molecular weight of dry air<a name='83'></font>
+    real(r8), intent(in)  :: n_avog_in      <font color=#447700>! Avogadro's number [ molec/kmol ]<a name='84'></font>
+    real(r8), intent(in)  :: gravit_in<a name='85'>
+    real(r8), intent(in)  :: cpair_in<a name='86'>
+    real(r8), intent(in)  :: kbtz_in        <font color=#447700>! Boltzman constant<a name='87'></font>
+    integer               :: m              <font color=#447700>! Constituent index<a name='88'></font>
+    <a name='89'>
+    if( kind .ne. r8 ) then<a name='90'>
+        write(iulog,*) 'KIND of reals passed to init_molec_diff -- exiting.'<a name='91'>
+#ifdef WRF_PORT<a name='92'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_molec_diff.F.html#INIT_MOLEC_DIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_588">(iulog)<a name='93'>
+#endif <a name='94'>
+        stop 'init_molec_diff'<a name='95'>
+    endif<a name='96'>
+    <a name='97'>
+    rair       = rair_in<a name='98'>
+    mw_dry     = mw_dry_in<a name='99'>
+    n_avog     = n_avog_in<a name='100'>
+    gravit     = gravit_in<a name='101'>
+    cpair      = cpair_in<a name='102'>
+    kbtz       = kbtz_in<a name='103'>
+    ntop_molec = ntop_molec_in<a name='104'>
+    nbot_molec = nbot_molec_in<a name='105'>
+    <a name='106'>
+  <font color=#447700>! Initialize upper boundary condition variables<a name='107'></font>
+<a name='108'>
+    call <A href='../../html_code/phys/module_cam_upper_bc.F.html#UBC_INIT'>ubc_init</A><A href='../../html_code/phys/module_cam_molec_diff.F.html#INIT_MOLEC_DIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="UBC_INIT_1">()<a name='109'>
+<a name='110'>
+  <font color=#447700>! Molecular weight factor in constitutent diffusivity<a name='111'></font>
+  <font color=#447700>! ***** FAKE THIS FOR NOW USING MOLECULAR WEIGHT OF DRY AIR FOR ALL TRACERS ****<a name='112'></font>
+ <a name='113'>
+    allocate(mw_fac(ncnst))<a name='114'>
+    do m = 1, ncnst<a name='115'>
+       mw_fac(m) = d0 * mw_dry * sqrt(1._r8/mw_dry + 1._r8/cnst_mw(m)) / n_avog<a name='116'>
+    end do<a name='117'>
+<a name='118'>
+  end subroutine init_molec_diff<a name='119'>
+<a name='120'>
+  <font color=#447700>!============================================================================ !<a name='121'></font>
+  <font color=#447700>!                                                                             !<a name='122'></font>
+  <font color=#447700>!============================================================================ !<a name='123'></font>
+#ifndef WRF_PORT <a name='124'>
+<A NAME='INIT_TIMESTEP_MOLEC_DIFF'><A href='../../html_code/phys/module_cam_molec_diff.F.html#INIT_TIMESTEP_MOLEC_DIFF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='125'>
+  <font color=#993300>subroutine </font><font color=#cc0000>init_timestep_molec_diff</font>(state),<A href='../../call_from/INIT_TIMESTEP_MOLEC_DIFF.html' TARGET='index'>2</A><a name='126'>
+    <font color=#447700>!--------------------------- !<a name='127'></font>
+    <font color=#447700>! Timestep dependent setting ! <a name='128'></font>
+    <font color=#447700>!--------------------------- !<a name='129'></font>
+    use <A href='../../html_code/phys/module_cam_upper_bc.F.html#UPPER_BC'>upper_bc</A><A href='../../html_code/phys/module_cam_molec_diff.F.html#INIT_TIMESTEP_MOLEC_DIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="UPPER_BC_2">,     only : ubc_timestep_init<a name='130'>
+    use physics_types,only: physics_state<a name='131'>
+    use ppgrid,       only: begchunk, endchunk<a name='132'>
+<a name='133'>
+    type(physics_state), intent(in) :: state(begchunk:endchunk)                 <a name='134'>
+<a name='135'>
+    call <A href='../../html_code/phys/module_cam_upper_bc.F.html#UBC_TIMESTEP_INIT'>ubc_timestep_init</A><A href='../../html_code/phys/module_cam_molec_diff.F.html#INIT_TIMESTEP_MOLEC_DIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="UBC_TIMESTEP_INIT_1">( state)<a name='136'>
+    <a name='137'>
+  end subroutine init_timestep_molec_diff<a name='138'>
+#endif<a name='139'>
+  <font color=#447700>!============================================================================ !<a name='140'></font>
+  <font color=#447700>!                                                                             !<a name='141'></font>
+  <font color=#447700>!============================================================================ !<a name='142'></font>
+<a name='143'>
+<A NAME='COMPUTE_MOLEC_DIFF'><A href='../../html_code/phys/module_cam_molec_diff.F.html#COMPUTE_MOLEC_DIFF' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='144'>
+  integer <font color=#993300>function </font><font color=#cc0000>compute_molec_diff</font>( lchnk       ,                                                                      &amp; <A href='../../call_to/COMPUTE_MOLEC_DIFF.html' TARGET='index'>1</A>,<A href='../../call_from/COMPUTE_MOLEC_DIFF.html' TARGET='index'>3</A><a name='145'>
+                                       pcols       , pver       , ncnst      , ncol     , t      , pmid   , pint        , &amp;<a name='146'>
+                                       zi          , ztodt      , kvh        , kvm      , tint   , rhoi   , tmpi2       , &amp;<a name='147'>
+                                       kq_scal     , ubc_t      , ubc_mmr    , dse_top  , cc_top , cd_top , cnst_mw_out , &amp;<a name='148'>
+                                       cnst_fixed_ubc_out , mw_fac_out , ntop_molec_out , nbot_molec_out )<a name='149'>
+    <a name='150'>
+    use <A href='../../html_code/phys/module_cam_upper_bc.F.html#UPPER_BC'>upper_bc</A><A href='../../html_code/phys/module_cam_molec_diff.F.html#COMPUTE_MOLEC_DIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="UPPER_BC_3">,        only : ubc_get_vals<a name='151'>
+    use <A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS'>constituents</A><A href='../../html_code/phys/module_cam_molec_diff.F.html#COMPUTE_MOLEC_DIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTITUENTS_5">,    only : cnst_mw, cnst_fixed_ubc<a name='152'>
+<a name='153'>
+    <font color=#447700>! --------------------- !<a name='154'></font>
+    <font color=#447700>! Input-Output Argument !<a name='155'></font>
+    <font color=#447700>! --------------------- !<a name='156'></font>
+    <a name='157'>
+    integer,  intent(in)    :: pcols<a name='158'>
+    integer,  intent(in)    :: pver<a name='159'>
+    integer,  intent(in)    :: ncnst<a name='160'>
+    integer,  intent(in)    :: ncol                      <font color=#447700>! Number of atmospheric columns<a name='161'></font>
+    integer,  intent(in)    :: lchnk                     <font color=#447700>! Chunk identifier<a name='162'></font>
+    real(r8), intent(in)    :: t(pcols,pver)             <font color=#447700>! Temperature input<a name='163'></font>
+    real(r8), intent(in)    :: pmid(pcols,pver)          <font color=#447700>! Midpoint pressures<a name='164'></font>
+    real(r8), intent(in)    :: pint(pcols,pver+1)        <font color=#447700>! Interface pressures<a name='165'></font>
+    real(r8), intent(in)    :: zi(pcols,pver+1)          <font color=#447700>! Interface heights<a name='166'></font>
+    real(r8), intent(in)    :: ztodt                     <font color=#447700>! 2 delta-t<a name='167'></font>
+    <a name='168'>
+    real(r8), intent(inout) :: kvh(pcols,pver+1)         <font color=#447700>! Diffusivity for heat<a name='169'></font>
+    real(r8), intent(inout) :: kvm(pcols,pver+1)         <font color=#447700>! Viscosity ( diffusivity for momentum )<a name='170'></font>
+    real(r8), intent(inout) :: tint(pcols,pver+1)        <font color=#447700>! Interface temperature<a name='171'></font>
+    real(r8), intent(inout) :: rhoi(pcols,pver+1)        <font color=#447700>! Density ( rho ) at interfaces<a name='172'></font>
+    real(r8), intent(inout) :: tmpi2(pcols,pver+1)       <font color=#447700>! dt*(g*rho)**2/dp at interfaces<a name='173'></font>
+<a name='174'>
+    real(r8), intent(out)   :: kq_scal(pcols,pver+1)     <font color=#447700>! kq_fac*sqrt(T)*m_d/rho for molecular diffusivity<a name='175'></font>
+    real(r8), intent(out)   :: ubc_mmr(pcols,ncnst)      <font color=#447700>! Upper boundary mixing ratios [ kg/kg ]<a name='176'></font>
+    real(r8), intent(out)   :: cnst_mw_out(ncnst)<a name='177'>
+    logical,  intent(out)   :: cnst_fixed_ubc_out(ncnst)<a name='178'>
+    real(r8), intent(out)   :: mw_fac_out(ncnst)<a name='179'>
+    real(r8), intent(out)   :: dse_top(pcols)            <font color=#447700>! dse on top boundary<a name='180'></font>
+    real(r8), intent(out)   :: cc_top(pcols)             <font color=#447700>! Lower diagonal at top interface<a name='181'></font>
+    real(r8), intent(out)   :: cd_top(pcols)             <font color=#447700>! cc_top * dse ubc value<a name='182'></font>
+    integer,  intent(out)   :: ntop_molec_out   <a name='183'>
+    integer,  intent(out)   :: nbot_molec_out   <a name='184'>
+<a name='185'>
+    <font color=#447700>! --------------- ! <a name='186'></font>
+    <font color=#447700>! Local variables !<a name='187'></font>
+    <font color=#447700>! --------------- !<a name='188'></font>
+<a name='189'>
+    integer                 :: m                          <font color=#447700>! Constituent index<a name='190'></font>
+    integer                 :: i                          <font color=#447700>! Column index<a name='191'></font>
+    integer                 :: k                          <font color=#447700>! Level index<a name='192'></font>
+    real(r8)                :: mkvisc                     <font color=#447700>! Molecular kinematic viscosity c*tint**(2/3)/rho<a name='193'></font>
+    real(r8)                :: ubc_t(pcols)               <font color=#447700>! Upper boundary temperature (K)<a name='194'></font>
+<a name='195'>
+    <font color=#447700>! ----------------------- !<a name='196'></font>
+    <font color=#447700>! Main Computation Begins !<a name='197'></font>
+    <font color=#447700>! ----------------------- !<a name='198'></font>
+<a name='199'>
+  <font color=#447700>! Get upper boundary values<a name='200'></font>
+<a name='201'>
+    call <A href='../../html_code/phys/module_cam_upper_bc.F.html#UBC_GET_VALS'>ubc_get_vals</A><A href='../../html_code/phys/module_cam_molec_diff.F.html#COMPUTE_MOLEC_DIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="UBC_GET_VALS_1">( lchnk, ncol, ntop_molec, pint, zi, ubc_t, ubc_mmr )<a name='202'>
+<a name='203'>
+  <font color=#447700>! Below are already computed, just need to be copied for output<a name='204'></font>
+<a name='205'>
+    cnst_mw_out(:ncnst)        = cnst_mw(:ncnst)<a name='206'>
+    cnst_fixed_ubc_out(:ncnst) = cnst_fixed_ubc(:ncnst)<a name='207'>
+    mw_fac_out(:ncnst)         = mw_fac(:ncnst)<a name='208'>
+    ntop_molec_out             = ntop_molec<a name='209'>
+    nbot_molec_out             = nbot_molec<a name='210'>
+    <a name='211'>
+  <font color=#447700>! Density and related factors for moecular diffusion and ubc.<a name='212'></font>
+  <font color=#447700>! Always have a fixed upper boundary T if molecular diffusion is active. Why ?<a name='213'></font>
+<a name='214'>
+    tint (:ncol,ntop_molec) = ubc_t(:ncol)<a name='215'>
+    rhoi (:ncol,ntop_molec) = pint(:ncol,ntop_molec) / ( rair * tint(:ncol,ntop_molec) )<a name='216'>
+    tmpi2(:ncol,ntop_molec) = ztodt * ( gravit * rhoi(:ncol,ntop_molec))**2 &amp;<a name='217'>
+                                    / ( pmid(:ncol,ntop_molec) - pint(:ncol,ntop_molec) )<a name='218'>
+    <a name='219'>
+  <font color=#447700>! Compute molecular kinematic viscosity, heat diffusivity and factor for constituent diffusivity<a name='220'></font>
+  <font color=#447700>! This is a key part of the code.<a name='221'></font>
+<a name='222'>
+    kq_scal(:ncol,1:ntop_molec-1) = 0._r8<a name='223'>
+    do k = ntop_molec, nbot_molec<a name='224'>
+       do i = 1, ncol<a name='225'>
+          mkvisc       = km_fac * tint(i,k)**pwr / rhoi(i,k)<a name='226'>
+          kvm(i,k)     = kvm(i,k) + mkvisc<a name='227'>
+          kvh(i,k)     = kvh(i,k) + mkvisc * pr_num<a name='228'>
+          kq_scal(i,k) = sqrt(tint(i,k)) / rhoi(i,k)<a name='229'>
+       end do<a name='230'>
+    end do<a name='231'>
+    kq_scal(:ncol,nbot_molec+1:pver+1) = 0._r8<a name='232'>
+    <a name='233'>
+  <font color=#447700>! Top boundary condition for dry static energy<a name='234'></font>
+<a name='235'>
+    dse_top(:ncol) = cpair * tint(:ncol,ntop_molec) + gravit * zi(:ncol,ntop_molec)<a name='236'>
+<a name='237'>
+  <font color=#447700>! Top value of cc for dry static energy<a name='238'></font>
+<a name='239'>
+    do i = 1, ncol<a name='240'>
+       cc_top(i) = ztodt * gravit**2 * rhoi(i,ntop_molec) * km_fac * ubc_t(i)**pwr / &amp;<a name='241'>
+                   ( ( pint(i,2) - pint(i,1) ) * ( pmid(i,1) - pint(i,1) ) )<a name='242'>
+    enddo<a name='243'>
+    cd_top(:ncol) = cc_top(:ncol) * dse_top(:ncol)<a name='244'>
+    <a name='245'>
+    compute_molec_diff = 1<a name='246'>
+    return<a name='247'>
+  end function compute_molec_diff<a name='248'>
+<a name='249'>
+  <font color=#447700>!============================================================================ !<a name='250'></font>
+  <font color=#447700>!                                                                             !<a name='251'></font>
+  <font color=#447700>!============================================================================ !<a name='252'></font>
+<a name='253'>
+<A NAME='VD_LU_QDECOMP'><A href='../../html_code/phys/module_cam_molec_diff.F.html#VD_LU_QDECOMP' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='254'>
+  integer <font color=#993300>function </font><font color=#cc0000>vd_lu_qdecomp</font>( pcols , pver   , ncol       , fixed_ubc  , mw     , ubc_mmr , &amp; <A href='../../call_to/VD_LU_QDECOMP.html' TARGET='index'>1</A>,<A href='../../call_from/VD_LU_QDECOMP.html' TARGET='index'>2</A><a name='255'>
+                                  kv    , kq_scal, mw_facm    , tmpi       , rpdel  ,           &amp;<a name='256'>
+                                  ca    , cc     , dnom       , ze         , rhoi   ,           &amp;<a name='257'>
+                                  tint  , ztodt  , ntop_molec , nbot_molec , cd_top )<a name='258'>
+<a name='259'>
+    <font color=#447700>!------------------------------------------------------------------------------ !<a name='260'></font>
+    <font color=#447700>! Add the molecular diffusivity to the turbulent diffusivity for a consitutent. !<a name='261'></font>
+    <font color=#447700>! Update the superdiagonal (ca(k)), diagonal (cb(k)) and subdiagonal (cc(k))    !<a name='262'></font>
+    <font color=#447700>! coefficients of the tridiagonal diffusion matrix, also ze and denominator.    !<a name='263'></font>
+    <font color=#447700>!------------------------------------------------------------------------------ !<a name='264'></font>
+<a name='265'>
+    <font color=#447700>! ---------------------- !<a name='266'></font>
+    <font color=#447700>! Input-Output Arguments !<a name='267'></font>
+    <font color=#447700>! ---------------------- !<a name='268'></font>
+<a name='269'>
+    integer,  intent(in)    :: pcols<a name='270'>
+    integer,  intent(in)    :: pver<a name='271'>
+    integer,  intent(in)    :: ncol                  <font color=#447700>! Number of atmospheric columns<a name='272'></font>
+<a name='273'>
+    integer,  intent(in)    :: ntop_molec<a name='274'>
+    integer,  intent(in)    :: nbot_molec<a name='275'>
+<a name='276'>
+    logical,  intent(in)    :: fixed_ubc             <font color=#447700>! Fixed upper boundary condition flag<a name='277'></font>
+    real(r8), intent(in)    :: kv(pcols,pver+1)      <font color=#447700>! Eddy diffusivity<a name='278'></font>
+    real(r8), intent(in)    :: kq_scal(pcols,pver+1) <font color=#447700>! Molecular diffusivity ( kq_fac*sqrt(T)*m_d/rho )<a name='279'></font>
+    real(r8), intent(in)    :: mw                    <font color=#447700>! Molecular weight for this constituent<a name='280'></font>
+    real(r8), intent(in)    :: ubc_mmr(pcols)        <font color=#447700>! Upper boundary mixing ratios [ kg/kg ]<a name='281'></font>
+    real(r8), intent(in)    :: mw_facm               <font color=#447700>! sqrt(1/M_q + 1/M_d) for this constituent<a name='282'></font>
+    real(r8), intent(in)    :: tmpi(pcols,pver+1)    <font color=#447700>! dt*(g/R)**2/dp*pi(k+1)/(.5*(tm(k+1)+tm(k))**2<a name='283'></font>
+    real(r8), intent(in)    :: rpdel(pcols,pver)     <font color=#447700>! 1./pdel ( thickness bet interfaces )<a name='284'></font>
+    real(r8), intent(in)    :: rhoi(pcols,pver+1)    <font color=#447700>! Density at interfaces [ kg/m3 ]<a name='285'></font>
+    real(r8), intent(in)    :: tint(pcols,pver+1)    <font color=#447700>! Interface temperature [ K ]<a name='286'></font>
+    real(r8), intent(in)    :: ztodt                 <font color=#447700>! 2 delta-t [ s ]<a name='287'></font>
+<a name='288'>
+    real(r8), intent(inout) :: ca(pcols,pver)        <font color=#447700>! -Upper diagonal<a name='289'></font>
+    real(r8), intent(inout) :: cc(pcols,pver)        <font color=#447700>! -Lower diagonal<a name='290'></font>
+    real(r8), intent(inout) :: dnom(pcols,pver)      <font color=#447700>! 1./(1. + ca(k) + cc(k) - cc(k)*ze(k-1)) , 1./(b(k) - c(k)*e(k-1))<a name='291'></font>
+    real(r8), intent(inout) :: ze(pcols,pver)        <font color=#447700>! Term in tri-diag. matrix system<a name='292'></font>
+<a name='293'>
+    real(r8), intent(out)   :: cd_top(pcols)         <font color=#447700>! Term for updating top level with ubc<a name='294'></font>
+<a name='295'>
+    <font color=#447700>! --------------- !<a name='296'></font>
+    <font color=#447700>! Local Variables !<a name='297'></font>
+    <font color=#447700>! --------------- !<a name='298'></font>
+<a name='299'>
+    integer                 :: i                     <font color=#447700>! Longitude index<a name='300'></font>
+    integer                 :: k, kp1                <font color=#447700>! Vertical indicies<a name='301'></font>
+<a name='302'>
+    real(r8)                :: rghd(pcols,pver+1)    <font color=#447700>! (1/H_i - 1/H) * (rho*g)^(-1)<a name='303'></font>
+    real(r8)                :: kmq(ncol)             <font color=#447700>! Molecular diffusivity for constituent<a name='304'></font>
+    real(r8)                :: wrk0(ncol)            <font color=#447700>! Work variable<a name='305'></font>
+    real(r8)                :: wrk1(ncol)            <font color=#447700>! Work variable<a name='306'></font>
+<a name='307'>
+    real(r8)                :: cb(pcols,pver)        <font color=#447700>! - Diagonal<a name='308'></font>
+    real(r8)                :: kvq(pcols,pver+1)     <font color=#447700>! Output vertical diffusion coefficient<a name='309'></font>
+<a name='310'>
+    <font color=#447700>! ----------------------- !<a name='311'></font>
+    <font color=#447700>! Main Computation Begins !<a name='312'></font>
+    <font color=#447700>! ----------------------- !   <a name='313'></font>
+<a name='314'>
+    <font color=#447700>! --------------------------------------------------------------------- !<a name='315'></font>
+    <font color=#447700>! Determine superdiagonal (ca(k)) and subdiagonal (cc(k)) coeffs of the !<a name='316'></font>
+    <font color=#447700>! tridiagonal diffusion matrix. The diagonal elements  (cb=1+ca+cc) are !<a name='317'></font>
+    <font color=#447700>! a combination of ca and cc; they are not required by the solver.      !<a name='318'></font>
+    <font color=#447700>!---------------------------------------------------------------------- !<a name='319'></font>
+<a name='320'>
+    call <A href='../../html_code/phys/module_cam_support.F.html#T_STARTF'>t_startf</A><A href='../../html_code/phys/module_cam_molec_diff.F.html#VD_LU_QDECOMP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="T_STARTF_1">('vd_lu_qdecomp')<a name='321'>
+<a name='322'>
+    kvq(:,:)  = 0._r8<a name='323'>
+    cd_top(:) = 0._r8<a name='324'>
+<a name='325'>
+  <font color=#447700>! Compute difference between scale heights of constituent and dry air<a name='326'></font>
+<a name='327'>
+    do k = ntop_molec, nbot_molec<a name='328'>
+       do i = 1, ncol<a name='329'>
+          rghd(i,k) = gravit / ( kbtz * n_avog * tint(i,k) ) * ( mw - mw_dry )<a name='330'>
+          rghd(i,k) = ztodt * gravit * rhoi(i,k) * rghd(i,k) <a name='331'>
+       enddo<a name='332'>
+    enddo<a name='333'>
+<a name='334'>
+    <font color=#447700>!-------------------- !<a name='335'></font>
+    <font color=#447700>! Molecular diffusion !<a name='336'></font>
+    <font color=#447700>!-------------------- !<a name='337'></font>
+<a name='338'>
+    do k = nbot_molec - 1, ntop_molec, -1<a name='339'>
+       kp1 = k + 1<a name='340'>
+       kmq(:ncol)  = kq_scal(:ncol,kp1) * mw_facm<a name='341'>
+       wrk0(:ncol) = ( kv(:ncol,kp1) + kmq(:ncol) ) * tmpi(:ncol,kp1)<a name='342'>
+       wrk1(:ncol) = kmq(:ncol) * 0.5_r8 * rghd(:ncol,kp1)<a name='343'>
+     <font color=#447700>! Add species separation term<a name='344'></font>
+       ca(:ncol,k  )  = ( wrk0(:ncol) - wrk1(:ncol) ) * rpdel(:ncol,k)<a name='345'>
+       cc(:ncol,kp1)  = ( wrk0(:ncol) + wrk1(:ncol) ) * rpdel(:ncol,kp1)<a name='346'>
+       kvq(:ncol,kp1) = kmq(:ncol)<a name='347'>
+    end do<a name='348'>
+<a name='349'>
+    if( fixed_ubc ) then<a name='350'>
+        cc(:ncol,ntop_molec) = kq_scal(:ncol,ntop_molec) * mw_facm                 &amp;<a name='351'>
+                             * ( tmpi(:ncol,ntop_molec) + rghd(:ncol,ntop_molec) ) &amp;<a name='352'>
+                             * rpdel(:ncol,ntop_molec)<a name='353'>
+    end if<a name='354'>
+<a name='355'>
+  <font color=#447700>! Calculate diagonal elements<a name='356'></font>
+<a name='357'>
+    do k = nbot_molec - 1, ntop_molec + 1, -1<a name='358'>
+       kp1 = k + 1<a name='359'>
+       cb(:ncol,k) = 1._r8 + ca(:ncol,k) + cc(:ncol,k)                   &amp;<a name='360'>
+                   + rpdel(:ncol,k) * ( kvq(:ncol,kp1) * rghd(:ncol,kp1) &amp;<a name='361'>
+                   - kvq(:ncol,k) * rghd(:ncol,k) )<a name='362'>
+       kvq(:ncol,kp1) = kv(:ncol,kp1) + kvq(:ncol,kp1)<a name='363'>
+    end do<a name='364'>
+<a name='365'>
+    k   = ntop_molec<a name='366'>
+    kp1 = k + 1<a name='367'>
+    if( fixed_ubc ) then<a name='368'>
+        cb(:ncol,k) = 1._r8 + ca(:ncol,k)                                 &amp;<a name='369'>
+                    + rpdel(:ncol,k) * kvq(:ncol,kp1) * rghd(:ncol,kp1)   &amp;<a name='370'>
+                    + kq_scal(:ncol,ntop_molec) * mw_facm                 &amp;<a name='371'>
+                    * ( tmpi(:ncol,ntop_molec) - rghd(:ncol,ntop_molec) ) &amp;<a name='372'>
+                    * rpdel(:ncol,ntop_molec)<a name='373'>
+    else<a name='374'>
+        cb(:ncol,k) = 1._r8 + ca(:ncol,k) &amp;<a name='375'>
+                    + rpdel(:ncol,k) * kvq(:ncol,kp1) * rghd(:ncol,kp1)<a name='376'>
+    end if<a name='377'>
+<a name='378'>
+    k   = nbot_molec<a name='379'>
+    cb(:ncol,k) = 1._r8 + cc(:ncol,k) + ca(:ncol,k) &amp;<a name='380'>
+                - rpdel(:ncol,k) * kvq(:ncol,k)*rghd(:ncol,k)<a name='381'>
+    do k = 1, nbot_molec + 1, -1<a name='382'>
+       cb(:ncol,k) = 1._r8 + ca(:ncol,k) + cc(:ncol,k)<a name='383'>
+    end do<a name='384'>
+<a name='385'>
+  <font color=#447700>! Compute term for updating top level mixing ratio for ubc<a name='386'></font>
+<a name='387'>
+    if( fixed_ubc ) then<a name='388'>
+        cd_top(:ncol) = cc(:ncol,ntop_molec) * ubc_mmr(:ncol)<a name='389'>
+    end if<a name='390'>
+<a name='391'>
+    <font color=#447700>!-------------------------------------------------------- !<a name='392'></font>
+    <font color=#447700>! Calculate e(k).                                         !<a name='393'></font>
+    <font color=#447700>! This term is required in solution of tridiagonal matrix ! <a name='394'></font>
+    <font color=#447700>! defined by implicit diffusion equation.                 !<a name='395'></font>
+    <font color=#447700>!-------------------------------------------------------- !<a name='396'></font>
+<a name='397'>
+    do k = nbot_molec, ntop_molec + 1, -1<a name='398'>
+       dnom(:ncol,k) = 1._r8 / ( cb(:ncol,k) - ca(:ncol,k) * ze(:ncol,k+1) )<a name='399'>
+       ze(:ncol,k)   = cc(:ncol,k) * dnom(:ncol,k)<a name='400'>
+    end do<a name='401'>
+    k = ntop_molec<a name='402'>
+    dnom(:ncol,k) = 1._r8 / ( cb(:ncol,k) - ca(:ncol,k) * ze(:ncol,k+1) )<a name='403'>
+<a name='404'>
+    vd_lu_qdecomp = 1<a name='405'>
+    call <A href='../../html_code/phys/module_cam_support.F.html#T_STOPF'>t_stopf</A><A href='../../html_code/phys/module_cam_molec_diff.F.html#VD_LU_QDECOMP' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="T_STOPF_1">('vd_lu_qdecomp')<a name='406'>
+    return<a name='407'>
+<a name='408'>
+  end function vd_lu_qdecomp<a name='409'>
+<a name='410'>
+  end module molec_diff<a name='411'>
+</pre></body></html>

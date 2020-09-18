@@ -1,0 +1,1015 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_BL_BOULAC'><A href='../../html_code/phys/module_bl_boulac.F.html#MODULE_BL_BOULAC' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_bl_boulac</font> <A href='../../call_to/MODULE_BL_BOULAC.html' TARGET='index'>2</A><a name='3'>
+<a name='4'>
+<font color=#447700>!USE module_model_constants<a name='5'></font>
+    <a name='6'>
+<a name='7'>
+<font color=#447700>!------------------------------------------------------------------------<a name='8'></font>
+<font color=#447700>!    Calculation of the tendency due to momentum, heat <a name='9'></font>
+<font color=#447700>!    and moisture turbulent fluxes follwing the approach <a name='10'></font>
+<font color=#447700>!    of Bougeault and Lacarrere, 1989 (MWR, 117, 1872-1890).<a name='11'></font>
+<font color=#447700>!    The scheme computes a prognostic ecuation for TKE and derives <a name='12'></font>
+<font color=#447700>!    dissipation and turbulent coefficients using length scales.<a name='13'></font>
+<font color=#447700>!    <a name='14'></font>
+<font color=#447700>!    Subroutine written by Alberto Martilli, CIEMAT, Spain,<a name='15'></font>
+<font color=#447700>!    e-mail:alberto_martilli@ciemat.es<a name='16'></font>
+<font color=#447700>!    August 2006.<a name='17'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='18'></font>
+<font color=#447700>! IN THIS VERSION TKE IS NOT ADVECTED!!!!<a name='19'></font>
+<font color=#447700>! TO BE CHANGED IN THE FUTURE<a name='20'></font>
+<font color=#447700>! <a name='21'></font>
+<font color=#447700>! -----------------------------------------------------------------------<a name='22'></font>
+<font color=#447700>!  Constant used in the module<a name='23'></font>
+<font color=#447700>!  ck_b=constant used in the compuation of diffusion coefficients<a name='24'></font>
+<font color=#447700>!  ceps_b=constant used inthe computation of dissipation<a name='25'></font>
+<font color=#447700>!  temin= minimum value allowed for TKE<a name='26'></font>
+<font color=#447700>!  vk=von karman constant<a name='27'></font>
+<font color=#447700>! -----------------------------------------------------------------------<a name='28'></font>
+<a name='29'>
+      real ck_b,ceps_b,vk,temin    <font color=#447700>! constant for Bougeault and Lacarrere    <a name='30'></font>
+      parameter(ceps_b=1/1.4,ck_b=0.4,temin=0.0001,vk=0.4) <font color=#447700>! impose minimum values for tke similar to those of MYJ<a name='31'></font>
+<font color=#447700>! -----------------------------------------------------------------------     <a name='32'></font>
+<a name='33'>
+<a name='34'>
+   CONTAINS<a name='35'>
+ <a name='36'>
+<A NAME='BOULAC'><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='37'>
+      <font color=#993300>subroutine </font><font color=#cc0000>boulac</font>(frc_urb2d,idiff,flag_bep,dz8w,dt,u_phy,v_phy   &amp;  <A href='../../call_to/BOULAC.html' TARGET='index'>1</A>,<A href='../../call_from/BOULAC.html' TARGET='index'>7</A><a name='38'>
+                      ,th_phy,rho,qv_curr,qc_curr,hfx                                  &amp;<a name='39'>
+                      ,qfx,ustar,cp,g                                          &amp;<a name='40'>
+                      ,rublten,rvblten,rthblten                                &amp;<a name='41'>
+                      ,rqvblten,rqcblten                        &amp; <a name='42'>
+                      ,tke,dlk,wu,wv,wt,wq,exch_h,exch_m,pblh        &amp;<a name='43'>
+                      ,a_u_bep,a_v_bep,a_t_bep,a_q_bep          &amp;<a name='44'>
+                      ,a_e_bep,b_u_bep,b_v_bep                  &amp;<a name='45'>
+                      ,b_t_bep,b_q_bep,b_e_bep,dlg_bep          &amp;<a name='46'>
+                      ,dl_u_bep,sf_bep,vl_bep                   &amp;                 <a name='47'>
+                      ,ids,ide, jds,jde, kds,kde                &amp;<a name='48'>
+                      ,ims,ime, jms,jme, kms,kme                &amp;<a name='49'>
+                      ,its,ite, jts,jte, kts,kte)                    <a name='50'>
+<a name='51'>
+      implicit none<a name='52'>
+<a name='53'>
+<a name='54'>
+<a name='55'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='56'></font>
+<font color=#447700>!     Input<a name='57'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='58'></font>
+   INTEGER::                        ids,ide, jds,jde, kds,kde,  &amp;<a name='59'>
+                                    ims,ime, jms,jme, kms,kme,  &amp;<a name='60'>
+                                    its,ite, jts,jte, kts,kte<a name='61'>
+ <a name='62'>
+   integer, INTENT(IN) :: idiff<a name='63'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::   DZ8W      <font color=#447700>!vertical resolution       <a name='64'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::   qv_curr   <font color=#447700>!moisture  <a name='65'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::   qc_curr   <font color=#447700>!liquid water<a name='66'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::   RHO       <font color=#447700>!air density<a name='67'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::   TH_PHY    <font color=#447700>!potential temperature<a name='68'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::   U_PHY     <font color=#447700>!x-component of wind<a name='69'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::   V_PHY     <font color=#447700>!y-component of wind<a name='70'></font>
+   REAL, DIMENSION( ims:ime, jms:jme ), INTENT(IN   )    ::   ustar              <font color=#447700>!friction velocity<a name='71'></font>
+   REAL, DIMENSION( ims:ime, jms:jme ), INTENT(IN   )    ::   hfx                <font color=#447700>!sensible heat flux (W/m2) at surface <a name='72'></font>
+   REAL, DIMENSION( ims:ime, jms:jme ), INTENT(IN   )    ::   qfx                <font color=#447700>!moisture flux at surface<a name='73'></font>
+   real,  INTENT(IN   )    :: g,cp                                              <font color=#447700>!gravity and Cp<a name='74'></font>
+   REAL, INTENT(IN )::   DT                                                      <font color=#447700>! Time step<a name='75'></font>
+<a name='76'>
+   REAL, DIMENSION( ims:ime, jms:jme ), INTENT(IN   )    ::   FRC_URB2D          <font color=#447700>!fraction cover urban<a name='77'></font>
+   REAL, DIMENSION( ims:ime, jms:jme ), INTENT(INOUT)    ::   PBLH          <font color=#447700>!PBL height<a name='78'></font>
+<font color=#447700>!<a name='79'></font>
+<font color=#447700>! variable added for urban<a name='80'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::a_u_bep        <font color=#447700>! Implicit component for the momemtum in X-direction<a name='81'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::a_v_bep        <font color=#447700>! Implicit component for the momemtum in Y-direction<a name='82'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::a_t_bep        <font color=#447700>! Implicit component for the Pot. Temp.<a name='83'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::a_q_bep        <font color=#447700>! Implicit component for Moisture<a name='84'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::a_e_bep        <font color=#447700>! Implicit component for the TKE<a name='85'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::b_u_bep        <font color=#447700>! Explicit component for the momemtum in X-direction<a name='86'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::b_v_bep        <font color=#447700>! Explicit component for the momemtum in Y-direction<a name='87'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::b_t_bep        <font color=#447700>! Explicit component for the Pot. Temp.<a name='88'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::b_q_bep        <font color=#447700>! Explicit component for Moisture<a name='89'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::b_e_bep        <font color=#447700>! Explicit component for the TKE<a name='90'></font>
+<a name='91'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(INOUT)    ::dlg_bep        <font color=#447700>! Height above ground (L_ground in formula (24) of the BLM paper). <a name='92'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::dl_u_bep        <font color=#447700>! Length scale (lb in formula (22) ofthe BLM paper).<a name='93'></font>
+<font color=#447700>! urban surface and volumes        <a name='94'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::sf_bep           <font color=#447700>! surface of the urban grid cells<a name='95'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   )    ::vl_bep             <font color=#447700>! volume of the urban grid cells<a name='96'></font>
+   LOGICAL, INTENT(IN) :: flag_bep                                             <font color=#447700>!flag for BEP<a name='97'></font>
+                                                           <a name='98'>
+<font color=#447700>!<a name='99'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='100'></font>
+<font color=#447700>!     Local, carried on from one timestep to the other<a name='101'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='102'></font>
+<font color=#447700>!      real, save, allocatable, dimension (:,:,:)::TKE  ! Turbulent kinetic energy<a name='103'></font>
+      real,  dimension (ims:ime, kms:kme, jms:jme)  ::th_0 <font color=#447700>! reference state for potential temperature<a name='104'></font>
+<a name='105'>
+<font color=#447700>!------------------------------------------------------------------------<a name='106'></font>
+<font color=#447700>!     Output<a name='107'></font>
+<font color=#447700>!------------------------------------------------------------------------   <a name='108'></font>
+        real, dimension( ims:ime, kms:kme, jms:jme ), INTENT(OUT   )    ::  exch_h <font color=#447700>! exchange coefficient for heat<a name='109'></font>
+        real, dimension( ims:ime, kms:kme, jms:jme ), INTENT(OUT   )    ::  exch_m <font color=#447700>! exchange coefficient for momentum<a name='110'></font>
+        real, dimension( ims:ime, kms:kme, jms:jme ), INTENT(INOUT   )    ::  tke  <font color=#447700>! Turbulence Kinetic Energy <a name='111'></font>
+        real, dimension( ims:ime, kms:kme, jms:jme ), INTENT(OUT   )    ::  wu  <font color=#447700>! Turbulent flux of momentum (x) <a name='112'></font>
+        real, dimension( ims:ime, kms:kme, jms:jme ), INTENT(OUT   )    ::  wv  <font color=#447700>! Turbulent flux of momentum (y) <a name='113'></font>
+        real, dimension( ims:ime, kms:kme, jms:jme ), INTENT(OUT   )    ::  wt  <font color=#447700>! Turbulent flux of temperature<a name='114'></font>
+        real, dimension( ims:ime, kms:kme, jms:jme ), INTENT(OUT   )    ::  wq  <font color=#447700>! Turbulent flux of water vapor<a name='115'></font>
+        real, dimension( ims:ime, kms:kme, jms:jme ), INTENT(OUT   )    ::  dlk  <font color=#447700>! Turbulent flux of water vapor<a name='116'></font>
+<font color=#447700>! only if idiff not equal 1:<a name='117'></font>
+        REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(OUT   )    ::   RUBLTEN  <font color=#447700>!tendency for U_phy<a name='118'></font>
+        REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(OUT   )    ::   RVBLTEN  <font color=#447700>!tendency for V_phy<a name='119'></font>
+        REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(OUT   )    ::   RTHBLTEN <font color=#447700>!tendency for TH_phy<a name='120'></font>
+        REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(OUT   )    ::   RQVBLTEN <font color=#447700>!tendency for QV_curr<a name='121'></font>
+        REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(OUT   )    ::   RQCBLTEN <font color=#447700>!tendency for QV_curr<a name='122'></font>
+<a name='123'>
+<font color=#447700>!--------------------------------------------------------------<a name='124'></font>
+<font color=#447700>! Local<a name='125'></font>
+<font color=#447700>!--------------------------------------------------------------<a name='126'></font>
+<font color=#447700>! 1D array used for the input and output of the routine boulac1D<a name='127'></font>
+<a name='128'>
+      real z1D(kms:kme)               <font color=#447700>! vertical coordinates (faces of the grid)<a name='129'></font>
+      real dz1D(kms:kme)              <font color=#447700>! vertical resolution<a name='130'></font>
+      real u1D(kms:kme)                 <font color=#447700>! wind speed in the x directions<a name='131'></font>
+      real v1D(kms:kme)                 <font color=#447700>! wind speed in the y directions<a name='132'></font>
+      real th1D(kms:kme)                <font color=#447700>! potential temperature<a name='133'></font>
+      real q1D(kms:kme)                 <font color=#447700>! moisture<a name='134'></font>
+      real qc1D(kms:kme)                 <font color=#447700>! liquid water<a name='135'></font>
+      real rho1D(kms:kme)               <font color=#447700>! air density<a name='136'></font>
+      real rhoz1D(kms:kme)            <font color=#447700>! air density at the faces<a name='137'></font>
+      real tke1D(kms:kme)               <font color=#447700>! air pressure<a name='138'></font>
+      real th01D(kms:kme)               <font color=#447700>! reference potential temperature<a name='139'></font>
+      real dlk1D(kms:kme)               <font color=#447700>! dlk<a name='140'></font>
+      real dls1D(kms:kme)               <font color=#447700>! dls<a name='141'></font>
+      real exch1D(kms:kme)            <font color=#447700>! exch<a name='142'></font>
+      real sf1D(kms:kme)              <font color=#447700>! surface of the grid cells<a name='143'></font>
+      real vl1D(kms:kme)                <font color=#447700>! volume of the  grid cells<a name='144'></font>
+      real a_u1D(kms:kme)               <font color=#447700>! Implicit component of the momentum sources or sinks in the X-direction<a name='145'></font>
+      real a_v1D(kms:kme)               <font color=#447700>! Implicit component of the momentum sources or sinks in the Y-direction<a name='146'></font>
+      real a_t1D(kms:kme)               <font color=#447700>! Implicit component of the heat sources or sinks<a name='147'></font>
+      real a_q1D(kms:kme)               <font color=#447700>! Implicit component of the moisture sources or sinks<a name='148'></font>
+      real a_qc1D(kms:kme)               <font color=#447700>! Implicit component of the liquid water sources or sinks<a name='149'></font>
+      real a_e1D(kms:kme)               <font color=#447700>! Implicit component of the TKE sources or sinks<a name='150'></font>
+      real b_u1D(kms:kme)               <font color=#447700>! Explicit component of the momentum sources or sinks in the X-direction<a name='151'></font>
+      real b_v1D(kms:kme)               <font color=#447700>! Explicit component of the momentum sources or sinks in the Y-direction<a name='152'></font>
+      real b_t1D(kms:kme)               <font color=#447700>! Explicit component of the heat sources or sinks<a name='153'></font>
+      real b_q1D(kms:kme)               <font color=#447700>! Explicit component of the moisture sources or sinks<a name='154'></font>
+      real b_qc1D(kms:kme)               <font color=#447700>! Explicit component of the liquid water sources or sinks<a name='155'></font>
+      real b_e1D(kms:kme)               <font color=#447700>! Explicit component of the TKE sources or sinks<a name='156'></font>
+      real dlg1D(kms:kme)               <font color=#447700>! Height above ground (L_ground in formula (24) of the BLM paper). <a name='157'></font>
+      real dl_u1D(kms:kme)              <font color=#447700>! Length scale (lb in formula (22) ofthe BLM paper)<a name='158'></font>
+      real sh1D(kms:kme)              <font color=#447700>! shear<a name='159'></font>
+      real bu1D(kms:kme)              <font color=#447700>! buoyancy<a name='160'></font>
+      real wu1D(kms:kme)              <font color=#447700>! turbulent flux of momentum (x component)<a name='161'></font>
+      real wv1D(kms:kme)              <font color=#447700>! turbulent flux of momentum (y component)<a name='162'></font>
+      real wt1D(kms:kme)              <font color=#447700>! turbulent flux of temperature<a name='163'></font>
+      real wq1D(kms:kme)              <font color=#447700>! turbulent flux of water vapor<a name='164'></font>
+      real wqc1D(kms:kme)              <font color=#447700>! turbulent flux of liquid water <a name='165'></font>
+      real gamma1D(kms:kme)              <font color=#447700>! non local term<a name='166'></font>
+      real t2_1D(kms:kme)              <font color=#447700>! temperature variance<a name='167'></font>
+      real w2_1D(kms:kme)              <font color=#447700>! vertical velocity variance<a name='168'></font>
+<font color=#447700>! local added only for diagnostic output<a name='169'></font>
+      real a_e(ims:ime,kms:kme,jms:jme) <font color=#447700>! implicit term in TKE<a name='170'></font>
+      real b_e(ims:ime,kms:kme,jms:jme) <font color=#447700>! explicit term in TKE<a name='171'></font>
+      real bu(ims:ime,kms:kme,jms:jme) <font color=#447700>! buoyancy term in TKE<a name='172'></font>
+      real sh(ims:ime,kms:kme,jms:jme) <font color=#447700>! shear term in TKE<a name='173'></font>
+      real wrk(ims:ime) <font color=#447700>! working array<a name='174'></font>
+      integer ix,iy,iz,id,iz_u,iw_u,ig,ir_u,ix1,iy1,igamma<a name='175'>
+      real ufrac_int                                              <font color=#447700>! urban fraction     <a name='176'></font>
+      real vect,time_tke,hour,zzz<a name='177'>
+      real ustarf,wstar,wts,t2,w2,tstar_w,zzi<a name='178'>
+      real summ1,summ2,summ3<a name='179'>
+      save time_tke,hour<a name='180'>
+<font color=#447700>!<a name='181'></font>
+<font color=#447700>!    <a name='182'></font>
+<a name='183'>
+<font color=#447700>!here I fix the value of the reference state equal to the value of the potnetial temperature<a name='184'></font>
+<font color=#447700>! the only use of this variable in the code is to compute the paramter BETA = g/th0<a name='185'></font>
+<font color=#447700>! I fix it to 300K. <a name='186'></font>
+      <a name='187'>
+        do ix=its,ite<a name='188'>
+        do iy=jts,jte        <a name='189'>
+        do iz=kts,kte<a name='190'>
+<font color=#447700>!         th_0(ix,iz,iy)=th_phy(ix,iz,iy)<a name='191'></font>
+         th_0(ix,iz,iy)=300.<a name='192'>
+        enddo<a name='193'>
+        enddo<a name='194'>
+        enddo<a name='195'>
+<font color=#447700>! initialization<a name='196'></font>
+       z1D=0.               <a name='197'>
+       dz1D=0.              <a name='198'>
+       u1D =0.               <a name='199'>
+       v1D =0.                <a name='200'>
+       th1D=0.              <a name='201'>
+       q1D=0.                <a name='202'>
+       rho1D=0.              <a name='203'>
+       rhoz1D=0.            <a name='204'>
+       tke1D =0.             <a name='205'>
+       th01D =0.             <a name='206'>
+       dlk1D =0.              <a name='207'>
+       dls1D =0.              <a name='208'>
+       exch1D=0.            <a name='209'>
+       sf1D  =1.            <a name='210'>
+       vl1D  =1.             <a name='211'>
+       a_u1D =0.              <a name='212'>
+       a_v1D =0.              <a name='213'>
+       a_t1D =0.              <a name='214'>
+       a_q1D =0. <a name='215'>
+       a_qc1D =0.              <a name='216'>
+       a_e1D =0.              <a name='217'>
+       b_u1D =0.             <a name='218'>
+       b_v1D =0.              <a name='219'>
+       b_t1D =0.            <a name='220'>
+       b_q1D =0.<a name='221'>
+       b_qc1D =0.              <a name='222'>
+       b_e1D =0.             <a name='223'>
+       dlg1D =0.             <a name='224'>
+       dl_u1D=0.              <a name='225'>
+       sh1D  =0.            <a name='226'>
+       bu1D  =0.            <a name='227'>
+       wu1D  =0.           <a name='228'>
+       wv1D  =0.            <a name='229'>
+       wt1D =0.              <a name='230'>
+       wq1D =0.             <a name='231'>
+<a name='232'>
+<font color=#447700>! flag to choose the method for the calcaulation of the gamma non local term:<a name='233'></font>
+<font color=#447700>! igamma=0 - no term<a name='234'></font>
+<font color=#447700>! igamma=1 Troen and Mahrt<a name='235'></font>
+<font color=#447700>! igamma=2 Deardroff and Therry-Lacarrere<a name='236'></font>
+<font color=#447700>! igamma=3 Holstag and Moeng<a name='237'></font>
+    <a name='238'>
+      igamma=1    <a name='239'>
+<font color=#447700>! loop over the columns. <a name='240'></font>
+<font color=#447700>! put variables in 1D temporary arrays<a name='241'></font>
+<font color=#447700>!     <a name='242'></font>
+<a name='243'>
+       do ix=its,ite<a name='244'>
+       do iy=jts,jte<a name='245'>
+         z1d(kts)=0.<a name='246'>
+         do iz= kts,kte<a name='247'>
+	  u1D(iz)=u_phy(ix,iz,iy)<a name='248'>
+	  v1D(iz)=v_phy(ix,iz,iy)<a name='249'>
+	  th1D(iz)=th_phy(ix,iz,iy)<a name='250'>
+          q1D(iz)=qv_curr(ix,iz,iy)<a name='251'>
+          qc1D(iz)=qc_curr(ix,iz,iy)<a name='252'>
+          tke1D(iz)=tke(ix,iz,iy)<a name='253'>
+	  rho1D(iz)=rho(ix,iz,iy)	   <a name='254'>
+	  th01D(iz)=th_0(ix,iz,iy)	  <a name='255'>
+          dz1D(iz)=dz8w(ix,iz,iy)<a name='256'>
+          z1D(iz+1)=z1D(iz)+dz1D(iz)<a name='257'>
+         enddo<a name='258'>
+        rhoz1D(kts)=rho1D(kts)<a name='259'>
+        do iz=kts+1,kte<a name='260'>
+         rhoz1D(iz)=(rho1D(iz)*dz1D(iz-1)+rho1D(iz-1)*dz1D(iz))/(dz1D(iz-1)+dz1D(iz))<a name='261'>
+        enddo<a name='262'>
+        rhoz1D(kte+1)=rho1D(kte)<a name='263'>
+        if(flag_bep)then<a name='264'>
+         do iz=kts,kte          <a name='265'>
+          a_e1D(iz)=a_e_bep(ix,iz,iy)<a name='266'>
+          b_e1D(iz)=b_e_bep(ix,iz,iy)<a name='267'>
+          dlg1D(iz)=(z1D(iz)+z1D(iz+1))/2.*(1.-frc_urb2d(ix,iy))+dlg_bep(ix,iz,iy)*frc_urb2d(ix,iy)<a name='268'>
+          dl_u1D(iz)=dl_u_bep(ix,iz,iy)<a name='269'>
+          if((1.-frc_urb2d(ix,iy)).lt.1.)dl_u1D(iz)=dl_u1D(iz)/frc_urb2d(ix,iy)<a name='270'>
+          vl1D(iz)=vl_bep(ix,iz,iy)<a name='271'>
+          sf1D(iz)=sf_bep(ix,iz,iy)<a name='272'>
+         enddo<a name='273'>
+         ufrac_int=frc_urb2d(ix,iy)<a name='274'>
+         sf1D(kte+1)=sf_bep(ix,1,iy)<a name='275'>
+        else<a name='276'>
+         do iz=kts,kte          <a name='277'>
+          a_e1D(iz)=0.        <a name='278'>
+          b_e1D(iz)=0.<a name='279'>
+          dlg1D(iz)=(z1D(iz)+z1D(iz+1))/2.<a name='280'>
+          dl_u1D(iz)=0.<a name='281'>
+          vl1D(iz)=1.<a name='282'>
+          sf1D(iz)=1.<a name='283'>
+         enddo<a name='284'>
+         ufrac_int=0.<a name='285'>
+         sf1D(kte+1)=1.<a name='286'>
+        endif<a name='287'>
+<a name='288'>
+<font color=#447700>! compute the pbl_height<a name='289'></font>
+        call <A href='../../html_code/phys/module_bl_boulac.F.html#PBL_HEIGHT'>pbl_height</A><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PBL_HEIGHT_1">(kms,kme,kts,kte,dz1d,z1d,th1D,q1D,pblh(ix,iy))<a name='290'>
+<a name='291'>
+<font color=#447700>! compute the values of wstar<a name='292'></font>
+        wts=max(0.,hfx(ix,iy)/rho1D(1)/cp)<a name='293'>
+        wstar=(g*wts*pblh(ix,iy)/th01D(1))**(1./3.)<a name='294'>
+        if (wts .ne. 0.0) then<a name='295'>
+          tstar_w=wts/wstar<a name='296'>
+        else<a name='297'>
+          tstar_w=0.0<a name='298'>
+        endif<a name='299'>
+        t2_1D=0.<a name='300'>
+        w2_1D=0.<a name='301'>
+        gamma1D=0.<a name='302'>
+<font color=#447700>! compute the variances<a name='303'></font>
+         do iz=kts+1,kte<a name='304'>
+	   zzi=z1D(iz)/pblh(ix,iy)<a name='305'>
+	   t2_1D(iz)=1.8*(zzi**(-2./3.))*(tstar_w**2.)<a name='306'>
+	   w2_1D(iz)=1.8*(zzi**(2./3.))*((1.-0.8*zzi)**2.)*(wstar**2.)<a name='307'>
+        enddo<a name='308'>
+<a name='309'>
+<font color=#447700>! compute gamma <a name='310'></font>
+     <a name='311'>
+ <a name='312'>
+       if(igamma.eq.1)then<a name='313'>
+<font color=#447700>! (Troen and Mahrt)<a name='314'></font>
+        do iz=kts+1,kte<a name='315'>
+         if(z1D(iz).le.1.0*pblh(ix,iy).and.wts.gt.0.)then<a name='316'>
+          gamma1D(iz)=10.*wts/wstar/pblh(ix,iy)<a name='317'>
+         else<a name='318'>
+          gamma1D(iz)=0.<a name='319'>
+         endif<a name='320'>
+        enddo<a name='321'>
+<a name='322'>
+       elseif(igamma.eq.2)then<a name='323'>
+<font color=#447700>! Deardorff, and Therry -Lacarrere<a name='324'></font>
+         do iz=kts+1,kte<a name='325'>
+	  if(wts.gt.0)then<a name='326'>
+           if(z1D(iz).le.(1.0*pblh(ix,iy)).and.z1D(iz).gt.(0.1*pblh(ix,iy)))then<a name='327'>
+            gamma1D(iz)=g/th01D(iz)*t2_1D(iz)/w2_1D(iz)<a name='328'>
+           else<a name='329'>
+            gamma1D(iz)=0.<a name='330'>
+           endif<a name='331'>
+	  endif<a name='332'>
+         enddo<a name='333'>
+<a name='334'>
+       elseif(igamma.eq.3)then<font color=#447700>! (Holtslag and Moeng)<a name='335'></font>
+         do iz=kts+1,kte<a name='336'>
+          if(z1D(iz).le.(1.0*pblh(ix,iy)).and.wts.gt.0)then<a name='337'>
+           gamma1D(iz)=2.*wstar*wts/w2_1D(iz)/pblh(ix,iy)<a name='338'>
+          else<a name='339'>
+           gamma1D(iz)=0.<a name='340'>
+          endif<a name='341'>
+         enddo<a name='342'>
+	  <a name='343'>
+<a name='344'>
+       endif<a name='345'>
+       <a name='346'>
+<a name='347'>
+         call <A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC1D'>boulac1D</A><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="BOULAC1D_1">(ix,iy,ufrac_int,kms,kme,kts,kte,dz1d,z1D,dt,u1D,v1D,th1D,rho1D,rhoz1D,q1D,th01D,&amp;<a name='348'>
+                   tke1D,ustar(ix,iy),hfx(ix,iy),qfx(ix,iy),cp,g,        &amp; <a name='349'>
+                   a_e1D,b_e1D,                              &amp; <a name='350'>
+                   dlg1D,dl_u1D,sf1D,vl1D,dlk1D,dls1D,exch1D,sh1D,bu1D,gamma1D)                    <a name='351'>
+<a name='352'>
+         <a name='353'>
+<a name='354'>
+<font color=#447700>! store turbulent exchange coefficients, TKE, and other variables<a name='355'></font>
+         <a name='356'>
+         do iz= kts,kte<a name='357'>
+          a_e(ix,iz,iy)=a_e1D(iz)<a name='358'>
+          b_e(ix,iz,iy)=b_e1D(iz)<a name='359'>
+          if(flag_bep)then<a name='360'>
+          dlg_bep(ix,iz,iy)=dlg1D(iz)<a name='361'>
+          endif<a name='362'>
+          tke(ix,iz,iy)=tke1D(iz)<a name='363'>
+          dlk(ix,iz,iy)=dlk1D(iz)<a name='364'>
+          sh(ix,iz,iy)=sh1D(iz)<a name='365'>
+          bu(ix,iz,iy)=bu1D(iz)<a name='366'>
+          exch_h(ix,iz,iy)=exch1D(iz)<a name='367'>
+          exch_m(ix,iz,iy)=exch1D(iz)<a name='368'>
+         enddo<a name='369'>
+<a name='370'>
+         if(idiff.ne.1)then<a name='371'>
+<a name='372'>
+<font color=#447700>! estimate the tendencies<a name='373'></font>
+<a name='374'>
+        if(flag_bep)then         <a name='375'>
+         do iz=kts,kte          <a name='376'>
+          a_t1D(iz)=a_t_bep(ix,iz,iy)<a name='377'>
+          b_t1D(iz)=b_t_bep(ix,iz,iy)<a name='378'>
+          a_u1D(iz)=a_u_bep(ix,iz,iy)<a name='379'>
+          b_u1D(iz)=b_u_bep(ix,iz,iy)<a name='380'>
+          a_v1D(iz)=a_v_bep(ix,iz,iy)<a name='381'>
+          b_v1D(iz)=b_v_bep(ix,iz,iy)<a name='382'>
+          a_q1D(iz)=a_q_bep(ix,iz,iy)<a name='383'>
+          b_q1D(iz)=b_q_bep(ix,iz,iy)<a name='384'>
+         enddo<a name='385'>
+        else<a name='386'>
+         do iz=kts,kte          <a name='387'>
+          a_t1D(iz)=0.         <a name='388'>
+          b_t1D(iz)=0.<a name='389'>
+          a_u1D(iz)=0.        <a name='390'>
+          b_u1D(iz)=0.<a name='391'>
+          a_v1D(iz)=0.         <a name='392'>
+          b_v1D(iz)=0.<a name='393'>
+          a_q1D(iz)=0.        <a name='394'>
+          b_q1D(iz)=0.<a name='395'>
+         enddo<a name='396'>
+          b_t1D(1)=hfx(ix,iy)/dz1D(1)/rho1D(1)/cp         <a name='397'>
+          b_q1D(1)=qfx(ix,iy)/dz1D(1)/rho1D(1)<a name='398'>
+          a_u1D(1)=(-ustar(ix,iy)*ustar(ix,iy)/dz1D(1)/((u1D(1)**2.+v1D(1)**2.)**.5))<a name='399'>
+          a_v1D(1)=(-ustar(ix,iy)*ustar(ix,iy)/dz1D(1)/((u1D(1)**2.+v1D(1)**2.)**.5))<a name='400'>
+        endif<a name='401'>
+<a name='402'>
+ <a name='403'>
+<font color=#447700>!<a name='404'></font>
+       <a name='405'>
+<font color=#447700>! compute the value of the extra term that will be added to b_t1D<a name='406'></font>
+        do iz=kts+1,kte<a name='407'>
+         if(z1D(iz).le.1.0*pblh(ix,iy).and.wts.gt.0.)then<a name='408'>
+          b_t1D(iz)=b_t1D(iz)-(exch1D(iz+1)*gamma1D(iz+1)-exch1D(iz)*gamma1D(iz))/dz1D(iz)<a name='409'>
+         endif<a name='410'>
+        enddo<a name='411'>
+       <a name='412'>
+    <a name='413'>
+<font color=#447700>!<a name='414'></font>
+<a name='415'>
+<a name='416'>
+         <a name='417'>
+<font color=#447700>! solve diffusion equation for momentum x component          <a name='418'></font>
+       call <A href='../../html_code/phys/module_pbl_driver.F.html#DIFF'>diff</A><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DIFF_1">(kms,kme,kts,kte,1,1,dt,u1D,rho1D,rhoz1D,exch1D,a_u1D,b_u1D,sf1D,vl1D,dz1D,wu1D)<a name='419'>
+        <a name='420'>
+<font color=#447700>! solve diffusion equation for momentum y component          <a name='421'></font>
+       call <A href='../../html_code/phys/module_pbl_driver.F.html#DIFF'>diff</A><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DIFF_2">(kms,kme,kts,kte,1,1,dt,v1D,rho1D,rhoz1D,exch1D,a_v1D,b_v1D,sf1D,vl1D,dz1D,wv1D)<a name='422'>
+<a name='423'>
+<font color=#447700>! solve diffusion equation for potential temperature        <a name='424'></font>
+       call <A href='../../html_code/phys/module_pbl_driver.F.html#DIFF'>diff</A><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DIFF_3">(kms,kme,kts,kte,1,1,dt,th1D,rho1D,rhoz1D,exch1D,a_t1D,b_t1D,sf1D,vl1D,dz1D,wt1D)<a name='425'>
+<a name='426'>
+<font color=#447700>! solve diffusion equation for water vapor mixing ratio     <a name='427'></font>
+       call <A href='../../html_code/phys/module_pbl_driver.F.html#DIFF'>diff</A><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DIFF_4">(kms,kme,kts,kte,1,1,dt,q1D,rho1D,rhoz1D,exch1D,a_q1D,b_q1D,sf1D,vl1D,dz1D,wq1D)<a name='428'>
+<a name='429'>
+<font color=#447700>! solve diffusion equation for liquid water mixing ratio     <a name='430'></font>
+       call <A href='../../html_code/phys/module_pbl_driver.F.html#DIFF'>diff</A><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DIFF_5">(kms,kme,kts,kte,1,1,dt,qc1D,rho1D,rhoz1D,exch1D,a_qc1D,b_qc1D,sf1D,vl1D,dz1D,wqc1D)<a name='431'>
+<a name='432'>
+<font color=#447700>! compute the tendencies<a name='433'></font>
+                             <a name='434'>
+         do iz= kts,kte<a name='435'>
+          rthblten(ix,iz,iy)=rthblten(ix,iz,iy)+(th1D(iz)-th_phy(ix,iz,iy))/dt<a name='436'>
+          rqvblten(ix,iz,iy)=rqvblten(ix,iz,iy)+(q1D(iz)-qv_curr(ix,iz,iy))/dt<a name='437'>
+          rqcblten(ix,iz,iy)=rqcblten(ix,iz,iy)+(qc1D(iz)-qc_curr(ix,iz,iy))/dt<a name='438'>
+          rublten(ix,iz,iy)=rublten(ix,iz,iy)+(u1D(iz)-u_phy(ix,iz,iy))/dt<a name='439'>
+          rvblten(ix,iz,iy)=rvblten(ix,iz,iy)+(v1D(iz)-v_phy(ix,iz,iy))/dt  <a name='440'>
+          wu(ix,iz,iy)=wu1D(iz)<a name='441'>
+          wv(ix,iz,iy)=wv1D(iz) <a name='442'>
+          wt(ix,iz,iy)=wt1D(iz)<a name='443'>
+          wq(ix,iz,iy)=wq1D(iz)      <a name='444'>
+        enddo<a name='445'>
+      endif<a name='446'>
+   <a name='447'>
+      enddo  <font color=#447700>! iy<a name='448'></font>
+      enddo  <font color=#447700>! ix<a name='449'></font>
+<a name='450'>
+  <a name='451'>
+      return<a name='452'>
+      end subroutine boulac<a name='453'>
+            <a name='454'>
+<a name='455'>
+<font color=#447700>! ===6=8===============================================================72<a name='456'></font>
+<a name='457'>
+<font color=#447700>! ===6=8===============================================================72<a name='458'></font>
+<a name='459'>
+<A NAME='BOULAC1D'><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC1D' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='460'>
+      <font color=#993300>subroutine </font><font color=#cc0000>boulac1D</font>(ix,iy,ufrac_int,kms,kme,kts,kte,dz,z,dt,u,v,th,rho,rhoz,qa,th0,te,    &amp; <A href='../../call_to/BOULAC1D.html' TARGET='index'>1</A>,<A href='../../call_from/BOULAC1D.html' TARGET='index'>5</A><a name='461'>
+                   ustar,hfx,qfx,cp,g,                               &amp; <a name='462'>
+                   a_e,b_e,                        &amp; <a name='463'>
+                   dlg,dl_u,sf,vl,dlk,dls,exch,sh,bu,gamma)                           <a name='464'>
+<a name='465'>
+<font color=#447700>! ----------------------------------------------------------------------<a name='466'></font>
+<font color=#447700>! 1D resolution of TKE following Bougeault and Lacarrere<a name='467'></font>
+<font color=#447700>! ----------------------------------------------------------------------<a name='468'></font>
+<a name='469'>
+      implicit none<a name='470'>
+<a name='471'>
+      integer iz,ix,iy<a name='472'>
+<a name='473'>
+<font color=#447700>! ----------------------------------------------------------------------<a name='474'></font>
+<font color=#447700>! INPUT:<a name='475'></font>
+<font color=#447700>! ----------------------------------------------------------------------<a name='476'></font>
+<a name='477'>
+<a name='478'>
+      integer kms,kme,kts,kte                 <a name='479'>
+      real z(kms:kme)               <font color=#447700>! Altitude above the ground of the cell interfaces.<a name='480'></font>
+      real dz(kms:kme)                <font color=#447700>! vertical resolution<a name='481'></font>
+      real u(kms:kme)                <font color=#447700>! Wind speed in the x direction<a name='482'></font>
+      real v(kms:kme)                <font color=#447700>! Wind speed in the y direction<a name='483'></font>
+      real th(kms:kme)                <font color=#447700>! Potential temperature<a name='484'></font>
+      real rho(kms:kme)                <font color=#447700>! Air density<a name='485'></font>
+      real g                     <font color=#447700>! gravity<a name='486'></font>
+      real cp                    <font color=#447700>!  <a name='487'></font>
+      real te(kms:kme)                <font color=#447700>! turbulent kinetic energy<a name='488'></font>
+      real qa(kms:kme)                <font color=#447700>! air humidity<a name='489'></font>
+      real th0(kms:kme)               <font color=#447700>! Reference potential temperature <a name='490'></font>
+      real dt                    <font color=#447700>! Time step<a name='491'></font>
+      real ustar                 <font color=#447700>! ustar<a name='492'></font>
+      real hfx                   <font color=#447700>! sensbile heat flux<a name='493'></font>
+      real qfx                   <font color=#447700>! kinematic latent heat flux<a name='494'></font>
+      real sf(kms:kme)              <font color=#447700>! surface of the urban grid cells<a name='495'></font>
+      real vl(kms:kme)                <font color=#447700>! volume of the urban grid cells<a name='496'></font>
+      real a_e(kms:kme)               <font color=#447700>! Implicit component of the TKE sources or sinks<a name='497'></font>
+      real b_e(kms:kme)               <font color=#447700>! Explicit component of the TKE sources or sinks<a name='498'></font>
+      real dlg(kms:kme)               <font color=#447700>! Height above ground (L_ground in formula (24) of the BLM paper). <a name='499'></font>
+      real dl_u(kms:kme)              <font color=#447700>! Length scale (lb in formula (22) ofthe BLM paper)<a name='500'></font>
+      real ufrac_int             <font color=#447700>! urban fraction<a name='501'></font>
+<font color=#447700>! local variables not needed in principle, but that can be used to estimate the budget and turbulent fluxes<a name='502'></font>
+ <a name='503'>
+      real we(kms:kme),dwe(kms:kme)<a name='504'>
+     <a name='505'>
+<font color=#447700>! local variables<a name='506'></font>
+      real sh(kms:kme)    <font color=#447700>! shear term in TKE eqn.<a name='507'></font>
+      real bu(kms:kme)    <font color=#447700>! buoyancy term in TKE eqn.<a name='508'></font>
+      real gamma(kms:kme)    <font color=#447700>! gamma term<a name='509'></font>
+      real td(kms:kme)    <font color=#447700>! dissipation term in TKE eqn.<a name='510'></font>
+      real exch(kms:kme) <font color=#447700>! turbulent diffusion coefficients (defined at the faces)<a name='511'></font>
+      real dls(kms:kme)   <font color=#447700>! dissipation length scale<a name='512'></font>
+      real dlk(kms:kme)   <font color=#447700>! length scale used to estimate exch<a name='513'></font>
+      real dlu(kms:kme)   <font color=#447700>! l_up<a name='514'></font>
+      real dld(kms:kme)   <font color=#447700>! l_down<a name='515'></font>
+      real rhoz(kms:kme) <font color=#447700>!air density at the faces of the cell                <a name='516'></font>
+      real tstar     <font color=#447700>! derived from hfx and ustar<a name='517'></font>
+      real beta<a name='518'>
+      real summ1,summ2,summ3,summ4<a name='519'>
+<font color=#447700>! interpolate air density at the faces<a name='520'></font>
+<a name='521'>
+       <a name='522'>
+<a name='523'>
+<font color=#447700>! estimation of tstar<a name='524'></font>
+<a name='525'>
+        tstar=-hfx/rho(1)/cp/ustar                                                <a name='526'>
+         <a name='527'>
+<font color=#447700>! first compute values of dlu and dld (length scales up and down). <a name='528'></font>
+       <a name='529'>
+       call <A href='../../html_code/phys/module_bl_boulac.F.html#DISSIP_BOUGEAULT'>dissip_bougeault</A><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC1D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DISSIP_BOUGEAULT_1">(ix,iy,g,kms,kme,kts,kte,z,dz,te,dlu,dld,th,th0)<a name='530'>
+          <a name='531'>
+<font color=#447700>!then average them to obtain dls and dlk (length scales for dissipation and eddy coefficients)<a name='532'></font>
+<a name='533'>
+       call <A href='../../html_code/phys/module_bl_boulac.F.html#LENGTH_BOUGEAULT'>length_bougeault</A><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC1D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LENGTH_BOUGEAULT_1">(ix,iy,kms,kme,kts,kte,dld,dlu,dlg,dl_u,dls,dlk)<a name='534'>
+            <a name='535'>
+<font color=#447700>! compute the turbulent diffusion coefficients exch<a name='536'></font>
+<a name='537'>
+       call <A href='../../html_code/phys/module_bl_boulac.F.html#CDTUR_BOUGEAULT'>cdtur_bougeault</A><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC1D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CDTUR_BOUGEAULT_1">(ix,iy,kms,kme,kts,kte,te,z,dz,exch,dlk)<a name='538'>
+<a name='539'>
+<font color=#447700>! compute source and sink terms in the TKE equation (shear, buoyancy and dissipation)<a name='540'></font>
+       <a name='541'>
+       call <A href='../../html_code/phys/module_bl_boulac.F.html#TKE_BOUGEAULT'>tke_bougeault</A><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC1D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TKE_BOUGEAULT_1">(ix,iy,g,kms,kme,kts,kte,z,dz,vl,u,v,th,te,th0,ustar,tstar,exch,dls,td,sh,bu,gamma,b_e,a_e,sf,ufrac_int)<a name='542'>
+        <a name='543'>
+<font color=#447700>! solve for tke <a name='544'></font>
+      <a name='545'>
+       call <A href='../../html_code/phys/module_pbl_driver.F.html#DIFF'>diff</A><A href='../../html_code/phys/module_bl_boulac.F.html#BOULAC1D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DIFF_6">(kms,kme,kts,kte,1,1,dt,te,rho,rhoz,exch,a_e,b_e,sf,vl,dz,we)<a name='546'>
+     <a name='547'>
+<font color=#447700>! avoid negative values for tke<a name='548'></font>
+  <a name='549'>
+       do iz=kts,kte<a name='550'>
+        if(te(iz).lt.temin) te(iz)=temin<a name='551'>
+       enddo <a name='552'>
+      <a name='553'>
+       return<a name='554'>
+       end subroutine boulac1d<a name='555'>
+<font color=#447700>! <a name='556'></font>
+<font color=#447700>! ===6=8===============================================================72<a name='557'></font>
+<a name='558'>
+<font color=#447700>! ===6=8===============================================================72<a name='559'></font>
+<A NAME='DISSIP_BOUGEAULT'><A href='../../html_code/phys/module_bl_boulac.F.html#DISSIP_BOUGEAULT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='560'>
+         <font color=#993300>subroutine </font><font color=#cc0000>dissip_bougeault</font>(ix,iy,g,kms,kme,kts,kte,z,dz,te,dlu,dld,th,th0) <A href='../../call_to/DISSIP_BOUGEAULT.html' TARGET='index'>1</A><a name='561'>
+<font color=#447700>! compute the length scales up and down<a name='562'></font>
+         implicit none<a name='563'>
+         integer kms,kme,kts,kte,iz,izz,ix,iy<a name='564'>
+         real dzt,zup,beta,zup_inf,bbb,tl,zdo,zdo_sup,zzz,g<a name='565'>
+         real te(kms:kme),dlu(kms:kme),dld(kms:kme),dz(kms:kme)<a name='566'>
+         real z(kms:kme),th(kms:kme),th0(kms:kme)<a name='567'>
+<a name='568'>
+         do iz=kts,kte<a name='569'>
+          zup=0.<a name='570'>
+          dlu(iz)=z(kte+1)-z(iz)-dz(iz)/2.<a name='571'>
+          zzz=0.<a name='572'>
+          zup_inf=0.<a name='573'>
+          beta=g/th0(iz)      <font color=#447700>!Buoyancy coefficient<a name='574'></font>
+          do izz=iz,kte-1<a name='575'>
+           dzt=(dz(izz+1)+dz(izz))/2.<a name='576'>
+           zup=zup-beta*th(iz)*dzt<a name='577'>
+           zup=zup+beta*(th(izz+1)+th(izz))*dzt/2.<a name='578'>
+           zzz=zzz+dzt<a name='579'>
+           if(te(iz).lt.zup.and.te(iz).ge.zup_inf)then<a name='580'>
+            bbb=(th(izz+1)-th(izz))/dzt<a name='581'>
+            if(bbb.ne.0)then<a name='582'>
+             tl=(-beta*(th(izz)-th(iz))+sqrt( max(0.,(beta*(th(izz)-th(iz)))**2.+2.*bbb*beta*(te(iz)-zup_inf))))/bbb/beta<a name='583'>
+            else<a name='584'>
+             if(th(izz).ne.th(iz))then<a name='585'>
+              tl=(te(iz)-zup_inf)/(beta*(th(izz)-th(iz)))<a name='586'>
+             else<a name='587'>
+              tl=0.<a name='588'>
+             endif<a name='589'>
+            endif            <a name='590'>
+            dlu(iz)=zzz-dzt+tl<a name='591'>
+           endif<a name='592'>
+           zup_inf=zup<a name='593'>
+          enddo<a name='594'>
+                  <a name='595'>
+          zdo=0.<a name='596'>
+          zdo_sup=0.<a name='597'>
+          dld(iz)=z(iz)+dz(iz)/2.<a name='598'>
+          zzz=0.<a name='599'>
+          do izz=iz,kts+1,-1<a name='600'>
+           dzt=(dz(izz-1)+dz(izz))/2.<a name='601'>
+           zdo=zdo+beta*th(iz)*dzt<a name='602'>
+           zdo=zdo-beta*(th(izz-1)+th(izz))*dzt/2.<a name='603'>
+           zzz=zzz+dzt<a name='604'>
+           if(te(iz).lt.zdo.and.te(iz).ge.zdo_sup)then<a name='605'>
+            bbb=(th(izz)-th(izz-1))/dzt<a name='606'>
+            if(bbb.ne.0.)then<a name='607'>
+             tl=(beta*(th(izz)-th(iz))+sqrt( max(0.,(beta*(th(izz)-th(iz)))**2.+2.*bbb*beta*(te(iz)-zdo_sup))))/bbb/beta<a name='608'>
+            else<a name='609'>
+             if(th(izz).ne.th(iz))then<a name='610'>
+              tl=(te(iz)-zdo_sup)/(beta*(th(izz)-th(iz)))<a name='611'>
+             else<a name='612'>
+              tl=0.<a name='613'>
+             endif<a name='614'>
+            endif<a name='615'>
+            <a name='616'>
+            dld(iz)=zzz-dzt+tl<a name='617'>
+           endif<a name='618'>
+           zdo_sup=zdo<a name='619'>
+          enddo<a name='620'>
+         enddo<a name='621'>
+            <a name='622'>
+                   <a name='623'>
+         end subroutine dissip_bougeault<a name='624'>
+<font color=#447700>!<a name='625'></font>
+<font color=#447700>! ===6=8===============================================================72 <a name='626'></font>
+<font color=#447700>! ===6=8===============================================================72<a name='627'></font>
+<A NAME='LENGTH_BOUGEAULT'><A href='../../html_code/phys/module_bl_boulac.F.html#LENGTH_BOUGEAULT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='628'>
+         <font color=#993300>subroutine </font><font color=#cc0000>length_bougeault</font>(ix,iy,kms,kme,kts,kte,dld,dlu,dlg,dl_u,dls,dlk) <A href='../../call_to/LENGTH_BOUGEAULT.html' TARGET='index'>1</A><a name='629'>
+<font color=#447700>! compute the length scales for dissipation and turbulent coefficients<a name='630'></font>
+         implicit none<a name='631'>
+         integer kms,kme,kts,kte,iz,ix,iy<a name='632'>
+         real dlu(kms:kme),dld(kms:kme),dl_u(kms:kme)<a name='633'>
+         real dls(kms:kme),dlk(kms:kme),dlg(kms:kme)<a name='634'>
+         <a name='635'>
+         do iz=kts,kte<a name='636'>
+          dld(iz)=min(dld(iz),dlg(iz))<a name='637'>
+          dls(iz)=sqrt(dlu(iz)*dld(iz))<a name='638'>
+          dlk(iz)=min(dlu(iz),dld(iz))<a name='639'>
+<a name='640'>
+         if(dl_u(iz).gt.0.)then               <a name='641'>
+           dls(iz)=1./(1./dls(iz)+1./dl_u(iz))<a name='642'>
+           dlk(iz)=1./(1./dlk(iz)+1./dl_u(iz))             <a name='643'>
+          endif<a name='644'>
+         enddo <a name='645'>
+                   <a name='646'>
+         return<a name='647'>
+         end subroutine length_bougeault<a name='648'>
+<font color=#447700>!<a name='649'></font>
+<a name='650'>
+<font color=#447700>! ===6=8===============================================================72 <a name='651'></font>
+<font color=#447700>! ===6=8===============================================================72<a name='652'></font>
+<a name='653'>
+<A NAME='CDTUR_BOUGEAULT'><A href='../../html_code/phys/module_bl_boulac.F.html#CDTUR_BOUGEAULT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='654'>
+       <font color=#993300>subroutine </font><font color=#cc0000>cdtur_bougeault</font>(ix,iy,kms,kme,kts,kte,te,z,dz,exch,dlk) <A href='../../call_to/CDTUR_BOUGEAULT.html' TARGET='index'>1</A><a name='655'>
+<font color=#447700>! compute turbulent coefficients<a name='656'></font>
+       implicit none<a name='657'>
+       integer iz,kms,kme,kts,kte,ix,iy<a name='658'>
+       real te_m,dlk_m<a name='659'>
+       real te(kms:kme),exch(kms:kme)<a name='660'>
+       real dz(kms:kme),z(kms:kme)<a name='661'>
+       real dlk(kms:kme)<a name='662'>
+       real fact<a name='663'>
+<a name='664'>
+       exch(kts)=0.<a name='665'>
+<a name='666'>
+<font color=#447700>!       do iz=2,nz-1<a name='667'></font>
+       do iz=kts+1,kte<a name='668'>
+        te_m=(te(iz-1)*dz(iz)+te(iz)*dz(iz-1))/(dz(iz)+dz(iz-1))<a name='669'>
+        dlk_m=(dlk(iz-1)*dz(iz)+dlk(iz)*dz(iz-1))/(dz(iz)+dz(iz-1))<a name='670'>
+        exch(iz)=ck_b*dlk_m*sqrt(te_m)<a name='671'>
+<font color=#447700>!        exch(iz)=max(exch(iz),0.0001)    <a name='672'></font>
+        exch(iz)=max(exch(iz),0.1) <a name='673'>
+       enddo<a name='674'>
+<a name='675'>
+       exch(kte+1)=0.1<a name='676'>
+<a name='677'>
+       return<a name='678'>
+       end subroutine cdtur_bougeault<a name='679'>
+<a name='680'>
+<a name='681'>
+<font color=#447700>! ===6=8===============================================================72<a name='682'></font>
+<font color=#447700>! ===6=8===============================================================72<a name='683'></font>
+<a name='684'>
+<A NAME='DIFF'><A href='../../html_code/phys/module_bl_boulac.F.html#DIFF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='685'>
+       <font color=#993300>subroutine </font><font color=#cc0000>diff</font>(kms,kme,kts,kte,iz1,izf,dt,co,rho,rhoz,cd,aa,bb,sf,vl,dz,fc) <A href='../../call_to/DIFF.html' TARGET='index'>12</A>,<A href='../../call_from/DIFF.html' TARGET='index'>2</A><a name='686'>
+<a name='687'>
+<a name='688'>
+<font color=#447700>!------------------------------------------------------------------------<a name='689'></font>
+<font color=#447700>!           Calculation of the diffusion in 1D        <a name='690'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='691'></font>
+<font color=#447700>!  - Input:<a name='692'></font>
+<font color=#447700>!       nz    : number of points<a name='693'></font>
+<font color=#447700>!       iz1   : first calculated point<a name='694'></font>
+<font color=#447700>!       co    : concentration of the variable of interest<a name='695'></font>
+<font color=#447700>!       dz    : vertical levels<a name='696'></font>
+<font color=#447700>!       cd    : diffusion coefficients<a name='697'></font>
+<font color=#447700>!       dtext : external time step<a name='698'></font>
+<font color=#447700>!       rho    : density of the air at the center<a name='699'></font>
+<font color=#447700>!       rhoz   : density of the air at the face<a name='700'></font>
+<font color=#447700>!       itest : if itest eq 1 then update co, else store in a flux array<a name='701'></font>
+<font color=#447700>!  - Output:<a name='702'></font>
+<font color=#447700>!       co :concentration of the variable of interest<a name='703'></font>
+<a name='704'>
+<font color=#447700>!  - Internal:<a name='705'></font>
+<font color=#447700>!       cddz  : constant terms in the equations <a name='706'></font>
+<font color=#447700>!       dt    : diffusion time step<a name='707'></font>
+<font color=#447700>!       nt    : number of the diffusion time steps<a name='708'></font>
+<font color=#447700>!       cstab : ratio of the stability condition for the time step<a name='709'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='710'></font>
+<a name='711'>
+        implicit none<a name='712'>
+        integer iz,iz1,izf<a name='713'>
+        integer kms,kme,kts,kte<a name='714'>
+        real dt,dzv               <a name='715'>
+        real co(kms:kme),cd(kms:kme),dz(kms:kme)<a name='716'>
+        real rho(kms:kme),rhoz(kms:kme)<a name='717'>
+        real cddz(kms:kme+1),fc(kms:kme),df(kms:kme)<a name='718'>
+        real a(kms:kme,3),c(kms:kme)<a name='719'>
+        real sf(kms:kme),vl(kms:kme)<a name='720'>
+        real aa(kms:kme),bb(kms:kme)<a name='721'>
+        <a name='722'>
+<a name='723'>
+<font color=#447700>! Compute cddz=2*cd/dz  <a name='724'></font>
+        <a name='725'>
+        cddz(kts)=sf(kts)*rhoz(kts)*cd(kts)/dz(kts)<a name='726'>
+        do iz=kts+1,kte<a name='727'>
+         cddz(iz)=2.*sf(iz)*rhoz(iz)*cd(iz)/(dz(iz)+dz(iz-1))<a name='728'>
+        enddo<a name='729'>
+        cddz(kte+1)=sf(kte+1)*rhoz(kte+1)*cd(kte+1)/dz(kte)<a name='730'>
+<a name='731'>
+         do iz=kts,iz1-1<a name='732'>
+          a(iz,1)=0.<a name='733'>
+          a(iz,2)=1.<a name='734'>
+          a(iz,3)=0.<a name='735'>
+          c(iz)=co(iz)<a name='736'>
+         enddo<a name='737'>
+          <a name='738'>
+          do iz=iz1,kte-izf<a name='739'>
+           dzv=vl(iz)*dz(iz)<a name='740'>
+           a(iz,1)=-cddz(iz)*dt/dzv/rho(iz)<a name='741'>
+           a(iz,2)=1+dt*(cddz(iz)+cddz(iz+1))/dzv/rho(iz)-aa(iz)*dt<a name='742'>
+           a(iz,3)=-cddz(iz+1)*dt/dzv/rho(iz)<a name='743'>
+           c(iz)=co(iz)+bb(iz)*dt                     <a name='744'>
+          enddo<a name='745'>
+          <a name='746'>
+          do iz=kte-(izf-1),kte<a name='747'>
+           a(iz,1)=0.<a name='748'>
+           a(iz,2)=1<a name='749'>
+           a(iz,3)=0.<a name='750'>
+           c(iz)=co(iz)<a name='751'>
+          enddo<a name='752'>
+           <a name='753'>
+          call <A href='../../html_code/phys/module_sf_bep_bem.F.html#INVERT'>invert</A><A href='../../html_code/phys/module_pbl_driver.F.html#DIFF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INVERT_1"> (kms,kme,kts,kte,a,c,co)<a name='754'>
+         <a name='755'>
+          do iz=kts,iz1 <a name='756'>
+           fc(iz)=0.<a name='757'>
+          enddo<a name='758'>
+                       <a name='759'>
+          do iz=iz1+1,kte <a name='760'>
+           fc(iz)=-(cddz(iz)*(co(iz)-co(iz-1)))/rho(iz)<a name='761'>
+          enddo<a name='762'>
+        <a name='763'>
+<font color=#447700>!          do iz=1,iz1<a name='764'></font>
+<font color=#447700>!           df(iz)=0.<a name='765'></font>
+<font color=#447700>!          enddo<a name='766'></font>
+<font color=#447700>!          <a name='767'></font>
+<font color=#447700>!          do iz=iz1+1,nz-izf<a name='768'></font>
+<font color=#447700>!           dzv=vl(iz)*dz(iz)<a name='769'></font>
+<font color=#447700>!           df(iz)=+(co(iz-1)*cddz(iz)-co(iz)*(cddz(iz)+cddz(iz+1))+co(iz+1)*cddz(iz+1))/dzv/rho(iz)<a name='770'></font>
+<font color=#447700>!          enddo<a name='771'></font>
+<font color=#447700>!          <a name='772'></font>
+<font color=#447700>!          do iz=nz-izf,nz <a name='773'></font>
+<font color=#447700>!           df(iz)=0.<a name='774'></font>
+<font color=#447700>!          enddo<a name='775'></font>
+                                        <a name='776'>
+       return<a name='777'>
+       end subroutine diff<a name='778'>
+<a name='779'>
+<font color=#447700>! ===6=8===============================================================72<a name='780'></font>
+<font color=#447700>! ===6=8===============================================================72<a name='781'></font>
+<a name='782'>
+<A NAME='BUOY'><A href='../../html_code/phys/module_bl_boulac.F.html#BUOY' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='783'>
+       <font color=#993300>subroutine </font><font color=#cc0000>buoy</font>(ix,iy,g,kms,kme,kts,kte,th,th0,exch,dz,bu,gamma,ustar,tstar,ufrac_int) <A href='../../call_to/BUOY.html' TARGET='index'>1</A><a name='784'>
+<font color=#447700>! compute buoyancy term<a name='785'></font>
+       implicit none<a name='786'>
+       integer kms,kme,kts,kte,iz,ix,iy<a name='787'>
+       real dtdz1,dtdz2,cdm,dtmdz,g      <a name='788'>
+       real th(kms:kme),exch(kms:kme),dz(kms:kme),bu(kms:kme),gamma(kms:kme)<a name='789'>
+       real th0(kms:kme),ustar,tstar,ufrac_int,gammam<a name='790'>
+        <a name='791'>
+<font color=#447700>!       bu(1)=-ustar*tstar*g/th0(1)*(1.-ufrac_int) <a name='792'></font>
+      bu(kts)=0. <a name='793'>
+       <a name='794'>
+        <a name='795'>
+       do iz=kts+1,kte-1       <a name='796'>
+        dtdz1=2.*(th(iz)-th(iz-1))/(dz(iz-1)+dz(iz))<a name='797'>
+        dtdz2=2.*(th(iz+1)-th(iz))/(dz(iz+1)+dz(iz))                  <a name='798'>
+        dtmdz=0.5*(dtdz1+dtdz2)<a name='799'>
+        cdm=0.5*(exch(iz+1)+exch(iz))<a name='800'>
+        gammam=0.5*(gamma(iz+1)+gamma(iz))<a name='801'>
+        bu(iz)=-cdm*(dtmdz-gammam)*g/th0(iz)         <a name='802'>
+       enddo<a name='803'>
+<font color=#447700>!<a name='804'></font>
+                 <a name='805'>
+       bu(kte)=0.<a name='806'>
+         <a name='807'>
+       return<a name='808'>
+       end subroutine buoy<a name='809'>
+<a name='810'>
+<font color=#447700>! ===6=8===============================================================72<a name='811'></font>
+<font color=#447700>! ===6=8===============================================================72<a name='812'></font>
+<a name='813'>
+<A NAME='SHEAR'><A href='../../html_code/phys/module_bl_boulac.F.html#SHEAR' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='814'>
+       <font color=#993300>subroutine </font><font color=#cc0000>shear</font>(ix,iy,g,kms,kme,kts,kte,u,v,cdua,dz,sh,ustar,tstar,th,ufrac_int) <A href='../../call_to/SHEAR.html' TARGET='index'>1</A><a name='815'>
+<font color=#447700>! compute shear term<a name='816'></font>
+       implicit none<a name='817'>
+       integer kms,kme,kts,kte,iz,ix,iy<a name='818'>
+       real dudz1,dudz2,dvdz1,dvdz2,cdm,dumdz,ustar<a name='819'>
+       real tstar,th,al,phim,g      <a name='820'>
+       real u(kms:kme),v(kms:kme),cdua(kms:kme),dz(kms:kme),sh(kms:kme)<a name='821'>
+       real u1,u2,v1,v2,ufrac_int<a name='822'>
+<a name='823'>
+<font color=#447700>!       al=vk*g*tstar/(th*(ustar**2.))<a name='824'></font>
+<font color=#447700>!       if(al.ge.0.)phim=1.+4.7*dz(1)/2.*al<a name='825'></font>
+<font color=#447700>!       if(al.lt.0.)phim=(1.-15*dz(1)/2.*al)**(-0.25)       <a name='826'></font>
+<font color=#447700>!        <a name='827'></font>
+<font color=#447700>!       sh(1)=(ustar**3.)/vk/(dz(1)/2.)*(1.-ufrac_int)       <a name='828'></font>
+       sh(kts)=0.<a name='829'>
+       do iz=kts+1,kte-1<a name='830'>
+        u2=(dz(iz+1)*u(iz)+dz(iz)*u(iz+1))/(dz(iz)+dz(iz+1))<a name='831'>
+        u1=(dz(iz)*u(iz-1)+dz(iz-1)*u(iz))/(dz(iz-1)+dz(iz))<a name='832'>
+        v2=(dz(iz+1)*v(iz)+dz(iz)*v(iz+1))/(dz(iz)+dz(iz+1))<a name='833'>
+        v1=(dz(iz)*v(iz-1)+dz(iz-1)*v(iz))/(dz(iz-1)+dz(iz))        <a name='834'>
+        cdm=0.5*(cdua(iz)+cdua(iz+1)) <a name='835'>
+        dumdz=((u2-u1)/dz(iz))**2.+((v2-v1)/dz(iz))**2.            <a name='836'>
+        sh(iz)=cdm*dumdz                          <a name='837'>
+       enddo<a name='838'>
+<a name='839'>
+<font color=#447700>!!!!!!!<a name='840'></font>
+       sh(kte)=0.<a name='841'>
+       <a name='842'>
+       return<a name='843'>
+       end subroutine shear<a name='844'>
+<a name='845'>
+<font color=#447700>! ===6=8===============================================================72<a name='846'></font>
+<font color=#447700>! ===6=8===============================================================72<a name='847'></font>
+<a name='848'>
+<A NAME='INVERT'><A href='../../html_code/phys/module_bl_boulac.F.html#INVERT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='849'>
+       <font color=#993300>subroutine </font><font color=#cc0000>invert</font>(kms,kme,kts,kte,a,c,x) <A href='../../call_to/INVERT.html' TARGET='index'>4</A><a name='850'>
+       <a name='851'>
+<font color=#447700>!ccccccccccccccccccccccccccccccc       <a name='852'></font>
+<font color=#447700>! Aim: Inversion and resolution of a tridiagonal matrix<a name='853'></font>
+<font color=#447700>!          A X = C<a name='854'></font>
+<font color=#447700>! Input:<a name='855'></font>
+<font color=#447700>!  a(*,1) lower diagonal (Ai,i-1)<a name='856'></font>
+<font color=#447700>!  a(*,2) principal diagonal (Ai,i)<a name='857'></font>
+<font color=#447700>!  a(*,3) upper diagonal (Ai,i+1)<a name='858'></font>
+<font color=#447700>!  c      <a name='859'></font>
+<font color=#447700>! Output<a name='860'></font>
+<font color=#447700>!  x     results<a name='861'></font>
+<font color=#447700>!ccccccccccccccccccccccccccccccc<a name='862'></font>
+<a name='863'>
+       implicit none<a name='864'>
+       integer in<a name='865'>
+       integer kts,kte,kms,kme<a name='866'>
+       real a(kms:kme,3),c(kms:kme),x(kms:kme)                       <a name='867'>
+        <a name='868'>
+        do in=kte-1,kts,-1                 <a name='869'>
+         c(in)=c(in)-a(in,3)*c(in+1)/a(in+1,2)<a name='870'>
+         a(in,2)=a(in,2)-a(in,3)*a(in+1,1)/a(in+1,2)<a name='871'>
+        enddo<a name='872'>
+        <a name='873'>
+        do in=kts+1,kte        <a name='874'>
+         c(in)=c(in)-a(in,1)*c(in-1)/a(in-1,2)<a name='875'>
+        enddo<a name='876'>
+        <a name='877'>
+        do in=kts,kte<a name='878'>
+          <a name='879'>
+         x(in)=c(in)/a(in,2)<a name='880'>
+          <a name='881'>
+        enddo<a name='882'>
+<a name='883'>
+        return<a name='884'>
+        end subroutine invert<a name='885'>
+  <a name='886'>
+<font color=#447700>! ===6=8===============================================================72<a name='887'></font>
+<font color=#447700>! ===6=8===============================================================72<a name='888'></font>
+              <a name='889'>
+<A NAME='TKE_BOUGEAULT'><A href='../../html_code/phys/module_bl_boulac.F.html#TKE_BOUGEAULT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='890'>
+       <font color=#993300>subroutine </font><font color=#cc0000>tke_bougeault</font>(ix,iy,g,kms,kme,kts,kte,z,dz,vl,u,v,th,te,th0,ustar,tstar,exch,   &amp; <A href='../../call_to/TKE_BOUGEAULT.html' TARGET='index'>1</A>,<A href='../../call_from/TKE_BOUGEAULT.html' TARGET='index'>2</A><a name='891'>
+                         dls,td,sh,bu,gamma,b_e,a_e,sf,ufrac_int)<a name='892'>
+<font color=#447700>! in this routine the shear, buoyancy and part of the dissipation terms<a name='893'></font>
+<font color=#447700>! of the TKE equation are computed       <a name='894'></font>
+<a name='895'>
+       implicit none<a name='896'>
+       integer kms,kme,kts,kte,iz,ix,iy<a name='897'>
+       real g,ustar,tstar,ufrac_int<a name='898'>
+       real z(kms:kme),dz(kms:kme),u(kms:kme),v(kms:kme),th(kms:kme),th0(kms:kme),te(kms:kme)<a name='899'>
+       real exch(kms:kme),dls(kms:kme),td(kms:kme),sh(kms:kme),bu(kms:kme),gamma(kms:kme)<a name='900'>
+       real a_e(kms:kme),b_e(kms:kme)<a name='901'>
+       real vl(kms:kme),sf(kms:kme)<a name='902'>
+       real te1,dl1<a name='903'>
+    <a name='904'>
+       call <A href='../../html_code/phys/module_bl_boulac.F.html#SHEAR'>shear</A><A href='../../html_code/phys/module_bl_boulac.F.html#TKE_BOUGEAULT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHEAR_1">(ix,iy,g,kms,kme,kts,kte,u,v,exch,dz,sh,ustar,tstar,th(kts),ufrac_int)<a name='905'>
+      <a name='906'>
+       call <A href='../../html_code/phys/module_bl_boulac.F.html#BUOY'>buoy</A><A href='../../html_code/phys/module_bl_boulac.F.html#TKE_BOUGEAULT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="BUOY_1">(ix,iy,g,kms,kme,kts,kte,th,th0,exch,dz,bu,gamma,ustar,tstar,ufrac_int)<a name='907'>
+     <a name='908'>
+       do iz=kts,kte          <a name='909'>
+        te1=max(te(iz),temin)<a name='910'>
+        dl1=max(dls(iz),0.1)<a name='911'>
+        td(iz)=-ceps_b*sqrt(te1)/dl1<a name='912'>
+        sh(iz)=sh(iz)*sf(iz)<a name='913'>
+        bu(iz)=bu(iz)*sf(iz)<a name='914'>
+        a_e(iz)=a_e(iz)+td(iz)       <a name='915'>
+        b_e(iz)=b_e(iz)+sh(iz)+bu(iz)<a name='916'>
+       enddo <a name='917'>
+<a name='918'>
+         <a name='919'>
+       return<a name='920'>
+       end subroutine tke_bougeault    <a name='921'>
+<a name='922'>
+<font color=#447700>! ===6=8===============================================================72<a name='923'></font>
+<A NAME='BOULACINIT'><A href='../../html_code/phys/module_bl_boulac.F.html#BOULACINIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='924'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>BOULACINIT</font>(RUBLTEN,RVBLTEN,RTHBLTEN,RQVBLTEN,RQCBLTEN,          &amp; <A href='../../call_to/BOULACINIT.html' TARGET='index'>1</A><a name='925'>
+     &amp;                      TKE_PBL,EXCH_H,RESTART,ALLOWED_TO_READ,     &amp;<a name='926'>
+     &amp;                      IDS,IDE,JDS,JDE,KDS,KDE,                    &amp;<a name='927'>
+     &amp;                      IMS,IME,JMS,JME,KMS,KME,                    &amp;<a name='928'>
+     &amp;                      ITS,ITE,JTS,JTE,KTS,KTE                 )<a name='929'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='930'></font>
+      IMPLICIT NONE<a name='931'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='932'></font>
+      LOGICAL,INTENT(IN) :: ALLOWED_TO_READ,RESTART<a name='933'>
+      INTEGER,INTENT(IN) :: IDS,IDE,JDS,JDE,KDS,KDE,                    &amp;<a name='934'>
+     &amp;                      IMS,IME,JMS,JME,KMS,KME,                    &amp;<a name='935'>
+     &amp;                      ITS,ITE,JTS,JTE,KTS,KTE<a name='936'>
+<a name='937'>
+      REAL,DIMENSION(IMS:IME,KMS:KME,JMS:JME),INTENT(OUT) ::    EXCH_H, &amp;<a name='938'>
+     &amp;                                                         RUBLTEN, &amp;<a name='939'>
+     &amp;                                                         RVBLTEN, &amp;<a name='940'>
+     &amp;                                                        RTHBLTEN, &amp;<a name='941'>
+     &amp;                                                        RQVBLTEN, &amp;<a name='942'>
+     &amp;                                                        RQCBLTEN, &amp;<a name='943'>
+     &amp;                                                         TKE_PBL<a name='944'>
+      INTEGER :: I,J,K,ITF,JTF,KTF<a name='945'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='946'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='947'></font>
+<a name='948'>
+      JTF=MIN0(JTE,JDE-1)<a name='949'>
+      KTF=MIN0(KTE,KDE-1)<a name='950'>
+      ITF=MIN0(ITE,IDE-1)<a name='951'>
+<a name='952'>
+      IF(.NOT.RESTART)THEN<a name='953'>
+        DO J=JTS,JTF<a name='954'>
+        DO K=KTS,KTF<a name='955'>
+        DO I=ITS,ITF<a name='956'>
+          TKE_PBL(I,K,J)=0.0001<a name='957'>
+          RUBLTEN(I,K,J)=0.<a name='958'>
+          RVBLTEN(I,K,J)=0.<a name='959'>
+          RTHBLTEN(I,K,J)=0.<a name='960'>
+          RQVBLTEN(I,K,J)=0.<a name='961'>
+          RQCBLTEN(I,K,J)=0.<a name='962'>
+          EXCH_H(I,K,J)=0.<a name='963'>
+        ENDDO<a name='964'>
+        ENDDO<a name='965'>
+        ENDDO<a name='966'>
+      ENDIF<a name='967'>
+<a name='968'>
+      END SUBROUTINE BOULACINIT<a name='969'>
+<font color=#447700>!######################################################################<a name='970'></font>
+<A NAME='PBL_HEIGHT'><A href='../../html_code/phys/module_bl_boulac.F.html#PBL_HEIGHT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='971'>
+       <font color=#993300>subroutine </font><font color=#cc0000>pbl_height</font>(kms,kme,kts,kte,dz,z,th,q,pblh) <A href='../../call_to/PBL_HEIGHT.html' TARGET='index'>1</A><a name='972'>
+<a name='973'>
+<font color=#447700>! this routine computes the PBL height<a name='974'></font>
+<font color=#447700>! with an approach similar to MYNN<a name='975'></font>
+       implicit none<a name='976'>
+       integer kms,kme,kts,kte,iz<a name='977'>
+       real z(kms:kme),dz(kms:kme),th(kms:kme),q(kms:kme)<a name='978'>
+       real pblh<a name='979'>
+<font color=#447700>!Local<a name='980'></font>
+       real thv(kms:kme),zc(kms:kme)<a name='981'>
+       real thsfc<a name='982'>
+<a name='983'>
+<font color=#447700>! compute the height of the center of the grid cells<a name='984'></font>
+      do iz=kts,kte<a name='985'>
+       zc(iz)=z(iz)+dz(iz)/2.<a name='986'>
+      enddo<a name='987'>
+<a name='988'>
+<font color=#447700>! compute the virtual potential temperature<a name='989'></font>
+<a name='990'>
+       do iz=kts,kte<a name='991'>
+        thv(iz)=th(iz)*(1.+0.61*q(iz))<a name='992'>
+       enddo<a name='993'>
+<font color=#447700>! now compute the PBL height<a name='994'></font>
+<a name='995'>
+       pblh=0.<a name='996'>
+       thsfc=thv(kts)+0.5<a name='997'>
+       do iz=kts+1,kte<a name='998'>
+        if(pblh.eq.0.and.thv(iz).gt.thsfc)then<a name='999'>
+         pblh=zc(iz-1)+(thsfc-thv(iz-1))/(max(0.01,thv(iz)-thv(iz-1)))*(zc(iz)-zc(iz-1))<a name='1000'>
+<font color=#447700>!         pblh=z(iz-1)+(thsfc-thv(iz-1))/(max(0.01,thv(iz)-thv(iz-1)))*(z(iz)-z(iz-1))<a name='1001'></font>
+        endif<a name='1002'>
+       enddo<a name='1003'>
+<a name='1004'>
+       return<a name='1005'>
+       end subroutine pbl_height<a name='1006'>
+<a name='1007'>
+<a name='1008'>
+<font color=#447700>! ===6=8===============================================================72<a name='1009'></font>
+<a name='1010'>
+<a name='1011'>
+<a name='1012'>
+END MODULE module_bl_boulac<a name='1013'>
+<a name='1014'>
+</pre></body></html>

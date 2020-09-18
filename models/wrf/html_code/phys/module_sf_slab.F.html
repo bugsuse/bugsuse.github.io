@@ -1,0 +1,562 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:MODEL_LAYER:PHYSICS<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<A NAME='MODULE_SF_SLAB'><A href='../../html_code/phys/module_sf_slab.F.html#MODULE_SF_SLAB' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='4'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_sf_slab</font> <A href='../../call_to/MODULE_SF_SLAB.html' TARGET='index'>2</A><a name='5'>
+<a name='6'>
+   <font color=#447700>!---SPECIFY CONSTANTS AND LAYERS FOR SOIL MODEL<a name='7'></font>
+   <font color=#447700>!---SOIL DIFFUSION CONSTANT SET (M^2/S)<a name='8'></font>
+<a name='9'>
+   REAL, PARAMETER :: DIFSL=5.e-7<a name='10'>
+<a name='11'>
+   <font color=#447700>!---FACTOR TO MAKE SOIL STEP MORE CONSERVATIVE<a name='12'></font>
+<a name='13'>
+   REAL , PARAMETER :: SOILFAC=1.25<a name='14'>
+<a name='15'>
+CONTAINS<a name='16'>
+<a name='17'>
+<font color=#447700>!----------------------------------------------------------------<a name='18'></font>
+<A NAME='SLAB'><A href='../../html_code/phys/module_sf_slab.F.html#SLAB' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='19'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>SLAB</font>(T3D,QV3D,P3D,FLHC,FLQC,                      &amp; <A href='../../call_to/SLAB.html' TARGET='index'>1</A>,<A href='../../call_from/SLAB.html' TARGET='index'>1</A><a name='20'>
+                   PSFC,XLAND,TMN,HFX,QFX,LH,TSK,QSFC,CHKLOWQ,  &amp;<a name='21'>
+                   GSW,GLW,CAPG,THC,SNOWC,EMISS,MAVAIL,         &amp;<a name='22'>
+                   DELTSM,ROVCP,XLV,DTMIN,IFSNOW,               &amp;<a name='23'>
+                   SVP1,SVP2,SVP3,SVPT0,EP2,                    &amp;<a name='24'>
+                   KARMAN,EOMEG,STBOLT,                         &amp;<a name='25'>
+                   TSLB,ZS,DZS,num_soil_layers,radiation,       &amp;<a name='26'>
+                   P1000mb,                                     &amp;<a name='27'>
+                   ids,ide, jds,jde, kds,kde,                   &amp;<a name='28'>
+                   ims,ime, jms,jme, kms,kme,                   &amp;<a name='29'>
+                   its,ite, jts,jte, kts,kte                    )<a name='30'>
+<font color=#447700>!----------------------------------------------------------------<a name='31'></font>
+    IMPLICIT NONE<a name='32'>
+<font color=#447700>!----------------------------------------------------------------<a name='33'></font>
+<font color=#447700>!                                                                        <a name='34'></font>
+<font color=#447700>!     SUBROUTINE SLAB CALCULATES THE GROUND TEMPERATURE TENDENCY <a name='35'></font>
+<font color=#447700>!     ACCORDING TO THE RESIDUAL OF THE SURFACE ENERGY BUDGET           <a name='36'></font>
+<font color=#447700>!     (BLACKADAR, 1978B).                                              <a name='37'></font>
+<font color=#447700>!                                                                      <a name='38'></font>
+<font color=#447700>!     CHANGES:                                                         <a name='39'></font>
+<font color=#447700>!          FOR SOIL SUB-TIMESTEPS UPDATE SURFACE HFX AND QFX AS TG     <a name='40'></font>
+<font color=#447700>!          CHANGES TO PREVENT POSSIBLE INSTABILITY FOR LONG MODEL      <a name='41'></font>
+<font color=#447700>!          STEPS (DT &gt; ~200 SEC).                                      <a name='42'></font>
+<font color=#447700>!                                                                      <a name='43'></font>
+<font color=#447700>!          PUT SNOW COVER CHECK ON SOIL SUB-TIMESTEPS                  <a name='44'></font>
+<font color=#447700>!                                                                      <a name='45'></font>
+<font color=#447700>!          MAKE UPPER LIMIT ON SOIL SUB-STEP LENGTH MORE CONSERVATIVE  <a name='46'></font>
+<font color=#447700>!                                                                      <a name='47'></font>
+<font color=#447700>!----------------------------------------------------------------          <a name='48'></font>
+<font color=#447700>!-- T3D         temperature (K)<a name='49'></font>
+<font color=#447700>!-- QV3D        3D water vapor mixing ratio (Kg/Kg)<a name='50'></font>
+<font color=#447700>!-- P3D         3D pressure (Pa)<a name='51'></font>
+<font color=#447700>!-- FLHC        exchange coefficient for heat (m/s)<a name='52'></font>
+<font color=#447700>!-- FLQC        exchange coefficient for moisture (m/s)<a name='53'></font>
+<font color=#447700>!-- PSFC        surface pressure (Pa)<a name='54'></font>
+<font color=#447700>!-- XLAND       land mask (1 for land, 2 for water)<a name='55'></font>
+<font color=#447700>!-- TMN         soil temperature at lower boundary (K)<a name='56'></font>
+<font color=#447700>!-- HFX         upward heat flux at the surface (W/m^2)<a name='57'></font>
+<font color=#447700>!-- QFX         upward moisture flux at the surface (kg/m^2/s)<a name='58'></font>
+<font color=#447700>!-- LH          latent heat flux at the surface (W/m^2)<a name='59'></font>
+<font color=#447700>!-- TSK         surface temperature (K)<a name='60'></font>
+<font color=#447700>!-- GSW         downward short wave flux at ground surface (W/m^2)      <a name='61'></font>
+<font color=#447700>!-- GLW         downward long wave flux at ground surface (W/m^2)<a name='62'></font>
+<font color=#447700>!-- CAPG        heat capacity for soil (J/K/m^3)<a name='63'></font>
+<font color=#447700>!-- THC         thermal inertia (Cal/cm/K/s^0.5)<a name='64'></font>
+<font color=#447700>!-- SNOWC       flag indicating snow coverage (1 for snow cover)<a name='65'></font>
+<font color=#447700>!-- EMISS       surface emissivity (between 0 and 1)<a name='66'></font>
+<font color=#447700>!-- DELTSM      time step (second)<a name='67'></font>
+<font color=#447700>!-- ROVCP       R/CP<a name='68'></font>
+<font color=#447700>!-- XLV         latent heat of melting (J/kg)<a name='69'></font>
+<font color=#447700>!-- DTMIN       time step (minute)<a name='70'></font>
+<font color=#447700>!-- IFSNOW      ifsnow=1 for snow-cover effects<a name='71'></font>
+<font color=#447700>!-- SVP1        constant for saturation vapor pressure (kPa)<a name='72'></font>
+<font color=#447700>!-- SVP2        constant for saturation vapor pressure (dimensionless)<a name='73'></font>
+<font color=#447700>!-- SVP3        constant for saturation vapor pressure (K)<a name='74'></font>
+<font color=#447700>!-- SVPT0       constant for saturation vapor pressure (K)<a name='75'></font>
+<font color=#447700>!-- EP1         constant for virtual temperature (R_v/R_d - 1) (dimensionless)<a name='76'></font>
+<font color=#447700>!-- EP2         constant for specific humidity calculation <a name='77'></font>
+<font color=#447700>!               (R_d/R_v) (dimensionless)<a name='78'></font>
+<font color=#447700>!-- KARMAN      Von Karman constant<a name='79'></font>
+<font color=#447700>!-- EOMEG       angular velocity of earth's rotation (rad/s)<a name='80'></font>
+<font color=#447700>!-- STBOLT      Stefan-Boltzmann constant (W/m^2/K^4)<a name='81'></font>
+<font color=#447700>!-- TSLB        soil temperature in 5-layer model<a name='82'></font>
+<font color=#447700>!-- ZS          depths of centers of soil layers<a name='83'></font>
+<font color=#447700>!-- DZS         thicknesses of soil layers<a name='84'></font>
+<font color=#447700>!-- num_soil_layers   the number of soil layers<a name='85'></font>
+<font color=#447700>!-- ids         start index for i in domain<a name='86'></font>
+<font color=#447700>!-- ide         end index for i in domain<a name='87'></font>
+<font color=#447700>!-- jds         start index for j in domain<a name='88'></font>
+<font color=#447700>!-- jde         end index for j in domain<a name='89'></font>
+<font color=#447700>!-- kds         start index for k in domain<a name='90'></font>
+<font color=#447700>!-- kde         end index for k in domain<a name='91'></font>
+<font color=#447700>!-- ims         start index for i in memory<a name='92'></font>
+<font color=#447700>!-- ime         end index for i in memory<a name='93'></font>
+<font color=#447700>!-- jms         start index for j in memory<a name='94'></font>
+<font color=#447700>!-- jme         end index for j in memory<a name='95'></font>
+<font color=#447700>!-- kms         start index for k in memory<a name='96'></font>
+<font color=#447700>!-- kme         end index for k in memory<a name='97'></font>
+<font color=#447700>!-- its         start index for i in tile<a name='98'></font>
+<font color=#447700>!-- ite         end index for i in tile<a name='99'></font>
+<font color=#447700>!-- jts         start index for j in tile<a name='100'></font>
+<font color=#447700>!-- jte         end index for j in tile<a name='101'></font>
+<font color=#447700>!-- kts         start index for k in tile<a name='102'></font>
+<font color=#447700>!-- kte         end index for k in tile<a name='103'></font>
+<font color=#447700>!----------------------------------------------------------------<a name='104'></font>
+   INTEGER,  INTENT(IN   )   ::     ids,ide, jds,jde, kds,kde,  &amp;<a name='105'>
+                                    ims,ime, jms,jme, kms,kme,  &amp;<a name='106'>
+                                    its,ite, jts,jte, kts,kte<a name='107'>
+<a name='108'>
+   INTEGER, INTENT(IN)       ::     num_soil_layers<a name='109'>
+   LOGICAL, INTENT(IN)       ::     radiation<a name='110'>
+<a name='111'>
+   INTEGER,  INTENT(IN   )   ::     IFSNOW<a name='112'>
+<a name='113'>
+<font color=#447700>!<a name='114'></font>
+   REAL,     INTENT(IN   )   ::     DTMIN,XLV,ROVCP,DELTSM<a name='115'>
+<a name='116'>
+   REAL,     INTENT(IN )     ::     SVP1,SVP2,SVP3,SVPT0<a name='117'>
+   REAL,     INTENT(IN )     ::     EP2,KARMAN,EOMEG,STBOLT<a name='118'>
+   REAL,     INTENT(IN )     ::     P1000mb<a name='119'>
+<a name='120'>
+   REAL,     DIMENSION( ims:ime , 1:num_soil_layers, jms:jme ), &amp;<a name='121'>
+             INTENT(INOUT)   :: TSLB<a name='122'>
+<a name='123'>
+   REAL,     DIMENSION(1:num_soil_layers), INTENT(IN)::ZS,DZS<a name='124'>
+<a name='125'>
+   REAL,    DIMENSION( ims:ime, kms:kme, jms:jme )            , &amp;<a name='126'>
+            INTENT(IN   )    ::                           QV3D, &amp;<a name='127'>
+                                                           P3D, &amp;<a name='128'>
+                                                           T3D<a name='129'>
+<font color=#447700>!<a name='130'></font>
+   REAL,    DIMENSION( ims:ime, jms:jme )                     , &amp;<a name='131'>
+            INTENT(IN   )    ::                          SNOWC, &amp;<a name='132'>
+                                                         XLAND, &amp;<a name='133'>
+                                                         EMISS, &amp;<a name='134'>
+                                                        MAVAIL, &amp;<a name='135'>
+                                                           TMN, &amp;<a name='136'>
+                                                           GSW, &amp;<a name='137'>
+                                                           GLW, &amp;<a name='138'>
+                                                           THC<a name='139'>
+<a name='140'>
+<font color=#447700>!CHKLOWQ is declared as memory size<a name='141'></font>
+<font color=#447700>!<a name='142'></font>
+   REAL,    DIMENSION( ims:ime, jms:jme )                     , &amp;<a name='143'>
+            INTENT(INOUT)    ::                            HFX, &amp;<a name='144'>
+                                                           QFX, &amp;<a name='145'>
+                                                            LH, &amp;<a name='146'>
+                                                          CAPG, &amp;<a name='147'>
+                                                           TSK, &amp;<a name='148'>
+                                                          QSFC, &amp;<a name='149'>
+                                                       CHKLOWQ<a name='150'>
+<a name='151'>
+   REAL,     DIMENSION( ims:ime, jms:jme )                    , &amp;<a name='152'>
+             INTENT(IN   )               ::               PSFC<a name='153'>
+<font color=#447700>!<a name='154'></font>
+   REAL,    DIMENSION( ims:ime, jms:jme ), INTENT(INOUT) ::     &amp;<a name='155'>
+                                                          FLHC, &amp;<a name='156'>
+                                                          FLQC<a name='157'>
+<a name='158'>
+<font color=#447700>! LOCAL VARS<a name='159'></font>
+<a name='160'>
+   REAL,     DIMENSION( its:ite ) ::                      QV1D, &amp;<a name='161'>
+                                                           P1D, &amp;<a name='162'>
+                                                           T1D<a name='163'>
+   INTEGER ::  I,J<a name='164'>
+<a name='165'>
+   DO J=jts,jte<a name='166'>
+<a name='167'>
+      DO i=its,ite<a name='168'>
+         T1D(i) =T3D(i,1,j)<a name='169'>
+         QV1D(i)=QV3D(i,1,j)<a name='170'>
+         P1D(i) =P3D(i,1,j)<a name='171'>
+      ENDDO<a name='172'>
+<a name='173'>
+<font color=#447700>! the indices to the PSFC argument in the following call look<a name='174'></font>
+<font color=#447700>! wrong; however, it is correct to call with its (and not ims)<a name='175'></font>
+<font color=#447700>! because of the way PSFC is defined in SLAB1D. Whether *that*<a name='176'></font>
+<font color=#447700>! is a good idea or not, this commenter cannot comment. JM<a name='177'></font>
+<a name='178'>
+      CALL <A href='../../html_code/phys/module_sf_slab.F.html#SLAB1D'>SLAB1D</A><A href='../../html_code/phys/module_sf_slab.F.html#SLAB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SLAB1D_1">(J,T1D,QV1D,P1D,FLHC(ims,j),FLQC(ims,j),       &amp;<a name='179'>
+           PSFC(its,j),XLAND(ims,j),TMN(ims,j),HFX(ims,j),      &amp;<a name='180'>
+           QFX(ims,j),TSK(ims,j),QSFC(ims,j),CHKLOWQ(ims,j),    &amp;<a name='181'>
+           LH(ims,j),GSW(ims,j),GLW(ims,j),                     &amp;<a name='182'>
+           CAPG(ims,j),THC(ims,j),SNOWC(ims,j),EMISS(ims,j),    &amp;<a name='183'>
+           MAVAIL(ims,j),DELTSM,ROVCP,XLV,DTMIN,IFSNOW,         &amp;<a name='184'>
+           SVP1,SVP2,SVP3,SVPT0,EP2,KARMAN,EOMEG,STBOLT,        &amp;<a name='185'>
+           TSLB(ims,1,j),ZS,DZS,num_soil_layers,radiation,      &amp;<a name='186'>
+           P1000mb,                                             &amp;<a name='187'>
+           ids,ide, jds,jde, kds,kde,                           &amp;<a name='188'>
+           ims,ime, jms,jme, kms,kme,                           &amp;<a name='189'>
+           its,ite, jts,jte, kts,kte                            )<a name='190'>
+<a name='191'>
+   ENDDO<a name='192'>
+<a name='193'>
+   END SUBROUTINE SLAB<a name='194'>
+<a name='195'>
+<font color=#447700>!----------------------------------------------------------------<a name='196'></font>
+<A NAME='SLAB1D'><A href='../../html_code/phys/module_sf_slab.F.html#SLAB1D' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='197'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>SLAB1D</font>(J,T1D,QV1D,P1D,FLHC,FLQC,                  &amp; <A href='../../call_to/SLAB1D.html' TARGET='index'>1</A><a name='198'>
+                   PSFCPA,XLAND,TMN,HFX,QFX,TSK,QSFC,CHKLOWQ,   &amp;<a name='199'>
+                   LH,GSW,GLW,CAPG,THC,SNOWC,EMISS,MAVAIL,      &amp;<a name='200'>
+                   DELTSM,ROVCP,XLV,DTMIN,IFSNOW,               &amp;<a name='201'>
+                   SVP1,SVP2,SVP3,SVPT0,EP2,                    &amp;<a name='202'>
+                   KARMAN,EOMEG,STBOLT,                         &amp;<a name='203'>
+                   TSLB2D,ZS,DZS,num_soil_layers,radiation,     &amp;<a name='204'>
+                   P1000mb,                                     &amp;<a name='205'>
+                   ids,ide, jds,jde, kds,kde,                   &amp;<a name='206'>
+                   ims,ime, jms,jme, kms,kme,                   &amp;<a name='207'>
+                   its,ite, jts,jte, kts,kte                    )<a name='208'>
+<font color=#447700>!----------------------------------------------------------------<a name='209'></font>
+    IMPLICIT NONE<a name='210'>
+<font color=#447700>!----------------------------------------------------------------<a name='211'></font>
+<font color=#447700>!                                                                        <a name='212'></font>
+<font color=#447700>!     SUBROUTINE SLAB CALCULATES THE GROUND TEMPERATURE TENDENCY <a name='213'></font>
+<font color=#447700>!     ACCORDING TO THE RESIDUAL OF THE SURFACE ENERGY BUDGET           <a name='214'></font>
+<font color=#447700>!     (BLACKADAR, 1978B).                                              <a name='215'></font>
+<font color=#447700>!                                                                      <a name='216'></font>
+<font color=#447700>!     CHANGES:                                                         <a name='217'></font>
+<font color=#447700>!          FOR SOIL SUB-TIMESTEPS UPDATE SURFACE HFX AND QFX AS TG     <a name='218'></font>
+<font color=#447700>!          CHANGES TO PREVENT POSSIBLE INSTABILITY FOR LONG MODEL      <a name='219'></font>
+<font color=#447700>!          STEPS (DT &gt; ~200 SEC).                                      <a name='220'></font>
+<font color=#447700>!                                                                      <a name='221'></font>
+<font color=#447700>!          PUT SNOW COVER CHECK ON SOIL SUB-TIMESTEPS                  <a name='222'></font>
+<font color=#447700>!                                                                      <a name='223'></font>
+<font color=#447700>!          MAKE UPPER LIMIT ON SOIL SUB-STEP LENGTH MORE CONSERVATIVE  <a name='224'></font>
+<font color=#447700>!                                                                      <a name='225'></font>
+<font color=#447700>!----------------------------------------------------------------          <a name='226'></font>
+<a name='227'>
+   INTEGER,  INTENT(IN   )   ::     ids,ide, jds,jde, kds,kde,  &amp;<a name='228'>
+                                    ims,ime, jms,jme, kms,kme,  &amp;<a name='229'>
+                                    its,ite, jts,jte, kts,kte,J <a name='230'>
+<a name='231'>
+   INTEGER , INTENT(IN)      ::     num_soil_layers<a name='232'>
+   LOGICAL,  INTENT(IN   )   ::     radiation<a name='233'>
+<a name='234'>
+   INTEGER,  INTENT(IN   )   ::     IFSNOW<a name='235'>
+<font color=#447700>!<a name='236'></font>
+   REAL,     INTENT(IN   )   ::     DTMIN,XLV,ROVCP,DELTSM<a name='237'>
+<a name='238'>
+   REAL,     INTENT(IN )     ::     SVP1,SVP2,SVP3,SVPT0<a name='239'>
+   REAL,     INTENT(IN )     ::     EP2,KARMAN,EOMEG,STBOLT<a name='240'>
+   REAL,     INTENT(IN )     ::     P1000mb<a name='241'>
+<a name='242'>
+   REAL,     DIMENSION( ims:ime , 1:num_soil_layers ),          &amp;<a name='243'>
+             INTENT(INOUT)   :: TSLB2D<a name='244'>
+<a name='245'>
+   REAL,     DIMENSION(1:num_soil_layers), INTENT(IN)::ZS,DZS<a name='246'>
+<a name='247'>
+<font color=#447700>!<a name='248'></font>
+   REAL,    DIMENSION( ims:ime )                              , &amp;<a name='249'>
+            INTENT(INOUT)    ::                            HFX, &amp;<a name='250'>
+                                                           QFX, &amp;<a name='251'>
+                                                            LH, &amp;<a name='252'>
+                                                          CAPG, &amp;<a name='253'>
+                                                           TSK, &amp;<a name='254'>
+                                                          QSFC, &amp;<a name='255'>
+                                                       CHKLOWQ<a name='256'>
+<font color=#447700>!<a name='257'></font>
+   REAL,    DIMENSION( ims:ime )                              , &amp;<a name='258'>
+            INTENT(IN   )    ::                          SNOWC, &amp;<a name='259'>
+                                                         XLAND, &amp;<a name='260'>
+                                                         EMISS, &amp;<a name='261'>
+                                                        MAVAIL, &amp;<a name='262'>
+                                                           TMN, &amp;<a name='263'>
+                                                           GSW, &amp;<a name='264'>
+                                                           GLW, &amp;<a name='265'>
+                                                           THC<a name='266'>
+<font color=#447700>!<a name='267'></font>
+   REAL,    DIMENSION( its:ite )                              , &amp;<a name='268'>
+            INTENT(IN   )    ::                           QV1D, &amp;<a name='269'>
+                                                           P1D, &amp;<a name='270'>
+                                                           T1D<a name='271'>
+<font color=#447700>!<a name='272'></font>
+   REAL,     DIMENSION( its:ite )                             , &amp;<a name='273'>
+             INTENT(IN   )               ::             PSFCPA<a name='274'>
+<a name='275'>
+<font color=#447700>!<a name='276'></font>
+   REAL,    DIMENSION( ims:ime ), INTENT(INOUT) ::              &amp;<a name='277'>
+                                                          FLHC, &amp;<a name='278'>
+                                                          FLQC<a name='279'>
+<font color=#447700>! LOCAL VARS<a name='280'></font>
+<a name='281'>
+   REAL,    DIMENSION( its:ite )          ::              PSFC<a name='282'>
+<a name='283'>
+   REAL,    DIMENSION( its:ite )          ::                    &amp;<a name='284'>
+                                                           THX, &amp;<a name='285'>
+                                                            QX, &amp;<a name='286'>
+                                                          SCR3 <a name='287'>
+<a name='288'>
+   REAL,    DIMENSION( its:ite )          ::            DTHGDT, &amp;<a name='289'>
+                                                           TG0, &amp;<a name='290'>
+                                                         THTMN, &amp;<a name='291'>
+                                                          XLD1, &amp;<a name='292'>
+                                                         TSCVN, &amp;<a name='293'>
+                                                          OLTG, &amp;<a name='294'>
+                                                        UPFLUX, &amp;<a name='295'>
+                                                            HM, &amp;<a name='296'>
+                                                          RNET, &amp;<a name='297'>
+                                                         XINET, &amp;<a name='298'>
+                                                            QS, &amp;<a name='299'>
+                                                         DTSDT<a name='300'>
+<font color=#447700>!<a name='301'></font>
+   REAL, DIMENSION( its:ite, num_soil_layers )        :: FLUX<a name='302'>
+<font color=#447700>!<a name='303'></font>
+   INTEGER :: I,K,NSOIL,ITSOIL,L,NK,RADSWTCH<a name='304'>
+   REAL    :: PS,PS1,XLDCOL,TSKX,RNSOIL,RHOG1,RHOG2,RHOG3,LAMDAG<a name='305'>
+   REAL    :: THG,ESG,QSG,HFXT,QFXT,CS,CSW,LAMG(4),THCON,PL<a name='306'>
+ <a name='307'>
+<font color=#447700>!----------------------------------------------------------------------          <a name='308'></font>
+<font color=#447700>!-----DETERMINE IF ANY POINTS IN COLUMN ARE LAND (RATHER THAN OCEAN)             <a name='309'></font>
+<font color=#447700>!       POINTS.  IF NOT, SKIP DOWN TO THE PRINT STATEMENTS SINCE OCEAN           <a name='310'></font>
+<font color=#447700>!       SURFACE TEMPERATURES ARE NOT ALLOWED TO CHANGE.                          <a name='311'></font>
+<font color=#447700>!                                                                                <a name='312'></font>
+<font color=#447700>! from sfcrad   <a name='313'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='314'></font>
+   DATA CSW/4.183E6/<a name='315'>
+   DATA LAMG/1.407E-8, -1.455E-5, 6.290E-3, 0.16857/<a name='316'>
+<a name='317'>
+   DO i=its,ite<a name='318'>
+<font color=#447700>! in cmb<a name='319'></font>
+      PSFC(I)=PSFCPA(I)/1000.<a name='320'>
+   ENDDO<a name='321'>
+<a name='322'>
+<a name='323'>
+      DO I=its,ite<a name='324'>
+<font color=#447700>! PL cmb<a name='325'></font>
+         PL=P1D(I)/1000.<a name='326'>
+         SCR3(I)=T1D(I)<a name='327'>
+<font color=#447700>!         THCON=(100./PL)**ROVCP<a name='328'></font>
+         THCON=(P1000mb*0.001/PL)**ROVCP<a name='329'>
+         THX(I)=SCR3(I)*THCON<a name='330'>
+         QX(I)=0.<a name='331'>
+      ENDDO<a name='332'>
+<a name='333'>
+<font color=#447700>!     IF(IDRY.EQ.1) GOTO 81<a name='334'></font>
+      DO I=its,ite<a name='335'>
+         QX(I)=QV1D(I)<a name='336'>
+      ENDDO<a name='337'>
+   81 CONTINUE<a name='338'>
+<a name='339'>
+<font color=#447700>!<a name='340'></font>
+<font color=#447700>!-----THE SLAB THERMAL CAPACITY CAPG(I) ARE DEPENDENT ON:<a name='341'></font>
+<font color=#447700>!     THC(I) - SOIL THERMAL INERTIAL, ONLY.<a name='342'></font>
+<font color=#447700>!<a name='343'></font>
+      DO I=its,ite<a name='344'>
+         CAPG(I)=3.298E6*THC(I)<a name='345'>
+         IF(num_soil_layers .gt. 1)THEN<a name='346'>
+<a name='347'>
+<font color=#447700>! CAPG REPRESENTS SOIL HEAT CAPACITY (J/K/M^3) WHEN DIFSL=5.E-7 (M^2/S)<a name='348'></font>
+<font color=#447700>! TO GIVE A CORRECT THERMAL INERTIA (=CAPG*DIFSL^0.5)<a name='349'></font>
+<a name='350'>
+            CAPG(I)=5.9114E7*THC(I)<a name='351'>
+         ENDIF<a name='352'>
+      ENDDO<a name='353'>
+<font color=#447700>!        <a name='354'></font>
+      XLDCOL=2.0                                                                 <a name='355'>
+      DO 10 I=its,ite<a name='356'>
+        XLDCOL=AMIN1(XLDCOL,XLAND(I))                                          <a name='357'>
+   10 CONTINUE                                                                   <a name='358'>
+<font color=#447700>!                                                                                <a name='359'></font>
+      IF(XLDCOL.GT.1.5)GOTO 90                                                   <a name='360'>
+<font color=#447700>!                                                                                <a name='361'></font>
+<font color=#447700>!                                                                                <a name='362'></font>
+<font color=#447700>!-----CONVERT SLAB TEMPERATURE TO POTENTIAL TEMPERATURE AND                      <a name='363'></font>
+<font color=#447700>!     SET XLD1(I) = 0. FOR OCEAN POINTS:                                         <a name='364'></font>
+<font color=#447700>!                                                                                <a name='365'></font>
+<font color=#447700>!                                                                                <a name='366'></font>
+      DO 20 I=its,ite<a name='367'>
+        IF((XLAND(I)-1.5).GE.0)THEN                                            <a name='368'>
+          XLD1(I)=0.                                                             <a name='369'>
+        ELSE                                                                     <a name='370'>
+          XLD1(I)=1.                                                             <a name='371'>
+        ENDIF                                                                    <a name='372'>
+   20 CONTINUE                                                                   <a name='373'>
+<font color=#447700>!                                                                                <a name='374'></font>
+<font color=#447700>!-----CONVERT 'TSK(THETAG)' TO 'TG' FOR 'IUP' CALCULATION ....                   <a name='375'></font>
+<font color=#447700>!       IF WE ARE USING THE BLACKADAR MULTI-LEVEL (HIGH-RESOLUTION)              <a name='376'></font>
+<font color=#447700>!       PBL MODEL                                                                <a name='377'></font>
+<font color=#447700>!                                                                                <a name='378'></font>
+      DO 50 I=its,ite<a name='379'>
+        IF(XLD1(I).LT.0.5)GOTO 50                                                <a name='380'>
+<a name='381'>
+<font color=#447700>! PS cmb<a name='382'></font>
+        PS=PSFC(I)<a name='383'>
+<a name='384'>
+<font color=#447700>! TSK is Temperature at gound sfc<a name='385'></font>
+<font color=#447700>!       TG0(I)=TSK(I)*(PS*0.01)**ROVCP                                         <a name='386'></font>
+        TG0(I)=TSK(I)<a name='387'>
+   50 CONTINUE                                                                   <a name='388'>
+<font color=#447700>!                                                                                <a name='389'></font>
+<font color=#447700>!-----COMPUTE THE SURFACE ENERGY BUDGET:                                         <a name='390'></font>
+<font color=#447700>!                                                                                <a name='391'></font>
+<font color=#447700>!     IF(ISOIL.EQ.1)NSOIL=1                                                      <a name='392'></font>
+      IF(num_soil_layers .gt. 1)NSOIL=1                                                      <a name='393'>
+<a name='394'>
+<a name='395'>
+      IF (radiation) then<a name='396'>
+        RADSWTCH=1<a name='397'>
+      ELSE<a name='398'>
+        RADSWTCH=0<a name='399'>
+      ENDIF<a name='400'>
+<a name='401'>
+      DO 70 I=its,ite<a name='402'>
+        IF(XLD1(I).LT.0.5)GOTO 70<a name='403'>
+<font color=#447700>!        OLTG(I)=TSK(I)*(100./PSFC(I))**ROVCP<a name='404'></font>
+        OLTG(I)=TSK(I)*(P1000mb*0.001/PSFC(I))**ROVCP<a name='405'>
+        UPFLUX(I)=RADSWTCH*STBOLT*TG0(I)**4                            <a name='406'>
+        XINET(I)=EMISS(I)*(GLW(I)-UPFLUX(I))    <a name='407'>
+        RNET(I)=GSW(I)+XINET(I)                                                <a name='408'>
+        HM(I)=1.18*EOMEG*(TG0(I)-TMN(I))                                       <a name='409'>
+<font color=#447700>!       MOISTURE FLUX CALCULATED HERE (OVERWRITES SFC LAYER VALUE FOR LAND)<a name='410'></font>
+                ESG=SVP1*EXP(SVP2*(TG0(I)-SVPT0)/(TG0(I)-SVP3))<a name='411'>
+                QSG=EP2*ESG/(PSFC(I)-ESG)<a name='412'>
+                THG=TSK(I)*(100./PSFC(I))**ROVCP<a name='413'>
+                HFX(I)=FLHC(I)*(THG-THX(I))<a name='414'>
+                QFX(I)=FLQC(I)*(QSG-QX(I))<a name='415'>
+                LH(I)=QFX(I)*XLV<a name='416'>
+        QS(I)=HFX(I)+QFX(I)*XLV                                <a name='417'>
+<font color=#447700>!       IF(ISOIL.EQ.0)THEN                                                       <a name='418'></font>
+        IF(num_soil_layers .EQ. 1)THEN                                                       <a name='419'>
+          DTHGDT(I)=(RNET(I)-QS(I))/CAPG(I)-HM(I)                              <a name='420'>
+        ELSE<a name='421'>
+          DTHGDT(I)=0.                                                           <a name='422'>
+        ENDIF                                                                    <a name='423'>
+   70 CONTINUE                                                                   <a name='424'>
+<font color=#447700>!     IF(ISOIL.EQ.1)THEN                                                         <a name='425'></font>
+      IF(num_soil_layers .gt. 1)THEN                                                         <a name='426'>
+        NSOIL=1+IFIX(SOILFAC*4*DIFSL/DZS(1)*DELTSM/DZS(1))   <a name='427'>
+        RNSOIL=1./FLOAT(NSOIL)                                                   <a name='428'>
+<font color=#447700>!                                                                                <a name='429'></font>
+<font color=#447700>!     SOIL SUB-TIMESTEP                                                          <a name='430'></font>
+<font color=#447700>!                                                                                <a name='431'></font>
+        DO ITSOIL=1,NSOIL                                                        <a name='432'>
+          DO I=its,ite<a name='433'>
+             DO L=1,num_soil_layers-1<a name='434'>
+              IF(XLD1(I).LT.0.5)GOTO 75                                          <a name='435'>
+              IF(L.EQ.1.AND.ITSOIL.GT.1)THEN                                     <a name='436'>
+<font color=#447700>!                PS1=(PSFC(I)*0.01)**ROVCP    <a name='437'></font>
+                PS1=(PSFCPA(I)/P1000mb)**ROVCP    <a name='438'>
+<a name='439'>
+<font color=#447700>! for rk scheme A and B are the same<a name='440'></font>
+                PS=PSFC(I)<a name='441'>
+                THG=TSLB2D(I,1)/PS1                                              <a name='442'>
+                ESG=SVP1*EXP(SVP2*(TSLB2D(I,1)-SVPT0)/(TSLB2D(I,1) &amp; <a name='443'>
+                    -SVP3))                                                      <a name='444'>
+                QSG=EP2*ESG/(PS-ESG)                                             <a name='445'>
+<font color=#447700>!     UPDATE FLUXES FOR NEW GROUND TEMPERATURE                                   <a name='446'></font>
+                HFXT=FLHC(I)*(THG-THX(I))                                     <a name='447'>
+                QFXT=FLQC(I)*(QSG-QX(I))<a name='448'>
+                QS(I)=HFXT+QFXT*XLV                                <a name='449'>
+<font color=#447700>!     SUM HFX AND QFX OVER SOIL TIMESTEPS                                        <a name='450'></font>
+                HFX(I)=HFX(I)+HFXT                                           <a name='451'>
+                QFX(I)=QFX(I)+QFXT                                           <a name='452'>
+              ENDIF                                                              <a name='453'>
+              FLUX(I,1)=RNET(I)-QS(I)                                            <a name='454'>
+              FLUX(I,L+1)=-DIFSL*CAPG(I)*(TSLB2D(I,L+1)-TSLB2D(I,L))/( &amp; <a name='455'>
+                          ZS(L+1)-ZS(L))                                         <a name='456'>
+              DTSDT(I)=-(FLUX(I,L+1)-FLUX(I,L))/(DZS(L)*CAPG(I))               <a name='457'>
+              TSLB2D(I,L)=TSLB2D(I,L)+DTSDT(I)*DELTSM*RNSOIL                     <a name='458'>
+              IF(IFSNOW.EQ.1.AND.L.EQ.1)THEN                              <a name='459'>
+                IF((SNOWC(I).GT.0..AND.TSLB2D(I,1).GT.273.16))THEN             <a name='460'>
+                  TSLB2D(I,1)=273.16                                             <a name='461'>
+                ENDIF                                                            <a name='462'>
+              ENDIF                                                              <a name='463'>
+              IF(L.EQ.1)DTHGDT(I)=DTHGDT(I)+RNSOIL*DTSDT(I)                      <a name='464'>
+              IF(ITSOIL.EQ.NSOIL.AND.L.EQ.1)THEN                                 <a name='465'>
+<font color=#447700>!     AVERAGE HFX AND QFX OVER SOIL TIMESTEPS FOR OUTPUT TO PBL                  <a name='466'></font>
+                HFX(I)=HFX(I)*RNSOIL                                         <a name='467'>
+                QFX(I)=QFX(I)*RNSOIL                                         <a name='468'>
+                LH(I)=QFX(I)*XLV<a name='469'>
+              ENDIF                                                              <a name='470'>
+   75         CONTINUE                                                           <a name='471'>
+            ENDDO                                                                <a name='472'>
+          ENDDO                                                                  <a name='473'>
+        ENDDO                                                                    <a name='474'>
+      ENDIF                                                                      <a name='475'>
+<font color=#447700>!                                                                                <a name='476'></font>
+      DO 80 I=its,ite<a name='477'>
+        IF(XLD1(I).LT.0.5) GOTO 80                                                <a name='478'>
+        TSKX=TG0(I)+DELTSM*DTHGDT(I)                                             <a name='479'>
+<a name='480'>
+<font color=#447700>! TSK is temperature<a name='481'></font>
+<font color=#447700>!       TSK(I)=TSKX*(100./PS1)**ROVCP                                          <a name='482'></font>
+        TSK(I)=TSKX<a name='483'>
+   80 CONTINUE                                                                   <a name='484'>
+<a name='485'>
+<font color=#447700>!                                                                                <a name='486'></font>
+<font color=#447700>!-----MODIFY THE THE GROUND TEMPERATURE IF THE SNOW COVER EFFECTS ARE            <a name='487'></font>
+<font color=#447700>!     CONSIDERED: LIMIT THE GROUND TEMPERATURE UNDER 0 C.                        <a name='488'></font>
+<font color=#447700>!                                                                                <a name='489'></font>
+      IF(IFSNOW.EQ.0)GOTO 90                                              <a name='490'>
+      DO 85 I=its,ite<a name='491'>
+        IF(XLD1(I).LT.0.5)GOTO 85                                                <a name='492'>
+<font color=#447700>!       PS1=(PSFC(I)*0.01)**ROVCP             <a name='493'></font>
+<font color=#447700>!       TSCVN(I)=TSK(I)*PS1                                            <a name='494'></font>
+        TSCVN(I)=TSK(I)<a name='495'>
+        IF((SNOWC(I).GT.0..AND.TSCVN(I).GT.273.16))THEN                        <a name='496'>
+          TSCVN(I)=273.16                                                        <a name='497'>
+        ELSE                                                                     <a name='498'>
+          TSCVN(I)=TSCVN(I)                                                      <a name='499'>
+        ENDIF                                                                    <a name='500'>
+<font color=#447700>!       TSK(I)=TSCVN(I)/PS1                                                    <a name='501'></font>
+        TSK(I)=TSCVN(I)<a name='502'>
+   85 CONTINUE                                                                   <a name='503'>
+<font color=#447700>!                                                                                <a name='504'></font>
+   90 CONTINUE                                                                   <a name='505'>
+      DO I=its,ite<a name='506'>
+<font color=#447700>! QSFC and CHKLOWQ needed by Eta PBL<a name='507'></font>
+<font color=#447700>! WA added check for flqc = 0 to accomodate TEMF (and others?)<a name='508'></font>
+        if ( FLQC(I) .ne. 0.) then<a name='509'>
+           QSFC(I)=QX(I)+QFX(I)/FLQC(I)<a name='510'>
+        else<a name='511'>
+           QSFC(I) = QX(I)<a name='512'>
+        end if<a name='513'>
+        CHKLOWQ(I)=MAVAIL(I)<a name='514'>
+      ENDDO<a name='515'>
+<font color=#447700>!                                                                                <a name='516'></font>
+  140 CONTINUE                                                                   <a name='517'>
+<a name='518'>
+   END SUBROUTINE SLAB1D<a name='519'>
+<a name='520'>
+<font color=#447700>!================================================================<a name='521'></font>
+<A NAME='SLABINIT'><A href='../../html_code/phys/module_sf_slab.F.html#SLABINIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='522'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>slabinit</font>(TSK,TMN,                                 &amp; <A href='../../call_to/SLABINIT.html' TARGET='index'>1</A><a name='523'>
+                       TSLB,ZS,DZS,num_soil_layers,             &amp;<a name='524'>
+                       allowed_to_read, start_of_simulation,    &amp;<a name='525'>
+                       ids,ide, jds,jde, kds,kde,               &amp;<a name='526'>
+                       ims,ime, jms,jme, kms,kme,               &amp;<a name='527'>
+                       its,ite, jts,jte, kts,kte                )<a name='528'>
+<font color=#447700>!----------------------------------------------------------------<a name='529'></font>
+   IMPLICIT NONE<a name='530'>
+<font color=#447700>!----------------------------------------------------------------<a name='531'></font>
+   LOGICAL , INTENT(IN)      ::      allowed_to_read<a name='532'>
+   LOGICAL , INTENT(IN)      ::      start_of_simulation<a name='533'>
+   INTEGER, INTENT(IN   )    ::      ids,ide, jds,jde, kds,kde, &amp;<a name='534'>
+                                     ims,ime, jms,jme, kms,kme, &amp;<a name='535'>
+                                     its,ite, jts,jte, kts,kte<a name='536'>
+<a name='537'>
+   INTEGER, INTENT(IN   )    ::      num_soil_layers<a name='538'>
+<font color=#447700>!   <a name='539'></font>
+   REAL,     DIMENSION( ims:ime , 1:num_soil_layers , jms:jme ), INTENT(INOUT) :: TSLB<a name='540'>
+<a name='541'>
+   REAL,     DIMENSION(1:num_soil_layers), INTENT(IN)  ::  ZS,DZS<a name='542'>
+<a name='543'>
+   REAL,    DIMENSION( ims:ime, jms:jme )                     , &amp;<a name='544'>
+            INTENT(IN)    ::                               TSK, &amp;<a name='545'>
+                                                           TMN<a name='546'>
+<a name='547'>
+<font color=#447700>!  LOCAR VAR<a name='548'></font>
+<a name='549'>
+   INTEGER                   ::      L,J,I,itf,jtf<a name='550'>
+   CHARACTER*1024 message<a name='551'>
+<a name='552'>
+<font color=#447700>!----------------------------------------------------------------<a name='553'></font>
+ <a name='554'>
+   itf=min0(ite,ide-1)<a name='555'>
+   jtf=min0(jte,jde-1)<a name='556'>
+<a name='557'>
+   END SUBROUTINE slabinit<a name='558'>
+<font color=#447700>!-------------------------------------------------------------------          <a name='559'></font>
+<a name='560'>
+END MODULE module_sf_slab<a name='561'>
+</pre></body></html>

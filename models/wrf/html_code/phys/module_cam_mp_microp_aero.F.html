@@ -1,0 +1,1646 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#define WRF_PORT<a name='2'>
+#if ( WRF_CHEM == 1 )<a name='3'>
+#       include "<A href='../../html_code/include/MODAL_AERO_CPP_DEFINES.h.html'>../chem/MODAL_AERO_CPP_DEFINES.h</A>"<A NAME="MODAL_AERO_CPP_DEFINES.h_1"><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#module_cam_mp_microp_aero.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='4'>
+#else<a name='5'>
+#       define MODAL_AERO<a name='6'>
+#       define MODAL_AERO_3MODE<a name='7'>
+#endif<a name='8'>
+<font color=#447700>! Updated to CESM1.0.3 (CAM5.1.01) by Balwinder.Singh@pnnl.gov<a name='9'></font>
+<A NAME='MICROP_AERO'><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='10'>
+<font color=#993300>module </font><font color=#cc0000>microp_aero</font> <A href='../../call_to/MICROP_AERO.html' TARGET='index'>2</A>,<A href='../../call_from/MICROP_AERO.html' TARGET='index'>8</A><a name='11'>
+<a name='12'>
+<font color=#447700>!---------------------------------------------------------------------------------<a name='13'></font>
+<font color=#447700>! Purpose:<a name='14'></font>
+<font color=#447700>!   CAM Interface for aerosol activation <a name='15'></font>
+<font color=#447700>!<a name='16'></font>
+<font color=#447700>! Author: Andrew Gettelman<a name='17'></font>
+<font color=#447700>! Based on code from: Hugh Morrison, Xiaohong Liu and Steve Ghan<a name='18'></font>
+<font color=#447700>! May 2010<a name='19'></font>
+<font color=#447700>! Description in: Morrison and Gettelman, 2008. J. Climate (MG2008)<a name='20'></font>
+<font color=#447700>!                 Gettelman et al., 2010 J. Geophys. Res. - Atmospheres (G2010)         <a name='21'></font>
+<font color=#447700>! for questions contact Andrew Gettelman  (andrew@ucar.edu)<a name='22'></font>
+<font color=#447700>! Modifications: A. Gettelman Nov 2010  - changed to support separation of <a name='23'></font>
+<font color=#447700>!                microphysics and macrophysics and concentrate aerosol information here<a name='24'></font>
+<font color=#447700>!<a name='25'></font>
+<font color=#447700>!---------------------------------------------------------------------------------<a name='26'></font>
+<a name='27'>
+  use <A href='../../html_code/phys/module_cam_shr_kind_mod.F.html#SHR_KIND_MOD'>shr_kind_mod</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_KIND_MOD_9">,  only: r8=&gt;shr_kind_r8<a name='28'>
+#ifndef WRF_PORT<a name='29'>
+  use spmd_utils,    only: masterproc<a name='30'>
+  use ppgrid,        only: pcols, pver, pverp<a name='31'>
+#else<a name='32'>
+  use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_18">, only: masterproc, pcols, pver, pverp<a name='33'>
+#endif<a name='34'>
+  use <A href='../../html_code/phys/module_cam_physconst.F.html#PHYSCONST'>physconst</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHYSCONST_9">,     only: gravit, rair, tmelt, cpair, rh2o, r_universal, mwh2o, rhoh2o<a name='35'>
+  use <A href='../../html_code/phys/module_cam_physconst.F.html#PHYSCONST'>physconst</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHYSCONST_10">,     only: latvap, latice<a name='36'>
+#ifndef WRF_PORT<a name='37'>
+  use abortutils,    only: endrun<a name='38'>
+#else<a name='39'>
+   use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_19">, only: endrun<a name='40'>
+#endif<a name='41'>
+  use <A href='../../html_code/phys/module_cam_error_function.F.html#ERROR_FUNCTION'>error_function</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ERROR_FUNCTION_1">, only: erf,erfc<a name='42'>
+  use <A href='../../html_code/phys/module_cam_wv_saturation.F.html#WV_SATURATION'>wv_saturation</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WV_SATURATION_7">,  only: estblf, hlatv, tmin, hlatf, rgasv, pcf, cp, epsqs, ttrice, &amp;<a name='43'>
+                            vqsatd2, vqsatd2_single,polysvp<a name='44'>
+#ifndef WRF_PORT<a name='45'>
+  use cam_history,    only: addfld, add_default, phys_decomp, outfld <a name='46'>
+  use cam_logfile,    only: iulog<a name='47'>
+  use rad_constituents, only: rad_cnst_get_info, rad_cnst_get_aer_props<a name='48'>
+  use phys_control,   only: phys_getopts<a name='49'>
+  use cldwat2m_macro, only: rhmini, rhmaxi<a name='50'>
+#else<a name='51'>
+  use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_20">, only: addfld, add_default, phys_decomp, outfld, iulog<a name='52'>
+#endif<a name='53'>
+<a name='54'>
+<a name='55'>
+ implicit none<a name='56'>
+ private<a name='57'>
+ save<a name='58'>
+<a name='59'>
+ public :: ini_microp_aero, microp_aero_ts<a name='60'>
+<a name='61'>
+<font color=#447700>! Private module data<a name='62'></font>
+<a name='63'>
+   logical             :: wsubTKE  <font color=#447700>! If .true. (.false.), use UW's TKE (kkvh) for computing wsub<a name='64'></font>
+<a name='65'>
+<a name='66'>
+      real(r8), private:: rn_dst1, rn_dst2, rn_dst3, rn_dst4 <font color=#447700>!dust number mean radius for contact freezing<a name='67'></font>
+      real(r8), private:: pi    <font color=#447700>! pi<a name='68'></font>
+      real(r8), private:: tt0   <font color=#447700>! Freezing temperature<a name='69'></font>
+      real(r8), private:: qsmall <font color=#447700>!min mixing ratio <a name='70'></font>
+<a name='71'>
+  real(r8), private::  r              <font color=#447700>!Dry air Gas constant<a name='72'></font>
+<a name='73'>
+<a name='74'>
+<font color=#447700>! activate parameters<a name='75'></font>
+<a name='76'>
+      integer, private:: psat<a name='77'>
+      parameter (psat=6) <font color=#447700>! number of supersaturations to calc ccn concentration<a name='78'></font>
+      real(r8), private:: aten<a name='79'>
+<a name='80'>
+      real(r8), allocatable, private:: alogsig(:) <font color=#447700>! natl log of geometric standard dev of aerosol<a name='81'></font>
+      real(r8), allocatable, private:: exp45logsig(:)<a name='82'>
+      real(r8), allocatable, private:: argfactor(:)<a name='83'>
+      real(r8), allocatable, private:: amcube(:) <font color=#447700>! cube of dry mode radius (m)<a name='84'></font>
+      real(r8), allocatable, private:: smcrit(:) <font color=#447700>! critical supersatuation for activation<a name='85'></font>
+      real(r8), allocatable, private:: lnsm(:) <font color=#447700>! ln(smcrit)<a name='86'></font>
+      real(r8), private:: amcubesulfate(pcols) <font color=#447700>! cube of dry mode radius (m) of sulfate<a name='87'></font>
+      real(r8), private:: smcritsulfate(pcols) <font color=#447700>! critical supersatuation for activation of sulfate<a name='88'></font>
+      real(r8), allocatable, private:: amcubefactor(:) <font color=#447700>! factors for calculating mode radius<a name='89'></font>
+      real(r8), allocatable, private:: smcritfactor(:) <font color=#447700>! factors for calculating critical supersaturation<a name='90'></font>
+      real(r8), private:: super(psat)<a name='91'>
+      real(r8), private:: alogten,alog2,alog3,alogaten<a name='92'>
+      real(r8), private, parameter :: supersat(psat)= &amp;<font color=#447700>! supersaturation (%) to determine ccn concentration<a name='93'></font>
+               (/0.02,0.05,0.1,0.2,0.5,1.0/)<a name='94'>
+      real(r8), allocatable, private:: ccnfact(:,:)<a name='95'>
+<a name='96'>
+      real(r8), allocatable, private:: f1(:),f2(:) <font color=#447700>! abdul-razzak functions of width<a name='97'></font>
+      real(r8), private:: third, sixth,zero<a name='98'>
+      real(r8), private:: sq2, sqpi<a name='99'>
+<a name='100'>
+      integer :: naer_all    <font color=#447700>! number of aerosols affecting climate<a name='101'></font>
+      integer :: idxsul = -1 <font color=#447700>! index in aerosol list for sulfate<a name='102'></font>
+      integer :: idxdst1 = -1 <font color=#447700>! index in aerosol list for dust1<a name='103'></font>
+      integer :: idxdst2 = -1 <font color=#447700>! index in aerosol list for dust2<a name='104'></font>
+      integer :: idxdst3 = -1 <font color=#447700>! index in aerosol list for dust3<a name='105'></font>
+      integer :: idxdst4 = -1 <font color=#447700>! index in aerosol list for dust4<a name='106'></font>
+<a name='107'>
+      integer :: idxbcphi = -1 <font color=#447700>! index in aerosol list for Soot (BCPHIL)<a name='108'></font>
+<a name='109'>
+      <font color=#447700>! aerosol properties<a name='110'></font>
+      character(len=20), allocatable :: aername(:)<a name='111'>
+      real(r8), allocatable :: dryrad_aer(:)<a name='112'>
+      real(r8), allocatable :: density_aer(:)<a name='113'>
+      real(r8), allocatable :: hygro_aer(:)<a name='114'>
+      real(r8), allocatable :: dispersion_aer(:)<a name='115'>
+      real(r8), allocatable :: num_to_mass_aer(:)<a name='116'>
+<a name='117'>
+contains<a name='118'>
+<a name='119'>
+<font color=#447700>!===============================================================================<a name='120'></font>
+<a name='121'>
+<A NAME='INI_MICROP_AERO'><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='122'>
+<font color=#993300>subroutine </font><font color=#cc0000>ini_microp_aero</font> <A href='../../call_to/INI_MICROP_AERO.html' TARGET='index'>1</A>,<A href='../../call_from/INI_MICROP_AERO.html' TARGET='index'>24</A><a name='123'>
+<a name='124'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='125'></font>
+<font color=#447700>! <a name='126'></font>
+<font color=#447700>! Purpose: <a name='127'></font>
+<font color=#447700>! initialize constants for aerosols needed by microphysics<a name='128'></font>
+<font color=#447700>! called from stratiform.F90<a name='129'></font>
+<font color=#447700>! <a name='130'></font>
+<font color=#447700>! Author: Andrew Gettelman May 2010<a name='131'></font>
+<font color=#447700>! <a name='132'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='133'></font>
+#ifdef MODAL_AERO<a name='134'>
+    use <A href='../../html_code/phys/module_cam_mp_ndrop.F.html#NDROP'>ndrop</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NDROP_1">,           only: activate_init<a name='135'>
+    use <A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS'>constituents</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTITUENTS_7">,    only: cnst_name<a name='136'>
+#ifndef WRF_PORT<a name='137'>
+    use cam_history,     only: fieldname_len<a name='138'>
+    use spmd_utils,      only: masterproc<a name='139'>
+    use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_3">, only: cnst_name_cw, &amp;<a name='140'>
+                               lmassptr_amode, lmassptrcw_amode, &amp;<a name='141'>
+                               nspec_amode, ntot_amode, numptr_amode, numptrcw_amode, ntot_amode<a name='142'>
+#else<a name='143'>
+    use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_21">, only: fieldname_len, masterproc<a name='144'>
+    use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_4">,    only: cnst_name_cw =&gt; cnst_name_cw_mp, &amp;<a name='145'>
+         lmassptr_amode =&gt; lmassptr_amode_mp, lmassptrcw_amode =&gt; lmassptrcw_amode_mp , &amp;<a name='146'>
+         nspec_amode    =&gt; nspec_amode_mp   , ntot_amode       =&gt; ntot_amode_mp,        &amp;<a name='147'>
+         numptr_amode   =&gt; numptr_amode_mp  , numptrcw_amode   =&gt; numptrcw_amode_mp<a name='148'>
+#endif<a name='149'>
+      <a name='150'>
+    integer                        :: lphase, lspec<a name='151'>
+    character(len=fieldname_len)   :: tmpname<a name='152'>
+    character(len=fieldname_len+3) :: fieldname<a name='153'>
+    character(128)                 :: long_name<a name='154'>
+    character(8)                   :: unit<a name='155'>
+    logical                        :: history_aerosol      <font color=#447700>! Output the MAM aerosol tendencies<a name='156'></font>
+<a name='157'>
+#endif<a name='158'>
+<a name='159'>
+   integer k<a name='160'>
+<a name='161'>
+   integer l,m, iaer<a name='162'>
+   real(r8) surften       <font color=#447700>! surface tension of water w/respect to air (N/m)<a name='163'></font>
+   real(r8) arg<a name='164'>
+   real(r8) derf<a name='165'>
+<a name='166'>
+   character(len=16) :: eddy_scheme = ' '<a name='167'>
+   logical           :: history_microphysics     <font color=#447700>! output variables for microphysics diagnostics package<a name='168'></font>
+#ifndef WRF_PORT<a name='169'>
+   <font color=#447700>! Query the PBL eddy scheme<a name='170'></font>
+   call phys_getopts(eddy_scheme_out              = eddy_scheme,           &amp;<a name='171'>
+                     history_microphysics_out     = history_microphysics   )<a name='172'>
+   wsubTKE = .false.<a name='173'>
+   if (trim(eddy_scheme) .eq. 'diag_TKE') wsubTKE = .true.<a name='174'>
+#else<a name='175'>
+   history_microphysics =.FALSE.<a name='176'>
+   wsubTKE              =.TRUE.<a name='177'>
+#endif<a name='178'>
+<a name='179'>
+   <font color=#447700>! Access the physical properties of the aerosols that are affecting the climate<a name='180'></font>
+   <font color=#447700>! by using routines from the rad_constituents module.<a name='181'></font>
+#ifndef WRF_PORT<a name='182'>
+   call rad_cnst_get_info(0, naero=naer_all)<a name='183'>
+   allocate( &amp;<a name='184'>
+      aername(naer_all),        &amp;<a name='185'>
+      dryrad_aer(naer_all),     &amp;<a name='186'>
+      density_aer(naer_all),    &amp;<a name='187'>
+      hygro_aer(naer_all),      &amp;<a name='188'>
+      dispersion_aer(naer_all), &amp;<a name='189'>
+      num_to_mass_aer(naer_all) )<a name='190'>
+<a name='191'>
+   do iaer = 1, naer_all<a name='192'>
+      call rad_cnst_get_aer_props(0, iaer, &amp;<a name='193'>
+         aername         = aername(iaer), &amp;<a name='194'>
+         dryrad_aer      = dryrad_aer(iaer), &amp;<a name='195'>
+         density_aer     = density_aer(iaer), &amp;<a name='196'>
+         hygro_aer       = hygro_aer(iaer), &amp;<a name='197'>
+         dispersion_aer  = dispersion_aer(iaer), &amp;<a name='198'>
+         num_to_mass_aer = num_to_mass_aer(iaer) )<a name='199'>
+<a name='200'>
+<a name='201'>
+      <font color=#447700>! Look for sulfate aerosol in this list (Bulk aerosol only)<a name='202'></font>
+      if (trim(aername(iaer)) == 'SULFATE') idxsul = iaer<a name='203'>
+      if (trim(aername(iaer)) == 'DUST1') idxdst1 = iaer<a name='204'>
+      if (trim(aername(iaer)) == 'DUST2') idxdst2 = iaer<a name='205'>
+      if (trim(aername(iaer)) == 'DUST3') idxdst3 = iaer<a name='206'>
+      if (trim(aername(iaer)) == 'DUST4') idxdst4 = iaer<a name='207'>
+      if (trim(aername(iaer)) == 'BCPHIL') idxbcphi = iaer<a name='208'>
+<a name='209'>
+<a name='210'>
+<font color=#447700>!addfield calls for outputting aerosol number concentration<a name='211'></font>
+<a name='212'>
+      call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_88">(aername(iaer)//'_m3', 'm-3', pver, 'A', 'aerosol number concentration', phys_decomp)<a name='213'>
+<a name='214'>
+   end do<a name='215'>
+<a name='216'>
+   if (masterproc) then<a name='217'>
+      write(iulog,*) 'ini_micro: iaer, name, dryrad, density, hygro, dispersion, num_to_mass'<a name='218'>
+#ifdef WRF_PORT<a name='219'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_589">(iulog)<a name='220'>
+#endif <a name='221'>
+      do iaer = 1, naer_all<a name='222'>
+         write(iulog,*) iaer, aername(iaer), dryrad_aer(iaer), density_aer(iaer), hygro_aer(iaer), &amp;<a name='223'>
+            dispersion_aer(iaer), num_to_mass_aer(iaer)<a name='224'>
+#ifdef WRF_PORT<a name='225'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_590">(iulog)<a name='226'>
+#endif <a name='227'>
+      end do<a name='228'>
+      if (idxsul &lt; 1) then<a name='229'>
+         write(iulog,*) 'ini_micro: SULFATE aerosol properties NOT FOUND'<a name='230'>
+#ifdef WRF_PORT<a name='231'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_591">(iulog)<a name='232'>
+#endif          <a name='233'>
+      else<a name='234'>
+         write(iulog,*) 'ini_micro: SULFATE aerosol properties FOUND at index ',idxsul<a name='235'>
+#ifdef WRF_PORT<a name='236'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_592">(iulog)<a name='237'>
+#endif <a name='238'>
+      end if<a name='239'>
+   end if<a name='240'>
+#endif<a name='241'>
+   call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_89"> ('CCN1    ','#/cm3   ',pver, 'A','CCN concentration at S=0.02%',phys_decomp)<a name='242'>
+   call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_90"> ('CCN2    ','#/cm3   ',pver, 'A','CCN concentration at S=0.05%',phys_decomp)<a name='243'>
+   call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_91"> ('CCN3    ','#/cm3   ',pver, 'A','CCN concentration at S=0.1%',phys_decomp)<a name='244'>
+   call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_92"> ('CCN4    ','#/cm3   ',pver, 'A','CCN concentration at S=0.2%',phys_decomp)<a name='245'>
+   call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_93"> ('CCN5    ','#/cm3   ',pver, 'A','CCN concentration at S=0.5%',phys_decomp)<a name='246'>
+   call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_94"> ('CCN6    ','#/cm3   ',pver, 'A','CCN concentration at S=1.0%',phys_decomp)<a name='247'>
+<a name='248'>
+   call <A href='../../html_code/phys/module_cam_support.F.html#ADD_DEFAULT'>add_default</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADD_DEFAULT_8">('CCN3',  1, ' ' )<a name='249'>
+<a name='250'>
+   call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_95"> ('NIHF    ','#/m3   ',pver, 'A','Activated Ice Number Concentation due to homogenous freezing',phys_decomp)<a name='251'>
+   call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_96"> ('NIDEP    ','#/m3   ',pver, 'A','Activated Ice Number Concentation due to deposition nucleation',phys_decomp)<a name='252'>
+   call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_97"> ('NIIMM    ','#/m3   ',pver, 'A','Activated Ice Number Concentation due to immersion freezing',phys_decomp)<a name='253'>
+   call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_98"> ('NIMEY    ','#/m3   ',pver, 'A','Activated Ice Number Concentation due to meyers deposition',phys_decomp)<a name='254'>
+<a name='255'>
+<font color=#447700>! contact freezing due to dust<a name='256'></font>
+<font color=#447700>! dust number mean radius (m), Zender et al JGR 2003 assuming number mode radius of 0.6 micron, sigma=2<a name='257'></font>
+<a name='258'>
+   rn_dst1=0.258e-6_r8<a name='259'>
+   rn_dst2=0.717e-6_r8<a name='260'>
+   rn_dst3=1.576e-6_r8<a name='261'>
+   rn_dst4=3.026e-6_r8<a name='262'>
+<a name='263'>
+<font color=#447700>! smallest mixing ratio considered in microphysics<a name='264'></font>
+<a name='265'>
+   qsmall = 1.e-18_r8  <a name='266'>
+<a name='267'>
+<font color=#447700>! set parameters for droplet activation, following abdul-razzak and ghan 2000, JGR<a name='268'></font>
+<a name='269'>
+<font color=#447700>!      mathematical constants<a name='270'></font>
+<a name='271'>
+      zero=0._r8<a name='272'>
+      third=1./3._r8<a name='273'>
+      sixth=1./6._r8<a name='274'>
+      sq2=sqrt(2._r8)<a name='275'>
+      pi=4._r8*atan(1.0_r8)<a name='276'>
+      sqpi=sqrt(pi)<a name='277'>
+<a name='278'>
+      r= rair        <font color=#447700>!Dry air Gas constant: note units(phys_constants are in J/K/kmol)<a name='279'></font>
+<a name='280'>
+<font color=#447700>! freezing temperature<a name='281'></font>
+      tt0=273.15_r8  <font color=#447700>!should be tmelt<a name='282'></font>
+<a name='283'>
+      surften=0.076_r8<a name='284'>
+      aten=2.*mwh2o*surften/(r_universal*tt0*rhoh2o)<a name='285'>
+      alogaten=log(aten)<a name='286'>
+      alog2=log(2._r8)<a name='287'>
+      alog3=log(3._r8)<a name='288'>
+      super(:)=0.01*supersat(:)<a name='289'>
+#ifndef WRF_PORT<a name='290'>
+      allocate(alogsig(naer_all),      &amp;<a name='291'>
+               exp45logsig(naer_all),  &amp;<a name='292'>
+               argfactor(naer_all),    &amp;<a name='293'>
+               amcube(naer_all),       &amp;<a name='294'>
+               smcrit(naer_all),       &amp;<a name='295'>
+               lnsm(naer_all),         &amp;<a name='296'>
+               amcubefactor(naer_all), &amp;<a name='297'>
+               smcritfactor(naer_all), &amp;<a name='298'>
+               ccnfact(psat,naer_all), &amp;<a name='299'>
+               f1(naer_all),           &amp;<a name='300'>
+               f2(naer_all)            )<a name='301'>
+<a name='302'>
+      do m=1,naer_all<a name='303'>
+          alogsig(m)=log(dispersion_aer(m))<a name='304'>
+          exp45logsig(m)=exp(4.5*alogsig(m)*alogsig(m))<a name='305'>
+	  argfactor(m)=2./(3.*sqrt(2.)*alogsig(m))<a name='306'>
+          f1(m)=0.5*exp(2.5*alogsig(m)*alogsig(m))<a name='307'>
+	  f2(m)=1.+0.25*alogsig(m)<a name='308'>
+          amcubefactor(m)=3._r8/(4._r8*pi*exp45logsig(m)*density_aer(m))<a name='309'>
+	  smcritfactor(m)=2._r8*aten*sqrt(aten/(27._r8*max(1.e-10_r8,hygro_aer(m))))<a name='310'>
+          amcube(m)=amcubefactor(m)/(num_to_mass_aer(m))<a name='311'>
+          if(hygro_aer(m).gt.1.e-10) then<a name='312'>
+             smcrit(m)=smcritfactor(m)/sqrt(amcube(m))<a name='313'>
+	  else<a name='314'>
+             smcrit(m)=100.<a name='315'>
+	  endif<a name='316'>
+          lnsm(m)=log(smcrit(m))<a name='317'>
+<a name='318'>
+          do l=1,psat<a name='319'>
+             arg=argfactor(m)*log(smcrit(m)/super(l))<a name='320'>
+	     if(arg&lt;2)then<a name='321'>
+	        if(arg&lt;-2)then<a name='322'>
+		   ccnfact(l,m)=1.e-6<a name='323'>
+	        else<a name='324'>
+		   ccnfact(l,m)=1.e-6_r8*0.5_r8*erfc(arg)<a name='325'>
+                endif<a name='326'>
+             else<a name='327'>
+	        ccnfact(l,m) = 0.<a name='328'>
+             endif<a name='329'>
+          enddo<a name='330'>
+      end do<a name='331'>
+<a name='332'>
+#ifdef MODAL_AERO<a name='333'>
+ call phys_getopts( history_aerosol_out        = history_aerosol)<a name='334'>
+ call <A href='../../html_code/phys/module_cam_mp_ndrop.F.html#ACTIVATE_INIT'>activate_init</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ACTIVATE_INIT_1"><a name='335'>
+<a name='336'>
+<font color=#447700>! Add dropmixnuc tendencies for all modal aerosol species<a name='337'></font>
+    do m = 1, ntot_amode<a name='338'>
+    do lphase = 1, 2<a name='339'>
+    do lspec = 0, nspec_amode(m)+1   <font color=#447700>! loop over number + chem constituents + water<a name='340'></font>
+       unit = 'kg/m2/s'<a name='341'>
+       if (lspec == 0) then   <font color=#447700>! number<a name='342'></font>
+          unit = '#/m2/s'<a name='343'>
+          if (lphase == 1) then<a name='344'>
+             l = numptr_amode(m)<a name='345'>
+          else<a name='346'>
+             l = numptrcw_amode(m)<a name='347'>
+          endif<a name='348'>
+       else if (lspec &lt;= nspec_amode(m)) then   <font color=#447700>! non-water mass<a name='349'></font>
+          if (lphase == 1) then<a name='350'>
+             l = lmassptr_amode(lspec,m)<a name='351'>
+          else<a name='352'>
+             l = lmassptrcw_amode(lspec,m)<a name='353'>
+          endif<a name='354'>
+       else   <font color=#447700>! water mass<a name='355'></font>
+          cycle<a name='356'>
+       end if<a name='357'>
+       if (lphase == 1) then<a name='358'>
+          tmpname = cnst_name(l)<a name='359'>
+       else<a name='360'>
+          tmpname = cnst_name_cw(l)<a name='361'>
+       end if<a name='362'>
+<a name='363'>
+       fieldname = trim(tmpname) // '_mixnuc1'<a name='364'>
+       long_name = trim(tmpname) // ' dropmixnuc mixnuc column tendency'<a name='365'>
+       call <A href='../../html_code/phys/module_cam_support.F.html#ADDFLD'>addfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADDFLD_99">( fieldname, unit, 1, 'A', long_name, phys_decomp )<a name='366'>
+       if ( history_aerosol ) then<a name='367'>
+          call <A href='../../html_code/phys/module_cam_support.F.html#ADD_DEFAULT'>add_default</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#INI_MICROP_AERO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ADD_DEFAULT_9">( fieldname, 1, ' ' )<a name='368'>
+          if ( masterproc ) write(*,'(2a)') 'microp_driver_init addfld - ', fieldname<a name='369'>
+       endif<a name='370'>
+<a name='371'>
+    end do   <font color=#447700>! lspec<a name='372'></font>
+    end do   <font color=#447700>! lphase<a name='373'></font>
+    end do   <font color=#447700>! m<a name='374'></font>
+#endif<a name='375'>
+#endif<a name='376'>
+ return<a name='377'>
+ end subroutine ini_microp_aero<a name='378'>
+<a name='379'>
+<a name='380'>
+<font color=#447700>!===============================================================================<a name='381'></font>
+<font color=#447700>!activation routine for each timestep goes here...<a name='382'></font>
+<a name='383'>
+<A NAME='MICROP_AERO_TS'><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='384'>
+      <font color=#993300>subroutine </font><font color=#cc0000>microp_aero_ts</font> (   &amp; <A href='../../call_to/MICROP_AERO_TS.html' TARGET='index'>1</A>,<A href='../../call_from/MICROP_AERO_TS.html' TARGET='index'>18</A><a name='385'>
+   lchnk, ncol, deltatin, t, ttend,        &amp;<a name='386'>
+   qn, qc, qi,               &amp;<a name='387'>
+   nc, ni, p, pdel, cldn,                   &amp;<a name='388'>
+   liqcldf, icecldf,                        &amp;<a name='389'>
+   cldo, pint, rpdel, zm, omega,            &amp;<a name='390'>
+#ifdef MODAL_AERO<a name='391'>
+   qaer, cflx, qaertend, dgnumwet,dgnum, &amp;<a name='392'>
+#else<a name='393'>
+   aer_mmr,                                 &amp;<a name='394'>
+#endif<a name='395'>
+   kkvh, tke, turbtype, smaw, wsub, wsubi, &amp;<a name='396'>
+   naai, naai_hom, npccn, rndst, nacon     &amp;<a name='397'>
+#ifdef WRF_PORT<a name='398'>
+   ,qqcw                                   &amp;<a name='399'>
+#endif<a name='400'>
+                                           )<a name='401'>
+<a name='402'>
+   use <A href='../../html_code/phys/module_cam_wv_saturation.F.html#WV_SATURATION'>wv_saturation</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WV_SATURATION_8">, only: vqsatd, vqsatd_water<a name='403'>
+#ifndef WRF_PORT<a name='404'>
+   use <A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS'>constituents</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTITUENTS_8">,  only: pcnst<a name='405'>
+#else<a name='406'>
+   use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_22">, only: pcnst =&gt; pcnst_mp<a name='407'>
+#endif<a name='408'>
+#ifdef MODAL_AERO<a name='409'>
+   use <A href='../../html_code/phys/module_cam_mp_ndrop.F.html#NDROP'>ndrop</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NDROP_2">,         only: dropmixnuc<a name='410'>
+#ifndef WRF_PORT<a name='411'>
+   use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_5">, only:numptr_amode, modeptr_accum, modeptr_coarse, modeptr_aitken, &amp;<a name='412'>
+                              lptr_dust_a_amode,lptr_nacl_a_amode,ntot_amode<a name='413'>
+#else<a name='414'>
+   use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_6">, only:numptr_amode =&gt; numptr_amode_mp, modeptr_accum =&gt; modeptr_accum_mp, &amp;<a name='415'>
+        modeptr_coarse    =&gt; modeptr_coarse_mp   , modeptr_aitken    =&gt; modeptr_aitken_mp, &amp;<a name='416'>
+        lptr_dust_a_amode =&gt; lptr_dust_a_amode_mp, lptr_nacl_a_amode =&gt; lptr_nacl_a_amode_mp, &amp;<a name='417'>
+        ntot_amode        =&gt; ntot_amode_mp, modeptr_coardust =&gt; modeptr_coardust_mp  <font color=#447700>!BSINGH - Added modeptr_coarsedust for MAM7 compliance<a name='418'></font>
+     <a name='419'>
+#endif<a name='420'>
+#endif<a name='421'>
+<a name='422'>
+   <font color=#447700>! input arguments<a name='423'></font>
+   integer,  intent(in) :: lchnk<a name='424'>
+   integer,  intent(in) :: ncol<a name='425'>
+   real(r8), intent(in) :: deltatin             <font color=#447700>! time step (s)<a name='426'></font>
+   real(r8), intent(in) :: t(pcols,pver)       <font color=#447700>! input temperature (K)<a name='427'></font>
+   real(r8), intent(in) :: ttend(pcols,pver)    <font color=#447700>! non-microphysical temperature tendency (K/s)<a name='428'></font>
+   real(r8), intent(in) :: qn(pcols,pver)       <font color=#447700>! input h20 vapor mixing ratio (kg/kg)<a name='429'></font>
+   <font color=#447700>! note: all input cloud variables are grid-averaged<a name='430'></font>
+   real(r8), intent(in) :: qc(pcols,pver)    <font color=#447700>! cloud water mixing ratio (kg/kg)<a name='431'></font>
+   real(r8), intent(in) :: qi(pcols,pver)    <font color=#447700>! cloud ice mixing ratio (kg/kg)<a name='432'></font>
+   real(r8), intent(in) :: nc(pcols,pver)    <font color=#447700>! cloud water number conc (1/kg)<a name='433'></font>
+   real(r8), intent(in) :: ni(pcols,pver)    <font color=#447700>! cloud ice number conc (1/kg)<a name='434'></font>
+   real(r8), intent(in) :: p(pcols,pver)        <font color=#447700>! air pressure (pa)<a name='435'></font>
+   real(r8), intent(in) :: pdel(pcols,pver)     <font color=#447700>! pressure difference across level (pa)<a name='436'></font>
+   real(r8), intent(in) :: cldn(pcols,pver)     <font color=#447700>! cloud fraction<a name='437'></font>
+   real(r8), intent(in) :: icecldf(pcols,pver)  <font color=#447700>! ice cloud fraction   <a name='438'></font>
+   real(r8), intent(in) :: liqcldf(pcols,pver)  <font color=#447700>! liquid cloud fraction<a name='439'></font>
+   real(r8), intent(in) :: cldo(pcols,pver)  <font color=#447700>! old cloud fraction<a name='440'></font>
+   real(r8), intent(in) :: pint(pcols,pverp)    <font color=#447700>! air pressure layer interfaces (pa)<a name='441'></font>
+   real(r8), intent(in) :: rpdel(pcols,pver)    <font color=#447700>! inverse pressure difference across level (pa)<a name='442'></font>
+   real(r8), intent(in) :: zm(pcols,pver)       <font color=#447700>! geopotential height of model levels (m)<a name='443'></font>
+   real(r8), intent(in) :: omega(pcols,pver)    <font color=#447700>! vertical velocity (Pa/s)<a name='444'></font>
+#ifdef MODAL_AERO<a name='445'>
+   real(r8), intent(in) :: qaer(pcols,pver,pcnst) <font color=#447700>! aerosol number and mass mixing ratios<a name='446'></font>
+   real(r8), intent(in) :: cflx(pcols,pcnst)      <font color=#447700>! constituent flux from surface<a name='447'></font>
+   real(r8), intent(inout) :: qaertend(pcols,pver,pcnst) <font color=#447700>! qaer tendency (1/s)<a name='448'></font>
+#ifdef WRF_PORT<a name='449'>
+   real(r8), intent(inout) :: qqcw(pcols,pver,pcnst) <font color=#447700>! cloud-borne aerosol<a name='450'></font>
+#endif<a name='451'>
+   real(r8), intent(in) :: dgnumwet(pcols,pver,ntot_amode) <font color=#447700>! aerosol mode diameter<a name='452'></font>
+   real(r8), intent(in) :: dgnum(pcols,pver,ntot_amode) <font color=#447700>! aerosol mode dry diameter<a name='453'></font>
+#else<a name='454'>
+   real(r8), intent(in) :: aer_mmr(:,:,:)       <font color=#447700>! aerosol mass mixing ratio<a name='455'></font>
+#endif<a name='456'>
+   real(r8), intent(in) :: kkvh(pcols,pver+1) <font color=#447700>! vertical eddy diff coef (m2 s-1)<a name='457'></font>
+   real(r8), intent(in) :: tke(pcols,pver+1)    <font color=#447700>! TKE from the UW PBL scheme (m2 s-2)<a name='458'></font>
+   real(r8), intent(in) :: turbtype(pcols,pver+1) <font color=#447700>! Turbulence type at each interface<a name='459'></font>
+   real(r8), intent(in) :: smaw(pcols,pver+1)     <font color=#447700>! Normalized instability function of momentum. 0 &lt;=  &lt;= 4.964 and 1 at neutral condition.<a name='460'></font>
+<a name='461'>
+   <font color=#447700>! output arguments<a name='462'></font>
+<a name='463'>
+   real(r8), intent(out) :: wsub(pcols,pver)    <font color=#447700>! diagnosed sub-grid vertical velocity st. dev. (m/s)<a name='464'></font>
+   real(r8), intent(out) :: wsubi(pcols,pver)   <font color=#447700>! diagnosed sub-grid vertical velocity ice (m/s)<a name='465'></font>
+   real(r8), intent(out) :: naai(pcols,pver)    <font color=#447700>! number of activated aerosol for ice nucleation<a name='466'></font>
+   real(r8), intent(out) :: naai_hom(pcols,pver)<font color=#447700>! number of activated aerosol for ice nucleation (homogeneous freezing only)<a name='467'></font>
+   real(r8), intent(out) :: npccn(pcols,pver)   <font color=#447700>! number of CCN (liquid activated)<a name='468'></font>
+   real(r8), intent(out) :: rndst(pcols,pver,4) <font color=#447700>! radius of 4 dust bins for contact freezing (from microp_aero_ts)<a name='469'></font>
+   real(r8), intent(out) :: nacon(pcols,pver,4) <font color=#447700>! number in 4 dust bins for contact freezing  (from microp_aero_ts)<a name='470'></font>
+<a name='471'>
+<a name='472'>
+<font color=#447700>! local workspace<a name='473'></font>
+<font color=#447700>! all units mks unless otherwise stated<a name='474'></font>
+<a name='475'>
+   real(r8) :: tkem(pcols,pver)     <font color=#447700>! Layer-mean TKE<a name='476'></font>
+   real(r8) :: smm(pcols,pver)      <font color=#447700>! Layer-mean instability function<a name='477'></font>
+   real(r8) :: relhum(pcols,pver) <font color=#447700>! relative humidity<a name='478'></font>
+   real(r8) :: cldm(pcols,pver)   <font color=#447700>! cloud fraction<a name='479'></font>
+   real(r8) :: icldm(pcols,pver)   <font color=#447700>! ice cloud fraction<a name='480'></font>
+   real(r8) :: lcldm(pcols,pver)   <font color=#447700>! liq cloud fraction<a name='481'></font>
+   real(r8) :: nfice(pcols,pver) <font color=#447700>!fice variable<a name='482'></font>
+   real(r8) :: dumfice<a name='483'>
+   real(r8) :: qcld          <font color=#447700>! total cloud water<a name='484'></font>
+        real(r8) :: lcldn(pcols,pver) <font color=#447700>! fractional coverage of new liquid cloud<a name='485'></font>
+        real(r8) :: lcldo(pcols,pver) <font color=#447700>! fractional coverage of old liquid cloud<a name='486'></font>
+        real(r8) :: nctend_mixnuc(pcols,pver)<a name='487'>
+   	real(r8) :: deltat        <font color=#447700>! sub-time step (s)<a name='488'></font>
+        real(r8) :: nihf2,niimm2,nidep2,nimey2,dum2 <font color=#447700>!dummy variables for activated ice nuclei by diffferent processes<a name='489'></font>
+        real(r8) arg  <font color=#447700>!variable for CCN number (BAM)<a name='490'></font>
+<a name='491'>
+	 integer ftrue  <font color=#447700>! integer used to determine cloud depth<a name='492'></font>
+         real(r8) :: dum        <font color=#447700>! temporary dummy variable<a name='493'></font>
+<a name='494'>
+        real(r8) :: q(pcols,pver) <font color=#447700>! water vapor mixing ratio (kg/kg)<a name='495'></font>
+<font color=#447700>!       real(r8) :: t(pcols,pver) ! temperature (K)<a name='496'></font>
+        real(r8) :: ncloc(pcols,pver) <font color=#447700>! local variable for nc<a name='497'></font>
+        real(r8) :: rho(pcols,pver) <font color=#447700>! air density (kg m-3)<a name='498'></font>
+        real(r8) :: mincld  <font color=#447700>! minimum allowed cloud fraction<a name='499'></font>
+<a name='500'>
+<font color=#447700>! used in contact freezing via dust particles<a name='501'></font>
+        real(r8)  tcnt, viscosity, mfp<a name='502'>
+        real(r8)  slip1, slip2, slip3, slip4<a name='503'>
+        real(r8)  dfaer1, dfaer2, dfaer3, dfaer4<a name='504'>
+        real(r8)  nacon1,nacon2,nacon3,nacon4<a name='505'>
+<a name='506'>
+        real(r8) dmc,ssmc,dstrn  <font color=#447700>! variables for modal scheme.<a name='507'></font>
+<a name='508'>
+<font color=#447700>! returns from function/subroutine calls<a name='509'></font>
+        real(r8) :: tsp(pcols,pver)      <font color=#447700>! saturation temp (K)<a name='510'></font>
+        real(r8) :: qsp(pcols,pver)      <font color=#447700>! saturation mixing ratio (kg/kg)<a name='511'></font>
+        real(r8) :: qsphy(pcols,pver)      <font color=#447700>! saturation mixing ratio (kg/kg): hybrid rh<a name='512'></font>
+        real(r8) :: qs(pcols)            <font color=#447700>! liquid-ice weighted sat mixing rat (kg/kg)<a name='513'></font>
+        real(r8) :: es(pcols)            <font color=#447700>! liquid-ice weighted sat vapor press (pa)<a name='514'></font>
+        real(r8) :: esl(pcols,pver)      <font color=#447700>! liquid sat vapor pressure (pa)<a name='515'></font>
+        real(r8) :: esi(pcols,pver)      <font color=#447700>! ice sat vapor pressure (pa)<a name='516'></font>
+        real(r8) :: gammas(pcols)        <font color=#447700>! parameter for cond/evap of cloud water<a name='517'></font>
+<a name='518'>
+<font color=#447700>! new aerosol variables<a name='519'></font>
+        real(r8), allocatable :: naermod(:) <font color=#447700>! aerosol number concentration (/m3)<a name='520'></font>
+	real(r8), allocatable :: naer2(:,:,:)   <font color=#447700>! new aerosol number concentration (/m3)<a name='521'></font>
+<a name='522'>
+        real(r8), allocatable :: maerosol(:,:)   <font color=#447700>! aerosol mass conc (kg/m3)<a name='523'></font>
+	real(r8) naer(pcols)<a name='524'>
+        real(r8) ccn(pcols,pver,psat)        <font color=#447700>! number conc of aerosols activated at supersat<a name='525'></font>
+        character*8, parameter :: ccn_name(psat)=(/'CCN1','CCN2','CCN3','CCN4','CCN5','CCN6'/)<a name='526'>
+<a name='527'>
+<font color=#447700>!output for ice nucleation<a name='528'></font>
+          real(r8) :: nimey(pcols,pver) <font color=#447700>!output number conc of ice nuclei due to meyers deposition (1/m3)<a name='529'></font>
+          real(r8) :: nihf(pcols,pver)  <font color=#447700>!output number conc of ice nuclei due to heterogenous freezing (1/m3)<a name='530'></font>
+          real(r8) :: nidep(pcols,pver) <font color=#447700>!output number conc of ice nuclei due to deoposion nucleation (hetero nuc) (1/m3)<a name='531'></font>
+          real(r8) :: niimm(pcols,pver) <font color=#447700>!output number conc of ice nuclei due to immersion freezing (hetero nuc) (1/m3)<a name='532'></font>
+<a name='533'>
+<font color=#447700>! loop array variables<a name='534'></font>
+         integer i,k,nstep,n, l<a name='535'>
+	 integer ii,kk, m<a name='536'>
+         integer, allocatable :: ntype(:)<a name='537'>
+<a name='538'>
+<font color=#447700>!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc<a name='539'></font>
+<a name='540'>
+<font color=#447700>! initialize  output fields for ice nucleation<a name='541'></font>
+    nimey(1:ncol,1:pver)=0._r8 <a name='542'>
+    nihf(1:ncol,1:pver)=0._r8  <a name='543'>
+    nidep(1:ncol,1:pver)=0._r8 <a name='544'>
+    niimm(1:ncol,1:pver)=0._r8  <a name='545'>
+<a name='546'>
+<font color=#447700>! initialize output<a name='547'></font>
+    naai(1:ncol,1:pver)=0._r8<a name='548'>
+    naai_hom(1:ncol,1:pver)=0._r8<a name='549'>
+    npccn(1:ncol,1:pver)=0._r8  <a name='550'>
+    nacon(1:ncol,1:pver,:)=0._r8<a name='551'>
+<a name='552'>
+<font color=#447700>! set default or fixed dust bins for contact freezing<a name='553'></font>
+    rndst(1:ncol,1:pver,1)=rn_dst1<a name='554'>
+    rndst(1:ncol,1:pver,2)=rn_dst2<a name='555'>
+    rndst(1:ncol,1:pver,3)=rn_dst3<a name='556'>
+    rndst(1:ncol,1:pver,4)=rn_dst4<a name='557'>
+     <a name='558'>
+<font color=#447700>! TKE initialization<a name='559'></font>
+    tkem(1:ncol,1:pver)=0._r8    <a name='560'>
+    smm(1:ncol,1:pver)=0._r8    <a name='561'>
+<a name='562'>
+    allocate(naermod(naer_all), &amp;<a name='563'>
+      naer2(pcols,pver,naer_all), &amp;<a name='564'>
+      maerosol(1,naer_all), &amp;<a name='565'>
+      ntype(naer_all))<a name='566'>
+<a name='567'>
+<font color=#447700>! assign variable deltat for sub-stepping...<a name='568'></font>
+	deltat=deltatin	<a name='569'>
+<a name='570'>
+<font color=#447700>! initialize multi-level fields<a name='571'></font>
+        q(1:ncol,1:pver)=qn(1:ncol,1:pver)<a name='572'>
+        ncloc(1:ncol,1:pver)=nc(1:ncol,1:pver)<a name='573'>
+<a name='574'>
+<font color=#447700>! parameters for scheme<a name='575'></font>
+	mincld=0.0001_r8<a name='576'>
+<a name='577'>
+<font color=#447700>! initialize time-varying parameters<a name='578'></font>
+<a name='579'>
+        do k=1,pver<a name='580'>
+           do i=1,ncol<a name='581'>
+              rho(i,k)=p(i,k)/(r*t(i,k))<a name='582'>
+           end do<a name='583'>
+        end do<a name='584'>
+<a name='585'>
+<font color=#447700>!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc<a name='586'></font>
+<font color=#447700>! More refined computation of sub-grid vertical velocity <a name='587'></font>
+<font color=#447700>! Set to be zero at the surface by initialization.<a name='588'></font>
+<a name='589'>
+        if( wsubTKE ) then<a name='590'>
+<a name='591'>
+            do i = 1, ncol<a name='592'>
+            do k = 1, pver<a name='593'>
+               tkem(i,k) = 0.5_r8 * ( tke(i,k)  +  tke(i,k+1) )<a name='594'>
+               smm(i,k)  = 0.5_r8 * ( smaw(i,k) + smaw(i,k+1) )<a name='595'>
+               if( turbtype(i,k) .eq. 3._r8 ) then       <font color=#447700>! Bottom entrainment interface<a name='596'></font>
+                   tkem(i,k) = 0.5_r8 *  tke(i,k+1)<a name='597'>
+                   smm(i,k)  = 0.5_r8 * smaw(i,k+1)<a name='598'>
+               elseif( turbtype(i,k+1) .eq. 4._r8 ) then <font color=#447700>! Top entrainment interface<a name='599'></font>
+                   tkem(i,k) = 0.5_r8 *  tke(i,k)  <a name='600'>
+                   smm(i,k)  = 0.5_r8 * smaw(i,k)<a name='601'>
+               endif<a name='602'>
+               smm(i,k) = 0.259_r8*smm(i,k)<a name='603'>
+               smm(i,k) = max(smm(i,k), 0.4743_r8)<a name='604'>
+	    end do<a name='605'>
+            end do<a name='606'>
+<a name='607'>
+        endif<a name='608'>
+<a name='609'>
+           do i=1,ncol<a name='610'>
+	      ftrue=0<a name='611'>
+              do k=1,pver<a name='612'>
+<font color=#447700>! get sub-grid vertical velocity from diff coef.<a name='613'></font>
+<font color=#447700>! following morrison et al. 2005, JAS<a name='614'></font>
+<font color=#447700>! assume mixing length of 30 m<a name='615'></font>
+<a name='616'>
+	      dum=(kkvh(i,k)+kkvh(i,k+1))/2._r8/30._r8<a name='617'>
+<font color=#447700>! use maximum sub-grid vertical vel of 10 m/s<a name='618'></font>
+	      dum=min(dum,10._r8)<a name='619'>
+<font color=#447700>! set wsub to value at current vertical level<a name='620'></font>
+	      wsub(i,k)=dum<a name='621'>
+            <font color=#447700>! new computation<a name='622'></font>
+              if( wsubTKE ) then<a name='623'>
+                  wsub(i,k) = sqrt(0.5_r8*(tke(i,k)+tke(i,k+1))*(2._r8/3._r8))<a name='624'>
+                  wsub(i,k) = min(wsub(i,k),10._r8)<a name='625'>
+              endif<a name='626'>
+              wsubi(i,k) = max(0.001_r8,wsub(i,k))<a name='627'>
+              wsubi(i,k) = min(wsubi(i,k),0.2_r8)<a name='628'>
+              wsub(i,k)  = max(0.20_r8,wsub(i,k))<a name='629'>
+           end do<a name='630'>
+        end do<a name='631'>
+<a name='632'>
+<font color=#447700>!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc<a name='633'></font>
+<font color=#447700>!Get humidity and saturation vapor pressures<a name='634'></font>
+<a name='635'>
+        do k=1,pver<a name='636'>
+<a name='637'>
+<font color=#447700>! find wet bulk temperature and saturation value for provisional t and q without<a name='638'></font>
+<font color=#447700>! condensation<a name='639'></font>
+<a name='640'>
+        call <A href='../../html_code/phys/module_cam_wv_saturation.F.html#VQSATD_WATER'>vqsatd_water</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VQSATD_WATER_2">(t(1,k),p(1,k),es,qs,gammas,ncol) <font color=#447700>! use rhw<a name='641'></font>
+<a name='642'>
+        do i=1,ncol<a name='643'>
+<a name='644'>
+	esl(i,k)=<A href='../../html_code/phys/module_mp_morr_two_moment.F.html#POLYSVP'>polysvp</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="POLYSVP_9">(t(i,k),0)<a name='645'>
+	esi(i,k)=<A href='../../html_code/phys/module_mp_morr_two_moment.F.html#POLYSVP'>polysvp</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="POLYSVP_10">(t(i,k),1)<a name='646'>
+<a name='647'>
+<font color=#447700>! hm fix, make sure when above freezing that esi=esl, not active yet<a name='648'></font>
+	if (t(i,k).gt.tmelt)esi(i,k)=esl(i,k)<a name='649'>
+<a name='650'>
+        relhum(i,k)=q(i,k)/qs(i)<a name='651'>
+<a name='652'>
+<font color=#447700>! get cloud fraction, check for minimum<a name='653'></font>
+<a name='654'>
+           cldm(i,k)=max(cldn(i,k),mincld)<a name='655'>
+<a name='656'>
+           icldm(i,k)=max(icecldf(i,k),mincld)<a name='657'>
+           lcldm(i,k)=max(liqcldf(i,k),mincld)<a name='658'>
+<a name='659'>
+<a name='660'>
+<font color=#447700>! calculate nfice based on liquid and ice mmr (no rain and snow mmr available yet)<a name='661'></font>
+<a name='662'>
+        nfice(i,k)=0._r8<a name='663'>
+        dumfice=qc(i,k)+qi(i,k)<a name='664'>
+        if (dumfice.gt.qsmall .and. qi(i,k).gt.qsmall) then<a name='665'>
+           nfice(i,k)=qi(i,k)/dumfice<a name='666'>
+        endif<a name='667'>
+<a name='668'>
+#ifndef MODAL_AERO<a name='669'>
+<a name='670'>
+        do m=1,naer_all<a name='671'>
+           ntype(m)=1<a name='672'>
+           maerosol(1,m)=aer_mmr(i,k,m)*rho(i,k)<a name='673'>
+<a name='674'>
+<font color=#447700>! For bulk aerosols only:<a name='675'></font>
+<font color=#447700>!   set number nucleated for sulfate based on Lohmann et al 2000 (JGR) eq 2<a name='676'></font>
+<font color=#447700>!           Na=340.*(massSO4)^0.58  where Na=cm-3 and massSO4=ug/m3<a name='677'></font>
+<font color=#447700>!   convert units to Na [m-3] and SO4 [kgm-3]<a name='678'></font>
+<font color=#447700>!   Na(m-3)= 1.e6 cm3 m-3 Na(cm-3)=340. *(massSO4[kg/m3]*1.e9ug/kg)^0.58<a name='679'></font>
+<font color=#447700>!   or Na(m-3)= 1.e6* 340.*(1.e9ug/kg)^0.58 * (massSO4[kg/m3])^0.58<a name='680'></font>
+<a name='681'>
+           if(m .eq. idxsul) then<a name='682'>
+<font color=#447700>!              naer2(i,k,m)= 5.64259e13_r8 * maerosol(1,m)**0.58<a name='683'></font>
+              naer2(i,k,m)=maerosol(1,m)*num_to_mass_aer(m)*2._r8<a name='684'>
+           else<a name='685'>
+              naer2(i,k,m)=maerosol(1,m)*num_to_mass_aer(m)<a name='686'>
+           endif<a name='687'>
+        enddo<a name='688'>
+#endif<a name='689'>
+<a name='690'>
+<font color=#447700>!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc<a name='691'></font>
+<font color=#447700>!ICE Nucleation<a name='692'></font>
+<a name='693'>
+        if (t(i,k).lt.tmelt - 5._r8) then<a name='694'>
+<a name='695'>
+<a name='696'>
+<font color=#447700>! get ice nucleation rate<a name='697'></font>
+<a name='698'>
+           call <A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI'>nucleati</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NUCLEATI_1">(wsubi(i,k),t(i,k),relhum(i,k),icldm(i,k),qc(i,k),nfice(i,k),rho(i,k),  &amp;<a name='699'>
+#ifdef MODAL_AERO<a name='700'>
+                         qaer(i,k,:)*rho(i,k),dgnum(i,k,:),1,naer_all,dum2,nihf2,niimm2,nidep2,nimey2)<a name='701'>
+#else<a name='702'>
+                         naer2(i,k,:)/25._r8,1,naer_all,dum2,nihf2,niimm2,nidep2,nimey2)<a name='703'>
+#endif<a name='704'>
+<a name='705'>
+           naai(i,k)=dum2<a name='706'>
+           naai_hom(i,k)=nihf2<a name='707'>
+           nihf(i,k)=nihf2<a name='708'>
+           niimm(i,k)=niimm2<a name='709'>
+           nidep(i,k)=nidep2<a name='710'>
+           nimey(i,k)=nimey2<a name='711'>
+        end if<a name='712'>
+<a name='713'>
+<a name='714'>
+<font color=#447700>!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc<a name='715'></font>
+<font color=#447700>!droplet activation for bulk aerosol<a name='716'></font>
+<a name='717'>
+#ifndef MODAL_AERO<a name='718'>
+        if (qc(i,k).ge.qsmall) then<a name='719'>
+<a name='720'>
+<font color=#447700>! get droplet activation rate<a name='721'></font>
+<a name='722'>
+        call <A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE'>activate</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ACTIVATE_1">(wsub(i,k),t(i,k),rho(i,k), &amp;<a name='723'>
+                 naer2(i,k,:), naer_all,naer_all, maerosol,  &amp;<a name='724'>
+                 dispersion_aer,hygro_aer, density_aer, dum2)<a name='725'>
+	dum = dum2<a name='726'>
+<a name='727'>
+	else<a name='728'>
+	dum = 0._r8<a name='729'>
+	end if<a name='730'>
+<a name='731'>
+ <font color=#447700>!note: deltat = deltat/2. to account for sub step in microphysics<a name='732'></font>
+        npccn(i,k) = (dum - nc(i,k)/lcldm(i,k))/(deltat/2._r8)*lcldm(i,k)<a name='733'>
+#endif<a name='734'>
+<a name='735'>
+	end do <font color=#447700>! i loop<a name='736'></font>
+	end do <font color=#447700>! k loop<a name='737'></font>
+<a name='738'>
+<font color=#447700>!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc<a name='739'></font>
+<font color=#447700>!droplet activation for modal aerosol<a name='740'></font>
+<a name='741'>
+#ifdef MODAL_AERO<a name='742'>
+<font color=#447700>!     partition cloud fraction into liquid water part<a name='743'></font>
+<a name='744'>
+      do k=1,pver<a name='745'>
+      do i=1,ncol<a name='746'>
+         qcld=qc(i,k)+qi(i,k)<a name='747'>
+         if(qcld.gt.qsmall)then<a name='748'>
+            lcldn(i,k)=cldn(i,k)*qc(i,k)/qcld<a name='749'>
+            lcldo(i,k)=cldo(i,k)*qc(i,k)/qcld<a name='750'>
+         else<a name='751'>
+            lcldn(i,k)=0._r8<a name='752'>
+            lcldo(i,k)=0._r8<a name='753'>
+         endif<a name='754'>
+      enddo<a name='755'>
+      enddo<a name='756'>
+<a name='757'>
+      call <A href='../../html_code/phys/module_cam_mp_ndrop.F.html#DROPMIXNUC'>dropmixnuc</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DROPMIXNUC_1">(lchnk, ncol, ncloc, nctend_mixnuc, t, omega,  &amp;<a name='758'>
+                    p, pint, pdel, rpdel, zm, kkvh, wsub, lcldn, lcldo,     &amp;<a name='759'>
+                    qaer, cflx, qaertend, deltat                    &amp;<a name='760'>
+#ifdef WRF_PORT<a name='761'>
+                    , qqcw                                          &amp;<a name='762'>
+#endif<a name='763'>
+                                                                    )<a name='764'>
+<a name='765'>
+      npccn(:ncol,:)= nctend_mixnuc(:ncol,:)<a name='766'>
+#endif<a name='767'>
+<a name='768'>
+<a name='769'>
+<font color=#447700>!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc<a name='770'></font>
+<font color=#447700>! Contact freezing  (-40&lt;T&lt;-3 C) (Young, 1974) with hooks into simulated dust<a name='771'></font>
+<font color=#447700>! estimate rndst and nanco for 4 dust bins here to pass to MG microphysics<a name='772'></font>
+<a name='773'>
+<a name='774'>
+      do k=1,pver<a name='775'>
+      do i=1,ncol<a name='776'>
+<a name='777'>
+         if (t(i,k).lt.269.15_r8) then<a name='778'>
+<a name='779'>
+#ifdef MODAL_AERO<a name='780'>
+<font color=#447700>!BSINGH - Following #if added for MAM7 compliance<a name='781'></font>
+#ifdef MODAL_AERO_7MODE <a name='782'>
+             nacon(i,k,3)=qaer(i,k,numptr_amode(modeptr_coardust))*rho(i,k)<a name='783'>
+             rndst(i,k,3)=0.5_r8*dgnumwet(i,k,modeptr_coardust)<a name='784'>
+#elif ( defined MODAL_AERO_3MODE )<a name='785'>
+<font color=#447700>! For modal aerosols:<a name='786'></font>
+<font color=#447700>!  use size '3' for dust coarse mode...<a name='787'></font>
+<font color=#447700>!  scale by dust fraction in coarse mode<a name='788'></font>
+               dmc= qaer(i,k,lptr_dust_a_amode(modeptr_coarse))<a name='789'>
+               ssmc=qaer(i,k,lptr_nacl_a_amode(modeptr_coarse))<a name='790'>
+               if (dmc.gt.0.0_r8) then<a name='791'>
+                  nacon(i,k,3)=dmc/(ssmc+dmc) * qaer(i,k,numptr_amode(modeptr_coarse))*rho(i,k) <font color=#447700>!*tcnt<a name='792'></font>
+               else <a name='793'>
+                  nacon(i,k,3)=0._r8<a name='794'>
+               endif<a name='795'>
+               <a name='796'>
+               <font color=#447700>!also redefine parameters based on size...<a name='797'></font>
+               <a name='798'>
+               rndst(i,k,3)=0.5_r8*dgnumwet(i,k,modeptr_coarse)<a name='799'>
+<a name='800'>
+<font color=#447700>!BSINGH - Following #endif added for MAM7 compliance<a name='801'></font>
+# endif <a name='802'>
+           if (rndst(i,k,3).le.0._r8) then <a name='803'>
+              rndst(i,k,3)=rn_dst3<a name='804'>
+           endif<a name='805'>
+<a name='806'>
+#else<a name='807'>
+<a name='808'>
+<font color=#447700>!For Bulk Aerosols: set equal to aerosol number for dust for bins 2-4 (bin 1=0)<a name='809'></font>
+<a name='810'>
+           if (idxdst2.gt.0) then <a name='811'>
+              nacon(i,k,2)=naer2(i,k,idxdst2) <font color=#447700>!*tcnt ! 1/m3<a name='812'></font>
+           endif<a name='813'>
+           if (idxdst3.gt.0) then <a name='814'>
+              nacon(i,k,3)=naer2(i,k,idxdst3) <font color=#447700>!*tcnt<a name='815'></font>
+           endif<a name='816'>
+           if (idxdst4.gt.0) then <a name='817'>
+              nacon(i,k,4)=naer2(i,k,idxdst4) <font color=#447700>! *tcnt<a name='818'></font>
+           endif<a name='819'>
+#endif<a name='820'>
+        endif<a name='821'>
+      enddo<a name='822'>
+      enddo<a name='823'>
+<a name='824'>
+<font color=#447700>!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc<a name='825'></font>
+<font color=#447700>!bulk aerosol ccn concentration (modal does it in ndrop, from dropmixnuc)<a name='826'></font>
+<a name='827'>
+<font color=#447700>!        ccn concentration as diagnostic<a name='828'></font>
+#ifndef MODAL_AERO<a name='829'>
+         do k=1,pver<a name='830'>
+	    ccn(:ncol,k,:) = 0.<a name='831'>
+            do m=1,naer_all<a name='832'>
+               if(m.eq.idxsul)then<a name='833'>
+	       <font color=#447700>! Lohmann treatment for sulfate has variable size distribution<a name='834'></font>
+	          do i=1,ncol<a name='835'>
+                     if (naer2(i,k,m).gt.0._r8) then <a name='836'>
+	                amcubesulfate(i)=amcubefactor(m)*aer_mmr(i,k,m)*rho(i,k)/(naer2(i,k,m))<a name='837'>
+                        smcritsulfate(i)=smcritfactor(m)/sqrt(amcubesulfate(i))<a name='838'>
+                     else<a name='839'>
+                        smcritsulfate(i)=1._r8<a name='840'>
+                     endif<a name='841'>
+                  end do<a name='842'>
+	       end if<a name='843'>
+               do l=1,psat<a name='844'>
+                  if(m.eq.idxsul)then<a name='845'>
+	             do i=1,ncol<a name='846'>
+                        arg=argfactor(m)*log(smcritsulfate(i)/super(l))<a name='847'>
+	                if(arg&lt;2)then<a name='848'>
+	                   if(arg&lt;-2)then<a name='849'>
+		              ccnfact(l,m)=1.0e-6_r8<a name='850'>
+	                   else<a name='851'>
+		              ccnfact(l,m)=0.5e-6_r8*erfc(arg)<a name='852'>
+			   endif<a name='853'>
+		        else<a name='854'>
+		           ccnfact(l,m)=0.0_r8<a name='855'>
+		        endif<a name='856'>
+                        ccn(i,k,l)=ccn(i,k,l)+naer2(i,k,m)*ccnfact(l,m)<a name='857'>
+		     end do<a name='858'>
+		  else<a name='859'>
+                  ccn(:ncol,k,l)=ccn(:ncol,k,l)+naer2(:ncol,k,m)*ccnfact(l,m)<a name='860'>
+               endif<a name='861'>
+            enddo<a name='862'>
+         enddo<a name='863'>
+      enddo<a name='864'>
+<a name='865'>
+      do l=1,psat<a name='866'>
+         call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_97">(ccn_name(l), ccn(1,1,l)    , pcols, lchnk   )<a name='867'>
+      enddo<a name='868'>
+#endif<a name='869'>
+<a name='870'>
+      do l=1,naer_all<a name='871'>
+         call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_98">(aername(l)//'_m3', naer2(1,1,l), pcols, lchnk)<a name='872'>
+      enddo<a name='873'>
+<a name='874'>
+<font color=#447700>!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc<a name='875'></font>
+<font color=#447700>! output activated liquid and ice (convert from #/kg -&gt; #/m3)<a name='876'></font>
+  do i = 1,ncol<a name='877'>
+     do k=1,pver<a name='878'>
+        nihf(i,k)=nihf(i,k)*rho(i,k)<a name='879'>
+        niimm(i,k)=niimm(i,k)*rho(i,k)   <a name='880'>
+        nidep(i,k)=nidep(i,k)*rho(i,k)<a name='881'>
+        nimey(i,k)=nimey(i,k)*rho(i,k)<a name='882'>
+     end do<a name='883'>
+  end do<a name='884'>
+  call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_99">('NIHF',nihf,    pcols,lchnk)<a name='885'>
+  call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_100">('NIIMM',niimm,    pcols,lchnk)<a name='886'>
+  call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_101">('NIDEP',nidep,    pcols,lchnk)<a name='887'>
+  call <A href='../../html_code/phys/module_cam_support.F.html#OUTFLD'>outfld</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MICROP_AERO_TS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OUTFLD_102">('NIMEY',nimey,    pcols,lchnk)<a name='888'>
+<a name='889'>
+      deallocate( &amp;<a name='890'>
+         naermod,  &amp;<a name='891'>
+         naer2,    &amp;<a name='892'>
+         maerosol, &amp;<a name='893'>
+         ntype     )<a name='894'>
+<a name='895'>
+return<a name='896'>
+end subroutine microp_aero_ts<a name='897'>
+<a name='898'>
+<font color=#447700>!##############################################################################<a name='899'></font>
+<a name='900'>
+<A NAME='ACTIVATE'><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#ACTIVATE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='901'>
+      <font color=#993300>subroutine </font><font color=#cc0000>activate</font>(wbar, tair, rhoair,  &amp; <A href='../../call_to/ACTIVATE.html' TARGET='index'>6</A>,<A href='../../call_from/ACTIVATE.html' TARGET='index'>14</A><a name='902'>
+                          na, pmode, nmode, ma, sigman, hygro, rhodry, nact)<a name='903'>
+<a name='904'>
+<font color=#447700>!      calculates number fraction of aerosols activated as CCN<a name='905'></font>
+<font color=#447700>!      assumes an internal mixture within each of up to pmode multiple aerosol modes<a name='906'></font>
+<font color=#447700>!      a gaussiam spectrum of updrafts can be treated.<a name='907'></font>
+<a name='908'>
+<font color=#447700>!      mks units<a name='909'></font>
+<a name='910'>
+<font color=#447700>!      Abdul-Razzak and Ghan, A parameterization of aerosol activation.<a name='911'></font>
+<font color=#447700>!      2. Multiple aerosol types. J. Geophys. Res., 105, 6837-6844.<a name='912'></font>
+<a name='913'>
+      use <A href='../../html_code/phys/module_cam_physconst.F.html#PHYSCONST'>physconst</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHYSCONST_11">, only: rair, epsilo, cpair, rh2o, latvap, gravit,   &amp;<a name='914'>
+                                 rhoh2o, mwh2o, r_universal<a name='915'>
+      use <A href='../../html_code/phys/module_cam_wv_saturation.F.html#WV_SATURATION'>wv_saturation</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WV_SATURATION_9">, only: estblf, epsqs<a name='916'>
+<a name='917'>
+      implicit none<a name='918'>
+<a name='919'>
+<a name='920'>
+<font color=#447700>!      input<a name='921'></font>
+<a name='922'>
+      integer pmode,ptype <font color=#447700>! dimension of modes, types in modes<a name='923'></font>
+      real(r8) wbar          <font color=#447700>! grid cell mean vertical velocity (m/s)<a name='924'></font>
+      real(r8) tair          <font color=#447700>! air temperature (K)<a name='925'></font>
+      real(r8) rhoair        <font color=#447700>! air density (kg/m3)<a name='926'></font>
+      real(r8) na(pmode)           <font color=#447700>! aerosol number concentration (/m3)<a name='927'></font>
+      integer nmode      <font color=#447700>! number of aerosol modes<a name='928'></font>
+      real(r8) ma(pmode)     <font color=#447700>! aerosol mass concentration (kg/m3)<a name='929'></font>
+      real(r8) rhodry(pmode) <font color=#447700>! density of aerosol material<a name='930'></font>
+<a name='931'>
+      real(r8) sigman(pmode)  <font color=#447700>! geometric standard deviation of aerosol size distribution<a name='932'></font>
+      real(r8) hygro(pmode)  <font color=#447700>! hygroscopicity of aerosol mode<a name='933'></font>
+<a name='934'>
+<a name='935'>
+<font color=#447700>!      output<a name='936'></font>
+<a name='937'>
+      real(r8) nact      <font color=#447700>! number fraction of aerosols activated<a name='938'></font>
+<a name='939'>
+<font color=#447700>!      local<a name='940'></font>
+<a name='941'>
+<font color=#447700>!      external erf,erfc<a name='942'></font>
+<font color=#447700>!      real(r8) erf,erfc<a name='943'></font>
+#if (defined AIX)<a name='944'>
+#define ERF erf<a name='945'>
+#define ERFC erfc<a name='946'>
+#else<a name='947'>
+#define ERF derf<a name='948'>
+#define ERFC derfc<a name='949'>
+      real(r8) derf,derfc<a name='950'>
+#endif<a name='951'>
+<a name='952'>
+      integer, parameter:: nx=200<a name='953'>
+      integer :: maxmodes<a name='954'>
+      real(r8) surften       <font color=#447700>! surface tension of water w/respect to air (N/m)<a name='955'></font>
+      data surften/0.076/<a name='956'>
+      save surften<a name='957'>
+      real(r8) p0     <font color=#447700>! reference pressure (Pa)<a name='958'></font>
+      data p0/1013.25e2/<a name='959'>
+      save p0<a name='960'>
+<a name='961'>
+      real(r8), allocatable :: volc(:) <font color=#447700>! total aerosol volume  concentration (m3/m3)<a name='962'></font>
+      real(r8) tmass <font color=#447700>! total aerosol mass concentration (g/cm3)<a name='963'></font>
+      real(r8) rm <font color=#447700>! number mode radius of aerosol at max supersat (cm)<a name='964'></font>
+      real(r8) pres <font color=#447700>! pressure (Pa)<a name='965'></font>
+      real(r8) path <font color=#447700>! mean free path (m)<a name='966'></font>
+      real(r8) diff <font color=#447700>! diffusivity (m2/s)<a name='967'></font>
+      real(r8) conduct <font color=#447700>! thermal conductivity (Joule/m/sec/deg)<a name='968'></font>
+      real(r8) diff0,conduct0<a name='969'>
+      real(r8) qs <font color=#447700>! water vapor saturation mixing ratio<a name='970'></font>
+      real(r8) dqsdt <font color=#447700>! change in qs with temperature<a name='971'></font>
+      real(r8) dqsdp <font color=#447700>! change in qs with pressure<a name='972'></font>
+      real(r8) gloc <font color=#447700>! thermodynamic function (m2/s)<a name='973'></font>
+      real(r8) zeta<a name='974'>
+      real(r8), allocatable :: eta(:)<a name='975'>
+      real(r8), allocatable :: smc(:)<a name='976'>
+      real(r8) lnsmax <font color=#447700>! ln(smax)<a name='977'></font>
+      real(r8) alpha<a name='978'>
+      real(r8) gammaloc<a name='979'>
+      real(r8) beta<a name='980'>
+      real(r8) sqrtg<a name='981'>
+      real(r8) alogam<a name='982'>
+      real(r8) rlo,rhi,xint1,xint2,xint3,xint4<a name='983'>
+      real(r8) w,wnuc,wb<a name='984'>
+<a name='985'>
+      real(r8) alw,sqrtalw<a name='986'>
+      real(r8) smax<a name='987'>
+      real(r8) x,arg<a name='988'>
+      real(r8) xmincoeff,xcut,volcut,surfcut<a name='989'>
+      real(r8) z,z1,z2,wf1,wf2,zf1,zf2,gf1,gf2,gf<a name='990'>
+      real(r8) :: etafactor1,etafactor2max<a name='991'>
+      real(r8),allocatable :: etafactor2(:)<a name='992'>
+      real(r8) es<a name='993'>
+      integer m,n<a name='994'>
+<a name='995'>
+      real(r8),allocatable :: amcubeloc(:)<a name='996'>
+      real(r8),allocatable :: lnsmloc(:)<a name='997'>
+<a name='998'>
+      maxmodes = naer_all<a name='999'>
+      allocate( &amp;<a name='1000'>
+         volc(maxmodes),       &amp;<a name='1001'>
+         eta(maxmodes),        &amp;<a name='1002'>
+         smc(maxmodes),        &amp;<a name='1003'>
+         etafactor2(maxmodes), &amp;<a name='1004'>
+         amcubeloc(maxmodes),  &amp;<a name='1005'>
+         lnsmloc(maxmodes)     )<a name='1006'>
+<a name='1007'>
+      if(maxmodes&lt;pmode)then<a name='1008'>
+         write(iulog,*)'maxmodes,pmode in activate =',maxmodes,pmode<a name='1009'>
+#ifdef WRF_PORT<a name='1010'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_593">(iulog)<a name='1011'>
+#endif <a name='1012'>
+	 call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_14">('activate')<a name='1013'>
+      endif<a name='1014'>
+<a name='1015'>
+      nact=0._r8<a name='1016'>
+<a name='1017'>
+      if(nmode.eq.1.and.na(1).lt.1.e-20)return<a name='1018'>
+<a name='1019'>
+      if(wbar.le.0.)return<a name='1020'>
+<a name='1021'>
+      pres=rair*rhoair*tair<a name='1022'>
+      diff0=0.211e-4*(p0/pres)*(tair/tt0)**1.94<a name='1023'>
+      conduct0=(5.69+0.017*(tair-tt0))*4.186e2*1.e-5 <font color=#447700>! convert to J/m/s/deg<a name='1024'></font>
+      es = <A href='../../html_code/phys/module_ra_cam_support.F.html#ESTBLF'>estblf</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ESTBLF_7">(tair)<a name='1025'>
+      qs = epsilo*es/(pres-(1.0_r8 - epsqs)*es)<a name='1026'>
+      dqsdt=latvap/(rh2o*tair*tair)*qs<a name='1027'>
+      alpha=gravit*(latvap/(cpair*rh2o*tair*tair)-1./(rair*tair))<a name='1028'>
+      gammaloc=(1+latvap/cpair*dqsdt)/(rhoair*qs)<a name='1029'>
+<font color=#447700>!     growth coefficent Abdul-Razzak &amp; Ghan 1998 eqn 16<a name='1030'></font>
+<font color=#447700>!     should depend on mean radius of mode to account for gas kinetic effects<a name='1031'></font>
+      gloc=1./(rhoh2o/(diff0*rhoair*qs)                                    &amp;<a name='1032'>
+          +latvap*rhoh2o/(conduct0*tair)*(latvap/(rh2o*tair)-1.))<a name='1033'>
+      sqrtg=sqrt(gloc)<a name='1034'>
+      beta=4.*pi*rhoh2o*gloc*gammaloc<a name='1035'>
+      etafactor2max=1.e10/(alpha*wbar)**1.5 <font color=#447700>! this should make eta big if na is very small.<a name='1036'></font>
+<a name='1037'>
+      do m=1,nmode<a name='1038'>
+<font color=#447700>!         internal mixture of aerosols<a name='1039'></font>
+          volc(m)=ma(m)/(rhodry(m)) <font color=#447700>! only if variable size dist<a name='1040'></font>
+<font color=#447700>! pjj/cray - use TINY intrinsic<a name='1041'></font>
+<font color=#447700>!        if(volc(m).gt.1.e-39.and.na(m).gt.1.e-39)then<a name='1042'></font>
+         if(volc(m).gt. TINY(volc) .and.na(m).gt. TINY(na))then<a name='1043'>
+            etafactor2(m)=1./(na(m)*beta*sqrtg)  <font color=#447700>!fixed or variable size dist<a name='1044'></font>
+<font color=#447700>!            number mode radius (m)<a name='1045'></font>
+            amcubeloc(m)=(3.*volc(m)/(4.*pi*exp45logsig(m)*na(m)))  <font color=#447700>! only if variable size dist<a name='1046'></font>
+	    smc(m)=smcrit(m) <font color=#447700>! only for prescribed size dist<a name='1047'></font>
+<a name='1048'>
+            if(hygro(m).gt.1.e-10)then   <font color=#447700>! loop only if variable size dist<a name='1049'></font>
+               smc(m)=2.*aten*sqrt(aten/(27.*hygro(m)*amcubeloc(m))) <a name='1050'>
+            else<a name='1051'>
+              smc(m)=100.<a name='1052'>
+            endif<a name='1053'>
+         else<a name='1054'>
+            smc(m)=1.<a name='1055'>
+	    etafactor2(m)=etafactor2max <font color=#447700>! this should make eta big if na is very small.<a name='1056'></font>
+         endif<a name='1057'>
+         lnsmloc(m)=log(smc(m)) <font color=#447700>! only if variable size dist<a name='1058'></font>
+      enddo<a name='1059'>
+<a name='1060'>
+<font color=#447700>!         single  updraft<a name='1061'></font>
+         wnuc=wbar<a name='1062'>
+<a name='1063'>
+            w=wbar<a name='1064'>
+            alw=alpha*wnuc<a name='1065'>
+            sqrtalw=sqrt(alw)<a name='1066'>
+            zeta=2.*sqrtalw*aten/(3.*sqrtg)<a name='1067'>
+	    etafactor1=2.*alw*sqrtalw<a name='1068'>
+<a name='1069'>
+            do m=1,nmode<a name='1070'>
+               eta(m)=etafactor1*etafactor2(m)<a name='1071'>
+            enddo<a name='1072'>
+<a name='1073'>
+            call <A href='../../html_code/phys/module_mixactivate.F.html#MAXSAT'>maxsat</A><A href='../../html_code/phys/module_mp_full_sbm.F.html#ACTIVATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAXSAT_1">(zeta,eta,nmode,smc,smax)<a name='1074'>
+<a name='1075'>
+            lnsmax=log(smax)<a name='1076'>
+            xmincoeff=alogaten-2.*third*(lnsmax-alog2)-alog3<a name='1077'>
+<a name='1078'>
+	    nact=0._r8<a name='1079'>
+            do m=1,nmode<a name='1080'>
+	       x=2*(lnsmloc(m)-lnsmax)/(3*sq2*alogsig(m))<a name='1081'>
+               nact=nact+0.5*(1.-erf(x))*na(m)<a name='1082'>
+            enddo<a name='1083'>
+	    nact=nact/rhoair <font color=#447700>! convert from #/m3 to #/kg<a name='1084'></font>
+<a name='1085'>
+      deallocate( &amp;<a name='1086'>
+         volc,       &amp;<a name='1087'>
+         eta,        &amp;<a name='1088'>
+         smc,        &amp;<a name='1089'>
+         etafactor2, &amp;<a name='1090'>
+         amcubeloc,  &amp;<a name='1091'>
+         lnsmloc     )<a name='1092'>
+<a name='1093'>
+      return<a name='1094'>
+      end subroutine activate<a name='1095'>
+<a name='1096'>
+<A NAME='MAXSAT'><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#MAXSAT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1097'>
+      <font color=#993300>subroutine </font><font color=#cc0000>maxsat</font>(zeta,eta,nmode,smc,smax) <A href='../../call_to/MAXSAT.html' TARGET='index'>7</A><a name='1098'>
+<a name='1099'>
+<font color=#447700>!      calculates maximum supersaturation for multiple<a name='1100'></font>
+<font color=#447700>!      competing aerosol modes.<a name='1101'></font>
+<a name='1102'>
+<font color=#447700>!      Abdul-Razzak and Ghan, A parameterization of aerosol activation.<a name='1103'></font>
+<font color=#447700>!      2. Multiple aerosol types. J. Geophys. Res., 105, 6837-6844.<a name='1104'></font>
+<a name='1105'>
+      implicit none<a name='1106'>
+<a name='1107'>
+    <font color=#447700>! integer pmode<a name='1108'></font>
+    <font color=#447700>! parameter (pmode=naer_all)<a name='1109'></font>
+      integer nmode <font color=#447700>! number of modes<a name='1110'></font>
+      real(r8) :: smc(:) <font color=#447700>! critical supersaturation for number mode radius<a name='1111'></font>
+      real(r8) zeta<a name='1112'>
+      real(r8) :: eta(:)<a name='1113'>
+      real(r8) smax <font color=#447700>! maximum supersaturation<a name='1114'></font>
+      integer m  <font color=#447700>! mode index<a name='1115'></font>
+      real(r8) sum, g1, g2<a name='1116'>
+<a name='1117'>
+      do m=1,nmode<a name='1118'>
+         if(zeta.gt.1.e5*eta(m).or.smc(m)*smc(m).gt.1.e5*eta(m))then<a name='1119'>
+<font color=#447700>!            weak forcing. essentially none activated<a name='1120'></font>
+            smax=1.e-20<a name='1121'>
+         else<a name='1122'>
+<font color=#447700>!            significant activation of this mode. calc activation all modes.<a name='1123'></font>
+            go to 1<a name='1124'>
+         endif<a name='1125'>
+      enddo<a name='1126'>
+<a name='1127'>
+      return<a name='1128'>
+<a name='1129'>
+  1   continue<a name='1130'>
+<a name='1131'>
+      sum=0<a name='1132'>
+      do m=1,nmode<a name='1133'>
+         if(eta(m).gt.1.e-20)then<a name='1134'>
+            g1=sqrt(zeta/eta(m))<a name='1135'>
+            g1=g1*g1*g1<a name='1136'>
+            g2=smc(m)/sqrt(eta(m)+3*zeta)<a name='1137'>
+            g2=sqrt(g2)<a name='1138'>
+            g2=g2*g2*g2<a name='1139'>
+            sum=sum+(f1(m)*g1+f2(m)*g2)/(smc(m)*smc(m))<a name='1140'>
+         else<a name='1141'>
+            sum=1.e20<a name='1142'>
+         endif<a name='1143'>
+      enddo<a name='1144'>
+<a name='1145'>
+      smax=1./sqrt(sum)<a name='1146'>
+<a name='1147'>
+      return<a name='1148'>
+<a name='1149'>
+      end subroutine maxsat<a name='1150'>
+<a name='1151'>
+<a name='1152'>
+<A NAME='NUCLEATI'><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1153'>
+<font color=#993300>subroutine </font><font color=#cc0000>nucleati</font>(wbar, tair, relhum, cldn, qc, nfice, rhoair, &amp; <A href='../../call_to/NUCLEATI.html' TARGET='index'>1</A>,<A href='../../call_from/NUCLEATI.html' TARGET='index'>14</A><a name='1154'>
+#ifdef MODAL_AERO<a name='1155'>
+       qaerpt, dgnum, ptype, naer_all, nuci, onihf, oniimm, onidep, onimey)<a name='1156'>
+#else<a name='1157'>
+       na, ptype, naer_all, nuci, onihf, oniimm, onidep, onimey)<a name='1158'>
+#endif<a name='1159'>
+ <a name='1160'>
+<font color=#447700>!---------------------------------------------------------------<a name='1161'></font>
+<font color=#447700>! Purpose:<a name='1162'></font>
+<font color=#447700>!  The parameterization of ice nucleation.<a name='1163'></font>
+<font color=#447700>!<a name='1164'></font>
+<font color=#447700>! Method: The current method is based on Liu &amp; Penner (2005)<a name='1165'></font>
+<font color=#447700>!  It related the ice nucleation with the aerosol number, temperature and the<a name='1166'></font>
+<font color=#447700>!  updraft velocity. It includes homogeneous freezing of sulfate, immersion<a name='1167'></font>
+<font color=#447700>!  freezing of soot, and Meyers et al. (1992) deposition nucleation<a name='1168'></font>
+<font color=#447700>!<a name='1169'></font>
+<font color=#447700>! Authors: Xiaohong Liu, 01/2005, modifications by A. Gettelman 2009-2010<a name='1170'></font>
+<font color=#447700>!----------------------------------------------------------------<a name='1171'></font>
+#ifdef MODAL_AERO      <a name='1172'>
+#ifndef WRF_PORT<a name='1173'>
+      use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_7">, only:numptr_amode, modeptr_accum, modeptr_coarse, modeptr_aitken, &amp;<a name='1174'>
+                                 ntot_amode, sigmag_amode, &amp;<a name='1175'>
+                                 lptr_dust_a_amode,lptr_nacl_a_amode<a name='1176'>
+      use <A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS'>constituents</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTITUENTS_9">, only: pcnst<a name='1177'>
+#else<a name='1178'>
+      use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_8">, only:numptr_amode =&gt; numptr_amode_mp, modeptr_accum =&gt; modeptr_accum_mp, &amp;<a name='1179'>
+           modeptr_coarse    =&gt; modeptr_coarse_mp   , modeptr_aitken    =&gt; modeptr_aitken_mp, &amp;<a name='1180'>
+           ntot_amode        =&gt; ntot_amode_mp       , sigmag_amode      =&gt; sigmag_amode_mp,   &amp;<a name='1181'>
+           lptr_dust_a_amode =&gt; lptr_dust_a_amode_mp, lptr_nacl_a_amode =&gt; lptr_nacl_a_amode_mp, &amp;<a name='1182'>
+           modeptr_coardust =&gt; modeptr_coardust_mp  <font color=#447700>!BSINGH - Added modeptr_coarsedust for MAM7 compliance<a name='1183'></font>
+      use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_23">, only: pcnst =&gt;pcnst_mp<a name='1184'>
+#endif<a name='1185'>
+#endif<a name='1186'>
+<a name='1187'>
+<font color=#447700>!-----------------------------------------------------<a name='1188'></font>
+<font color=#447700>! Input Arguments<a name='1189'></font>
+<font color=#447700>!<a name='1190'></font>
+  integer ptype, naer_all<a name='1191'>
+  real(r8), intent(in) :: wbar                <font color=#447700>! grid cell mean vertical velocity (m/s)<a name='1192'></font>
+  real(r8), intent(in) :: tair                <font color=#447700>! temperature (K)<a name='1193'></font>
+  real(r8), intent(in) :: relhum              <font color=#447700>! relative humidity with respective to liquid<a name='1194'></font>
+  real(r8), intent(in) :: cldn                <font color=#447700>! new value of cloud fraction    (fraction)<a name='1195'></font>
+  real(r8), intent(in) :: qc                  <font color=#447700>! liquid water mixing ratio (kg/kg)<a name='1196'></font>
+  real(r8), intent(in) :: nfice               <font color=#447700>! ice mass fraction<a name='1197'></font>
+  real(r8), intent(in) :: rhoair              <font color=#447700>! air density (kg/m3)<a name='1198'></font>
+#ifdef MODAL_AERO<a name='1199'>
+  real(r8), intent(in) :: qaerpt(pcnst) <font color=#447700>! aerosol number and mass mixing ratios <a name='1200'></font>
+  real(r8), intent(in) :: dgnum(ntot_amode)   <font color=#447700>! aerosol mode dry diameter (m)<a name='1201'></font>
+#else      <a name='1202'>
+  real(r8), intent(in) :: na(naer_all)        <font color=#447700>! aerosol number concentration (/m3)<a name='1203'></font>
+#endif<a name='1204'>
+<a name='1205'>
+<a name='1206'>
+<font color=#447700>!<a name='1207'></font>
+<font color=#447700>! Output Arguments<a name='1208'></font>
+<font color=#447700>!<a name='1209'></font>
+  real(r8), intent(out) :: nuci               <font color=#447700>! ice number nucleated (#/kg)<a name='1210'></font>
+  real(r8), intent(out) :: onihf              <font color=#447700>! nucleated number from homogeneous freezing of so4<a name='1211'></font>
+  real(r8), intent(out) :: oniimm             <font color=#447700>! nucleated number from immersion freezing<a name='1212'></font>
+  real(r8), intent(out) :: onidep             <font color=#447700>! nucleated number from deposition nucleation<a name='1213'></font>
+  real(r8), intent(out) :: onimey             <font color=#447700>! nucleated number from deposition nucleation  (meyers: mixed phase)<a name='1214'></font>
+<a name='1215'>
+<font color=#447700>!<a name='1216'></font>
+<font color=#447700>! Local workspace<a name='1217'></font>
+<font color=#447700>!<a name='1218'></font>
+  real(r8)  so4_num                                      <font color=#447700>! so4 aerosol number (#/cm^3)<a name='1219'></font>
+  real(r8)  soot_num                                     <font color=#447700>! soot (hydrophilic) aerosol number (#/cm^3)<a name='1220'></font>
+  real(r8)  dst1_num,dst2_num,dst3_num,dst4_num          <font color=#447700>! dust aerosol number (#/cm^3)<a name='1221'></font>
+  real(r8)  dst_num                                      <font color=#447700>! total dust aerosol number (#/cm^3)<a name='1222'></font>
+  real(r8)  nihf                                         <font color=#447700>! nucleated number from homogeneous freezing of so4<a name='1223'></font>
+  real(r8)  niimm                                        <font color=#447700>! nucleated number from immersion freezing<a name='1224'></font>
+  real(r8)  nidep                                        <font color=#447700>! nucleated number from deposition nucleation<a name='1225'></font>
+  real(r8)  nimey                                        <font color=#447700>! nucleated number from deposition nucleation (meyers)<a name='1226'></font>
+  real(r8)  n1,ni                                        <font color=#447700>! nucleated number<a name='1227'></font>
+  real(r8)  tc,A,B,C,regm,RHw                            <font color=#447700>! work variable<a name='1228'></font>
+  real(r8)  esl,esi,deles                                <font color=#447700>! work variable<a name='1229'></font>
+  real(r8)  dst_scale<a name='1230'>
+  real(r8)  subgrid<a name='1231'>
+  real(r8) dmc,ssmc         <font color=#447700>! variables for modal scheme.<a name='1232'></font>
+<a name='1233'>
+    so4_num=0.0_r8<a name='1234'>
+    soot_num=0.0_r8<a name='1235'>
+    dst_num=0.0_r8<a name='1236'>
+    dst1_num = 0.0_r8<a name='1237'>
+    dst2_num = 0.0_r8<a name='1238'>
+    dst3_num = 0.0_r8<a name='1239'>
+    dst4_num = 0.0_r8     <a name='1240'>
+<a name='1241'>
+<font color=#447700>!For modal aerosols, assume for the upper troposphere:<a name='1242'></font>
+<font color=#447700>! soot = accumulation mode<a name='1243'></font>
+<font color=#447700>! sulfate = aiken mode<a name='1244'></font>
+<font color=#447700>! dust = coarse mode<a name='1245'></font>
+<font color=#447700>! since modal has internal mixtures.<a name='1246'></font>
+<a name='1247'>
+#ifdef MODAL_AERO<a name='1248'>
+      soot_num = qaerpt(numptr_amode(modeptr_accum))*1.0e-6_r8 <font color=#447700>!#/cm^3<a name='1249'></font>
+<font color=#447700>!BSINGH - Following #if added for MAM7 compliance<a name='1250'></font>
+#ifdef MODAL_AERO_7MODE<a name='1251'>
+      dst_num=qaerpt(numptr_amode(modeptr_coardust))*1.0e-6_r8 <font color=#447700>!#/cm^3<a name='1252'></font>
+#elif ( defined MODAL_AERO_3MODE )<a name='1253'>
+      dmc= qaerpt(lptr_dust_a_amode(modeptr_coarse))<a name='1254'>
+      ssmc=qaerpt(lptr_nacl_a_amode(modeptr_coarse))<a name='1255'>
+      if (dmc.gt.0._r8) then<a name='1256'>
+         dst_num=dmc/(ssmc+dmc) * qaerpt(numptr_amode(modeptr_coarse))*1.0e-6_r8 <font color=#447700>!#/cm^3<a name='1257'></font>
+      else <a name='1258'>
+         dst_num=0.0_r8<a name='1259'>
+      endif<a name='1260'>
+<font color=#447700>!BSINGH - Following #endif added for MAM7 compliance<a name='1261'></font>
+#endif<a name='1262'>
+      if (dgnum(modeptr_aitken) .gt. 0._r8  ) then<a name='1263'>
+         so4_num  = qaerpt(numptr_amode(modeptr_aitken))*1.0e-6_r8 &amp; <font color=#447700>!#/cm^3, only allow so4 with D&gt;0.1 um in ice nucleation<a name='1264'></font>
+               * (0.5_r8 - 0.5_r8*erf(log(0.1e-6_r8/dgnum(modeptr_aitken))/  &amp;<a name='1265'>
+                 (2._r8**0.5_r8*log(sigmag_amode(modeptr_aitken)))))<a name='1266'>
+      else <a name='1267'>
+         so4_num = 0.0_r8 <a name='1268'>
+      endif<a name='1269'>
+      so4_num = max(0.0_r8,so4_num)<a name='1270'>
+#else<a name='1271'>
+    if(idxsul .gt. 0) then <a name='1272'>
+       so4_num=na(idxsul)*1.0e-6_r8 <font color=#447700>! #/cm^3<a name='1273'></font>
+    end if<a name='1274'>
+<a name='1275'>
+<font color=#447700>!continue above philosophy here....<a name='1276'></font>
+<a name='1277'>
+    if(idxbcphi .gt. 0) then <a name='1278'>
+      soot_num=na(idxbcphi)*1.0e-6_r8 <font color=#447700>!#/cm^3<a name='1279'></font>
+    end if<a name='1280'>
+<a name='1281'>
+    if(idxdst1 .gt. 0) then <a name='1282'>
+       dst1_num=na(idxdst1)  *1.0e-6_r8 <font color=#447700>!#/cm^3<a name='1283'></font>
+    end if<a name='1284'>
+<a name='1285'>
+    if(idxdst2 .gt. 0) then <a name='1286'>
+       dst2_num=na(idxdst2)*1.0e-6_r8 <font color=#447700>!#/cm^3<a name='1287'></font>
+    end if<a name='1288'>
+<a name='1289'>
+    if(idxdst3 .gt. 0) then <a name='1290'>
+       dst3_num=na(idxdst3)*1.0e-6_r8 <font color=#447700>!#/cm^3<a name='1291'></font>
+    end if<a name='1292'>
+<a name='1293'>
+    if(idxdst4 .gt. 0) then <a name='1294'>
+       dst4_num=na(idxdst4)*1.0e-6_r8 <font color=#447700>!#/cm^3<a name='1295'></font>
+    end if<a name='1296'>
+<a name='1297'>
+    dst_num =dst1_num+dst2_num+dst3_num+dst4_num<a name='1298'>
+<a name='1299'>
+#endif<a name='1300'>
+<a name='1301'>
+<font color=#447700>! no soot nucleation <a name='1302'></font>
+    soot_num=0.0_r8<a name='1303'>
+<a name='1304'>
+    ni=0._r8<a name='1305'>
+    tc=tair-273.15_r8<a name='1306'>
+<a name='1307'>
+    <font color=#447700>! initialize<a name='1308'></font>
+    niimm=0._r8<a name='1309'>
+    nidep=0._r8<a name='1310'>
+    nihf=0._r8<a name='1311'>
+<a name='1312'>
+    if(so4_num.ge.1.0e-10_r8 .and. (soot_num+dst_num).ge.1.0e-10_r8 .and. cldn.gt.0._r8) then<a name='1313'>
+<a name='1314'>
+<font color=#447700>!-----------------------------<a name='1315'></font>
+<font color=#447700>! RHw parameterization for heterogeneous immersion nucleation<a name='1316'></font>
+    A = 0.0073_r8<a name='1317'>
+    B = 1.477_r8<a name='1318'>
+    C = 131.74_r8<a name='1319'>
+    RHw=(A*tc*tc+B*tc+C)*0.01_r8   <font color=#447700>! RHi ~ 120-130%<a name='1320'></font>
+<a name='1321'>
+    subgrid = 1.2_r8<a name='1322'>
+<a name='1323'>
+    if((tc.le.-35.0_r8) .and. ((relhum*polysvp(tair,0)/polysvp(tair,1)*subgrid).ge.1.2_r8)) then <font color=#447700>! use higher RHi threshold<a name='1324'></font>
+<a name='1325'>
+       A = -1.4938_r8 * log(soot_num+dst_num) + 12.884_r8<a name='1326'>
+       B = -10.41_r8  * log(soot_num+dst_num) - 67.69_r8<a name='1327'>
+       regm = A * log(wbar) + B<a name='1328'>
+<a name='1329'>
+       if(tc.gt.regm) then    <font color=#447700>! heterogeneous nucleation only<a name='1330'></font>
+         if(tc.lt.-40._r8 .and. wbar.gt.1._r8) then <font color=#447700>! exclude T&lt;-40 &amp; W&gt;1m/s from hetero. nucleation<a name='1331'></font>
+           call <A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#HF'>hf</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HF_1">(tc,wbar,relhum,subgrid,so4_num,nihf)<a name='1332'>
+           niimm=0._r8<a name='1333'>
+           nidep=0._r8<a name='1334'>
+           n1=nihf<a name='1335'>
+         else<a name='1336'>
+           call <A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#HETERO'>hetero</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HETERO_1">(tc,wbar,soot_num+dst_num,niimm,nidep)<a name='1337'>
+           nihf=0._r8<a name='1338'>
+           n1=niimm+nidep<a name='1339'>
+         endif<a name='1340'>
+       elseif (tc.lt.regm-5._r8) then <font color=#447700>! homogeneous nucleation only<a name='1341'></font>
+         call <A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#HF'>hf</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HF_2">(tc,wbar,relhum,subgrid,so4_num,nihf)<a name='1342'>
+         niimm=0._r8<a name='1343'>
+         nidep=0._r8<a name='1344'>
+         n1=nihf<a name='1345'>
+       else        <font color=#447700>! transition between homogeneous and heterogeneous: interpolate in-between<a name='1346'></font>
+         if(tc.lt.-40._r8 .and. wbar.gt.1._r8) then <font color=#447700>! exclude T&lt;-40 &amp; W&gt;1m/s from hetero. nucleation<a name='1347'></font>
+           call <A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#HF'>hf</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HF_3">(tc,wbar,relhum,subgrid,so4_num,nihf)<a name='1348'>
+           niimm=0._r8<a name='1349'>
+           nidep=0._r8<a name='1350'>
+           n1=nihf<a name='1351'>
+         else<a name='1352'>
+<a name='1353'>
+           call <A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#HF'>hf</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HF_4">(regm-5._r8,wbar,relhum,subgrid,so4_num,nihf)<a name='1354'>
+           call <A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#HETERO'>hetero</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HETERO_2">(regm,wbar,soot_num+dst_num,niimm,nidep)<a name='1355'>
+<a name='1356'>
+           if(nihf.le.(niimm+nidep)) then<a name='1357'>
+             n1=nihf<a name='1358'>
+           else<a name='1359'>
+             n1=(niimm+nidep)*((niimm+nidep)/nihf)**((tc-regm)/5._r8)<a name='1360'>
+           endif<a name='1361'>
+         endif<a name='1362'>
+       endif<a name='1363'>
+<a name='1364'>
+       ni=n1<a name='1365'>
+<a name='1366'>
+    endif<a name='1367'>
+    endif<a name='1368'>
+1100  continue<a name='1369'>
+<a name='1370'>
+<font color=#447700>! deposition/condensation nucleation in mixed clouds (-40&lt;T&lt;0C) (Meyers, 1992)<a name='1371'></font>
+    if(tc.lt.0._r8 .and. tc.gt.-37._r8 .and. qc.gt.1.e-12_r8) then<a name='1372'>
+      esl = <A href='../../html_code/phys/module_mp_morr_two_moment.F.html#POLYSVP'>polysvp</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="POLYSVP_11">(tair,0)     <font color=#447700>! over water in mixed clouds<a name='1373'></font>
+      esi = <A href='../../html_code/phys/module_mp_morr_two_moment.F.html#POLYSVP'>polysvp</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="POLYSVP_12">(tair,1)     <font color=#447700>! over ice<a name='1374'></font>
+      deles = (esl - esi)<a name='1375'>
+      nimey=1.e-3_r8*exp(12.96_r8*deles/esi - 0.639_r8) <a name='1376'>
+    else<a name='1377'>
+      nimey=0._r8<a name='1378'>
+    endif<a name='1379'>
+<a name='1380'>
+    nuci=ni+nimey<a name='1381'>
+    if(nuci.gt.9999._r8.or.nuci.lt.0._r8) then<a name='1382'>
+       write(iulog, *) 'Warning: incorrect ice nucleation number (nuci reset =0)'<a name='1383'>
+#ifdef WRF_PORT<a name='1384'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_594">(iulog)<a name='1385'>
+#endif <a name='1386'>
+       write(iulog, *) ni, tair, relhum, wbar, nihf, niimm, nidep,deles,esi,dst2_num,dst3_num,dst4_num<a name='1387'>
+#ifdef WRF_PORT<a name='1388'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#NUCLEATI' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_595">(iulog)<a name='1389'>
+#endif <a name='1390'>
+       nuci=0._r8<a name='1391'>
+    endif<a name='1392'>
+<a name='1393'>
+    nuci=nuci*1.e+6_r8/rhoair    <font color=#447700>! change unit from #/cm3 to #/kg<a name='1394'></font>
+    onimey=nimey*1.e+6_r8/rhoair<a name='1395'>
+    onidep=nidep*1.e+6_r8/rhoair<a name='1396'>
+    oniimm=niimm*1.e+6_r8/rhoair<a name='1397'>
+    onihf=nihf*1.e+6_r8/rhoair<a name='1398'>
+<a name='1399'>
+  return<a name='1400'>
+  end subroutine nucleati<a name='1401'>
+<a name='1402'>
+<A NAME='HETERO'><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#HETERO' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1403'>
+  <font color=#993300>subroutine </font><font color=#cc0000>hetero</font>(T,ww,Ns,Nis,Nid) <A href='../../call_to/HETERO.html' TARGET='index'>2</A><a name='1404'>
+<a name='1405'>
+    real(r8), intent(in)  :: T, ww, Ns<a name='1406'>
+    real(r8), intent(out) :: Nis, Nid<a name='1407'>
+<a name='1408'>
+    real(r8) A11,A12,A21,A22,B11,B12,B21,B22<a name='1409'>
+    real(r8) A,B,C<a name='1410'>
+<a name='1411'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1412'></font>
+<font color=#447700>! parameters<a name='1413'></font>
+<a name='1414'>
+      A11 = 0.0263_r8<a name='1415'>
+      A12 = -0.0185_r8<a name='1416'>
+      A21 = 2.758_r8<a name='1417'>
+      A22 = 1.3221_r8<a name='1418'>
+      B11 = -0.008_r8<a name='1419'>
+      B12 = -0.0468_r8<a name='1420'>
+      B21 = -0.2667_r8<a name='1421'>
+      B22 = -1.4588_r8<a name='1422'>
+<a name='1423'>
+<font color=#447700>!     ice from immersion nucleation (cm^-3)<a name='1424'></font>
+<a name='1425'>
+      B = (A11+B11*log(Ns)) * log(ww) + (A12+B12*log(Ns))<a name='1426'>
+      C =  A21+B21*log(Ns)<a name='1427'>
+<a name='1428'>
+      Nis = exp(A22) * Ns**B22 * exp(B*T) * ww**C<a name='1429'>
+      Nis = min(Nis,Ns)<a name='1430'>
+<a name='1431'>
+      Nid = 0.0_r8    <font color=#447700>! don't include deposition nucleation for cirrus clouds when T&lt;-37C<a name='1432'></font>
+<a name='1433'>
+      return<a name='1434'>
+  end subroutine hetero<a name='1435'>
+<a name='1436'>
+<a name='1437'>
+<A NAME='HF'><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#HF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1438'>
+  <font color=#993300>subroutine </font><font color=#cc0000>hf</font>(T,ww,RH,subgrid,Na,Ni) <A href='../../call_to/HF.html' TARGET='index'>4</A><a name='1439'>
+<a name='1440'>
+      real(r8), intent(in)  :: T, ww, RH, subgrid, Na<a name='1441'>
+      real(r8), intent(out) :: Ni<a name='1442'>
+<a name='1443'>
+      real(r8)    A1_fast,A21_fast,A22_fast,B1_fast,B21_fast,B22_fast<a name='1444'>
+      real(r8)    A2_fast,B2_fast<a name='1445'>
+      real(r8)    C1_fast,C2_fast,k1_fast,k2_fast<a name='1446'>
+      real(r8)    A1_slow,A2_slow,B1_slow,B2_slow,B3_slow<a name='1447'>
+      real(r8)    C1_slow,C2_slow,k1_slow,k2_slow<a name='1448'>
+      real(r8)    regm<a name='1449'>
+      real(r8)    A,B,C<a name='1450'>
+      real(r8)    RHw<a name='1451'>
+<a name='1452'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1453'></font>
+<font color=#447700>! parameters<a name='1454'></font>
+<a name='1455'>
+      A1_fast  =0.0231_r8<a name='1456'>
+      A21_fast =-1.6387_r8  <font color=#447700>!(T&gt;-64 deg)<a name='1457'></font>
+      A22_fast =-6.045_r8   <font color=#447700>!(T&lt;=-64 deg)<a name='1458'></font>
+      B1_fast  =-0.008_r8<a name='1459'>
+      B21_fast =-0.042_r8   <font color=#447700>!(T&gt;-64 deg)<a name='1460'></font>
+      B22_fast =-0.112_r8   <font color=#447700>!(T&lt;=-64 deg)<a name='1461'></font>
+      C1_fast  =0.0739_r8<a name='1462'>
+      C2_fast  =1.2372_r8<a name='1463'>
+<a name='1464'>
+      A1_slow  =-0.3949_r8<a name='1465'>
+      A2_slow  =1.282_r8<a name='1466'>
+      B1_slow  =-0.0156_r8<a name='1467'>
+      B2_slow  =0.0111_r8<a name='1468'>
+      B3_slow  =0.0217_r8<a name='1469'>
+      C1_slow  =0.120_r8<a name='1470'>
+      C2_slow  =2.312_r8<a name='1471'>
+<a name='1472'>
+      Ni = 0.0_r8<a name='1473'>
+<a name='1474'>
+<font color=#447700>!----------------------------<a name='1475'></font>
+<font color=#447700>!RHw parameters<a name='1476'></font>
+      A = 6.0e-4_r8*log(ww)+6.6e-3_r8<a name='1477'>
+      B = 6.0e-2_r8*log(ww)+1.052_r8<a name='1478'>
+      C = 1.68_r8  *log(ww)+129.35_r8<a name='1479'>
+      RHw=(A*T*T+B*T+C)*0.01_r8<a name='1480'>
+<a name='1481'>
+      if((T.le.-37.0_r8) .and. ((RH*subgrid).ge.RHw)) then<a name='1482'>
+<a name='1483'>
+        regm = 6.07_r8*log(ww)-55.0_r8<a name='1484'>
+<a name='1485'>
+        if(T.ge.regm) then    <font color=#447700>! fast-growth regime<a name='1486'></font>
+<a name='1487'>
+          if(T.gt.-64.0_r8) then<a name='1488'>
+            A2_fast=A21_fast<a name='1489'>
+            B2_fast=B21_fast<a name='1490'>
+          else<a name='1491'>
+            A2_fast=A22_fast<a name='1492'>
+            B2_fast=B22_fast<a name='1493'>
+          endif<a name='1494'>
+<a name='1495'>
+          k1_fast = exp(A2_fast + B2_fast*T + C2_fast*log(ww))<a name='1496'>
+          k2_fast = A1_fast+B1_fast*T+C1_fast*log(ww)<a name='1497'>
+<a name='1498'>
+          Ni = k1_fast*Na**(k2_fast)<a name='1499'>
+          Ni = min(Ni,Na)<a name='1500'>
+<a name='1501'>
+        else       <font color=#447700>! slow-growth regime<a name='1502'></font>
+<a name='1503'>
+          k1_slow = exp(A2_slow + (B2_slow+B3_slow*log(ww))*T + C2_slow*log(ww))<a name='1504'>
+          k2_slow = A1_slow+B1_slow*T+C1_slow*log(ww)<a name='1505'>
+<a name='1506'>
+          Ni = k1_slow*Na**(k2_slow)<a name='1507'>
+          Ni = min(Ni,Na)<a name='1508'>
+<a name='1509'>
+        endif<a name='1510'>
+<a name='1511'>
+      end if<a name='1512'>
+<a name='1513'>
+      return<a name='1514'>
+  end subroutine hf<a name='1515'>
+<a name='1516'>
+<font color=#447700>!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc<a name='1517'></font>
+<font color=#447700>! error function in single precision<a name='1518'></font>
+<font color=#447700>!<a name='1519'></font>
+<font color=#447700>!    Copyright(C) 1996 Takuya OOURA (email: ooura@mmm.t.u-tokyo.ac.jp).<a name='1520'></font>
+<font color=#447700>!    You may use, copy, modify this code for any purpose and <a name='1521'></font>
+<font color=#447700>!    without fee. You may distribute this ORIGINAL package.<a name='1522'></font>
+<a name='1523'>
+<A NAME='DERF'><A href='../../html_code/phys/module_cam_mp_microp_aero.F.html#DERF' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1524'>
+      real(r8) <font color=#993300>function </font><font color=#cc0000>derf</font>(x) <A href='../../call_to/DERF.html' TARGET='index'>1</A>,<A href='../../call_from/DERF.html' TARGET='index'>1</A><a name='1525'>
+      implicit real (a - h, o - z)<a name='1526'>
+<font color=#447700>! pjj/cray function type<a name='1527'></font>
+<font color=#447700>!     real(r8) a,b,x<a name='1528'></font>
+      real(r8) a,b,x<a name='1529'>
+      dimension a(0 : 64), b(0 : 64)<a name='1530'>
+      integer i,k<a name='1531'>
+      data (a(i), i = 0, 12) / &amp; <a name='1532'>
+         0.00000000005958930743d0, -0.00000000113739022964d0, &amp; <a name='1533'>
+         0.00000001466005199839d0, -0.00000016350354461960d0, &amp;<a name='1534'>
+         0.00000164610044809620d0, -0.00001492559551950604d0, &amp;<a name='1535'>
+         0.00012055331122299265d0, -0.00085483269811296660d0, &amp;<a name='1536'>
+         0.00522397762482322257d0, -0.02686617064507733420d0, &amp;<a name='1537'>
+         0.11283791670954881569d0, -0.37612638903183748117d0, &amp;<a name='1538'>
+         1.12837916709551257377d0 / <a name='1539'>
+      data (a(i), i = 13, 25) / &amp;<a name='1540'>
+         0.00000000002372510631d0, -0.00000000045493253732d0, &amp;<a name='1541'>
+         0.00000000590362766598d0, -0.00000006642090827576d0, &amp;<a name='1542'>
+         0.00000067595634268133d0, -0.00000621188515924000d0, &amp;<a name='1543'>
+         0.00005103883009709690d0, -0.00037015410692956173d0, &amp;<a name='1544'>
+         0.00233307631218880978d0, -0.01254988477182192210d0, &amp;<a name='1545'>
+         0.05657061146827041994d0, -0.21379664776456006580d0, &amp;<a name='1546'>
+         0.84270079294971486929d0 / <a name='1547'>
+      data (a(i), i = 26, 38) / &amp;<a name='1548'>
+         0.00000000000949905026d0, -0.00000000018310229805d0, &amp;<a name='1549'>
+         0.00000000239463074000d0, -0.00000002721444369609d0, &amp;<a name='1550'>
+         0.00000028045522331686d0, -0.00000261830022482897d0, &amp;<a name='1551'>
+         0.00002195455056768781d0, -0.00016358986921372656d0, &amp;<a name='1552'>
+         0.00107052153564110318d0, -0.00608284718113590151d0, &amp;<a name='1553'>
+         0.02986978465246258244d0, -0.13055593046562267625d0, &amp;<a name='1554'>
+         0.67493323603965504676d0 / <a name='1555'>
+      data (a(i), i = 39, 51) / &amp;<a name='1556'>
+         0.00000000000382722073d0, -0.00000000007421598602d0, &amp;<a name='1557'>
+         0.00000000097930574080d0, -0.00000001126008898854d0, &amp;<a name='1558'>
+         0.00000011775134830784d0, -0.00000111992758382650d0, &amp;<a name='1559'>
+         0.00000962023443095201d0, -0.00007404402135070773d0, &amp;<a name='1560'>
+         0.00050689993654144881d0, -0.00307553051439272889d0, &amp;<a name='1561'>
+         0.01668977892553165586d0, -0.08548534594781312114d0, &amp;<a name='1562'>
+         0.56909076642393639985d0 / <a name='1563'>
+      data (a(i), i = 52, 64) / &amp;<a name='1564'>
+         0.00000000000155296588d0, -0.00000000003032205868d0, &amp;<a name='1565'>
+         0.00000000040424830707d0, -0.00000000471135111493d0, &amp;<a name='1566'>
+         0.00000005011915876293d0, -0.00000048722516178974d0, &amp;<a name='1567'>
+         0.00000430683284629395d0, -0.00003445026145385764d0, &amp;<a name='1568'>
+         0.00024879276133931664d0, -0.00162940941748079288d0, &amp;<a name='1569'>
+         0.00988786373932350462d0, -0.05962426839442303805d0, &amp;<a name='1570'>
+         0.49766113250947636708d0 / <a name='1571'>
+      data (b(i), i = 0, 12) / &amp;<a name='1572'>
+         -0.00000000029734388465d0, 0.00000000269776334046d0, &amp;<a name='1573'>
+         -0.00000000640788827665d0, -0.00000001667820132100d0, &amp;<a name='1574'>
+         -0.00000021854388148686d0, 0.00000266246030457984d0, &amp;<a name='1575'>
+         0.00001612722157047886d0, -0.00025616361025506629d0, &amp;<a name='1576'>
+         0.00015380842432375365d0, 0.00815533022524927908d0, &amp;<a name='1577'>
+         -0.01402283663896319337d0, -0.19746892495383021487d0,&amp; <a name='1578'>
+         0.71511720328842845913d0 / <a name='1579'>
+      data (b(i), i = 13, 25) / &amp;<a name='1580'>
+         -0.00000000001951073787d0, -0.00000000032302692214d0, &amp;<a name='1581'>
+         0.00000000522461866919d0, 0.00000000342940918551d0, &amp;<a name='1582'>
+         -0.00000035772874310272d0, 0.00000019999935792654d0, &amp;<a name='1583'>
+         0.00002687044575042908d0, -0.00011843240273775776d0, &amp;<a name='1584'>
+         -0.00080991728956032271d0, 0.00661062970502241174d0, &amp;<a name='1585'>
+         0.00909530922354827295d0, -0.20160072778491013140d0, &amp;<a name='1586'>
+         0.51169696718727644908d0 / <a name='1587'>
+      data (b(i), i = 26, 38) / &amp;<a name='1588'>
+         0.00000000003147682272d0, -0.00000000048465972408d0, &amp;<a name='1589'>
+         0.00000000063675740242d0, 0.00000003377623323271d0, &amp;<a name='1590'>
+         -0.00000015451139637086d0, -0.00000203340624738438d0,&amp; <a name='1591'>
+         0.00001947204525295057d0, 0.00002854147231653228d0, &amp;<a name='1592'>
+         -0.00101565063152200272d0, 0.00271187003520095655d0, &amp;<a name='1593'>
+         0.02328095035422810727d0, -0.16725021123116877197d0, &amp;<a name='1594'>
+         0.32490054966649436974d0 / <a name='1595'>
+      data (b(i), i = 39, 51) / &amp;<a name='1596'>
+         0.00000000002319363370d0, -0.00000000006303206648d0, &amp;<a name='1597'>
+         -0.00000000264888267434d0, 0.00000002050708040581d0, &amp;<a name='1598'>
+         0.00000011371857327578d0, -0.00000211211337219663d0, &amp;<a name='1599'>
+         0.00000368797328322935d0, 0.00009823686253424796d0, &amp;<a name='1600'>
+         -0.00065860243990455368d0, -0.00075285814895230877d0,&amp; <a name='1601'>
+         0.02585434424202960464d0, -0.11637092784486193258d0, &amp;<a name='1602'>
+         0.18267336775296612024d0 / <a name='1603'>
+      data (b(i), i = 52, 64) / &amp;<a name='1604'>
+         -0.00000000000367789363d0, 0.00000000020876046746d0, &amp;<a name='1605'>
+         -0.00000000193319027226d0, -0.00000000435953392472d0, &amp;<a name='1606'>
+         0.00000018006992266137d0, -0.00000078441223763969d0, &amp;<a name='1607'>
+         -0.00000675407647949153d0, 0.00008428418334440096d0, &amp;<a name='1608'>
+         -0.00017604388937031815d0, -0.00239729611435071610d0, &amp;<a name='1609'>
+         0.02064129023876022970d0, -0.06905562880005864105d0, &amp;<a name='1610'>
+         0.09084526782065478489d0 / <a name='1611'>
+      w = abs(x)<a name='1612'>
+      if (w .lt. 2.2d0) then<a name='1613'>
+          t = w * w<a name='1614'>
+          k = int(t)<a name='1615'>
+          t = t - k<a name='1616'>
+          k = k * 13<a name='1617'>
+          y = ((((((((((((a(k) * t + a(k + 1)) * t + &amp;<a name='1618'>
+             a(k + 2)) * t + a(k + 3)) * t + a(k + 4)) * t + &amp;<a name='1619'>
+             a(k + 5)) * t + a(k + 6)) * t + a(k + 7)) * t + &amp;<a name='1620'>
+             a(k + 8)) * t + a(k + 9)) * t + a(k + 10)) * t + &amp;<a name='1621'>
+             a(k + 11)) * t + a(k + 12)) * w<a name='1622'>
+      else if (w .lt. 6.9d0) then<a name='1623'>
+          k = int(w)<a name='1624'>
+          t = w - k<a name='1625'>
+          k = 13 * (k - 2)<a name='1626'>
+          y = (((((((((((b(k) * t + b(k + 1)) * t + &amp;<a name='1627'>
+             b(k + 2)) * t + b(k + 3)) * t + b(k + 4)) * t + &amp;<a name='1628'>
+             b(k + 5)) * t + b(k + 6)) * t + b(k + 7)) * t + &amp;<a name='1629'>
+             b(k + 8)) * t + b(k + 9)) * t + b(k + 10)) * t + &amp;<a name='1630'>
+             b(k + 11)) * t + b(k + 12)<a name='1631'>
+          y = y * y<a name='1632'>
+          y = y * y<a name='1633'>
+          y = y * y<a name='1634'>
+          y = 1 - y * y<a name='1635'>
+      else<a name='1636'>
+          y = 1<a name='1637'>
+      end if<a name='1638'>
+      if (x .lt. 0) y = -y<a name='1639'>
+      derf = y<a name='1640'>
+      end function derf<a name='1641'>
+<font color=#447700>!<a name='1642'></font>
+<a name='1643'>
+end module microp_aero<a name='1644'>
+<a name='1645'>
+</pre></body></html>

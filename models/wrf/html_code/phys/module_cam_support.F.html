@@ -1,0 +1,265 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_CAM_SUPPORT'><A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_cam_support</font> <A href='../../call_to/MODULE_CAM_SUPPORT.html' TARGET='index'>78</A><a name='3'>
+  <font color=#447700>!------------------------------------------------------------------------<a name='4'></font>
+  <font color=#447700>! This module contains global scope variables and routines shared by<a name='5'></font>
+  <font color=#447700>! multiple CAM physics routines. As much as possible, the codes is copied<a name='6'></font>
+  <font color=#447700>! verbatim from the corresponding CAM modules noted below.<a name='7'></font>
+  <font color=#447700>!<a name='8'></font>
+  <font color=#447700>! Author: William.Gustafson@pnl.gov, Nov 2009<a name='9'></font>
+  <font color=#447700>!------------------------------------------------------------------------<a name='10'></font>
+  use <A href='../../html_code/frame/module_state_description.F.html#MODULE_STATE_DESCRIPTION'>module_state_description</A><A href='../../html_code/phys/module_cam_support.F.html#module_cam_support.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STATE_DESCRIPTION_109">, only: param_num_moist<a name='11'>
+  use <A href='../../html_code/phys/module_cam_shr_kind_mod.F.html#SHR_KIND_MOD'>shr_kind_mod</A><A href='../../html_code/phys/module_cam_support.F.html#module_cam_support.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_KIND_MOD_18"><a name='12'>
+  <a name='13'>
+  implicit none<a name='14'>
+  <a name='15'>
+  public<a name='16'>
+  save<a name='17'>
+  <a name='18'>
+  integer(SHR_KIND_IN),parameter,private :: R8 = SHR_KIND_R8 <font color=#447700>! rename for local readability only<a name='19'></font>
+  <a name='20'>
+  <font color=#447700>! From spmd_utils in CAM...<a name='21'></font>
+  logical, parameter :: masterproc = .TRUE.<a name='22'>
+  logical, parameter :: iam = .FALSE.<a name='23'>
+  <a name='24'>
+  <font color=#447700>! From ppgrid in CAM...<a name='25'></font>
+  integer, parameter :: pcols = 1   <font color=#447700>!Always have a chunk size of 1 in WRF<a name='26'></font>
+  integer :: pver                   <font color=#447700>!Number of model level middles in CAM speak<a name='27'></font>
+  integer :: pverp                  <font color=#447700>!Number of model level interfaces in CAM speak<a name='28'></font>
+  <a name='29'>
+  <font color=#447700>! From constituents in CAM...<a name='30'></font>
+  integer, parameter :: pcnst = param_num_moist  <font color=#447700>!Number of tracer constituents for CAM q array <a name='31'></font>
+  <font color=#447700>!In WRF this is currently setup to only handle<a name='32'></font>
+  <font color=#447700>!the moist array, and then even in a half-handed way.<a name='33'></font>
+  <font color=#447700>!We allocate the max possible size, but loops need to<a name='34'></font>
+  <font color=#447700>!be over a smaller number.<a name='35'></font>
+  <font color=#447700>!Scalar and chem need to eventually be handled too.<a name='36'></font>
+  <a name='37'>
+  <font color=#447700>! 2010-06-16 rce - about pcnst ...<a name='38'></font>
+  <font color=#447700>! in CAM with modal aerosols, pcnst = 5 (water vapor + cloud water/ice mass/number) + <a name='39'></font>
+  <font color=#447700>!     number of trace gas and aerosol species<a name='40'></font>
+  <font color=#447700>! if we want to do things similarly in wrfchem, then we should have pcnst = 5 + num_chem,<a name='41'></font>
+  <font color=#447700>!     which means that pcnst is set at runtime,<a name='42'></font>
+  <font color=#447700>!     which means that any saved arrays (i.e. module data) need to be allocated<a name='43'></font>
+  <font color=#447700>! OR, we could use a bunch of CPP directives to produce the appropriate constant value<a name='44'></font>
+  <font color=#447700>!<a name='45'></font>
+  <font color=#447700>! for now (temporarily), the following will be used in modal aerosol routines<a name='46'></font>
+  <font color=#447700>! its appropriate value must be set in an initialization routine,<a name='47'></font>
+  <font color=#447700>!    and the initial -999888777 should cause code to crash if it gets used<a name='48'></font>
+  <font color=#447700>!    before being set correctly<a name='49'></font>
+<a name='50'>
+  <font color=#447700>!Balwinder.Singh@pnnl.gov: pcnst is now defined dynamically in module_physics_init.F. pcnst_runtime<a name='51'></font>
+  <font color=#447700>!is referenced by pcnst for getting the runtime (dynamic) value of pcnst. TO accomplish this, <a name='52'></font>
+  <font color=#447700>!all 'module level' or 'saved' arrays are declared 'allocatable' in CAM specific modules. The <a name='53'></font>
+  <font color=#447700>!allocatable arrays are allocated in the 'initialization' call of the respective module. If a module <a name='54'></font>
+  <font color=#447700>!doesn't have an 'initialization' subroutine then allocatable arrays are allocated in module_physics_init.F.<a name='55'></font>
+  <font color=#447700>!Allocatable CAM arrays which are NOT currently used by WRF are not allocated<a name='56'></font>
+<a name='57'>
+  integer :: pcnst_runtime    = -999888777 <font color=#447700>!Number of tracer constituents in CAM q array<a name='58'></font>
+<a name='59'>
+  <font color=#447700>!For assisting decoupled microphysics (MP) CAM MAM simulations (simulations, where MAM package is coupled with <a name='60'></font>
+  <font color=#447700>!radiation but decoupled with MP- i.e. MP runs with 'prescribed' aerosols) 'pcnst_mp' is defined.'pcnst_mp' will<a name='61'></font>
+  <font color=#447700>!only be used in the CAMMGMP driver and its supporting modules (ndrop and microp_aero)<a name='62'></font>
+  integer :: pcnst_mp         = -999888777 <a name='63'>
+  <a name='64'>
+  integer :: gas_pcnst_modal_aero = -999888777 <font color=#447700>!Number of tracer constituents in CAM q array<a name='65'></font>
+<a name='66'>
+  <font color=#447700>!BSINGH - In simulations where no MAM chem package (501, 502,503 or 504) is used, <a name='67'></font>
+  <font color=#447700>! following integer(gas_pcnst_modal_aero_pos) is used to specify array dimensions, <a name='68'></font>
+  <font color=#447700>! so it has to have a positive value. It will assume a positive value in chemistry<a name='69'></font>
+  <font color=#447700>! initializations accordling to the chem package specified in the namelist<a name='70'></font>
+  integer :: gas_pcnst_modal_aero_pos = -999888777 <font color=#447700>!Number of tracer constituents in CAM q array<a name='71'></font>
+<a name='72'>
+  <font color=#447700>! excluding water vapor, cloud water, cloud ice, droplet number, ice number<a name='73'></font>
+  <a name='74'>
+  integer :: pcnst_non_chem_modal_aero = -999888777  <font color=#447700>!Number of non-chemistry (i.e., moisture) species in CAM q array<a name='75'></font>
+  <a name='76'>
+  <font color=#447700>! From cam_logfile...<a name='77'></font>
+  character(len=750) :: iulog       <font color=#447700>!In CAM this is a file handle. In WRF, this is a string<a name='78'></font>
+  <font color=#447700>!that can be used to send messages via wrf_message, etc.<a name='79'></font>
+  <a name='80'>
+  <font color=#447700>!From cam_pio_utils.F90<a name='81'></font>
+  integer, parameter, public :: phys_decomp=100<a name='82'>
+  <a name='83'>
+  <font color=#447700>! From cam_pio_utils (used in camuwpbl_driver module)...<a name='84'></font>
+  integer, parameter :: fieldname_len = 16   <font color=#447700>! max chars for field name<a name='85'></font>
+<a name='86'>
+  <font color=#447700>!From chem_mods (dummy value for now)<a name='87'></font>
+  integer, parameter :: nfs = -999888777 <font color=#447700>!Balwinder.Singh@pnnl.gov: NFS is not used for any meaningful computations for now<a name='88'></font>
+<a name='89'>
+  <font color=#447700>!From cam_history_support.F90<a name='90'></font>
+  real(r8), parameter, public :: fillvalue = 1.e36_r8     <font color=#447700>! fill value for netcdf fields<a name='91'></font>
+<a name='92'>
+#if ( WRF_CHEM == 1 )<a name='93'>
+  <font color=#447700>!For module_cam_mam_gas_wetdep_driver.F<a name='94'></font>
+  <font color=#447700>!BSINGH - We are going to operate on only 6 gases (following MOSAIC -<a name='95'></font>
+  <font color=#447700>!module_mosaic_wetscav.F). MOSAIC actually operates upon 7 gases but MAM<a name='96'></font>
+  <font color=#447700>!doesn't have msa, therefore MAM will operate on only 6 gases<a name='97'></font>
+  <a name='98'>
+  <font color=#447700>!so2,h2o2,h2so4,hno3,hcl,nh3 (msa not included)<a name='99'></font>
+  <a name='100'>
+  integer, public, parameter :: gas_wetdep_cnt = 6<a name='101'>
+  character(len=3), public, parameter  :: gas_wetdep_method = 'MOZ'<a name='102'>
+  <font color=#447700>!BSINGH - Following list should be all UPPER CASE and 'sulf' should be replaced with 'H2SO4'<a name='103'></font>
+  character(len=5), public, parameter   :: gas_wetdep_list(1:gas_wetdep_cnt) = (/'SO2  ','H2O2 ','H2SO4','HNO3 ','HCL  ','NH3  '/) <font color=#447700>!Upper Case<a name='104'></font>
+<a name='105'>
+  <font color=#447700>!BSINGH:01/31/2013 - numgas_mam is being used for specifying a variable dimension in che_driver<a name='106'></font>
+  <font color=#447700>!This variable is *UPDATED* in chemics_init.F, where it is assigned a new value based<a name='107'></font>
+  <font color=#447700>!on number of gases being used in the simulation<a name='108'></font>
+  integer :: numgas_mam = 1<a name='109'>
+<a name='110'>
+  <font color=#447700>!BSINGH:02/01/2013 - Define cam_mam_aerosol to know if the simulation is a mam simulation or not<a name='111'></font>
+  <font color=#447700>! This variable is updated in module_physics_init.F<a name='112'></font>
+  logical :: cam_mam_aerosols = .FALSE.<a name='113'>
+#endif<a name='114'>
+  <a name='115'>
+  <font color=#447700>!------------------------------------------------------------------------<a name='116'></font>
+CONTAINS<a name='117'>
+  <font color=#447700>!------------------------------------------------------------------------<a name='118'></font>
+<A NAME='LOWER_CASE'><A href='../../html_code/phys/module_cam_support.F.html#LOWER_CASE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='119'>
+  <font color=#993300>subroutine </font><font color=#cc0000>lower_case</font>( txt_in, txt_lc ) <A href='../../call_to/LOWER_CASE.html' TARGET='index'>10</A><a name='120'>
+    <font color=#447700>!<a name='121'></font>
+    <font color=#447700>! converts a character string (txt_in) to lowercase (txt_lc)<a name='122'></font>
+    <font color=#447700>!<a name='123'></font>
+    implicit none<a name='124'>
+    <a name='125'>
+    character(len=*), intent(in)  :: txt_in<a name='126'>
+    character(len=*), intent(out) :: txt_lc<a name='127'>
+    <a name='128'>
+    integer :: i, j<a name='129'>
+    integer, parameter :: iachar_lowera = iachar('a')<a name='130'>
+    integer, parameter :: iachar_uppera = iachar('A')<a name='131'>
+    integer, parameter :: iachar_upperz = iachar('Z')<a name='132'>
+    <a name='133'>
+    txt_lc = txt_in<a name='134'>
+    do i = 1, len( trim(txt_lc) )<a name='135'>
+       j = iachar( txt_lc(i:i) )<a name='136'>
+       if (j &lt; iachar_uppera) cycle<a name='137'>
+       if (j &gt; iachar_upperz) cycle<a name='138'>
+       txt_lc(i:i) = achar( j + iachar_lowera - iachar_uppera )<a name='139'>
+    end do<a name='140'>
+    <a name='141'>
+    return<a name='142'>
+  end subroutine lower_case<a name='143'>
+  <a name='144'>
+  <a name='145'>
+  <font color=#447700>!------------------------------------------------------------------------<a name='146'></font>
+<A NAME='ENDRUN'><A href='../../html_code/phys/module_cam_support.F.html#ENDRUN' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='147'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>endrun</font>(msg) <A href='../../call_to/ENDRUN.html' TARGET='index'>161</A>,<A href='../../call_from/ENDRUN.html' TARGET='index'>3</A><a name='148'>
+    <font color=#447700>! Pass through routine to wrf_error_fatal that mimics endrun in module<a name='149'></font>
+    <font color=#447700>! abortutils of CAM.<a name='150'></font>
+    <font color=#447700>!<a name='151'></font>
+    <font color=#447700>! Replaces endrun in abortutils module in CAM.<a name='152'></font>
+    <font color=#447700>!<a name='153'></font>
+    <font color=#447700>! Author: William.Gustafson@pnl.gov, Nov 2009<a name='154'></font>
+    <font color=#447700>! Modified : Balwinder.Singh@pnl.gov - Argument made optional <a name='155'></font>
+    <font color=#447700>!------------------------------------------------------------------------<a name='156'></font>
+    USE <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_43"><a name='157'>
+    <a name='158'>
+    <font color=#447700>! Argument of the subroutine is made optional to accomodate endrun calls with no argument <a name='159'></font>
+    character(len=*), intent(in), optional :: msg<a name='160'>
+    <a name='161'>
+    if(present(msg)) then<a name='162'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_594">(msg)<a name='163'>
+    else<a name='164'>
+       <font color=#447700>! The error message is written to iulog before the endrun call<a name='165'></font>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_595">(iulog)<a name='166'>
+    endif<a name='167'>
+    <a name='168'>
+  END SUBROUTINE endrun<a name='169'>
+  <a name='170'>
+  <a name='171'>
+  <a name='172'>
+  <font color=#447700>!------------------------------------------------------------------------<a name='173'></font>
+<A NAME='T_STOPF'><A href='../../html_code/phys/module_cam_support.F.html#T_STOPF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='174'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>t_stopf</font>(event) <A href='../../call_to/T_STOPF.html' TARGET='index'>1</A><a name='175'>
+    <font color=#447700>! Stub to accomodate stop time calls of CAM<a name='176'></font>
+    <font color=#447700>!<a name='177'></font>
+    <font color=#447700>! Replaces t_stopf in perf_mod module in CAM.<a name='178'></font>
+    <font color=#447700>!<a name='179'></font>
+    <font color=#447700>! Author: Balwinder.Singh@pnl.gov<a name='180'></font>
+    <font color=#447700>!------------------------------------------------------------------------<a name='181'></font>
+    character(len=*), intent(in) :: event <a name='182'>
+    <a name='183'>
+  END SUBROUTINE t_stopf<a name='184'>
+  <a name='185'>
+  <a name='186'>
+  <a name='187'>
+  <font color=#447700>!------------------------------------------------------------------------<a name='188'></font>
+<A NAME='T_STARTF'><A href='../../html_code/phys/module_cam_support.F.html#T_STARTF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='189'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>t_startf</font>(event) <A href='../../call_to/T_STARTF.html' TARGET='index'>1</A><a name='190'>
+    <font color=#447700>! Stub to accomodate start time calls of CAM<a name='191'></font>
+    <font color=#447700>!<a name='192'></font>
+    <font color=#447700>! Replaces t_startf in perf_mod module in CAM.<a name='193'></font>
+    <font color=#447700>!<a name='194'></font>
+    <font color=#447700>! Author: Balwinder.Singh@pnl.gov<a name='195'></font>
+    <font color=#447700>!------------------------------------------------------------------------<a name='196'></font>
+    <a name='197'>
+    character(len=*), intent(in) :: event<a name='198'>
+    <a name='199'>
+  END SUBROUTINE t_startf<a name='200'>
+  <a name='201'>
+  <a name='202'>
+  <a name='203'>
+  <font color=#447700>!------------------------------------------------------------------------<a name='204'></font>
+<A NAME='OUTFLD'><A href='../../html_code/phys/module_cam_support.F.html#OUTFLD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='205'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>outfld</font>( fname, field, idim, c) <A href='../../call_to/OUTFLD.html' TARGET='index'>199</A><a name='206'>
+    <font color=#447700>! Stub to accomodate outfld calls of CAM<a name='207'></font>
+    <font color=#447700>!<a name='208'></font>
+    <font color=#447700>! Replaces outfld in cam_history module in CAM.<a name='209'></font>
+    <font color=#447700>!<a name='210'></font>
+    <font color=#447700>! Author: Balwinder.Singh@pnl.gov<a name='211'></font>
+    <font color=#447700>!------------------------------------------------------------------------<a name='212'></font>
+    character(len=*), intent(in) :: fname<a name='213'>
+    integer,          intent(in) :: idim          <a name='214'>
+    integer,          intent(in) :: c             <a name='215'>
+    real(r8),         intent(in) :: field(idim,*)<a name='216'>
+    <a name='217'>
+  END SUBROUTINE outfld<a name='218'>
+  <a name='219'>
+  <a name='220'>
+  <a name='221'>
+  <font color=#447700>!------------------------------------------------------------------------<a name='222'></font>
+<A NAME='ADDFLD'><A href='../../html_code/phys/module_cam_support.F.html#ADDFLD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='223'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>addfld</font>(fname, units, numlev, avgflag, long_name, &amp; <A href='../../call_to/ADDFLD.html' TARGET='index'>195</A><a name='224'>
+       decomp_type, flag_xyfill, flag_isccplev, sampling_seq)<a name='225'>
+    <font color=#447700>! Stub to accomodate addfld calls of CAM<a name='226'></font>
+    <font color=#447700>!<a name='227'></font>
+    <font color=#447700>! Replaces addfld in cam_history module in CAM.<a name='228'></font>
+    <font color=#447700>!<a name='229'></font>
+    <font color=#447700>! Author: Balwinder.Singh@pnl.gov<a name='230'></font>
+    <font color=#447700>!------------------------------------------------------------------------<a name='231'></font>
+    character(len=*), intent(in) :: fname     <a name='232'>
+    character(len=*), intent(in) :: units     <a name='233'>
+    character(len=1), intent(in) :: avgflag   <a name='234'>
+    character(len=*), intent(in) :: long_name <a name='235'>
+    <a name='236'>
+    integer, intent(in) :: numlev             <a name='237'>
+    integer, intent(in) :: decomp_type        <a name='238'>
+    <a name='239'>
+    logical, intent(in), optional :: flag_xyfill<a name='240'>
+    logical, intent(in), optional :: flag_isccplev<a name='241'>
+    character(len=*), intent(in), optional :: sampling_seq<a name='242'>
+    <a name='243'>
+  END SUBROUTINE ADDFLD<a name='244'>
+  <a name='245'>
+  <a name='246'>
+  <a name='247'>
+  <font color=#447700>!------------------------------------------------------------------------<a name='248'></font>
+<A NAME='ADD_DEFAULT'><A href='../../html_code/phys/module_cam_support.F.html#ADD_DEFAULT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='249'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>ADD_DEFAULT</font> (name, tindex, flag) <A href='../../call_to/ADD_DEFAULT.html' TARGET='index'>11</A><a name='250'>
+    <font color=#447700>!<a name='251'></font>
+    <font color=#447700>! Stub to accomodate add_default calls of CAM <a name='252'></font>
+    <font color=#447700>! Relaces add_default in cam_history module of CAM<a name='253'></font>
+    <font color=#447700>! <a name='254'></font>
+    <font color=#447700>! Author: Balwinder.Singh@pnl.gov<a name='255'></font>
+    <font color=#447700>!-----------------------------------------------------------------------<a name='256'></font>
+    character(len=*), intent(in) :: name  <font color=#447700>! field name<a name='257'></font>
+    character(len=1), intent(in) :: flag  <font color=#447700>! averaging flag<a name='258'></font>
+    <a name='259'>
+    integer, intent(in) :: tindex         <font color=#447700>! history tape index<a name='260'></font>
+    <a name='261'>
+  END SUBROUTINE ADD_DEFAULT<a name='262'>
+  <a name='263'>
+END MODULE module_cam_support<a name='264'>
+</pre></body></html>

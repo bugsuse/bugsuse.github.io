@@ -1,0 +1,2371 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_SF_BEM'><A href='../../html_code/phys/module_sf_bem.F.html#MODULE_SF_BEM' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_sf_bem</font> <A href='../../call_to/MODULE_SF_BEM.html' TARGET='index'>1</A><a name='3'>
+<font color=#447700>! -----------------------------------------------------------------------<a name='4'></font>
+<font color=#447700>!  Variables and constants used in the BEM module<a name='5'></font>
+<font color=#447700>! -----------------------------------------------------------------------<a name='6'></font>
+         <a name='7'>
+        real emins		<font color=#447700>!emissivity of the internal walls<a name='8'></font>
+        parameter (emins=0.9) <a name='9'>
+        real albins	        <font color=#447700>!albedo of the internal walls<a name='10'></font>
+<font color=#447700>!!      parameter (albins=0.5)<a name='11'></font>
+        parameter (albins=0.3)<a name='12'>
+<a name='13'>
+        real thickwin           <font color=#447700>!thickness of the window [m] <a name='14'></font>
+        parameter (thickwin=0.006)<a name='15'>
+        real cswin		<font color=#447700>!Specific heat of the windows [J/(m3.K)]<a name='16'></font>
+        parameter(cswin= 2.268e+06)<a name='17'>
+<a name='18'>
+        real temp_rat            <font color=#447700>!power of the A.C. heating/cooling the indoor air [K/s]<a name='19'></font>
+        parameter(temp_rat=0.001)<a name='20'>
+<a name='21'>
+        real hum_rat            <font color=#447700>!power of the A.C. drying/moistening the indoor air [(Kg/kg)/s]<a name='22'></font>
+        parameter(hum_rat=1.e-06)<a name='23'>
+<a name='24'>
+<a name='25'>
+    CONTAINS<a name='26'>
+<a name='27'>
+<font color=#447700>!====6================================================================72<a name='28'></font>
+<font color=#447700>!====6================================================================72	<a name='29'></font>
+	<a name='30'>
+<A NAME='BEM'><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='31'>
+	<font color=#993300>subroutine </font><font color=#cc0000>BEM</font>(nzcanm,nlev,nhourday,dt,bw,bl,dzlev,            &amp; <A href='../../call_to/BEM.html' TARGET='index'>1</A>,<A href='../../call_from/BEM.html' TARGET='index'>41</A><a name='32'>
+                       nwal,nflo,nrof,ngrd,hswalout,gswal,             &amp;<a name='33'>
+                       hswinout,hsrof,gsrof,                           &amp;<a name='34'>
+                       latent,sigma,albwal,albwin,albrof,              &amp;<a name='35'>
+     		       emrof,emwal,emwin,rswal,rlwal,rair,cp,          &amp;<a name='36'>
+     		       rhoout,tout,humout,press,                       &amp;<a name='37'>
+     		       rs,rl,dzwal,cswal,kwal,pwin,cop,beta,sw_cond,   &amp;<a name='38'>
+                       timeon,timeoff,targtemp,gaptemp,targhum,gaphum, &amp;<a name='39'>
+                       perflo,hsesf,hsequip,dzflo,                     &amp;<a name='40'>
+     		       csflo,kflo,dzgrd,csgrd,kgrd,dzrof,csrof,        &amp;<a name='41'>
+     		       krof,tlev,shumlev,twal,twin,tflo,tgrd,trof,     &amp;<a name='42'>
+     		       hsout,hlout,consump,hsvent,hlvent)<a name='43'>
+<a name='44'>
+<a name='45'>
+<font color=#447700>! ---------------------------------------------------------------------<a name='46'></font>
+	implicit none<a name='47'>
+	<a name='48'>
+<font color=#447700>! ---------------------------------------------------------------------	<a name='49'></font>
+<font color=#447700>!		       TOP<a name='50'></font>
+<font color=#447700>!	      ---------------------	<a name='51'></font>
+<font color=#447700>!	      !	----------------- !---&gt;roof	(-) : level number	<a name='52'></font>
+<font color=#447700>!	      !	!		! !		rem: the windows are given <a name='53'></font>
+<font color=#447700>!	      !	!---------------! !                  with respect to the <a name='54'></font>
+<font color=#447700>!	      !	!---------------! !                  vertical walls--&gt;win(2) <a name='55'></font>
+<font color=#447700>!	   (n)! !(1)	     (1)!-!(n)<a name='56'></font>
+<font color=#447700>!	      !	!---------------! !		2D vision of the building<a name='57'></font>
+<font color=#447700>!   WEST      ! !-------4-------! !	EAST<a name='58'></font>
+<font color=#447700>!	    I ! ! 1    ilev    2! ! II               ^<a name='59'></font>
+<font color=#447700>!	      !	!-------3--------! !		     !  	<a name='60'></font>
+<font color=#447700>!	      ! !---------------! !---&gt;floor 1	     ! 				<a name='61'></font>
+<font color=#447700>!	      !	!		! !                  !<a name='62'></font>
+<font color=#447700>!	      ! !		! !                  !<a name='63'></font>
+<font color=#447700>!	      !	----------------- !          &lt;--------------(n)  	<a name='64'></font>
+<font color=#447700>!	      ------------------------&gt;ground	------------(1)<a name='65'></font>
+<font color=#447700>!		     BOTTOM<a name='66'></font>
+<font color=#447700>!				i(6)			<a name='67'></font>
+<font color=#447700>!			        i<a name='68'></font>
+<font color=#447700>!                     +---------v-----+ <a name='69'></font>
+<font color=#447700>!                    /|              /|    3D vision of a room	<a name='70'></font>
+<font color=#447700>!                   / | 4           / |		<a name='71'></font>
+<font color=#447700>!                  /  |            /  |<a name='72'></font>
+<font color=#447700>!                 /   |           /   |<a name='73'></font>
+<font color=#447700>!                /    |          /    |<a name='74'></font>
+<font color=#447700>!               +---------------+     |<a name='75'></font>
+<font color=#447700>!               |  1   |        |  2  |<a name='76'></font>
+<font color=#447700>!               |     +---------|-----+<a name='77'></font>
+<font color=#447700>!       dzlev   |    /          |    /<a name='78'></font>
+<font color=#447700>!               |   /    3      |   /<a name='79'></font>
+<font color=#447700>!               |  /bw          |  /<a name='80'></font>
+<font color=#447700>!               | /             | /  <a name='81'></font>
+<font color=#447700>!               |/              |/<a name='82'></font>
+<font color=#447700>!               +---------------+<a name='83'></font>
+<font color=#447700>!                     ^ bl<a name='84'></font>
+<font color=#447700>!		      i          <a name='85'></font>
+<font color=#447700>!                     i<a name='86'></font>
+<font color=#447700>!		     (5)	<a name='87'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='88'></font>
+<a name='89'>
+<a name='90'>
+<font color=#447700>! Input:<a name='91'></font>
+<font color=#447700>! -----	<a name='92'></font>
+<a name='93'>
+	real dt				<font color=#447700>!time step [s]<a name='94'></font>
+                                       <a name='95'>
+        integer nzcanm                  <font color=#447700>!Maximum number of vertical levels in the urban grid<a name='96'></font>
+	integer nlev			<font color=#447700>!number of floors in the building<a name='97'></font>
+	integer nwal                    <font color=#447700>!number of levels inside the wall<a name='98'></font>
+	integer nrof                    <font color=#447700>!number of levels inside the roof<a name='99'></font>
+	integer nflo                    <font color=#447700>!number of levels inside the floor<a name='100'></font>
+	integer ngrd                    <font color=#447700>!number of levels inside the ground<a name='101'></font>
+	real dzlev			<font color=#447700>!vertical grid resolution [m]			<a name='102'></font>
+	real bl				<font color=#447700>!Building length [m]<a name='103'></font>
+	real bw                         <font color=#447700>!Building width [m]<a name='104'></font>
+	<a name='105'>
+	real albwal			<font color=#447700>!albedo of the walls 				<a name='106'></font>
+	real albwin		 	<font color=#447700>!albedo of the windows<a name='107'></font>
+	real albrof			<font color=#447700>!albedo of the roof<a name='108'></font>
+	<a name='109'>
+	real emwal 	          	<font color=#447700>!emissivity of the walls<a name='110'></font>
+	<a name='111'>
+	real emrof			<font color=#447700>!emissivity of the roof<a name='112'></font>
+        real emwin                      <font color=#447700>!emissivity of the windows<a name='113'></font>
+<a name='114'>
+	real pwin                       <font color=#447700>!window proportion<a name='115'></font>
+	real,    intent(in) :: cop      <font color=#447700>!Coefficient of performance of the A/C systems<a name='116'></font>
+	real,    intent(in) :: beta     <font color=#447700>!Thermal efficiency of the heat exchanger<a name='117'></font>
+        integer, intent(in) :: sw_cond  <font color=#447700>! Air Conditioning switch<a name='118'></font>
+        real,    intent(in) :: timeon   <font color=#447700>! Initial local time of A/C systems<a name='119'></font>
+        real,    intent(in) :: timeoff  <font color=#447700>! Ending local time of A/C systems<a name='120'></font>
+        real,    intent(in) :: targtemp <font color=#447700>! Target temperature of A/C systems<a name='121'></font>
+        real,    intent(in) :: gaptemp  <font color=#447700>! Comfort range of indoor temperature<a name='122'></font>
+        real,    intent(in) :: targhum  <font color=#447700>! Target humidity of A/C systems<a name='123'></font>
+        real,    intent(in) :: gaphum   <font color=#447700>! Comfort range of specific humidity<a name='124'></font>
+        real,    intent(in) :: perflo   <font color=#447700>! Peak number of occupants per unit floor area<a name='125'></font>
+        real,    intent(in) :: hsesf    <font color=#447700>! <a name='126'></font>
+        real,    intent(in) :: hsequip(24) <font color=#447700>! <a name='127'></font>
+	<a name='128'>
+	real cswal(nwal)		<font color=#447700>!Specific heat of the wall [J/(m3.K)] <a name='129'></font>
+	<a name='130'>
+	real csflo(nflo)		<font color=#447700>!Specific heat of the floor [J/(m3.K)]<a name='131'></font>
+	real csrof(nrof)		<font color=#447700>!Specific heat of the roof [J/(m3.K)] <a name='132'></font>
+	real csgrd(ngrd)		<font color=#447700>!Specific heat of the ground [J/(m3.K)]<a name='133'></font>
+	<a name='134'>
+	real kwal(nwal+1)		<font color=#447700>!Thermal conductivity in each layers of the walls (face) [W/(m.K)]<a name='135'></font>
+	real kflo(nflo+1)		<font color=#447700>!Thermal diffusivity in each layers of the floors (face) [W/(m.K)]<a name='136'></font>
+	real krof(nrof+1)		<font color=#447700>!Thermal diffusivity in each layers of the roof (face) [W/(m.K)]<a name='137'></font>
+	real kgrd(ngrd+1)		<font color=#447700>!Thermal diffusivity in each layers of the ground (face) [W/(m.K)]<a name='138'></font>
+	<a name='139'>
+	real dzwal(nwal)		<font color=#447700>!Layer sizes of walls [m]<a name='140'></font>
+	real dzflo(nflo)		<font color=#447700>!Layer sizes of floors [m]<a name='141'></font>
+	real dzrof(nrof)		<font color=#447700>!Layer sizes of roof [m]<a name='142'></font>
+	real dzgrd(ngrd)		<font color=#447700>!Layer sizes of ground [m]<a name='143'></font>
+	<a name='144'>
+	real latent                      <font color=#447700>!latent heat of evaporation [J/Kg]	<a name='145'></font>
+<a name='146'>
+<a name='147'>
+	real rs				<font color=#447700>!external short wave radiation [W/m2]<a name='148'></font>
+	real rl				<font color=#447700>!external long wave radiation [W/m2]<a name='149'></font>
+	real rswal(4,nzcanm)		<font color=#447700>!short wave radiation reaching the exterior walls [W/m2]<a name='150'></font>
+        real rlwal(4,nzcanm)		<font color=#447700>!long wave radiation reaching the walls [W/m2]	<a name='151'></font>
+	real rhoout(nzcanm)		<font color=#447700>!exterior air density [kg/m3]<a name='152'></font>
+	real tout(nzcanm)		<font color=#447700>!external temperature [K]<a name='153'></font>
+	real humout(nzcanm)		<font color=#447700>!absolute humidity [Kgwater/Kgair]<a name='154'></font>
+	real press(nzcanm)		<font color=#447700>!external air pressure [Pa]<a name='155'></font>
+	<a name='156'>
+	real hswalout(4,nzcanm)	        <font color=#447700>!outside walls sensible heat flux [W/m2]<a name='157'></font>
+	real hswinout(4,nzcanm)	        <font color=#447700>!outside window sensible heat flux [W/m2]<a name='158'></font>
+	real hsrof			<font color=#447700>!Sensible heat flux at the roof [W/m2]<a name='159'></font>
+	<a name='160'>
+	real rair			<font color=#447700>!ideal gas constant  [J.kg-1.K-1]<a name='161'></font>
+	real sigma			<font color=#447700>!parameter (wall is not black body) [W/m2.K4]<a name='162'></font>
+	real cp				<font color=#447700>!specific heat of air [J/kg.K]<a name='163'></font>
+       <a name='164'>
+	<a name='165'>
+<font color=#447700>!Input-Output<a name='166'></font>
+<font color=#447700>!------------<a name='167'></font>
+	real tlev(nzcanm)		<font color=#447700>!temperature of the floors [K] <a name='168'></font>
+	real shumlev(nzcanm)		<font color=#447700>!specific humidity of the floor [kg/kg]<a name='169'></font>
+	real twal(4,nwal,nzcanm)	<font color=#447700>!walls temperatures [K]<a name='170'></font>
+	real twin(4,nzcanm)		<font color=#447700>!windows temperatures [K]	<a name='171'></font>
+	real tflo(nflo,nzcanm-1)	<font color=#447700>!floor temperatures [K]<a name='172'></font>
+	real tgrd(ngrd)		        <font color=#447700>!ground temperature [K]<a name='173'></font>
+	real trof(nrof)		        <font color=#447700>!roof temperature [K]<a name='174'></font>
+	real hsout(nzcanm)		<font color=#447700>!sensible heat emitted outside the floor [W]<a name='175'></font>
+	real hlout(nzcanm)		<font color=#447700>!latent heat emitted outside the floor [W]<a name='176'></font>
+        real consump(nzcanm)            <font color=#447700>!Consumption for the a.c. in each floor [W]<a name='177'></font>
+	real hsvent(nzcanm)		<font color=#447700>!sensible heat generated by natural ventilation [W]<a name='178'></font>
+	real hlvent(nzcanm)		<font color=#447700>!latent heat generated by natural ventilation [W] <a name='179'></font>
+        real gsrof                      <font color=#447700>!heat flux flowing inside the roof [W/m^2]<a name='180'></font>
+        real gswal(4,nzcanm)             <font color=#447700>!heat flux flowing inside the floors [W/m^2]<a name='181'></font>
+<a name='182'>
+<font color=#447700>! Local:<a name='183'></font>
+<font color=#447700>! -----<a name='184'></font>
+	integer swwal                   <font color=#447700>!swich for the physical coefficients calculation<a name='185'></font>
+	integer ilev			<font color=#447700>!index for rooms	<a name='186'></font>
+	integer iwal			<font color=#447700>!index for walls<a name='187'></font>
+	integer iflo			<font color=#447700>!index for floors<a name='188'></font>
+	integer ivw			<font color=#447700>!index for vertical walls<a name='189'></font>
+        integer igrd                    <font color=#447700>!index for ground<a name='190'></font>
+        integer irof                    <font color=#447700>!index for roof <a name='191'></font>
+        real hseqocc(nzcanm)		<font color=#447700>!sensible heat generated by equipments and occupants [W]<a name='192'></font>
+	real hleqocc(nzcanm)		<font color=#447700>!latent heat generated by occupants [W]<a name='193'></font>
+        real hscond(nzcanm)		<font color=#447700>!sensible heat generated by wall conduction [W]<a name='194'></font>
+        real hslev(nzcanm)		<font color=#447700>!sensible heat flux generated inside the room [W]<a name='195'></font>
+        real hllev(nzcanm)		<font color=#447700>!latent heat flux generatd inside the room [W]<a name='196'></font>
+	real surwal(6,nzcanm)	        <font color=#447700>!Surface of the walls [m2]<a name='197'></font>
+	real surwal1D(6)	        <font color=#447700>!wall surfaces of a generic room [m2]<a name='198'></font>
+	real rsint(6)		        <font color=#447700>!short wave radiation reaching the indoor walls[W/m2]<a name='199'></font>
+	real rswalins(6,nzcanm)	        <font color=#447700>!internal short wave radiation for the building [W/m2]<a name='200'></font>
+	real twin1D(4)		        <font color=#447700>!temperature of windows for a particular room [K]<a name='201'></font>
+	real twal_int(6)		<font color=#447700>!temperature of the first internal layers of a room [K]<a name='202'></font>
+	real rlint(6)		        <font color=#447700>!internal wall long wave radiation [w/m2]<a name='203'></font>
+	real rlwalins(6,nzcanm)	        <font color=#447700>!internal long wave radiation for the building [W/m2]	<a name='204'></font>
+	real hrwalout(4,nzcanm)	        <font color=#447700>!external radiative flux to the walls [W/m2]<a name='205'></font>
+	real hrwalins(6,nzcanm)	        <font color=#447700>!inside radiative flux to the walls [W/m2] <a name='206'></font>
+	real hrwinout(4,nzcanm)	        <font color=#447700>!external radiative flux to the window [W/m2]<a name='207'></font>
+	real hrwinins(4,nzcanm)	        <font color=#447700>!inside radiative flux to the window [W/m2] <a name='208'></font>
+	real hrrof			<font color=#447700>!external radiative flux to the roof [W/m2]<a name='209'></font>
+	real hs<a name='210'>
+        real hsneed(nzcanm)		<font color=#447700>!sensible heat needed by the room [W]<a name='211'></font>
+	real hlneed(nzcanm)		<font color=#447700>!latent heat needed by the room [W]	<a name='212'></font>
+        real hswalins(6,nzcanm)	        <font color=#447700>!inside walls sensible heat flux [W/m2]<a name='213'></font>
+	real hswalins1D(6)<a name='214'>
+	real hswinins(4,nzcanm)	        <font color=#447700>!inside window sensible heat flux [W/m2]<a name='215'></font>
+	real hswinins1D(4)	<a name='216'>
+	real htot(2)			<font color=#447700>!total heat flux at the wall [W/m2]<a name='217'></font>
+	real twal1D(nwal)<a name='218'>
+	real tflo1D(nflo)	<a name='219'>
+        real tgrd1D(ngrd)<a name='220'>
+        real trof1D(nrof)<a name='221'>
+	real rswal1D(4)<a name='222'>
+	real Qb				<font color=#447700>!Overall heat capacity of the indoor air [J/K]<a name='223'></font>
+	real vollev			<font color=#447700>!volume of the room [m3]<a name='224'></font>
+	real rhoint			<font color=#447700>!density of the internal air [Kg/m3]<a name='225'></font>
+	real cpint			<font color=#447700>!specific heat of the internal air [J/kg.K]<a name='226'></font>
+        real humdry                     <font color=#447700>!specific humidiy of dry air [kg water/kg dry air]<a name='227'></font>
+	real radflux                    <font color=#447700>!Function to compute the total radiation budget<a name='228'></font>
+	real consumpbuild               <font color=#447700>!Energetic consumption for the entire building [KWh/s]<a name='229'></font>
+        real hsoutbuild                 <font color=#447700>!Total sensible heat ejected into the atmosphere[W]<a name='230'></font>
+                                        <font color=#447700>!by the air conditioning system and per building<a name='231'></font>
+        real nhourday                   <font color=#447700>!number of hours from midnight, local time<a name='232'></font>
+<font color=#447700>!--------------------------------------------<a name='233'></font>
+<font color=#447700>!Initialization<a name='234'></font>
+<font color=#447700>!--------------------------------------------<a name='235'></font>
+<a name='236'>
+       do ilev=1,nzcanm<a name='237'>
+          hseqocc(ilev)=0.<a name='238'>
+          hleqocc(ilev)=0.<a name='239'>
+          hscond(ilev)=0.<a name='240'>
+          hslev(ilev)=0.<a name='241'>
+          hllev(ilev)=0.<a name='242'>
+       enddo	<a name='243'>
+<a name='244'>
+<font color=#447700>!Calculation of the surfaces of the building <a name='245'></font>
+<font color=#447700>!--------------------------------------------<a name='246'></font>
+	<a name='247'>
+       <a name='248'>
+	do ivw=1,6<a name='249'>
+	do ilev=1,nzcanm<a name='250'>
+	 surwal(ivw,ilev)=1.   <font color=#447700>!initialisation<a name='251'></font>
+	end do<a name='252'>
+	end do<a name='253'>
+<a name='254'>
+	do ilev=1,nlev<a name='255'>
+	  do ivw=1,2<a name='256'>
+	   surwal(ivw,ilev)=dzlev*bw<a name='257'>
+	  end do<a name='258'>
+	  do ivw=3,4<a name='259'>
+	   surwal(ivw,ilev)=dzlev*bl<a name='260'>
+	  end do<a name='261'>
+	  do ivw=5,6 		<a name='262'>
+	   surwal(ivw,ilev)=bw*bl<a name='263'>
+	  end do <a name='264'>
+	end do<a name='265'>
+<a name='266'>
+<a name='267'>
+<font color=#447700>! Calculation of the short wave radiations at the internal walls<a name='268'></font>
+<font color=#447700>! ---------------------------------------------------------------<a name='269'></font>
+	<a name='270'>
+<a name='271'>
+	do ilev=1,nlev	<a name='272'>
+	  <a name='273'>
+	  do ivw=1,4<a name='274'>
+	    rswal1D(ivw)=rswal(ivw,ilev)<a name='275'>
+	  end do	<a name='276'>
+<a name='277'>
+	  do ivw=1,6<a name='278'>
+	    surwal1D(ivw)=surwal(ivw,ilev)<a name='279'>
+	  end do 		<a name='280'>
+	<a name='281'>
+	  call <A href='../../html_code/phys/module_sf_bem.F.html#INT_RSRAD'>int_rsrad</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INT_RSRAD_1">(albwin,albins,pwin,rswal1D,&amp;<a name='282'>
+                         surwal1D,bw,bl,dzlev,rsint)<a name='283'>
+<a name='284'>
+	  do ivw=1,6<a name='285'>
+	    rswalins(ivw,ilev)=rsint(ivw)<a name='286'>
+	  end do<a name='287'>
+          <a name='288'>
+	end do <font color=#447700>!ilev<a name='289'></font>
+	<a name='290'>
+	 <a name='291'>
+<a name='292'>
+<font color=#447700>! Calculation of the long wave radiation at the internal walls<a name='293'></font>
+<font color=#447700>!-------------------------------------------------------------<a name='294'></font>
+<a name='295'>
+<a name='296'>
+<font color=#447700>!Intermediate rooms<a name='297'></font>
+       <a name='298'>
+       if (nlev.gt.2) then<a name='299'>
+	do ilev=2,nlev-1<a name='300'>
+<a name='301'>
+	  do ivw=1,4<a name='302'>
+	    twin1D(ivw)=twin(ivw,ilev)<a name='303'>
+	    twal_int(ivw)=twal(ivw,1,ilev)<a name='304'>
+	  end do<a name='305'>
+	    <a name='306'>
+	   twal_int(5)=tflo(nflo,ilev-1)<a name='307'>
+	   twal_int(6)=tflo(1,ilev)		<a name='308'>
+		 <a name='309'>
+	   call <A href='../../html_code/phys/module_sf_bem.F.html#INT_RLRAD'>int_rlrad</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INT_RLRAD_1">(emins,emwin,sigma,twal_int,twin1D,&amp;<a name='310'>
+     			  pwin,bw,bl,dzlev,rlint)<a name='311'>
+	  <a name='312'>
+	  <a name='313'>
+	  do ivw=1,6<a name='314'>
+	    rlwalins(ivw,ilev)=rlint(ivw)<a name='315'>
+	  end do<a name='316'>
+	    <a name='317'>
+	end do	<font color=#447700>!ilev <a name='318'></font>
+      end if	 <a name='319'>
+	<a name='320'>
+<a name='321'>
+      if (nlev.ne.1) then  <a name='322'>
+<a name='323'>
+<font color=#447700>!bottom room<a name='324'></font>
+<a name='325'>
+	  do ivw=1,4<a name='326'>
+	    twin1D(ivw)=twin(ivw,1)<a name='327'>
+	    twal_int(ivw)=twal(ivw,1,1)<a name='328'>
+	  end do<a name='329'>
+	  <a name='330'>
+	  twal_int(5)=tgrd(ngrd)<a name='331'>
+	  twal_int(6)=tflo(1,1)		<a name='332'>
+	  <a name='333'>
+	  						  	   <a name='334'>
+	   call <A href='../../html_code/phys/module_sf_bem.F.html#INT_RLRAD'>int_rlrad</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INT_RLRAD_2">(emins,emwin,sigma,twal_int,twin1D,&amp;<a name='335'>
+     			  pwin,bw,bl,dzlev,rlint)<a name='336'>
+	  <a name='337'>
+	  do ivw=1,6<a name='338'>
+	    rlwalins(ivw,1)=rlint(ivw)<a name='339'>
+	  end do	  <a name='340'>
+            <a name='341'>
+<font color=#447700>!top room<a name='342'></font>
+	 <a name='343'>
+	  do ivw=1,4<a name='344'>
+	    twin1D(ivw)=twin(ivw,nlev)<a name='345'>
+	    twal_int(ivw)=twal(ivw,1,nlev)<a name='346'>
+	  end do<a name='347'>
+	  <a name='348'>
+	  twal_int(5)=tflo(nflo,nlev-1)<a name='349'>
+	  twal_int(6)=trof(1)		<a name='350'>
+	  <a name='351'>
+					<a name='352'>
+	   call <A href='../../html_code/phys/module_sf_bem.F.html#INT_RLRAD'>int_rlrad</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INT_RLRAD_3">(emins,emwin,sigma,twal_int,twin1D,&amp;<a name='353'>
+     			  pwin,bw,bl,dzlev,rlint)<a name='354'>
+	  <a name='355'>
+	  do ivw=1,6<a name='356'>
+	    rlwalins(ivw,nlev)=rlint(ivw)<a name='357'>
+	  end do<a name='358'>
+	  <a name='359'>
+      else   <font color=#447700>!Top &lt;---&gt; Bottom<a name='360'></font>
+	  <a name='361'>
+	  do ivw=1,4<a name='362'>
+	    twin1D(ivw)=twin(ivw,1)<a name='363'>
+	    twal_int(ivw)=twal(ivw,1,1)<a name='364'>
+	  end do<a name='365'>
+	  <a name='366'>
+	  twal_int(5)=tgrd(ngrd)      <a name='367'>
+      	  twal_int(6)=trof(1)<a name='368'>
+	  <a name='369'>
+	  call <A href='../../html_code/phys/module_sf_bem.F.html#INT_RLRAD'>int_rlrad</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INT_RLRAD_4">(emins,emwin,sigma,twal_int,twin1D, &amp;<a name='370'>
+     			 pwin,bw,bl,dzlev,rlint)<a name='371'>
+     	  <a name='372'>
+	  do ivw=1,6<a name='373'>
+	    rlwalins(ivw,1)=rlint(ivw)<a name='374'>
+	  end do<a name='375'>
+	<a name='376'>
+      end if  <a name='377'>
+	<a name='378'>
+<a name='379'>
+<font color=#447700>! Calculation of the radiative fluxes<a name='380'></font>
+<font color=#447700>! -----------------------------------<a name='381'></font>
+<a name='382'>
+<font color=#447700>!External vertical walls and windows<a name='383'></font>
+<a name='384'>
+        do ilev=1,nlev<a name='385'>
+	 do ivw=1,4	 <a name='386'>
+	 call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_1">(radflux,albwal,rswal(ivw,ilev),     &amp;<a name='387'>
+     	                    emwal,rlwal(ivw,ilev),sigma,   &amp;<a name='388'>
+                            twal(ivw,nwal,ilev))<a name='389'>
+	<a name='390'>
+         hrwalout(ivw,ilev)=radflux<a name='391'>
+      	 						<a name='392'>
+	 hrwinout(ivw,ilev)=emwin*rlwal(ivw,ilev)- &amp;<a name='393'>
+     	                    emwin*sigma*(twin(ivw,ilev)**4)<a name='394'>
+	 <a name='395'>
+	 <a name='396'>
+	 end do <font color=#447700>! ivw<a name='397'></font>
+	end do  <font color=#447700>! ilev<a name='398'></font>
+	<a name='399'>
+<font color=#447700>!Roof<a name='400'></font>
+<a name='401'>
+        call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_2">(radflux,albrof,rs,emrof,rl,sigma,trof(nrof))<a name='402'>
+<a name='403'>
+        hrrof=radflux<a name='404'>
+<a name='405'>
+<font color=#447700>!Internal walls for intermediate rooms<a name='406'></font>
+<a name='407'>
+      if(nlev.gt.2) then<a name='408'>
+       <a name='409'>
+	do ilev=2,nlev-1<a name='410'>
+	 do ivw=1,4<a name='411'>
+         <a name='412'>
+	 call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_3">(radflux,albins,rswalins(ivw,ilev),     &amp;<a name='413'>
+     	                    emins,rlwalins(ivw,ilev),sigma,   &amp;<a name='414'>
+                            twal(ivw,1,ilev))<a name='415'>
+	 <a name='416'>
+	 hrwalins(ivw,ilev)=radflux<a name='417'>
+<a name='418'>
+	 end do <font color=#447700>!ivw						<a name='419'></font>
+<a name='420'>
+	 call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_4">(radflux,albins,rswalins(5,ilev), &amp;<a name='421'>
+     	                      emins,rlwalins(5,ilev),sigma,&amp;<a name='422'>
+                              tflo(nflo,ilev-1))<a name='423'>
+<a name='424'>
+         hrwalins(5,ilev)=radflux<a name='425'>
+<a name='426'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_5">(radflux,albins,rswalins(6,ilev), &amp;<a name='427'>
+                              emins,rlwalins(6,ilev),sigma,&amp;<a name='428'>
+                              tflo(1,ilev))<a name='429'>
+         hrwalins(6,ilev)=radflux<a name='430'>
+<a name='431'>
+       end do <font color=#447700>!ilev<a name='432'></font>
+<a name='433'>
+      end if 	<a name='434'>
+<a name='435'>
+<a name='436'>
+<font color=#447700>!Internal walls for the bottom and the top room	 <a name='437'></font>
+<font color=#447700>!<a name='438'></font>
+      if (nlev.ne.1) then <a name='439'>
+<a name='440'>
+<font color=#447700>!bottom floor<a name='441'></font>
+<a name='442'>
+	 do ivw=1,4<a name='443'>
+<a name='444'>
+	    call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_6">(radflux,albins,rswalins(ivw,1),  &amp;<a name='445'>
+     	                    emins,rlwalins(ivw,1),sigma,   &amp;<a name='446'>
+                            twal(ivw,1,1))<a name='447'>
+	<a name='448'>
+            hrwalins(ivw,1)=radflux<a name='449'>
+<a name='450'>
+	 end do<a name='451'>
+	<a name='452'>
+	<a name='453'>
+	  call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_7">(radflux,albins,rswalins(5,1),&amp;<a name='454'>
+                           emins,rlwalins(5,1),sigma,&amp;    <font color=#447700>!bottom<a name='455'></font>
+                           tgrd(ngrd))<a name='456'>
+<a name='457'>
+          hrwalins(5,1)=radflux<a name='458'>
+<a name='459'>
+	   <a name='460'>
+          call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_8">(radflux,albins,rswalins(6,1),&amp;<a name='461'>
+     	                   emins,rlwalins(6,1),sigma,&amp;<a name='462'>
+                           tflo(1,1))  <a name='463'>
+	 <a name='464'>
+          hrwalins(6,1)=radflux<a name='465'>
+<a name='466'>
+<font color=#447700>!roof floor<a name='467'></font>
+<a name='468'>
+         do ivw=1,4<a name='469'>
+   <a name='470'>
+          call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_9">(radflux,albins,rswalins(ivw,nlev),     &amp;<a name='471'>
+     	                        emins,rlwalins(ivw,nlev),sigma,&amp;<a name='472'>
+                                twal(ivw,1,nlev))<a name='473'>
+<a name='474'>
+	  hrwalins(ivw,nlev)=radflux<a name='475'>
+<a name='476'>
+	 end do                                          <font color=#447700>!top<a name='477'></font>
+<a name='478'>
+	<a name='479'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_10">(radflux,albins,rswalins(5,nlev),    &amp;<a name='480'>
+     	                      emins,rlwalins(5,nlev),sigma,&amp;<a name='481'>
+                              tflo(nflo,nlev-1))<a name='482'>
+<a name='483'>
+         hrwalins(5,nlev)=radflux<a name='484'>
+<a name='485'>
+	 call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_11">(radflux,albins,rswalins(6,nlev), &amp;<a name='486'>
+                              emins,rlwalins(6,nlev),sigma,&amp;<a name='487'>
+                              trof(1))<a name='488'>
+<a name='489'>
+         hrwalins(6,nlev)=radflux<a name='490'>
+      <a name='491'>
+      else       <font color=#447700>! Top &lt;---&gt; Bottom room<a name='492'></font>
+      <a name='493'>
+	 do ivw=1,4<a name='494'>
+<a name='495'>
+	    call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_12">(radflux,albins,rswalins(ivw,1),&amp;<a name='496'>
+     	                    emins,rlwalins(ivw,1),sigma, &amp;<a name='497'>
+                            twal(ivw,1,1))<a name='498'>
+<a name='499'>
+            hrwalins(ivw,1)=radflux<a name='500'>
+<a name='501'>
+         end do<a name='502'>
+     <a name='503'>
+     	    call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_13">(radflux,albins,rswalins(5,1),&amp;<a name='504'>
+                           emins,rlwalins(5,1),sigma,  &amp;<a name='505'>
+                           tgrd(ngrd))<a name='506'>
+<a name='507'>
+            hrwalins(5,1)=radflux<a name='508'>
+     <a name='509'>
+     	    call <A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS'>radfluxs</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RADFLUXS_14">(radflux,albins,rswalins(6,nlev),     &amp;<a name='510'>
+                                  emins,rlwalins(6,nlev),sigma,&amp;<a name='511'>
+                                  trof(1))<a name='512'>
+            hrwalins(6,1)=radflux<a name='513'>
+<a name='514'>
+      end if<a name='515'>
+      <a name='516'>
+		<a name='517'>
+<font color=#447700>!Windows<a name='518'></font>
+<a name='519'>
+	 do ilev=1,nlev<a name='520'>
+	  do ivw=1,4<a name='521'>
+	     hrwinins(ivw,ilev)=emwin*rlwalins(ivw,ilev)-    &amp;<a name='522'>
+                                emwin*sigma*(twin(ivw,ilev)**4)<a name='523'>
+	  end do<a name='524'>
+	 end do<a name='525'>
+	<a name='526'>
+		<a name='527'>
+<font color=#447700>! Calculation of the sensible heat fluxes<a name='528'></font>
+<font color=#447700>! ---------------------------------------<a name='529'></font>
+<a name='530'>
+<font color=#447700>!Vertical fluxes for walls<a name='531'></font>
+	<a name='532'>
+	do ilev=1,nlev<a name='533'>
+         do ivw=1,4<a name='534'>
+		<a name='535'>
+               call <A href='../../html_code/phys/module_sf_bem.F.html#HSINSFLUX'>hsinsflux</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HSINSFLUX_1"> (2,2,tlev(ilev),twal(ivw,1,ilev),hs)		<a name='536'>
+	       <a name='537'>
+               hswalins(ivw,ilev)=hs <a name='538'>
+         <a name='539'>
+         end do <font color=#447700>! ivw     <a name='540'></font>
+        end do <font color=#447700>! ilev<a name='541'></font>
+       <a name='542'>
+      <a name='543'>
+<font color=#447700>!Vertical fluxes for windows<a name='544'></font>
+<a name='545'>
+	do ilev=1,nlev<a name='546'>
+<a name='547'>
+         do ivw=1,4<a name='548'>
+	 <a name='549'>
+	       call <A href='../../html_code/phys/module_sf_bem.F.html#HSINSFLUX'>hsinsflux</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HSINSFLUX_2"> (2,1,tlev(ilev),twin(ivw,ilev),hs)<a name='550'>
+	       <a name='551'>
+               hswinins(ivw,ilev)=hs <a name='552'>
+			<a name='553'>
+         end do <font color=#447700>! ivw	<a name='554'></font>
+	<a name='555'>
+	end do <font color=#447700>!ilev      <a name='556'></font>
+<a name='557'>
+<font color=#447700>!Horizontal fluxes<a name='558'></font>
+       <a name='559'>
+      if (nlev.gt.2) then<a name='560'>
+       <a name='561'>
+        do ilev=2,nlev-1<a name='562'>
+                <a name='563'>
+	       call <A href='../../html_code/phys/module_sf_bem.F.html#HSINSFLUX'>hsinsflux</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HSINSFLUX_3"> (1,2,tlev(ilev),tflo(nflo,ilev-1),hs)<a name='564'>
+<a name='565'>
+	       hswalins(5,ilev)=hs<a name='566'>
+            <a name='567'>
+	       call <A href='../../html_code/phys/module_sf_bem.F.html#HSINSFLUX'>hsinsflux</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HSINSFLUX_4"> (1,2,tlev(ilev),tflo(1,ilev),hs)<a name='568'>
+<a name='569'>
+	       hswalins(6,ilev)=hs<a name='570'>
+<a name='571'>
+        end do <font color=#447700>! ilev<a name='572'></font>
+       <a name='573'>
+      end if<a name='574'>
+       <a name='575'>
+      if (nlev.ne.1) then<a name='576'>
+       <a name='577'>
+       	        call <A href='../../html_code/phys/module_sf_bem.F.html#HSINSFLUX'>hsinsflux</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HSINSFLUX_5"> (1,2,tlev(1),tgrd(ngrd),hs)<a name='578'>
+<a name='579'>
+		hswalins(5,1)=hs				<font color=#447700>!Bottom room<a name='580'></font>
+		<a name='581'>
+		call <A href='../../html_code/phys/module_sf_bem.F.html#HSINSFLUX'>hsinsflux</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HSINSFLUX_6"> (1,2,tlev(1),tflo(1,1),hs)<a name='582'>
+<a name='583'>
+		hswalins(6,1)=hs				<a name='584'>
+	 <a name='585'>
+       	        call <A href='../../html_code/phys/module_sf_bem.F.html#HSINSFLUX'>hsinsflux</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HSINSFLUX_7"> (1,2,tlev(nlev),tflo(nflo,nlev-1),hs)<a name='586'>
+<a name='587'>
+		hswalins(5,nlev)=hs			        <font color=#447700>!Top room<a name='588'></font>
+<a name='589'>
+		call <A href='../../html_code/phys/module_sf_bem.F.html#HSINSFLUX'>hsinsflux</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HSINSFLUX_8"> (1,2,tlev(nlev),trof(1),hs)<a name='590'>
+<a name='591'>
+		hswalins(6,nlev)=hs	       <a name='592'>
+      <a name='593'>
+      else  <font color=#447700>! Bottom&lt;---&gt;Top <a name='594'></font>
+      <a name='595'>
+                call <A href='../../html_code/phys/module_sf_bem.F.html#HSINSFLUX'>hsinsflux</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HSINSFLUX_9"> (1,2,tlev(1),tgrd(ngrd),hs)<a name='596'>
+		<a name='597'>
+		hswalins(5,1)=hs<a name='598'>
+		<a name='599'>
+		call <A href='../../html_code/phys/module_sf_bem.F.html#HSINSFLUX'>hsinsflux</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HSINSFLUX_10"> (1,2,tlev(nlev),trof(1),hs)<a name='600'>
+		<a name='601'>
+		hswalins(6,nlev)=hs<a name='602'>
+      <a name='603'>
+      end if<a name='604'>
+<a name='605'>
+<a name='606'>
+<font color=#447700>!Calculation of the temperature for the different surfaces <a name='607'></font>
+<font color=#447700>! --------------------------------------------------------<a name='608'></font>
+<a name='609'>
+<font color=#447700>! Vertical walls	<a name='610'></font>
+        <a name='611'>
+       swwal=1<a name='612'>
+       do ilev=1,nlev<a name='613'>
+        do ivw=1,4  <a name='614'>
+<a name='615'>
+	   htot(1)=hswalins(ivw,ilev)+hrwalins(ivw,ilev)	<a name='616'>
+           htot(2)=hswalout(ivw,ilev)+hrwalout(ivw,ilev)<a name='617'>
+           gswal(ivw,ilev)=htot(2)<a name='618'>
+<a name='619'>
+	   do iwal=1,nwal<a name='620'>
+	      twal1D(iwal)=twal(ivw,iwal,ilev)<a name='621'>
+	   end do<a name='622'>
+	  <a name='623'>
+	   call <A href='../../html_code/phys/module_sf_bem.F.html#WALL'>wall</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WALL_1">(swwal,nwal,dt,dzwal,kwal,cswal,htot,twal1D)<a name='624'>
+	<a name='625'>
+	   do iwal=1,nwal<a name='626'>
+	      twal(ivw,iwal,ilev)=twal1D(iwal)<a name='627'>
+	   end do<a name='628'>
+           <a name='629'>
+	end do <font color=#447700>! ivw<a name='630'></font>
+       end do <font color=#447700>! ilev<a name='631'></font>
+       <a name='632'>
+<font color=#447700>! Windows<a name='633'></font>
+<a name='634'>
+       do ilev=1,nlev<a name='635'>
+        do ivw=1,4<a name='636'>
+       <a name='637'>
+         htot(1)=hswinins(ivw,ilev)+hrwinins(ivw,ilev)	<a name='638'>
+         htot(2)=hswinout(ivw,ilev)+hrwinout(ivw,ilev)	<a name='639'>
+<a name='640'>
+         twin(ivw,ilev)=twin(ivw,ilev)+(dt/(cswin*thickwin))* &amp;<a name='641'>
+                        (htot(1)+htot(2))<a name='642'>
+	<a name='643'>
+	end do <font color=#447700>! ivw<a name='644'></font>
+       end do <font color=#447700>! ilev   <a name='645'></font>
+<a name='646'>
+<font color=#447700>! Horizontal floors<a name='647'></font>
+<a name='648'>
+<a name='649'>
+      if (nlev.gt.1) then<a name='650'>
+       swwal=1<a name='651'>
+       do ilev=1,nlev-1<a name='652'>
+ <a name='653'>
+          htot(1)=hrwalins(6,ilev)+hswalins(6,ilev)<a name='654'>
+          htot(2)=hrwalins(5,ilev+1)+hswalins(5,ilev+1)	<a name='655'>
+<a name='656'>
+	  do iflo=1,nflo<a name='657'>
+	     tflo1D(iflo)=tflo(iflo,ilev)<a name='658'>
+	  end do<a name='659'>
+        <a name='660'>
+	  call <A href='../../html_code/phys/module_sf_bem.F.html#WALL'>wall</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WALL_2">(swwal,nflo,dt,dzflo,kflo,csflo,htot,tflo1D)<a name='661'>
+	<a name='662'>
+	 do iflo=1,nflo<a name='663'>
+	    tflo(iflo,ilev)=tflo1D(iflo)<a name='664'>
+	 end do<a name='665'>
+<a name='666'>
+       end do <font color=#447700>! ilev<a name='667'></font>
+      end if <a name='668'>
+        <a name='669'>
+<a name='670'>
+<font color=#447700>! Ground 	<a name='671'></font>
+        <a name='672'>
+	swwal=1<a name='673'>
+<a name='674'>
+	htot(1)=0.	<font color=#447700>!Diriclet b.c. at the internal boundary    <a name='675'></font>
+	htot(2)=hswalins(5,1)+hrwalins(5,1)   <a name='676'>
+   <a name='677'>
+        do igrd=1,ngrd<a name='678'>
+           tgrd1D(igrd)=tgrd(igrd)<a name='679'>
+        end do<a name='680'>
+<a name='681'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#WALL'>wall</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WALL_3">(swwal,ngrd,dt,dzgrd,kgrd,csgrd,htot,tgrd1D)<a name='682'>
+<a name='683'>
+        do igrd=1,ngrd<a name='684'>
+           tgrd(igrd)=tgrd1D(igrd)<a name='685'>
+        end do<a name='686'>
+<a name='687'>
+        <a name='688'>
+<font color=#447700>! Roof<a name='689'></font>
+        <a name='690'>
+      swwal=1    <a name='691'>
+<a name='692'>
+      htot(1)=hswalins(6,nlev)+hrwalins(6,nlev)     	<a name='693'>
+      htot(2)=hsrof+hrrof     <a name='694'>
+      gsrof=htot(2)<a name='695'>
+<a name='696'>
+      do irof=1,nrof<a name='697'>
+         trof1D(irof)=trof(irof)<a name='698'>
+      end do     <a name='699'>
+      <a name='700'>
+      call <A href='../../html_code/phys/module_sf_bem.F.html#WALL'>wall</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WALL_4">(swwal,nrof,dt,dzrof,krof,csrof,htot,trof1D)<a name='701'>
+ <a name='702'>
+      do irof=1,nrof<a name='703'>
+         trof(irof)=trof1D(irof)<a name='704'>
+      end do<a name='705'>
+      <a name='706'>
+<font color=#447700>! Calculation of the heat fluxes and of the temperature of the rooms<a name='707'></font>
+<font color=#447700>! ------------------------------------------------------------------<a name='708'></font>
+<a name='709'>
+ 	do ilev=1,nlev<a name='710'>
+	  	  <a name='711'>
+	 <font color=#447700>!Calculation of the heat generated by equipments and occupants<a name='712'></font>
+	 <a name='713'>
+	 call <A href='../../html_code/phys/module_sf_bem.F.html#FLUXEQOCC'>fluxeqocc</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FLUXEQOCC_1">(nhourday,bw,bl,perflo,hsesf,hsequip,hseqocc(ilev),hleqocc(ilev))<a name='714'>
+<a name='715'>
+     	 <font color=#447700>!Calculation of the heat generated by natural ventilation<a name='716'></font>
+	<a name='717'>
+	  vollev=bw*bl*dzlev<a name='718'>
+          humdry=shumlev(ilev)/(1.-shumlev(ilev))<a name='719'>
+	  rhoint=(press(ilev))/(rair*(1.+0.61*humdry)*tlev(ilev))<a name='720'>
+	  cpint=cp*(1.+0.84*humdry)<a name='721'>
+          <a name='722'>
+ 	  <a name='723'>
+	  call <A href='../../html_code/phys/module_sf_bem.F.html#FLUXVENT'>fluxvent</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FLUXVENT_1">(cpint,rhoint,vollev,tlev(ilev),tout(ilev),     &amp;<a name='724'>
+                        latent,humout(ilev),rhoout(ilev),shumlev(ilev),&amp;<a name='725'>
+                        beta,hsvent(ilev),hlvent(ilev))<a name='726'>
+	      <a name='727'>
+         <font color=#447700>!Calculation of the heat generated by conduction<a name='728'></font>
+	  <a name='729'>
+	   do iwal=1,6<a name='730'>
+	     hswalins1D(iwal)=hswalins(iwal,ilev)<a name='731'>
+	     surwal1D(iwal)=surwal(iwal,ilev)<a name='732'>
+	  end do<a name='733'>
+	  <a name='734'>
+	   do iwal=1,4<a name='735'>
+	     hswinins1D(iwal)=hswinins(iwal,ilev)<a name='736'>
+	   end do<a name='737'>
+	<a name='738'>
+	  call <A href='../../html_code/phys/module_sf_bem.F.html#FLUXCOND'>fluxcond</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FLUXCOND_1">(hswalins1D,hswinins1D,surwal1D,pwin,&amp;<a name='739'>
+                        hscond(ilev))<a name='740'>
+<a name='741'>
+	<font color=#447700>!Calculation of the heat generated inside the room<a name='742'></font>
+ 	<a name='743'>
+	  call <A href='../../html_code/phys/module_sf_bem.F.html#FLUXROO'>fluxroo</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FLUXROO_1">(hseqocc(ilev),hleqocc(ilev),hsvent(ilev), &amp;<a name='744'>
+               hlvent(ilev),hscond(ilev),hslev(ilev),hllev(ilev))<a name='745'>
+<a name='746'>
+	  <a name='747'>
+	<font color=#447700>!Evolution of the temperature and of the specific humidity <a name='748'></font>
+<a name='749'>
+	  Qb=rhoint*cpint*vollev<a name='750'>
+<a name='751'>
+        <font color=#447700>! temperature regulation<a name='752'></font>
+<a name='753'>
+          call <A href='../../html_code/phys/module_sf_bem.F.html#REGTEMP'>regtemp</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="REGTEMP_1">(sw_cond,nhourday,dt,Qb,hslev(ilev),       &amp;<a name='754'>
+                       tlev(ilev),timeon,timeoff,targtemp,gaptemp,hsneed(ilev))<a name='755'>
+<a name='756'>
+        <font color=#447700>! humidity regulation <a name='757'></font>
+<a name='758'>
+	  call <A href='../../html_code/phys/module_sf_bem.F.html#REGHUM'>reghum</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="REGHUM_1">(sw_cond,nhourday,dt,vollev,rhoint,latent, &amp;<a name='759'>
+                      hllev(ilev),shumlev(ilev),timeon,timeoff,&amp;<a name='760'>
+                      targhum,gaphum,hlneed(ilev))<a name='761'>
+<font color=#447700>!<a name='762'></font>
+<font color=#447700>!performance of the air conditioning system for the test<a name='763'></font>
+<font color=#447700>!	<a name='764'></font>
+	        <a name='765'>
+          call <A href='../../html_code/phys/module_sf_bem.F.html#AIR_COND'>air_cond</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="AIR_COND_1">(hsneed(ilev),hlneed(ilev),dt, &amp;<a name='766'>
+                        hsout(ilev),hlout(ilev),consump(ilev), cop)<a name='767'>
+    	         	<a name='768'>
+ 	  tlev(ilev)=tlev(ilev)+(dt/Qb)*(hslev(ilev)-hsneed(ilev))<a name='769'>
+          	  	  <a name='770'>
+	  shumlev(ilev)=shumlev(ilev)+(dt/(vollev*rhoint*latent))* &amp;<a name='771'>
+                        (hllev(ilev)-hlneed(ilev))<a name='772'>
+           <a name='773'>
+	end do <font color=#447700>!ilev<a name='774'></font>
+        <a name='775'>
+        call <A href='../../html_code/phys/module_sf_bem.F.html#CONSUMP_TOTAL'>consump_total</A><A href='../../html_code/phys/module_sf_bem.F.html#BEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSUMP_TOTAL_1">(nzcanm,nlev,consumpbuild,hsoutbuild, &amp;<a name='776'>
+                           hsout,consump)<a name='777'>
+                <a name='778'>
+      return<a name='779'>
+      end subroutine BEM<a name='780'>
+<a name='781'>
+<font color=#447700>!====6=8===============================================================72<a name='782'></font>
+<font color=#447700>!====6=8===============================================================72<a name='783'></font>
+<a name='784'>
+<A NAME='WALL'><A href='../../html_code/phys/module_sf_bem.F.html#WALL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='785'>
+	<font color=#993300>subroutine </font><font color=#cc0000>wall</font>(swwall,nz,dt,dz,k,cs,flux,temp) <A href='../../call_to/WALL.html' TARGET='index'>4</A>,<A href='../../call_from/WALL.html' TARGET='index'>2</A><a name='786'>
+	<a name='787'>
+<font color=#447700>!______________________________________________________________________<a name='788'></font>
+<a name='789'>
+<font color=#447700>!The aim of this subroutine is to solve the 1D heat fiffusion equation<a name='790'></font>
+<font color=#447700>!for roof, walls and streets:<a name='791'></font>
+<font color=#447700>!<a name='792'></font>
+<font color=#447700>!	dT/dt=d/dz[K*dT/dz] where:<a name='793'></font>
+<font color=#447700>!<a name='794'></font>
+<font color=#447700>!	-T is the surface temperature(wall, street, roof)<a name='795'></font>
+<font color=#447700>!      	-Kz is the heat diffusivity inside the material.<a name='796'></font>
+<font color=#447700>!<a name='797'></font>
+<font color=#447700>!The resolution is done implicitly with a FV discretisation along the<a name='798'></font>
+<font color=#447700>!different layers of the material:<a name='799'></font>
+<a name='800'>
+<font color=#447700>!	____________________________<a name='801'></font>
+<font color=#447700>!     n             *<a name='802'></font>
+<font color=#447700>!                   *<a name='803'></font>
+<font color=#447700>!                   *<a name='804'></font>
+<font color=#447700>!     	____________________________<a name='805'></font>
+<font color=#447700>!    i+2<a name='806'></font>
+<font color=#447700>!              	    I+1                 <a name='807'></font>
+<font color=#447700>!	____________________________        <a name='808'></font>
+<font color=#447700>!    i+1        <a name='809'></font>
+<font color=#447700>!                    I                ==&gt;   [T(I,n+1)-T(I,n)]/DT= <a name='810'></font>
+<font color=#447700>!	____________________________        [F(i+1)-F(i)]/DZI<a name='811'></font>
+<font color=#447700>!    i<a name='812'></font>
+<font color=#447700>!                   I-1               ==&gt; A*T(n+1)=B where:<a name='813'></font>
+<font color=#447700>!	____________________________         <a name='814'></font>
+<font color=#447700>!   i-1              *                   * A is a TRIDIAGONAL matrix.<a name='815'></font>
+<font color=#447700>!                    *                   * B=T(n)+S takes into account the sources.<a name='816'></font>
+<font color=#447700>!                    *<a name='817'></font>
+<font color=#447700>!     1	____________________________<a name='818'></font>
+<a name='819'>
+<font color=#447700>!________________________________________________________________<a name='820'></font>
+<a name='821'>
+	implicit none<a name='822'>
+		<a name='823'>
+<font color=#447700>!Input:<a name='824'></font>
+<font color=#447700>!-----<a name='825'></font>
+	integer nz		<font color=#447700>!Number of layers inside the material<a name='826'></font>
+	real dt			<font color=#447700>!Time step<a name='827'></font>
+	real dz(nz)		<font color=#447700>!Layer sizes [m]<a name='828'></font>
+	real cs(nz)		<font color=#447700>!Specific heat of the material [J/(m3.K)] <a name='829'></font>
+	real k(nz+1)		<font color=#447700>!Thermal conductivity in each layers (face) [W/(m.K)]<a name='830'></font>
+	real flux(2)		<font color=#447700>!Internal and external flux terms.<a name='831'></font>
+<a name='832'>
+<font color=#447700>!Input-Output:<a name='833'></font>
+<font color=#447700>!-------------<a name='834'></font>
+<a name='835'>
+	integer swwall          <font color=#447700>!swich for the physical coefficients calculation<a name='836'></font>
+	real temp(nz)		<font color=#447700>!Temperature at each layer<a name='837'></font>
+<a name='838'>
+<font color=#447700>!Local:<a name='839'></font>
+<font color=#447700>!-----	<a name='840'></font>
+<a name='841'>
+      real a(-1:1,nz)          <font color=#447700>!  a(-1,*) lower diagonal      A(i,i-1)<a name='842'></font>
+                               <font color=#447700>!  a(0,*)  principal diagonal  A(i,i)<a name='843'></font>
+                               <font color=#447700>!  a(1,*)  upper diagonal      A(i,i+1).<a name='844'></font>
+      <a name='845'>
+      real b(nz)	       <font color=#447700>!Coefficients of the second term.	<a name='846'></font>
+      real k1(20)<a name='847'>
+      real k2(20)<a name='848'>
+      real kc(20)<a name='849'>
+      save k1,k2,kc<a name='850'>
+      integer iz<a name='851'>
+        	<a name='852'>
+<font color=#447700>!________________________________________________________________<a name='853'></font>
+<font color=#447700>!<a name='854'></font>
+<font color=#447700>!Calculation of the coefficients<a name='855'></font>
+	<a name='856'>
+	if (swwall.eq.1) then<a name='857'>
+	<a name='858'>
+           if (nz.gt.20) then<a name='859'>
+              write(*,*) 'number of layers in the walls/roofs too big ',nz<a name='860'>
+              write(*,*) 'please decrease under of',20<a name='861'>
+              stop<a name='862'>
+           endif<a name='863'>
+<a name='864'>
+	   call <A href='../../html_code/phys/module_sf_bem.F.html#WALL_COEFF'>wall_coeff</A><A href='../../html_code/phys/module_sf_bem.F.html#WALL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WALL_COEFF_1">(nz,dt,dz,cs,k,k1,k2,kc)<a name='865'>
+	   swwall=0<a name='866'>
+<a name='867'>
+	end if<a name='868'>
+ 	<a name='869'>
+<font color=#447700>!Computation of the first value (iz=1) of A and B:<a name='870'></font>
+	<a name='871'>
+		 a(-1,1)=0.<a name='872'>
+		 a(0,1)=1+k2(1)<a name='873'>
+		 a(1,1)=-k2(1)<a name='874'>
+<a name='875'>
+                 b(1)=temp(1)+flux(1)*kc(1)<a name='876'>
+<a name='877'>
+<font color=#447700>!!<a name='878'></font>
+<font color=#447700>!!We can fixed the internal temperature	<a name='879'></font>
+<font color=#447700>!!<a name='880'></font>
+<font color=#447700>!!		 a(-1,1)=0.<a name='881'></font>
+<font color=#447700>!!		 a(0,1)=1<a name='882'></font>
+<font color=#447700>!!		 a(1,1)=0.		 	 <a name='883'></font>
+<font color=#447700>!!		 <a name='884'></font>
+<font color=#447700>!!		 b(1)=temp(1)<a name='885'></font>
+<font color=#447700>!!<a name='886'></font>
+<font color=#447700>!Computation of the internal values (iz=2,...,n-1) of A and B:<a name='887'></font>
+<a name='888'>
+	do iz=2,nz-1<a name='889'>
+		a(-1,iz)=-k1(iz)<a name='890'>
+		a(0,iz)=1+k1(iz)+k2(iz)<a name='891'>
+     		a(1,iz)=-k2(iz)<a name='892'>
+		b(iz)=temp(iz)<a name='893'>
+	end do		<a name='894'>
+<a name='895'>
+<font color=#447700>!Computation of the external value (iz=n) of A and B:<a name='896'></font>
+	<a name='897'>
+		a(-1,nz)=-k1(nz)<a name='898'>
+		a(0,nz)=1+k1(nz)<a name='899'>
+		a(1,nz)=0.<a name='900'>
+	<a name='901'>
+		b(nz)=temp(nz)+flux(2)*kc(nz)<a name='902'>
+<a name='903'>
+<font color=#447700>!Resolution of the system A*T(n+1)=B<a name='904'></font>
+<a name='905'>
+	call <A href='../../html_code/phys/module_sf_bem.F.html#TRIDIA'>tridia</A><A href='../../html_code/phys/module_sf_bem.F.html#WALL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRIDIA_1">(nz,a,b,temp)<a name='906'>
+<a name='907'>
+        return<a name='908'>
+	end  subroutine wall	<a name='909'>
+<a name='910'>
+<font color=#447700>!====6=8===============================================================72<a name='911'></font>
+<font color=#447700>!====6=8===============================================================72<a name='912'></font>
+<a name='913'>
+<A NAME='WALL_COEFF'><A href='../../html_code/phys/module_sf_bem.F.html#WALL_COEFF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='914'>
+	<font color=#993300>subroutine </font><font color=#cc0000>wall_coeff</font>(nz,dt,dz,cs,k,k1,k2,kc) <A href='../../call_to/WALL_COEFF.html' TARGET='index'>1</A><a name='915'>
+<a name='916'>
+	implicit none<a name='917'>
+	<a name='918'>
+<font color=#447700>!---------------------------------------------------------------------<a name='919'></font>
+<font color=#447700>!Input<a name='920'></font>
+<font color=#447700>!-----<a name='921'></font>
+	integer nz		<font color=#447700>!Number of layers inside the material<a name='922'></font>
+	real dt			<font color=#447700>!Time step<a name='923'></font>
+	real dz(nz)		<font color=#447700>!Layer sizes [m]<a name='924'></font>
+	real cs(nz)		<font color=#447700>!Specific heat of the material [J/(m3.K)] <a name='925'></font>
+	real k(nz+1)		<font color=#447700>!Thermal diffusivity in each layers (face) [W/(m.K)]<a name='926'></font>
+<a name='927'>
+<a name='928'>
+<font color=#447700>!Input-Output<a name='929'></font>
+<font color=#447700>!------------<a name='930'></font>
+<a name='931'>
+	real flux(2)		<font color=#447700>!Internal and external flux terms.<a name='932'></font>
+<a name='933'>
+<a name='934'>
+<font color=#447700>!Output<a name='935'></font>
+<font color=#447700>!------<a name='936'></font>
+        real k1(20)<a name='937'>
+        real k2(20)<a name='938'>
+        real kc(20)<a name='939'>
+<a name='940'>
+<font color=#447700>!Local<a name='941'></font>
+<font color=#447700>!-----	<a name='942'></font>
+	integer iz<a name='943'>
+	real kf(nz)<a name='944'>
+<a name='945'>
+<font color=#447700>!------------------------------------------------------------------<a name='946'></font>
+<a name='947'>
+	do iz=2,nz<a name='948'>
+	 kc(iz)=dt/(dz(iz)*cs(iz))<a name='949'>
+	 kf(iz)=2*k(iz)/(dz(iz)+dz(iz-1))<a name='950'>
+	end do <a name='951'>
+	<a name='952'>
+	kc(1)=dt/(dz(1)*cs(1))<a name='953'>
+        kf(1)=2*k(1)/(dz(1))<a name='954'>
+<a name='955'>
+	do iz=1,nz<a name='956'>
+	 k1(iz)=kc(iz)*kf(iz)<a name='957'>
+	end do<a name='958'>
+	<a name='959'>
+	do iz=1,nz-1<a name='960'>
+	 k2(iz)=kc(iz)*kf(iz+1)*cs(iz)/cs(iz+1)<a name='961'>
+	end do<a name='962'>
+<a name='963'>
+	return<a name='964'>
+	end subroutine wall_coeff<a name='965'>
+<a name='966'>
+<font color=#447700>!====6=8===============================================================72  <a name='967'></font>
+<font color=#447700>!====6=8===============================================================72<a name='968'></font>
+<A NAME='HSINSFLUX'><A href='../../html_code/phys/module_sf_bem.F.html#HSINSFLUX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='969'>
+	<font color=#993300>subroutine </font><font color=#cc0000>hsinsflux</font>(swsurf,swwin,tin,tw,hsins)	 <A href='../../call_to/HSINSFLUX.html' TARGET='index'>10</A><a name='970'>
+	<a name='971'>
+	implicit none<a name='972'>
+	<a name='973'>
+<font color=#447700>! --------------------------------------------------------------------<a name='974'></font>
+<font color=#447700>! This routine computes the internal sensible heat flux.<a name='975'></font>
+<font color=#447700>! The swsurf, makes rhe difference between a vertical and a <a name='976'></font>
+<font color=#447700>! horizontal surface. <a name='977'></font>
+<font color=#447700>! The values of the heat conduction coefficients hc are obtained from the book<a name='978'></font>
+<font color=#447700>! "Energy Simulation in Building Design". J.A. Clarke. <a name='979'></font>
+<font color=#447700>! Adam Hilger, Bristol, 362 pp.<a name='980'></font>
+<font color=#447700>! --------------------------------------------------------------------<a name='981'></font>
+<font color=#447700>!Input<a name='982'></font>
+<font color=#447700>!----<a name='983'></font>
+	integer swsurf  <font color=#447700>!swich for the type of surface (horizontal/vertical) <a name='984'></font>
+        integer swwin   <font color=#447700>!swich for the type of surface (window/wall)<a name='985'></font>
+	real tin	<font color=#447700>!Inside temperature [K]<a name='986'></font>
+	real tw		<font color=#447700>!Internal wall temperature [K]  	<a name='987'></font>
+<a name='988'>
+<a name='989'>
+<font color=#447700>!Output<a name='990'></font>
+<font color=#447700>!------<a name='991'></font>
+	real hsins	<font color=#447700>!internal sensible heat flux [W/m2]<a name='992'></font>
+<font color=#447700>!Local<a name='993'></font>
+<font color=#447700>!-----<a name='994'></font>
+	real hc		<font color=#447700>!heat conduction coefficient [W/C.m2]<a name='995'></font>
+<font color=#447700>!--------------------------------------------------------------------<a name='996'></font>
+<a name='997'>
+	if (swsurf.eq.2) then	<font color=#447700>!vertical surface<a name='998'></font>
+         if (swwin.eq.1) then<a name='999'>
+            hc=5.678*0.99        <font color=#447700>!window surface (smooth surface)<a name='1000'></font>
+         else<a name='1001'>
+            hc=5.678*1.09        <font color=#447700>!wall surface (rough surface)<a name='1002'></font>
+         endif<a name='1003'>
+	 hsins=hc*(tin-tw)	<a name='1004'>
+	endif<a name='1005'>
+	<a name='1006'>
+	if (swsurf.eq.1)  then   <font color=#447700>!horizontal surface<a name='1007'></font>
+         if (swwin.eq.1) then<a name='1008'>
+           hc=5.678*0.99        <font color=#447700>!window surface (smooth surface)<a name='1009'></font>
+         else<a name='1010'>
+           hc=5.678*1.09        <font color=#447700>!wall surface (rough surface)<a name='1011'></font>
+         endif<a name='1012'>
+         hsins=hc*(tin-tw)<a name='1013'>
+        endif 		<a name='1014'>
+<a name='1015'>
+	return<a name='1016'>
+	end subroutine hsinsflux<a name='1017'>
+<font color=#447700>!====6=8===============================================================72  <a name='1018'></font>
+<font color=#447700>!====6=8===============================================================72<a name='1019'></font>
+<a name='1020'>
+<A NAME='INT_RSRAD'><A href='../../html_code/phys/module_sf_bem.F.html#INT_RSRAD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1021'>
+	<font color=#993300>subroutine </font><font color=#cc0000>int_rsrad</font>(albwin,albwal,pwin,rswal,&amp; <A href='../../call_to/INT_RSRAD.html' TARGET='index'>1</A>,<A href='../../call_from/INT_RSRAD.html' TARGET='index'>2</A><a name='1022'>
+                             surwal,bw,bl,zw,rsint)<a name='1023'>
+	<a name='1024'>
+<font color=#447700>! ------------------------------------------------------------------<a name='1025'></font>
+	implicit none<a name='1026'>
+<font color=#447700>! ------------------------------------------------------------------	<a name='1027'></font>
+<a name='1028'>
+<font color=#447700>!Input<a name='1029'></font>
+<font color=#447700>!-----<a name='1030'></font>
+	real albwin		<font color=#447700>!albedo of the windows<a name='1031'></font>
+	real albwal		<font color=#447700>!albedo of the internal wall					<a name='1032'></font>
+	real rswal(4)		<font color=#447700>!incoming short wave radiation [W/m2]<a name='1033'></font>
+        real surwal(6) 		<font color=#447700>!surface of the indoor walls [m2]<a name='1034'></font>
+	real bw,bl		<font color=#447700>!width of the walls [m]<a name='1035'></font>
+	real zw			<font color=#447700>!height of the wall [m]<a name='1036'></font>
+	real pwin               <font color=#447700>!window proportion<a name='1037'></font>
+	<a name='1038'>
+<font color=#447700>!Output<a name='1039'></font>
+<font color=#447700>!------<a name='1040'></font>
+	real rsint(6)		<font color=#447700>!internal walls short wave radiation [W/m2]<a name='1041'></font>
+<a name='1042'>
+<font color=#447700>!Local<a name='1043'></font>
+<font color=#447700>!-----<a name='1044'></font>
+	real transmit   <font color=#447700>!transmittance of the direct/diffused radiation<a name='1045'></font>
+        real rstr	<font color=#447700>!solar radiation transmitted through the windows	<a name='1046'></font>
+        real surtotwal  <font color=#447700>!total indoor surface of the walls in the room<a name='1047'></font>
+	integer iw<a name='1048'>
+	real b(6)	<font color=#447700>!second member for the system<a name='1049'></font>
+	real a(6,6)	<font color=#447700>!matrix for the system<a name='1050'></font>
+<a name='1051'>
+<font color=#447700>!-------------------------------------------------------------------<a name='1052'></font>
+<a name='1053'>
+<a name='1054'>
+<font color=#447700>! Calculation of the solar radiation transmitted through windows<a name='1055'></font>
+                    <a name='1056'>
+            rstr = 0.<a name='1057'>
+            do iw=1,4<a name='1058'>
+               transmit=1.-albwin<a name='1059'>
+               rstr = rstr+(surwal(iw)*pwin)*(transmit*rswal(iw))<a name='1060'>
+            enddo<a name='1061'>
+<a name='1062'>
+<font color=#447700>!We suppose that the radiation is spread isotropically within the<a name='1063'></font>
+<font color=#447700>!room when it passes through the windows, so the flux [W/m^2] in every <a name='1064'></font>
+<font color=#447700>!wall is:<a name='1065'></font>
+<a name='1066'>
+            surtotwal=0.<a name='1067'>
+            do iw=1,6<a name='1068'>
+               surtotwal=surtotwal+surwal(iw)<a name='1069'>
+            enddo<a name='1070'>
+            <a name='1071'>
+            rstr=rstr/surtotwal<a name='1072'>
+ 		<a name='1073'>
+<font color=#447700>!Computation of the short wave radiation reaching the internal walls<a name='1074'></font>
+	<a name='1075'>
+	    call <A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_SHORT'>algebra_short</A><A href='../../html_code/phys/module_sf_bem.F.html#INT_RSRAD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ALGEBRA_SHORT_1">(rstr,albwal,albwin,bw,bl,zw,pwin,a,b)<a name='1076'>
+		<a name='1077'>
+	    call <A href='../../html_code/phys/module_sf_bem.F.html#GAUSSJBEM'>gaussjbem</A><A href='../../html_code/phys/module_sf_bem.F.html#INT_RSRAD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GAUSSJBEM_1">(a,6,b,6)<a name='1078'>
+	<a name='1079'>
+            do iw=1,6<a name='1080'>
+               rsint(iw)=b(iw)<a name='1081'>
+            enddo<a name='1082'>
+<a name='1083'>
+	    return<a name='1084'>
+	    end subroutine int_rsrad<a name='1085'>
+<a name='1086'>
+<font color=#447700>!====6=8===============================================================72  <a name='1087'></font>
+<font color=#447700>!====6=8===============================================================72<a name='1088'></font>
+<a name='1089'>
+<A NAME='INT_RLRAD'><A href='../../html_code/phys/module_sf_bem.F.html#INT_RLRAD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1090'>
+	<font color=#993300>subroutine </font><font color=#cc0000>int_rlrad</font>(emwal,emwin,sigma,twal_int,twin,&amp; <A href='../../call_to/INT_RLRAD.html' TARGET='index'>4</A>,<A href='../../call_from/INT_RLRAD.html' TARGET='index'>2</A><a name='1091'>
+     			     pwin,bw,bl,zw,rlint)<a name='1092'>
+	<a name='1093'>
+<font color=#447700>! ------------------------------------------------------------------<a name='1094'></font>
+	implicit none<a name='1095'>
+<font color=#447700>! ------------------------------------------------------------------	<a name='1096'></font>
+<a name='1097'>
+<font color=#447700>!Input<a name='1098'></font>
+<font color=#447700>!-----<a name='1099'></font>
+<a name='1100'>
+	real emwal	<font color=#447700>!emissivity of the internal walls<a name='1101'></font>
+	real emwin	<font color=#447700>!emissivity of the window<a name='1102'></font>
+	real sigma	<font color=#447700>!Stefan-Boltzmann constant [W/m2.K4]<a name='1103'></font>
+	real twal_int(6)<font color=#447700>!temperature of the first internal layers of a room [K]<a name='1104'></font>
+	real twin(4)	<font color=#447700>!temperature of the windows [K]<a name='1105'></font>
+	real bw		<font color=#447700>!width of the wall<a name='1106'></font>
+	real bl		<font color=#447700>!length of the wall<a name='1107'></font>
+	real zw		<font color=#447700>!height of the wall<a name='1108'></font>
+	real pwin       <font color=#447700>!window proportion	<a name='1109'></font>
+<a name='1110'>
+<font color=#447700>!Output<a name='1111'></font>
+<font color=#447700>!------<a name='1112'></font>
+<a name='1113'>
+	real rlint(6)	<font color=#447700>!internal walls long wave radiation [W/m2]<a name='1114'></font>
+<a name='1115'>
+<font color=#447700>!Local<a name='1116'></font>
+<font color=#447700>!------<a name='1117'></font>
+	<a name='1118'>
+	real b(6)	<font color=#447700>!second member vector for the system<a name='1119'></font>
+	real a(6,6)	<font color=#447700>!matrix for the system<a name='1120'></font>
+        integer iw<a name='1121'>
+<font color=#447700>!----------------------------------------------------------------<a name='1122'></font>
+<a name='1123'>
+<font color=#447700>!Compute the long wave radiation reachs the internal walls<a name='1124'></font>
+<a name='1125'>
+	call <A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG'>algebra_long</A><A href='../../html_code/phys/module_sf_bem.F.html#INT_RLRAD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ALGEBRA_LONG_1">(emwal,emwin,sigma,twal_int,twin,pwin,&amp;<a name='1126'>
+                          bw,bl,zw,a,b)<a name='1127'>
+  			  <a name='1128'>
+	call <A href='../../html_code/phys/module_sf_bem.F.html#GAUSSJBEM'>gaussjbem</A><A href='../../html_code/phys/module_sf_bem.F.html#INT_RLRAD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GAUSSJBEM_2">(a,6,b,6)<a name='1129'>
+<a name='1130'>
+        do iw=1,6<a name='1131'>
+           rlint(iw)=b(iw)<a name='1132'>
+        enddo<a name='1133'>
+            <a name='1134'>
+	return<a name='1135'>
+	end subroutine int_rlrad	<a name='1136'>
+<a name='1137'>
+<font color=#447700>!====6=8===============================================================72  <a name='1138'></font>
+<font color=#447700>!====6=8===============================================================72<a name='1139'></font>
+<a name='1140'>
+<A NAME='ALGEBRA_SHORT'><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_SHORT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1141'>
+	<font color=#993300>subroutine </font><font color=#cc0000>algebra_short</font>(rstr,albwal,albwin,aw,bw,zw,pwin,a,b) <A href='../../call_to/ALGEBRA_SHORT.html' TARGET='index'>1</A>,<A href='../../call_from/ALGEBRA_SHORT.html' TARGET='index'>9</A><a name='1142'>
+    <a name='1143'>
+<font color=#447700>!--------------------------------------------------------------------<a name='1144'></font>
+<font color=#447700>!This routine calculates the algebraic system that will be solved for <a name='1145'></font>
+<font color=#447700>!the computation of the total shortwave radiation that reachs every <a name='1146'></font>
+<font color=#447700>!indoor wall in a floor.<a name='1147'></font>
+<font color=#447700>!Write the matrix system ax=b to solve<a name='1148'></font>
+<font color=#447700>!<a name='1149'></font>
+<font color=#447700>!     -Rs(1)+a(1,2)Rs(2)+.................+a(1,6)Rs(6)=-Rs=b(1)<a name='1150'></font>
+<font color=#447700>!a(2,1)Rs(1)-      Rs(2)+.................+a(2,6)Rs(6)=-Rs=b(2)<a name='1151'></font>
+<font color=#447700>!a(3,1)Rs(1)+a(3,2)Rs(3)-Rs(3)+...........+a(3,6)Rs(6)=-Rs=b(3)<a name='1152'></font>
+<font color=#447700>!a(4,1)Rs(1)+.................-Rs(4)+.....+a(4,6)Rs(6)=-Rs=b(4)<a name='1153'></font>
+<font color=#447700>!a(5,1)Rs(1)+.......................-Rs(5)+a(5,6)Rs(6)=-Rs=b(5)<a name='1154'></font>
+<font color=#447700>!a(6,1)Rs(1)+....................................-R(6)=-Rs=b(6)<a name='1155'></font>
+<font color=#447700>!<a name='1156'></font>
+<font color=#447700>!This version suppose the albedo of the indoor walls is the same.<a name='1157'></font>
+<font color=#447700>!--------------------------------------------------------------------<a name='1158'></font>
+	implicit none<a name='1159'>
+<font color=#447700>!--------------------------------------------------------------------<a name='1160'></font>
+<a name='1161'>
+<font color=#447700>!Input<a name='1162'></font>
+<font color=#447700>!-----<a name='1163'></font>
+	real rstr	<font color=#447700>!solar radiation transmitted through the windows		<a name='1164'></font>
+	real albwal	<font color=#447700>!albedo of the internal walls<a name='1165'></font>
+	real albwin	<font color=#447700>!albedo of the windows.<a name='1166'></font>
+	real bw		<font color=#447700>!length of the wall<a name='1167'></font>
+	real aw		<font color=#447700>!width of the wall<a name='1168'></font>
+	real zw		<font color=#447700>!height of the wall<a name='1169'></font>
+	real fprl_int	<font color=#447700>!view factor<a name='1170'></font>
+	real fnrm_int	<font color=#447700>!view factor<a name='1171'></font>
+	real pwin       <font color=#447700>!window proportion<a name='1172'></font>
+<font color=#447700>!Output<a name='1173'></font>
+<font color=#447700>!------<a name='1174'></font>
+	real a(6,6)		<font color=#447700>!Matrix for the system<a name='1175'></font>
+	real b(6)		<font color=#447700>!Second member for the system<a name='1176'></font>
+<font color=#447700>!Local<a name='1177'></font>
+<font color=#447700>!-----<a name='1178'></font>
+	integer iw,jw	<a name='1179'>
+	real albm               <font color=#447700>!averaged albedo<a name='1180'></font>
+<font color=#447700>!----------------------------------------------------------------<a name='1181'></font>
+<a name='1182'>
+<font color=#447700>!Initialise the variables<a name='1183'></font>
+<a name='1184'>
+	do iw=1,6<a name='1185'>
+           b(iw)= 0.<a name='1186'>
+	  do jw=1,6<a name='1187'>
+           a(iw,jw)= 0. <a name='1188'>
+          enddo<a name='1189'>
+        enddo <a name='1190'>
+<a name='1191'>
+<font color=#447700>!Calculation of the second member b<a name='1192'></font>
+<a name='1193'>
+	do iw=1,6<a name='1194'>
+	 b(iw)=-rstr<a name='1195'>
+	end do	<a name='1196'>
+<a name='1197'>
+<font color=#447700>!Calculation of the averaged albedo<a name='1198'></font>
+<a name='1199'>
+	albm=pwin*albwin+(1-pwin)*albwal<a name='1200'>
+	<a name='1201'>
+<font color=#447700>!Calculation of the matrix a<a name='1202'></font>
+<a name='1203'>
+            a(1,1)=-1.<a name='1204'>
+<a name='1205'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_SHORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_1">(fprl_int,aw/bw,zw/bw)<a name='1206'>
+<a name='1207'>
+            a(1,2)=albm*fprl_int<a name='1208'>
+<a name='1209'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_SHORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_1">(fnrm_int,aw/zw,bw/zw,(aw*aw+bw*bw)/(zw*zw))<a name='1210'>
+<a name='1211'>
+            a(1,3)=albm*(bw/aw)*fnrm_int<a name='1212'>
+<a name='1213'>
+            a(1,4)=a(1,3)<a name='1214'>
+<a name='1215'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_SHORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_2">(fnrm_int,zw/aw,bw/aw,(bw*bw+zw*zw)/(aw*aw))<a name='1216'>
+<a name='1217'>
+            a(1,5)=albwal*(bw/zw)*fnrm_int<a name='1218'>
+<a name='1219'>
+            a(1,6)=a(1,5)<a name='1220'>
+<a name='1221'>
+<a name='1222'>
+            a(2,1)=a(1,2)<a name='1223'>
+            a(2,2)=-1.<a name='1224'>
+            a(2,3)=a(1,3)<a name='1225'>
+            a(2,4)=a(1,4)<a name='1226'>
+            a(2,5)=a(1,5)<a name='1227'>
+            a(2,6)=a(1,6)<a name='1228'>
+ <a name='1229'>
+	<a name='1230'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_SHORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_3">(fnrm_int,bw/zw,aw/zw,(bw*bw+aw*aw)/(zw*zw))<a name='1231'>
+<a name='1232'>
+            a(3,1)=albm*(aw/bw)*fnrm_int<a name='1233'>
+	    a(3,2)=a(3,1)<a name='1234'>
+	    a(3,3)=-1.<a name='1235'>
+<a name='1236'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_SHORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_2">(fprl_int,zw/aw,bw/aw)<a name='1237'>
+<a name='1238'>
+	    a(3,4)=albm*fprl_int<a name='1239'>
+<a name='1240'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_SHORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_4">(fnrm_int,zw/bw,aw/bw,(aw*aw+zw*zw)/(bw*bw))<a name='1241'>
+<a name='1242'>
+	    a(3,5)=albwal*(aw/zw)*fnrm_int<a name='1243'>
+            a(3,6)=a(3,5)<a name='1244'>
+	<a name='1245'>
+<a name='1246'>
+            a(4,1)=a(3,1)<a name='1247'>
+            a(4,2)=a(3,2)<a name='1248'>
+            a(4,3)=a(3,4)<a name='1249'>
+            a(4,4)=-1.<a name='1250'>
+            a(4,5)=a(3,5)<a name='1251'>
+            a(4,6)=a(3,6)<a name='1252'>
+<a name='1253'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_SHORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_5">(fnrm_int,bw/aw,zw/aw,(bw*bw+zw*zw)/(aw*aw)) <a name='1254'>
+<a name='1255'>
+            a(5,1)=albm*(zw/bw)*fnrm_int<a name='1256'>
+                   <a name='1257'>
+            a(5,2)=a(5,1)<a name='1258'>
+<a name='1259'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_SHORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_6">(fnrm_int,aw/bw,zw/bw,(aw*aw+zw*zw)/(bw*bw))<a name='1260'>
+<a name='1261'>
+            a(5,3)=albm*(zw/aw)*fnrm_int<a name='1262'>
+           	   <a name='1263'>
+            a(5,4)=a(5,3)<a name='1264'>
+            a(5,5)=-1.<a name='1265'>
+<a name='1266'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_SHORT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_3">(fprl_int,aw/zw,bw/zw)<a name='1267'>
+<a name='1268'>
+            a(5,6)=albwal*fprl_int<a name='1269'>
+<a name='1270'>
+<a name='1271'>
+            a(6,1)=a(5,1)<a name='1272'>
+            a(6,2)=a(5,2)<a name='1273'>
+            a(6,3)=a(5,3)<a name='1274'>
+            a(6,4)=a(5,4)<a name='1275'>
+            a(6,5)=a(5,6)<a name='1276'>
+            a(6,6)=-1.<a name='1277'>
+	<a name='1278'>
+	return<a name='1279'>
+	end subroutine algebra_short<a name='1280'>
+<a name='1281'>
+<font color=#447700>!====6=8===============================================================72  <a name='1282'></font>
+<font color=#447700>!====6=8===============================================================72<a name='1283'></font>
+<a name='1284'>
+<A NAME='ALGEBRA_LONG'><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1285'>
+	<font color=#993300>subroutine </font><font color=#cc0000>algebra_long</font>(emwal,emwin,sigma,twalint,twinint,&amp; <A href='../../call_to/ALGEBRA_LONG.html' TARGET='index'>1</A>,<A href='../../call_from/ALGEBRA_LONG.html' TARGET='index'>39</A><a name='1286'>
+     				pwin,aw,bw,zw,a,b)<a name='1287'>
+<a name='1288'>
+<font color=#447700>!--------------------------------------------------------------------<a name='1289'></font>
+<font color=#447700>!This routine computes the algebraic system that will be solved to <a name='1290'></font>
+<font color=#447700>!compute the longwave radiation that reachs the indoor<a name='1291'></font>
+<font color=#447700>!walls in a floor. <a name='1292'></font>
+<font color=#447700>!Write the matrix system ax=b to solve<a name='1293'></font>
+<font color=#447700>!<a name='1294'></font>
+<font color=#447700>!a(1,1)Rl(1)+.............................+Rl(6)=b(1)<a name='1295'></font>
+<font color=#447700>!a(2,1)Rl(1)+.................+Rl(5)+a(2,6)Rl(6)=b(2)<a name='1296'></font>
+<font color=#447700>!a(3,1)Rl(1)+.....+Rl(3)+...........+a(3,6)Rl(6)=b(3)<a name='1297'></font>
+<font color=#447700>!a(4,1)Rl(1)+...........+Rl(4)+.....+a(4,6)Rl(6)=b(4)<a name='1298'></font>
+<font color=#447700>!      Rl(1)+.......................+a(5,6)Rl(6)=b(5)<a name='1299'></font>
+<font color=#447700>!a(6,1)Rl(1)+Rl(2)+.................+a(6,6)Rl(6)=b(6)<a name='1300'></font>
+<font color=#447700>!<a name='1301'></font>
+<font color=#447700>!--------------------------------------------------------------------<a name='1302'></font>
+        implicit none <a name='1303'>
+	<a name='1304'>
+<font color=#447700>!--------------------------------------------------------------------<a name='1305'></font>
+<a name='1306'>
+<font color=#447700>!Input<a name='1307'></font>
+<font color=#447700>!-----<a name='1308'></font>
+<a name='1309'>
+	real pwin       <font color=#447700>!window proportion <a name='1310'></font>
+	real emwal	<font color=#447700>!emissivity of the internal walls<a name='1311'></font>
+	real emwin	<font color=#447700>!emissivity of the window<a name='1312'></font>
+	real sigma	<font color=#447700>!Stefan-Boltzmann constant [W/m2.K4]<a name='1313'></font>
+	real twalint(6) <font color=#447700>!temperature of the first internal layers of a room [K]<a name='1314'></font>
+	real twinint(4)	<font color=#447700>!temperature of the windows [K]<a name='1315'></font>
+	real aw		<font color=#447700>!width of the wall<a name='1316'></font>
+	real bw		<font color=#447700>!length of the wall<a name='1317'></font>
+	real zw		<font color=#447700>!height of the wall<a name='1318'></font>
+	real fprl_int	<font color=#447700>!view factor<a name='1319'></font>
+	real fnrm_int	<font color=#447700>!view factor	<a name='1320'></font>
+        real fnrm_intx	<font color=#447700>!view factor<a name='1321'></font>
+        real fnrm_inty	<font color=#447700>!view factor<a name='1322'></font>
+<a name='1323'>
+<font color=#447700>!Output<a name='1324'></font>
+<font color=#447700>!------<a name='1325'></font>
+	real b(6)	<font color=#447700>!second member vector for the system<a name='1326'></font>
+	real a(6,6)	<font color=#447700>!matrix for the system<a name='1327'></font>
+<font color=#447700>!Local<a name='1328'></font>
+<font color=#447700>!-----<a name='1329'></font>
+	integer iw,jw<a name='1330'>
+	real b_wall(6)	<a name='1331'>
+	real b_wind(6)<a name='1332'>
+	real emwal_av		<font color=#447700>!averadge emissivity of the wall<a name='1333'></font>
+	real emwin_av		<font color=#447700>!averadge emissivity of the window<a name='1334'></font>
+	real em_av		<font color=#447700>!averadge emissivity<a name='1335'></font>
+        real twal_int(6)        <font color=#447700>!twalint <a name='1336'></font>
+	real twin(4)   		<font color=#447700>!twinint <a name='1337'></font>
+<font color=#447700>!------------------------------------------------------------------<a name='1338'></font>
+<a name='1339'>
+<font color=#447700>!Initialise the variables<a name='1340'></font>
+<font color=#447700>!-------------------------<a name='1341'></font>
+<a name='1342'>
+	 do iw=1,6<a name='1343'>
+            b(iw)= 0.<a name='1344'>
+            b_wall(iw)=0.<a name='1345'>
+            b_wind(iw)=0.<a name='1346'>
+          do jw=1,6<a name='1347'>
+            a(iw,jw)= 0. <a name='1348'>
+          enddo<a name='1349'>
+         enddo<a name='1350'>
+<a name='1351'>
+         do iw=1,6<a name='1352'>
+            twal_int(iw)=twalint(iw)<a name='1353'>
+         enddo<a name='1354'>
+<a name='1355'>
+         do iw=1,4<a name='1356'>
+            twin(iw)=twinint(iw)<a name='1357'>
+         enddo<a name='1358'>
+	 <a name='1359'>
+<font color=#447700>!Calculation of the averadge emissivities<a name='1360'></font>
+<font color=#447700>!-----------------------------------------<a name='1361'></font>
+<a name='1362'>
+	emwal_av=(1-pwin)*emwal<a name='1363'>
+	emwin_av=pwin*emwin<a name='1364'>
+	em_av=emwal_av+emwin_av<a name='1365'>
+	<a name='1366'>
+<font color=#447700>!Calculation of the second term for the walls<a name='1367'></font>
+<font color=#447700>!-------------------------------------------<a name='1368'></font>
+<a name='1369'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_4">(fprl_int,aw/zw,bw/zw)<a name='1370'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_7">(fnrm_intx,aw/bw,zw/bw,(aw*aw+zw*zw)/(bw*bw))<a name='1371'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_8">(fnrm_inty,bw/aw,zw/aw,(bw*bw+zw*zw)/(aw*aw))<a name='1372'>
+<a name='1373'>
+            b_wall(1)=(emwal*sigma*(twal_int(5)**4)*           &amp;<a name='1374'>
+     	         fprl_int)+                                    &amp;<a name='1375'>
+                 (sigma*(emwal_av*(twal_int(3)**4)+            &amp;<a name='1376'>
+                  emwal_av*(twal_int(4)**4))*                  &amp;<a name='1377'>
+                 (zw/aw)*fnrm_intx)+                           &amp;<a name='1378'>
+                 (sigma*(emwal_av*(twal_int(1)**4)+            &amp;<a name='1379'>
+                  emwal_av*(twal_int(2)**4))*                  &amp; <a name='1380'>
+                 (zw/bw)*fnrm_inty)<a name='1381'>
+<a name='1382'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_5">(fprl_int,aw/zw,bw/zw)<a name='1383'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_9">(fnrm_intx,aw/bw,zw/bw,(aw*aw+zw*zw)/(bw*bw))<a name='1384'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_10">(fnrm_inty,bw/aw,zw/aw,(bw*bw+zw*zw)/(aw*aw))<a name='1385'>
+	<a name='1386'>
+            b_wall(2)=(emwal*sigma*(twal_int(6)**4)*           &amp;<a name='1387'>
+              	   fprl_int)+                                  &amp;<a name='1388'>
+                  (sigma*(emwal_av*(twal_int(3)**4)+           &amp;<a name='1389'>
+                  emwal_av*(twal_int(4)**4))*                  &amp; <a name='1390'>
+                 (zw/aw)*fnrm_intx)+                           &amp;<a name='1391'>
+                 (sigma*(emwal_av*(twal_int(1)**4)+            &amp;<a name='1392'>
+                 emwal_av*(twal_int(2)**4))*                   &amp;<a name='1393'>
+                 (zw/bw)*fnrm_inty)<a name='1394'>
+<a name='1395'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_6">(fprl_int,zw/aw,bw/aw)<a name='1396'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_11">(fnrm_intx,bw/zw,aw/zw,(bw*bw+aw*aw)/(zw*zw))<a name='1397'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_12">(fnrm_inty,zw/bw,aw/bw,(aw*aw+zw*zw)/(bw*bw))<a name='1398'>
+<a name='1399'>
+            b_wall(3)=(emwal_av*sigma*(twal_int(4)**4)*        &amp;<a name='1400'>
+        	  fprl_int)+                                   &amp;<a name='1401'>
+                 (sigma*(emwal_av*(twal_int(2)**4)+            &amp;<a name='1402'>
+                  emwal_av*(twal_int(1)**4))*                  &amp;<a name='1403'>
+                 (aw/bw)*fnrm_intx)+                           &amp;<a name='1404'>
+                 (sigma*(emwal*(twal_int(5)**4)+               &amp;<a name='1405'>
+                  emwal*(twal_int(6)**4))*                     &amp;<a name='1406'>
+                 (aw/zw)*fnrm_inty)<a name='1407'>
+<a name='1408'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_7">(fprl_int,zw/aw,bw/aw)<a name='1409'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_13">(fnrm_intx,bw/zw,aw/zw,(bw*bw+aw*aw)/(zw*zw))<a name='1410'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_14">(fnrm_inty,zw/bw,aw/bw,(aw*aw+zw*zw)/(bw*bw))<a name='1411'>
+<a name='1412'>
+            b_wall(4)=(emwal_av*sigma*(twal_int(3)**4)*        &amp;<a name='1413'>
+     	          fprl_int)+                                   &amp;<a name='1414'>
+                 (sigma*(emwal_av*(twal_int(2)**4)+            &amp;<a name='1415'>
+                  emwal_av*(twal_int(1)**4))*                  &amp;<a name='1416'>
+                 (aw/bw)*fnrm_intx)+                           &amp;<a name='1417'>
+                 (sigma*(emwal*(twal_int(5)**4)+               &amp;<a name='1418'>
+                  emwal*(twal_int(6)**4))*                     &amp;<a name='1419'>
+                 (aw/zw)*fnrm_inty)<a name='1420'>
+<a name='1421'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_8">(fprl_int,aw/bw,zw/bw)<a name='1422'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_15">(fnrm_intx,aw/zw,bw/zw,(aw*aw+bw*bw)/(zw*zw))<a name='1423'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_16">(fnrm_inty,zw/aw,bw/aw,(bw*bw+zw*zw)/(aw*aw))<a name='1424'>
+          <a name='1425'>
+            b_wall(5)=(emwal_av*sigma*(twal_int(2)**4)*        &amp;<a name='1426'>
+     	          fprl_int)+                                   &amp;<a name='1427'>
+                 (sigma*(emwal_av*(twal_int(3)**4)+            &amp;<a name='1428'>
+                  emwal_av*(twal_int(4)**4))*                  &amp;<a name='1429'>
+                 (bw/aw)*fnrm_intx)+                           &amp;<a name='1430'>
+                 (sigma*(emwal*(twal_int(5)**4)+               &amp;<a name='1431'>
+                  emwal*(twal_int(6)**4))*                     &amp;<a name='1432'>
+                 (bw/zw)*fnrm_inty)<a name='1433'>
+<a name='1434'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_9">(fprl_int,aw/bw,zw/bw)<a name='1435'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_17">(fnrm_intx,aw/zw,bw/zw,(aw*aw+bw*bw)/(zw*zw))<a name='1436'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_18">(fnrm_inty,zw/aw,bw/aw,(bw*bw+zw*zw)/(aw*aw))<a name='1437'>
+<a name='1438'>
+            b_wall(6)=(emwal_av*sigma*(twal_int(1)**4)*        &amp;<a name='1439'>
+     	         fprl_int)+                                    &amp;<a name='1440'>
+                 (sigma*(emwal_av*(twal_int(3)**4)+            &amp;<a name='1441'>
+                  emwal_av*(twal_int(4)**4))*                  &amp;<a name='1442'>
+                 (bw/aw)*fnrm_intx)+                           &amp;<a name='1443'>
+                 (sigma*(emwal*(twal_int(5)**4)+               &amp;<a name='1444'>
+                 emwal*(twal_int(6)**4))*                      &amp;<a name='1445'>
+                 (bw/zw)*fnrm_inty)<a name='1446'>
+	<a name='1447'>
+<font color=#447700>!Calculation of the second term for the windows<a name='1448'></font>
+<font color=#447700>!---------------------------------------------<a name='1449'></font>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_19">(fnrm_intx,aw/bw,zw/bw,(aw*aw+zw*zw)/(bw*bw))<a name='1450'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_20">(fnrm_inty,bw/aw,zw/aw,(bw*bw+zw*zw)/(aw*aw))<a name='1451'>
+<a name='1452'>
+            b_wind(1)=(sigma*(emwin_av*(twin(3)**4)+          &amp;<a name='1453'>
+                  emwin_av*(twin(4)**4))*                     &amp;<a name='1454'>
+                 (zw/aw)*fnrm_intx)+                          &amp;<a name='1455'>
+                 (sigma*(emwin_av*(twin(1)**4)+               &amp;<a name='1456'>
+                  emwin_av*(twin(2)**4))*                     &amp;<a name='1457'>
+                 (zw/bw)*fnrm_inty)<a name='1458'>
+<a name='1459'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_21">(fnrm_intx,aw/bw,zw/bw,(aw*aw+zw*zw)/(bw*bw))<a name='1460'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_22">(fnrm_inty,bw/aw,zw/aw,(bw*bw+zw*zw)/(aw*aw))<a name='1461'>
+<a name='1462'>
+            b_wind(2)=(sigma*(emwin_av*(twin(3)**4)+          &amp;<a name='1463'>
+                  emwin_av*(twin(4)**4))*                     &amp;<a name='1464'>
+                 (zw/aw)*fnrm_intx)+                          &amp;<a name='1465'>
+                 (sigma*(emwin_av*(twin(1)**4)+               &amp;<a name='1466'>
+                  emwin_av*(twin(2)**4))*                     &amp;<a name='1467'>
+                 (zw/bw)*fnrm_inty)<a name='1468'>
+<a name='1469'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_10">(fprl_int,zw/aw,bw/aw)<a name='1470'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_23">(fnrm_int,bw/zw,aw/zw,(bw*bw+aw*aw)/(zw*zw))<a name='1471'>
+          <a name='1472'>
+            b_wind(3)=emwin_av*sigma*(twin(4)**4)*            &amp;<a name='1473'>
+                 fprl_int+(sigma*(emwin_av*                   &amp;<a name='1474'>
+                 (twin(2)**4)+emwin_av*(twin(1)**4))*         &amp;<a name='1475'>
+                 (aw/bw)*fnrm_int)<a name='1476'>
+<a name='1477'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_11">(fprl_int,zw/aw,bw/aw)<a name='1478'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_24">(fnrm_int,bw/zw,aw/zw,(bw*bw+aw*aw)/(zw*zw))<a name='1479'>
+<a name='1480'>
+            b_wind(4)=emwin_av*sigma*(twin(3)**4)*            &amp;<a name='1481'>
+                 fprl_int+(sigma*(emwin_av*                   &amp;<a name='1482'>
+                  (twin(2)**4)+emwin_av*(twin(1)**4))*        &amp;<a name='1483'>
+                 (aw/bw)*fnrm_int)<a name='1484'>
+<a name='1485'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_12">(fprl_int,aw/bw,zw/bw)<a name='1486'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_25">(fnrm_int,aw/zw,bw/zw,(aw*aw+bw*bw)/(zw*zw))<a name='1487'>
+          <a name='1488'>
+            b_wind(5)=emwin_av*sigma*(twin(2)**4)*            &amp;<a name='1489'>
+                 fprl_int+(sigma*(emwin_av*                   &amp;<a name='1490'>
+                 (twin(3)**4)+emwin_av*(twin(4)**4))*         &amp;<a name='1491'>
+                 (bw/aw)*fnrm_int)<a name='1492'>
+ <a name='1493'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_13">(fprl_int,aw/bw,zw/bw)<a name='1494'>
+            call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_26">(fnrm_int,aw/zw,bw/zw,(aw*aw+bw*bw)/(zw*zw))<a name='1495'>
+<a name='1496'>
+            b_wind(6)=emwin_av*sigma*(twin(1)**4)*            &amp;<a name='1497'>
+                 fprl_int+(sigma*(emwin_av*                   &amp;<a name='1498'>
+                 (twin(3)**4)+emwin_av*(twin(4)**4))*         &amp;<a name='1499'>
+                 (bw/aw)*fnrm_int)<a name='1500'>
+     <a name='1501'>
+<font color=#447700>!Calculation of the total b term<a name='1502'></font>
+<font color=#447700>!-------------------------------<a name='1503'></font>
+<a name='1504'>
+	do iw=1,6<a name='1505'>
+	 b(iw)=b_wall(iw)+b_wind(iw)<a name='1506'>
+	end do     <a name='1507'>
+<a name='1508'>
+<a name='1509'>
+<font color=#447700>!Calculation of the matrix of the system<a name='1510'></font>
+<font color=#447700>!----------------------------------------<a name='1511'></font>
+<a name='1512'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_27">(fnrm_int,bw/aw,zw/aw,(bw*bw+zw*zw)/(aw*aw))         <a name='1513'>
+<a name='1514'>
+         a(1,1)=(em_av-1.)*(zw/bw)*fnrm_int<a name='1515'>
+     	        <a name='1516'>
+         a(1,2)=a(1,1)<a name='1517'>
+<a name='1518'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_28">(fnrm_int,aw/bw,zw/bw,(aw*aw+zw*zw)/(bw*bw))<a name='1519'>
+<a name='1520'>
+         a(1,3)=(em_av-1.)*(zw/aw)*fnrm_int<a name='1521'>
+         	 <a name='1522'>
+         a(1,4)=a(1,3)<a name='1523'>
+<a name='1524'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_14">(fprl_int,aw/zw,bw/zw)<a name='1525'>
+<a name='1526'>
+         a(1,5)=(emwal-1.)*fprl_int<a name='1527'>
+         a(1,6)=1.<a name='1528'>
+<a name='1529'>
+         a(2,1)=a(1,1)<a name='1530'>
+         a(2,2)=a(1,2)<a name='1531'>
+         a(2,3)=a(1,3)<a name='1532'>
+         a(2,4)=a(1,4)<a name='1533'>
+         a(2,5)=1.<a name='1534'>
+         a(2,6)=a(1,5)<a name='1535'>
+<a name='1536'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_29">(fnrm_int,bw/zw,aw/zw,(bw*bw+aw*aw)/(zw*zw))<a name='1537'>
+<a name='1538'>
+         a(3,1)=(em_av-1.)*(aw/bw)*fnrm_int<a name='1539'>
+     	        <a name='1540'>
+         a(3,2)=a(3,1)<a name='1541'>
+         a(3,3)=1.<a name='1542'>
+<a name='1543'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_15">(fprl_int,zw/aw,bw/aw) <a name='1544'>
+<a name='1545'>
+         a(3,4)=(em_av-1.)*fprl_int<a name='1546'>
+<a name='1547'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_30">(fnrm_int,zw/bw,aw/bw,(aw*aw+zw*zw)/(bw*bw))<a name='1548'>
+<a name='1549'>
+         a(3,5)=(emwal-1.)*(aw/zw)*fnrm_int<a name='1550'>
+     	        <a name='1551'>
+         a(3,6)=a(3,5)<a name='1552'>
+<a name='1553'>
+         a(4,1)=a(3,1)<a name='1554'>
+         a(4,2)=a(3,2)<a name='1555'>
+         a(4,3)=a(3,4)<a name='1556'>
+         a(4,4)=1.<a name='1557'>
+         a(4,5)=a(3,5)<a name='1558'>
+         a(4,6)=a(3,6)<a name='1559'>
+<a name='1560'>
+         a(5,1)=1.<a name='1561'>
+<a name='1562'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS'>fprl_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPRL_INTS_16">(fprl_int,aw/bw,zw/bw)<a name='1563'>
+<a name='1564'>
+         a(5,2)=(em_av-1.)*fprl_int<a name='1565'>
+<a name='1566'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_31">(fnrm_int,aw/zw,bw/zw,(aw*aw+bw*bw)/(zw*zw))<a name='1567'>
+<a name='1568'>
+         a(5,3)=(em_av-1.)*(bw/aw)*fnrm_int<a name='1569'>
+     	        <a name='1570'>
+         a(5,4)=a(5,3)<a name='1571'>
+<a name='1572'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS'>fnrm_ints</A><A href='../../html_code/phys/module_sf_bem.F.html#ALGEBRA_LONG' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FNRM_INTS_32">(fnrm_int,zw/aw,bw/aw,(bw*bw+zw*zw)/(aw*aw))<a name='1573'>
+<a name='1574'>
+         a(5,5)=(emwal-1.)*(bw/zw)*fnrm_int<a name='1575'>
+     	        <a name='1576'>
+         a(5,6)=a(5,5)<a name='1577'>
+<a name='1578'>
+         a(6,1)=a(5,2)<a name='1579'>
+         a(6,2)=1.<a name='1580'>
+         a(6,3)=a(5,3)<a name='1581'>
+         a(6,4)=a(5,4)<a name='1582'>
+         a(6,5)=a(5,5)<a name='1583'>
+         a(6,6)=a(6,5)<a name='1584'>
+<a name='1585'>
+      return<a name='1586'>
+      end subroutine algebra_long<a name='1587'>
+<a name='1588'>
+<font color=#447700>!====6=8===============================================================72 <a name='1589'></font>
+<font color=#447700>!====6=8===============================================================72 <a name='1590'></font>
+<a name='1591'>
+<a name='1592'>
+<A NAME='FLUXROO'><A href='../../html_code/phys/module_sf_bem.F.html#FLUXROO' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1593'>
+	<font color=#993300>subroutine </font><font color=#cc0000>fluxroo</font>(hseqocc,hleqocc,hsvent,hlvent, &amp; <A href='../../call_to/FLUXROO.html' TARGET='index'>1</A><a name='1594'>
+                           hscond,hslev,hllev) <a name='1595'>
+	<a name='1596'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1597'></font>
+<font color=#447700>!This routine calculates the heat flux generated inside the room<a name='1598'></font>
+<font color=#447700>!and the heat ejected to the atmosphere.<a name='1599'></font>
+<font color=#447700>!----------------------------------------------------------------------	<a name='1600'></font>
+<a name='1601'>
+	implicit none<a name='1602'>
+<a name='1603'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1604'></font>
+<a name='1605'>
+<font color=#447700>!Input<a name='1606'></font>
+<font color=#447700>!-----<a name='1607'></font>
+	real hseqocc		<font color=#447700>!sensible heat generated by equipments and occupants [W]<a name='1608'></font>
+	real hleqocc		<font color=#447700>!latent heat generated by occupants [W]<a name='1609'></font>
+	real hsvent		<font color=#447700>!sensible heat generated by natural ventilation [W]<a name='1610'></font>
+	real hlvent		<font color=#447700>!latent heat generated by natural ventilation [W] <a name='1611'></font>
+	real hscond		<font color=#447700>!sensible heat generated by wall conduction <a name='1612'></font>
+<a name='1613'>
+<font color=#447700>!Output<a name='1614'></font>
+<font color=#447700>!------<a name='1615'></font>
+	real hslev		<font color=#447700>!sensible heat flux generated inside the room [W]<a name='1616'></font>
+	real hllev		<font color=#447700>!latent heat flux generatd inside the room<a name='1617'></font>
+<a name='1618'>
+<a name='1619'>
+<font color=#447700>!Calculation of the total sensible heat generated inside the room<a name='1620'></font>
+<a name='1621'>
+	hslev=hseqocc+hsvent+hscond <a name='1622'>
+ <a name='1623'>
+<font color=#447700>!Calculation of the total latent heat generated inside the room<a name='1624'></font>
+	<a name='1625'>
+	hllev=hleqocc+hlvent<a name='1626'>
+        <a name='1627'>
+	return<a name='1628'>
+	end subroutine fluxroo<a name='1629'>
+<a name='1630'>
+<font color=#447700>!====6=8===============================================================72 <a name='1631'></font>
+<font color=#447700>!====6=8===============================================================72<a name='1632'></font>
+<a name='1633'>
+<A NAME='PHIRAT'><A href='../../html_code/phys/module_sf_bem.F.html#PHIRAT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1634'>
+	<font color=#993300>subroutine </font><font color=#cc0000>phirat</font>(nhourday,rocc) <A href='../../call_to/PHIRAT.html' TARGET='index'>1</A><a name='1635'>
+<a name='1636'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1637'></font>
+<font color=#447700>!This routine calculates the occupation ratio of a floor<a name='1638'></font>
+<font color=#447700>!By now we suppose a constant value<a name='1639'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1640'></font>
+<a name='1641'>
+        implicit none<a name='1642'>
+<a name='1643'>
+<font color=#447700>!Input<a name='1644'></font>
+<font color=#447700>!-----<a name='1645'></font>
+<a name='1646'>
+	real nhourday	<font color=#447700>! number of hours from midnight (local time)<a name='1647'></font>
+	<a name='1648'>
+<font color=#447700>!Output<a name='1649'></font>
+<font color=#447700>!------<a name='1650'></font>
+	real rocc       <font color=#447700>!value between 0 and 1<a name='1651'></font>
+<a name='1652'>
+<font color=#447700>!!TEST<a name='1653'></font>
+        rocc=1.<a name='1654'>
+<a name='1655'>
+	return<a name='1656'>
+	end subroutine phirat<a name='1657'>
+<a name='1658'>
+<font color=#447700>!====6=8===============================================================72 <a name='1659'></font>
+<font color=#447700>!====6=8===============================================================72<a name='1660'></font>
+<a name='1661'>
+<A NAME='PHIEQU'><A href='../../html_code/phys/module_sf_bem.F.html#PHIEQU' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1662'>
+	<font color=#993300>subroutine </font><font color=#cc0000>phiequ</font>(nhourday,hsesf,hsequip,hsequ) <A href='../../call_to/PHIEQU.html' TARGET='index'>1</A><a name='1663'>
+<a name='1664'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1665'></font>
+<font color=#447700>!This routine calculates the sensible heat gain from equipments<a name='1666'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='1667'></font>
+        implicit none<a name='1668'>
+<font color=#447700>!Input<a name='1669'></font>
+<font color=#447700>!-----<a name='1670'></font>
+<a name='1671'>
+	real nhourday <font color=#447700>! number of hours from midnight, Local time<a name='1672'></font>
+        real, intent(in) :: hsesf<a name='1673'>
+        real, intent(in), dimension(24) :: hsequip<a name='1674'>
+	<a name='1675'>
+<font color=#447700>!Output<a name='1676'></font>
+<font color=#447700>!------<a name='1677'></font>
+	real hsequ    <font color=#447700>!sensible heat gain from equipment [W/m^2]<a name='1678'></font>
+<a name='1679'>
+<font color=#447700>!---------------------------------------------------------------------	<a name='1680'></font>
+<a name='1681'>
+        hsequ = hsequip(int(nhourday)+1) * hsesf<a name='1682'>
+        <a name='1683'>
+	end subroutine phiequ<a name='1684'>
+<font color=#447700>!====6=8===============================================================72 <a name='1685'></font>
+<font color=#447700>!====6=8===============================================================72<a name='1686'></font>
+<a name='1687'>
+<A NAME='FLUXEQOCC'><A href='../../html_code/phys/module_sf_bem.F.html#FLUXEQOCC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1688'>
+	<font color=#993300>subroutine </font><font color=#cc0000>fluxeqocc</font>(nhourday,bw,bl,perflo,hsesf,hsequip,hseqocc,hleqocc) <A href='../../call_to/FLUXEQOCC.html' TARGET='index'>1</A>,<A href='../../call_from/FLUXEQOCC.html' TARGET='index'>2</A><a name='1689'>
+	<a name='1690'>
+	implicit none<a name='1691'>
+<a name='1692'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1693'></font>
+<font color=#447700>!This routine calculates the sensible and the latent heat flux <a name='1694'></font>
+<font color=#447700>!generated by equipments and occupants<a name='1695'></font>
+<font color=#447700>!---------------------------------------------------------------------	<a name='1696'></font>
+<a name='1697'>
+<font color=#447700>!Input<a name='1698'></font>
+<font color=#447700>!-----<a name='1699'></font>
+	real bw			<font color=#447700>!Room width [m]<a name='1700'></font>
+	real bl			<font color=#447700>!Room lengzh [m]<a name='1701'></font>
+	real nhourday		<font color=#447700>!number of hours from the beginning of the day<a name='1702'></font>
+        real, intent(in) :: perflo <font color=#447700>! Peak number of occupants per unit floor area<a name='1703'></font>
+        real, intent(in) :: hsesf<a name='1704'>
+        real, intent(in), dimension(24) :: hsequip<a name='1705'>
+<a name='1706'>
+<font color=#447700>!Output<a name='1707'></font>
+<font color=#447700>!------<a name='1708'></font>
+	real hseqocc		<font color=#447700>!sensible heat generated by equipments and occupants [W]<a name='1709'></font>
+	real hleqocc		<font color=#447700>!latent heat generated by occupants [W]<a name='1710'></font>
+<font color=#447700>!Local<a name='1711'></font>
+<font color=#447700>!-----<a name='1712'></font>
+	real Af			<font color=#447700>!Air conditioned floor area [m2]<a name='1713'></font>
+	real rocc		<font color=#447700>!Occupation ratio of the floor [0,1]<a name='1714'></font>
+        real hsequ		<font color=#447700>!Heat generated from equipments <a name='1715'></font>
+<a name='1716'>
+        real hsocc		<font color=#447700>!Sensible heat generated by a person [W/Person]<a name='1717'></font>
+                                <font color=#447700>!Source Boundary Layer Climates,page 195 (book)<a name='1718'></font>
+        parameter (hsocc=160.)<a name='1719'>
+<a name='1720'>
+        real hlocc		<font color=#447700>!Latent heat generated by a person [W/Person]<a name='1721'></font>
+                                <font color=#447700>!Source Boundary Layer Climates,page 225 (book)<a name='1722'></font>
+        parameter (hlocc=1.96e6/86400.)<a name='1723'>
+<a name='1724'>
+<font color=#447700>!------------------------------------------------------------------<a name='1725'></font>
+<font color=#447700>!			Sensible heat flux<a name='1726'></font>
+<font color=#447700>!			------------------<a name='1727'></font>
+<a name='1728'>
+	 Af=bw*bl<a name='1729'>
+<a name='1730'>
+	 call <A href='../../html_code/phys/module_sf_bem.F.html#PHIRAT'>phirat</A><A href='../../html_code/phys/module_sf_bem.F.html#FLUXEQOCC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHIRAT_1">(nhourday,rocc)<a name='1731'>
+<a name='1732'>
+         call <A href='../../html_code/phys/module_sf_bem.F.html#PHIEQU'>phiequ</A><A href='../../html_code/phys/module_sf_bem.F.html#FLUXEQOCC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHIEQU_1">(nhourday,hsesf,hsequip,hsequ)<a name='1733'>
+<a name='1734'>
+         hseqocc=Af*rocc*perflo*hsocc+Af*hsequ<a name='1735'>
+<a name='1736'>
+<font color=#447700>!<a name='1737'></font>
+<font color=#447700>!			Latent heat<a name='1738'></font>
+<font color=#447700>!			-----------<a name='1739'></font>
+<font color=#447700>!<a name='1740'></font>
+<a name='1741'>
+         hleqocc=Af*rocc*perflo*hlocc<a name='1742'>
+<a name='1743'>
+	return<a name='1744'>
+	end subroutine fluxeqocc<a name='1745'>
+<a name='1746'>
+<font color=#447700>!====6=8===============================================================72 <a name='1747'></font>
+<font color=#447700>!====6=8===============================================================72<a name='1748'></font>
+	<a name='1749'>
+<A NAME='FLUXVENT'><A href='../../html_code/phys/module_sf_bem.F.html#FLUXVENT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1750'>
+	<font color=#993300>subroutine </font><font color=#cc0000>fluxvent</font>(cpint,rhoint,vollev,tlev,tout,latent,&amp; <A href='../../call_to/FLUXVENT.html' TARGET='index'>1</A><a name='1751'>
+                            humout,rhoout,humlev,beta,hsvent,hlvent)<a name='1752'>
+	<a name='1753'>
+	implicit none<a name='1754'>
+<a name='1755'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1756'></font>
+<font color=#447700>!This routine calculates the sensible and the latent heat flux <a name='1757'></font>
+<font color=#447700>!generated by natural ventilation<a name='1758'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1759'></font>
+<a name='1760'>
+<font color=#447700>!Input<a name='1761'></font>
+<font color=#447700>!-----<a name='1762'></font>
+	real cpint		<font color=#447700>!specific heat of the indoor air [J/kg.K]<a name='1763'></font>
+	real rhoint		<font color=#447700>!density of the indoor air [Kg/m3]	<a name='1764'></font>
+	real vollev		<font color=#447700>!volume of the room [m3]<a name='1765'></font>
+	real tlev		<font color=#447700>!Room temperature [K]<a name='1766'></font>
+	real tout		<font color=#447700>!outside air temperature [K]<a name='1767'></font>
+	real latent		<font color=#447700>!latent heat of evaporation [J/Kg]<a name='1768'></font>
+	real humout		<font color=#447700>!outside absolute humidity [Kgwater/Kgair]<a name='1769'></font>
+	real rhoout		<font color=#447700>!air density [kg/m3]<a name='1770'></font>
+	real humlev		<font color=#447700>!Specific humidity of the indoor air [Kgwater/Kgair]<a name='1771'></font>
+        real, intent(in) :: beta<font color=#447700>!Thermal efficiency of the heat exchanger <a name='1772'></font>
+	<a name='1773'>
+<font color=#447700>!Output<a name='1774'></font>
+<font color=#447700>!------<a name='1775'></font>
+	real hsvent		<font color=#447700>!sensible heat generated by natural ventilation [W]<a name='1776'></font>
+	real hlvent		<font color=#447700>!latent heat generated by natural ventilation [W] <a name='1777'></font>
+<a name='1778'>
+<font color=#447700>!Local<a name='1779'></font>
+<font color=#447700>!-----       <a name='1780'></font>
+        <a name='1781'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1782'></font>
+<a name='1783'>
+<font color=#447700>!			Sensible heat flux<a name='1784'></font>
+<font color=#447700>!			------------------<a name='1785'></font>
+        <a name='1786'>
+	hsvent=(1.-beta)*cpint*rhoint*(vollev/3600.)*  &amp;<a name='1787'>
+               (tout-tlev)<a name='1788'>
+	<a name='1789'>
+<font color=#447700>!			Latent heat flux<a name='1790'></font>
+<font color=#447700>!			----------------<a name='1791'></font>
+       <a name='1792'>
+	hlvent=(1.-beta)*latent*rhoint*(vollev/3600.)* &amp;<a name='1793'>
+     	       (humout-humlev)<a name='1794'>
+<a name='1795'>
+<a name='1796'>
+	return<a name='1797'>
+	end subroutine fluxvent<a name='1798'>
+<a name='1799'>
+<font color=#447700>!====6=8===============================================================72 <a name='1800'></font>
+<font color=#447700>!====6=8===============================================================72<a name='1801'></font>
+	<a name='1802'>
+<A NAME='FLUXCOND'><A href='../../html_code/phys/module_sf_bem.F.html#FLUXCOND' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1803'>
+	<font color=#993300>subroutine </font><font color=#cc0000>fluxcond</font>(hswalins,hswinins,surwal,pwin,hscond) <A href='../../call_to/FLUXCOND.html' TARGET='index'>1</A><a name='1804'>
+	<a name='1805'>
+	implicit none<a name='1806'>
+<a name='1807'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1808'></font>
+<font color=#447700>!This routine calculates the sensible heat flux generated by <a name='1809'></font>
+<font color=#447700>!wall conduction.<a name='1810'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1811'></font>
+<a name='1812'>
+<font color=#447700>!Input<a name='1813'></font>
+<font color=#447700>!-----<a name='1814'></font>
+	real hswalins(6)	<font color=#447700>!sensible heat at the internal layers of the wall [W/m2]<a name='1815'></font>
+	real hswinins(4)	<font color=#447700>!internal window sensible heat flux [W/m2]<a name='1816'></font>
+	real surwal(6)	        <font color=#447700>!surfaces of the room walls [m2]<a name='1817'></font>
+	real pwin               <font color=#447700>!window proportion	<a name='1818'></font>
+<a name='1819'>
+<a name='1820'>
+<font color=#447700>!Output<a name='1821'></font>
+<font color=#447700>!------<a name='1822'></font>
+	<a name='1823'>
+	real hscond		<font color=#447700>!sensible heat generated by wall conduction [W]<a name='1824'></font>
+	<a name='1825'>
+<font color=#447700>!Local<a name='1826'></font>
+<font color=#447700>!-----<a name='1827'></font>
+<a name='1828'>
+	integer ivw<a name='1829'>
+<a name='1830'>
+<font color=#447700>!----------------------------------------------------------------------<a name='1831'></font>
+<a name='1832'>
+	  hscond=0.<a name='1833'>
+<a name='1834'>
+	do ivw=1,4<a name='1835'>
+	   hscond=hscond+surwal(ivw)*(1-pwin)*hswalins(ivw)+ &amp;<a name='1836'>
+                  surwal(ivw)*pwin*hswinins(ivw)	         <a name='1837'>
+	end do<a name='1838'>
+<a name='1839'>
+	do ivw=5,6<a name='1840'>
+    	   hscond=hscond+surwal(ivw)*hswalins(ivw)	<a name='1841'>
+	end do<a name='1842'>
+<font color=#447700>!           <a name='1843'></font>
+<font color=#447700>!Finally we must change the sign in hscond to be proportional<a name='1844'></font>
+<font color=#447700>!to the difference (Twall-Tindoor).<a name='1845'></font>
+<font color=#447700>!<a name='1846'></font>
+        hscond=(-1)*hscond <a name='1847'>
+<a name='1848'>
+	return<a name='1849'>
+	end subroutine fluxcond<a name='1850'>
+<a name='1851'>
+<font color=#447700>!====6=8===============================================================72 <a name='1852'></font>
+<font color=#447700>!====6=8===============================================================72<a name='1853'></font>
+	<a name='1854'>
+<A NAME='REGTEMP'><A href='../../html_code/phys/module_sf_bem.F.html#REGTEMP' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1855'>
+	<font color=#993300>subroutine </font><font color=#cc0000>regtemp</font>(swcond,nhourday,dt,Qb,hsroo,          &amp; <A href='../../call_to/REGTEMP.html' TARGET='index'>1</A><a name='1856'>
+                           tlev,timeon,timeoff,targtemp,gaptemp,hsneed)<a name='1857'>
+	<a name='1858'>
+	implicit none<a name='1859'>
+<a name='1860'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1861'></font>
+<font color=#447700>!This routine calculates the sensible heat fluxes, <a name='1862'></font>
+<font color=#447700>!after anthropogenic regulation (air conditioning)<a name='1863'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1864'></font>
+<a name='1865'>
+<font color=#447700>!Input:<a name='1866'></font>
+<font color=#447700>!-----.<a name='1867'></font>
+        integer swcond       <font color=#447700>!swich air conditioning<a name='1868'></font>
+	real nhourday        <font color=#447700>!number of hours from the beginning of the day real<a name='1869'></font>
+	real dt	             <font color=#447700>!time step [s]<a name='1870'></font>
+	real Qb		     <font color=#447700>!overall heat capacity of the indoor air [J/K]<a name='1871'></font>
+        real hsroo           <font color=#447700>!sensible heat flux generated inside the room [W]<a name='1872'></font>
+        real tlev            <font color=#447700>!room air temperature [K]<a name='1873'></font>
+        real, intent(in) :: timeon  <font color=#447700>! Initial local time of A/C systems<a name='1874'></font>
+        real, intent(in) :: timeoff <font color=#447700>! Ending local time of A/C systems<a name='1875'></font>
+        real, intent(in) :: targtemp<font color=#447700>! Target temperature of A/C systems<a name='1876'></font>
+        real, intent(in) :: gaptemp <font color=#447700>! Comfort range of indoor temperature<a name='1877'></font>
+        <a name='1878'>
+<a name='1879'>
+<font color=#447700>!Local:<a name='1880'></font>
+<font color=#447700>!-----.<a name='1881'></font>
+<a name='1882'>
+        real templev         <font color=#447700>!hipotetical room air temperature [K]<a name='1883'></font>
+        real alpha           <font color=#447700>!variable to control the heating/cooling of <a name='1884'></font>
+                             <font color=#447700>!the air conditining system<a name='1885'></font>
+<font color=#447700>!Output:<a name='1886'></font>
+<font color=#447700>!-----.<a name='1887'></font>
+	real hsneed	     <font color=#447700>!sensible heat extracted to the indoor air [W]<a name='1888'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1889'></font>
+<font color=#447700>!initialize variables<a name='1890'></font>
+<font color=#447700>!---------------------<a name='1891'></font>
+        templev = 0.<a name='1892'>
+        alpha   = 0.<a name='1893'>
+<a name='1894'>
+        if (swcond.eq.0) then <font color=#447700>! there is not air conditioning in the floor<a name='1895'></font>
+            hsneed = 0.<a name='1896'>
+            goto 100<a name='1897'>
+        else<a name='1898'>
+            if ((nhourday.ge.timeon).and.(nhourday.le.timeoff)) then<a name='1899'>
+               templev=tlev+(dt/Qb)*hsroo<a name='1900'>
+               goto 200<a name='1901'>
+            else<a name='1902'>
+               hsneed = 0.     <font color=#447700>! air conditioning is switched off<a name='1903'></font>
+               goto 100<a name='1904'>
+            endif<a name='1905'>
+        endif<a name='1906'>
+<a name='1907'>
+200     continue<a name='1908'>
+<a name='1909'>
+        if (abs(templev-targtemp).le.gaptemp) then<a name='1910'>
+           hsneed = 0.<a name='1911'>
+        else <a name='1912'>
+           if (templev.gt.(targtemp+gaptemp)) then<a name='1913'>
+              hsneed=hsroo-(Qb/dt)*(targtemp+gaptemp-tlev)<a name='1914'>
+              alpha=(abs(hsneed-hsroo)/Qb)<a name='1915'>
+              if (alpha.gt.temp_rat) then<a name='1916'>
+                  hsneed=hsroo+temp_rat*Qb<a name='1917'>
+                  goto 100<a name='1918'>
+              else<a name='1919'>
+                  goto 100<a name='1920'>
+              endif<a name='1921'>
+           else <a name='1922'>
+              hsneed=hsroo-(Qb/dt)*(targtemp-gaptemp-tlev)<a name='1923'>
+              alpha=(abs(hsneed-hsroo)/Qb)<a name='1924'>
+              if (alpha.gt.temp_rat) then<a name='1925'>
+                  hsneed=hsroo-temp_rat*Qb<a name='1926'>
+                  goto 100<a name='1927'>
+              else<a name='1928'>
+                  goto 100<a name='1929'>
+              endif<a name='1930'>
+           endif<a name='1931'>
+        endif <a name='1932'>
+<a name='1933'>
+100     continue<a name='1934'>
+	return<a name='1935'>
+	end subroutine regtemp<a name='1936'>
+     <a name='1937'>
+<font color=#447700>!====6=8==============================================================72<a name='1938'></font>
+<font color=#447700>!====6=8==============================================================72<a name='1939'></font>
+         <a name='1940'>
+<A NAME='REGHUM'><A href='../../html_code/phys/module_sf_bem.F.html#REGHUM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1941'>
+	 <font color=#993300>subroutine </font><font color=#cc0000>reghum</font>(swcond,nhourday,dt,volroo,rhoint,latent, &amp; <A href='../../call_to/REGHUM.html' TARGET='index'>1</A><a name='1942'>
+                           hlroo,shumroo,timeon,timeoff,targhum,gaphum,hlneed)<a name='1943'>
+<a name='1944'>
+	 implicit none<a name='1945'>
+<a name='1946'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1947'></font>
+<font color=#447700>!This routine calculates the latent heat fluxes, <a name='1948'></font>
+<font color=#447700>!after anthropogenic regulation (air conditioning)<a name='1949'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='1950'></font>
+<a name='1951'>
+<font color=#447700>!Input:<a name='1952'></font>
+<font color=#447700>!-----.<a name='1953'></font>
+        integer swcond    <font color=#447700>!swich air conditioning<a name='1954'></font>
+	real nhourday     <font color=#447700>!number of hours from the beginning of the day real[h]<a name='1955'></font>
+	real dt	          <font color=#447700>!time step [s]<a name='1956'></font>
+	real volroo       <font color=#447700>!volume of the room [m3]<a name='1957'></font>
+        real rhoint       <font color=#447700>!density of the internal air [Kg/m3]<a name='1958'></font>
+        real latent       <font color=#447700>!latent heat of evaporation [J/Kg]<a name='1959'></font>
+        real hlroo        <font color=#447700>!latent heat flux generated inside the room [W]<a name='1960'></font>
+        real shumroo      <font color=#447700>!specific humidity of the indoor air [kg/kg]<a name='1961'></font>
+        real, intent(in) :: timeon  <font color=#447700>! Initial local time of A/C systems<a name='1962'></font>
+        real, intent(in) :: timeoff <font color=#447700>! Ending local time of A/C systems<a name='1963'></font>
+        real, intent(in) :: targhum <font color=#447700>! Target humidity of the A/C systems<a name='1964'></font>
+        real, intent(in) :: gaphum  <font color=#447700>! comfort range of the specific humidity<a name='1965'></font>
+<a name='1966'>
+<font color=#447700>!Local:<a name='1967'></font>
+<font color=#447700>!-----.<a name='1968'></font>
+<a name='1969'>
+        real humlev       <font color=#447700>!hipotetical specific humidity of the indoor [kg/kg]<a name='1970'></font>
+        real betha        <font color=#447700>!variable to control the drying/moistening of<a name='1971'></font>
+                          <font color=#447700>!the air conditioning system<a name='1972'></font>
+<font color=#447700>!Output:<a name='1973'></font>
+<font color=#447700>!-----.<a name='1974'></font>
+	real hlneed	  <font color=#447700>!latent heat extracted to the indoor air [W]<a name='1975'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1976'></font>
+<font color=#447700>!initialize variables<a name='1977'></font>
+<font color=#447700>!---------------------<a name='1978'></font>
+        humlev = 0.<a name='1979'>
+        betha  = 0.<a name='1980'>
+<a name='1981'>
+        if (swcond.eq.0) then <font color=#447700>! there is not air conditioning in the floor<a name='1982'></font>
+            hlneed = 0.<a name='1983'>
+            goto 100<a name='1984'>
+        else<a name='1985'>
+            if ((nhourday.ge.timeon).and.(nhourday.le.timeoff)) then<a name='1986'>
+               humlev=shumroo+(dt/(latent*rhoint*volroo))*hlroo<a name='1987'>
+               goto 200<a name='1988'>
+            else<a name='1989'>
+               hlneed = 0.     <font color=#447700>! air conditioning is switched off<a name='1990'></font>
+               goto 100<a name='1991'>
+            endif<a name='1992'>
+        endif<a name='1993'>
+<a name='1994'>
+200     continue<a name='1995'>
+<a name='1996'>
+        if (abs(humlev-targhum).le.gaphum) then<a name='1997'>
+           hlneed = 0.<a name='1998'>
+        else <a name='1999'>
+           if (humlev.gt.(targhum+gaphum)) then<a name='2000'>
+              hlneed=hlroo-((latent*rhoint*volroo)/dt)* &amp;<a name='2001'>
+                          (targhum+gaphum-shumroo)<a name='2002'>
+              betha=abs(hlneed-hlroo)/(latent*rhoint*volroo)<a name='2003'>
+              if (betha.gt.hum_rat) then<a name='2004'>
+                  hlneed=hlroo+hum_rat*(latent*rhoint*volroo)<a name='2005'>
+                  goto 100<a name='2006'>
+              else<a name='2007'>
+                  goto 100<a name='2008'>
+              endif<a name='2009'>
+           else <a name='2010'>
+              hlneed=hlroo-((latent*rhoint*volroo)/dt)* &amp;<a name='2011'>
+                          (targhum-gaphum-shumroo)<a name='2012'>
+              betha=abs(hlneed-hlroo)/(latent*rhoint*volroo)<a name='2013'>
+              if (betha.gt.hum_rat) then<a name='2014'>
+                  hlneed=hlroo-hum_rat*(latent*rhoint*volroo)<a name='2015'>
+                  goto 100<a name='2016'>
+              else<a name='2017'>
+                  goto 100<a name='2018'>
+              endif<a name='2019'>
+           endif<a name='2020'>
+        endif <a name='2021'>
+	<a name='2022'>
+100     continue<a name='2023'>
+	return<a name='2024'>
+	end subroutine reghum<a name='2025'>
+<a name='2026'>
+<font color=#447700>!====6=8==============================================================72<a name='2027'></font>
+<font color=#447700>!====6=8==============================================================72<a name='2028'></font>
+         <a name='2029'>
+<A NAME='AIR_COND'><A href='../../html_code/phys/module_sf_bem.F.html#AIR_COND' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2030'>
+         <font color=#993300>subroutine </font><font color=#cc0000>air_cond</font>(hsneed,hlneed,dt,hsout,hlout,consump,cop) <A href='../../call_to/AIR_COND.html' TARGET='index'>1</A><a name='2031'>
+<a name='2032'>
+         implicit none<a name='2033'>
+<a name='2034'>
+<font color=#447700>!<a name='2035'></font>
+<font color=#447700>!Performance of the air conditioning system        <a name='2036'></font>
+<font color=#447700>!<a name='2037'></font>
+<font color=#447700>!INPUT/OUTPUT VARIABLES<a name='2038'></font>
+         real, intent(in) :: cop<a name='2039'>
+<font color=#447700>!<a name='2040'></font>
+<font color=#447700>!INPUT/OUTPUT VARIABLES<a name='2041'></font>
+<font color=#447700>!       <a name='2042'></font>
+         real hsneed     <font color=#447700>!sensible heat that is necessary for cooling/heating<a name='2043'></font>
+                         <font color=#447700>!the indoor air temperature [W] <a name='2044'></font>
+         real hlneed     <font color=#447700>!latent heat that is necessary for controling<a name='2045'></font>
+                         <font color=#447700>!the humidity of the indoor air [W]<a name='2046'></font>
+         real dt         <font color=#447700>!time step [s]<a name='2047'></font>
+<font color=#447700>!<a name='2048'></font>
+<font color=#447700>!OUTPUT VARIABLES<a name='2049'></font>
+<font color=#447700>!<a name='2050'></font>
+         real hsout      <font color=#447700>!sensible heat pumped out into the atmosphere [W]<a name='2051'></font>
+         real hlout      <font color=#447700>!latent heat pumped out into the atmosphere [W]<a name='2052'></font>
+         real consump    <font color=#447700>!Electrical consumption of the air conditioning system [W] <a name='2053'></font>
+                         <a name='2054'>
+    <a name='2055'>
+<font color=#447700>!<a name='2056'></font>
+<font color=#447700>!Performance of the air conditioning system<a name='2057'></font>
+<font color=#447700>!<a name='2058'></font>
+         if (hsneed.gt.0) then         <font color=#447700>! air conditioning is cooling <a name='2059'></font>
+                                       <font color=#447700>! and the heat is pumped out into the atmosphere  <a name='2060'></font>
+	  hsout=(1/cop)*(abs(hsneed)+abs(hlneed))+hsneed<a name='2061'>
+          hlout=hlneed<a name='2062'>
+          consump=(1./cop)*(abs(hsneed)+abs(hlneed))<a name='2063'>
+<font color=#447700>!!        hsout=0.             <a name='2064'></font>
+<font color=#447700>!!        hlout=0.<a name='2065'></font>
+<a name='2066'>
+         else if(hsneed.eq.0.) then <font color=#447700>!air conditioning is not working to regulate the indoor temperature<a name='2067'></font>
+               hlneed=0.       <font color=#447700>!no humidity regulation is considered <a name='2068'></font>
+               hsout=0.        <font color=#447700>!no output into the atmosphere (sensible heat) <a name='2069'></font>
+               hlout=0.        <font color=#447700>!no output into the atmosphere (latent heat)<a name='2070'></font>
+               consump=0.      <font color=#447700>!no electrical consumption<a name='2071'></font>
+<a name='2072'>
+              else  <font color=#447700>!! hsneed &lt; 0. !air conditioning is heating <a name='2073'></font>
+               hlneed=0.           <font color=#447700>!no humidity regulation is considered<a name='2074'></font>
+               hlout=0.            <font color=#447700>!no output into the atmosphere (latent heat) <a name='2075'></font>
+               consump=(1./cop)*(abs(hsneed)+abs(hlneed))<a name='2076'>
+<font color=#447700>!<a name='2077'></font>
+<font color=#447700>!!We have two possibilities <a name='2078'></font>
+<font color=#447700>! <a name='2079'></font>
+<font color=#447700>!!             hsout=(1./cop)*(abs(hsneed)+abs(hlneed)) !output into the atmosphere <a name='2080'></font>
+               hsout=0.                            <font color=#447700>!no output into the atmosphere                        <a name='2081'></font>
+         end if<a name='2082'>
+<a name='2083'>
+         return <a name='2084'>
+         end subroutine air_cond<a name='2085'>
+<a name='2086'>
+<font color=#447700>!====6=8==============================================================72<a name='2087'></font>
+<font color=#447700>!====6=8==============================================================72<a name='2088'></font>
+<a name='2089'>
+<A NAME='CONSUMP_TOTAL'><A href='../../html_code/phys/module_sf_bem.F.html#CONSUMP_TOTAL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2090'>
+        <font color=#993300>subroutine </font><font color=#cc0000>consump_total</font>(nzcanm,nlev,consumpbuild,hsoutbuild, &amp; <A href='../../call_to/CONSUMP_TOTAL.html' TARGET='index'>1</A><a name='2091'>
+                                 hsout,consump)<a name='2092'>
+<a name='2093'>
+        implicit none<a name='2094'>
+        <a name='2095'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='2096'></font>
+<font color=#447700>!Compute the total consumption in kWh/s (1kWh=3.6e+6 J) and sensible heat<a name='2097'></font>
+<font color=#447700>!ejected into the atmosphere per building<a name='2098'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='2099'></font>
+<font color=#447700>!<a name='2100'></font>
+<font color=#447700>!INPUT VARIABLES<a name='2101'></font>
+<font color=#447700>!<a name='2102'></font>
+<font color=#447700>!<a name='2103'></font>
+        integer nzcanm            <font color=#447700>!Maximum number of vertical levels in the urban grid<a name='2104'></font>
+        real hsout(nzcanm)        <font color=#447700>!sensible heat emitted outside the room [W]<a name='2105'></font>
+        real consump(nzcanm)      <font color=#447700>!Electricity consumption for the a.c. in each floor[W]<a name='2106'></font>
+<font color=#447700>!<a name='2107'></font>
+<font color=#447700>!OUTPUT VARIABLES<a name='2108'></font>
+<font color=#447700>!<a name='2109'></font>
+	real consumpbuild         <font color=#447700>!Energetic consumption for the entire building[kWh/s]<a name='2110'></font>
+        real hsoutbuild           <font color=#447700>!Total sensible heat ejected into the atmosphere<a name='2111'></font>
+                                  <font color=#447700>!by the air conditioning systems per building [W]        <a name='2112'></font>
+<font color=#447700>!<a name='2113'></font>
+<font color=#447700>!LOCAL  VARIABLES<a name='2114'></font>
+<font color=#447700>!<a name='2115'></font>
+        integer ilev<a name='2116'>
+<a name='2117'>
+<font color=#447700>!<a name='2118'></font>
+<font color=#447700>!INPUT VARIABLES<a name='2119'></font>
+<font color=#447700>!<a name='2120'></font>
+        integer nlev     <a name='2121'>
+        <a name='2122'>
+<font color=#447700>!<a name='2123'></font>
+<font color=#447700>!INITIALIZE VARIABLES<a name='2124'></font>
+<font color=#447700>!<a name='2125'></font>
+        consumpbuild=0.<a name='2126'>
+        hsoutbuild=0.<a name='2127'>
+<font color=#447700>!<a name='2128'></font>
+        do ilev=1,nlev<a name='2129'>
+           consumpbuild=consumpbuild+consump(ilev)<a name='2130'>
+           hsoutbuild=hsoutbuild+hsout(ilev)<a name='2131'>
+        enddo <font color=#447700>!ilev<a name='2132'></font>
+<a name='2133'>
+        consumpbuild=consumpbuild/(3.6e+06)<a name='2134'>
+<a name='2135'>
+        return <a name='2136'>
+        end subroutine consump_total<a name='2137'>
+<font color=#447700>!====6=8==============================================================72<a name='2138'></font>
+<font color=#447700>!====6=8==============================================================72<a name='2139'></font>
+<A NAME='TRIDIA'><A href='../../html_code/phys/module_sf_bem.F.html#TRIDIA' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2140'>
+        <font color=#993300>subroutine </font><font color=#cc0000>tridia</font>(n,a,b,x) <A href='../../call_to/TRIDIA.html' TARGET='index'>1</A><a name='2141'>
+<a name='2142'>
+<font color=#447700>!     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++<a name='2143'></font>
+<font color=#447700>!     +    by A. Clappier,     EPFL, CH 1015 Lausanne                  +<a name='2144'></font>
+<font color=#447700>!     +                        phone: ++41-(0)21-693-61-60             +<a name='2145'></font>
+<font color=#447700>!     +                        email:alain.clappier@epfl.ch            +<a name='2146'></font>
+<font color=#447700>!     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++<a name='2147'></font>
+<a name='2148'>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2149'></font>
+<font color=#447700>!        Resolution of a * x = b    where a is a tridiagonal matrix<a name='2150'></font>
+<font color=#447700>!<a name='2151'></font>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2152'></font>
+<a name='2153'>
+        implicit none<a name='2154'>
+<a name='2155'>
+<font color=#447700>! Input<a name='2156'></font>
+        integer n<a name='2157'>
+        real a(-1:1,n)           <font color=#447700>!  a(-1,*) lower diagonal      A(i,i-1)<a name='2158'></font>
+                               <font color=#447700>!  a(0,*)  principal diagonal  A(i,i)<a name='2159'></font>
+                               <font color=#447700>!  a(1,*)  upper diagonal      A(i,i+1)<a name='2160'></font>
+        real b(n)<a name='2161'>
+<a name='2162'>
+<font color=#447700>! Output<a name='2163'></font>
+        real x(n)<a name='2164'>
+<a name='2165'>
+<font color=#447700>! Local<a name='2166'></font>
+        integer i<a name='2167'>
+<a name='2168'>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2169'></font>
+<a name='2170'>
+        do i=n-1,1,-1<a name='2171'>
+           b(i)=b(i)-a(1,i)*b(i+1)/a(0,i+1)<a name='2172'>
+           a(0,i)=a(0,i)-a(1,i)*a(-1,i+1)/a(0,i+1)<a name='2173'>
+        enddo<a name='2174'>
+<a name='2175'>
+        do i=2,n<a name='2176'>
+           b(i)=b(i)-a(-1,i)*b(i-1)/a(0,i-1)<a name='2177'>
+        enddo<a name='2178'>
+<a name='2179'>
+        do i=1,n<a name='2180'>
+           x(i)=b(i)/a(0,i)<a name='2181'>
+        enddo<a name='2182'>
+<a name='2183'>
+        return<a name='2184'>
+        end subroutine tridia    <a name='2185'>
+<font color=#447700>!====6=8===============================================================72     <a name='2186'></font>
+<font color=#447700>!====6=8===============================================================72     <a name='2187'></font>
+      <a name='2188'>
+<A NAME='GAUSSJBEM'><A href='../../html_code/phys/module_sf_bem.F.html#GAUSSJBEM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2189'>
+       <font color=#993300>subroutine </font><font color=#cc0000>gaussjbem</font>(a,n,b,np) <A href='../../call_to/GAUSSJBEM.html' TARGET='index'>2</A>,<A href='../../call_from/GAUSSJBEM.html' TARGET='index'>2</A><a name='2190'>
+<a name='2191'>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2192'></font>
+<font color=#447700>! This routine solve a linear system of n equations of the form<a name='2193'></font>
+<font color=#447700>!              A X = B<a name='2194'></font>
+<font color=#447700>!  where  A is a matrix a(i,j)<a name='2195'></font>
+<font color=#447700>!         B a vector and X the solution<a name='2196'></font>
+<font color=#447700>! In output b is replaced by the solution     <a name='2197'></font>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2198'></font>
+<a name='2199'>
+       implicit none<a name='2200'>
+<a name='2201'>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2202'></font>
+<font color=#447700>! INPUT:<a name='2203'></font>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2204'></font>
+       integer np<a name='2205'>
+       real a(np,np)<a name='2206'>
+<a name='2207'>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2208'></font>
+<font color=#447700>! OUTPUT:<a name='2209'></font>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2210'></font>
+       real b(np)<a name='2211'>
+<a name='2212'>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2213'></font>
+<font color=#447700>! LOCAL:<a name='2214'></font>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2215'></font>
+      integer nmax<a name='2216'>
+      parameter (nmax=150)<a name='2217'>
+<a name='2218'>
+      real big,dum<a name='2219'>
+      integer i,icol,irow<a name='2220'>
+      integer j,k,l,ll,n<a name='2221'>
+      integer ipiv(nmax)<a name='2222'>
+      real pivinv<a name='2223'>
+<a name='2224'>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2225'></font>
+<font color=#447700>! END VARIABLES DEFINITIONS<a name='2226'></font>
+<font color=#447700>! ----------------------------------------------------------------------<a name='2227'></font>
+       <a name='2228'>
+       do j=1,n<a name='2229'>
+          ipiv(j)=0.<a name='2230'>
+       enddo<a name='2231'>
+       <a name='2232'>
+      do i=1,n<a name='2233'>
+         big=0.<a name='2234'>
+         do j=1,n<a name='2235'>
+            if(ipiv(j).ne.1)then<a name='2236'>
+               do k=1,n<a name='2237'>
+                  if(ipiv(k).eq.0)then<a name='2238'>
+                     if(abs(a(j,k)).ge.big)then<a name='2239'>
+                        big=abs(a(j,k))<a name='2240'>
+                        irow=j<a name='2241'>
+                        icol=k<a name='2242'>
+                     endif<a name='2243'>
+                  elseif(ipiv(k).gt.1)then<a name='2244'>
+                     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_sf_bem.F.html#GAUSSJBEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1132">('singular matrix in gaussjbem')<a name='2245'>
+                  endif<a name='2246'>
+               enddo<a name='2247'>
+            endif<a name='2248'>
+         enddo<a name='2249'>
+         <a name='2250'>
+         ipiv(icol)=ipiv(icol)+1<a name='2251'>
+         <a name='2252'>
+         if(irow.ne.icol)then<a name='2253'>
+            do l=1,n<a name='2254'>
+               dum=a(irow,l)<a name='2255'>
+               a(irow,l)=a(icol,l)<a name='2256'>
+               a(icol,l)=dum<a name='2257'>
+            enddo<a name='2258'>
+            <a name='2259'>
+            dum=b(irow)<a name='2260'>
+            b(irow)=b(icol)<a name='2261'>
+            b(icol)=dum<a name='2262'>
+          <a name='2263'>
+         endif<a name='2264'>
+         <a name='2265'>
+         if(a(icol,icol).eq.0) CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_sf_bem.F.html#GAUSSJBEM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1133">('singular matrix in gaussjbem')<a name='2266'>
+         <a name='2267'>
+         pivinv=1./a(icol,icol)<a name='2268'>
+         a(icol,icol)=1<a name='2269'>
+         <a name='2270'>
+         do l=1,n<a name='2271'>
+            a(icol,l)=a(icol,l)*pivinv<a name='2272'>
+         enddo<a name='2273'>
+         <a name='2274'>
+         b(icol)=b(icol)*pivinv<a name='2275'>
+         <a name='2276'>
+         do ll=1,n<a name='2277'>
+            if(ll.ne.icol)then<a name='2278'>
+               dum=a(ll,icol)<a name='2279'>
+               a(ll,icol)=0.<a name='2280'>
+               do l=1,n<a name='2281'>
+                  a(ll,l)=a(ll,l)-a(icol,l)*dum<a name='2282'>
+               enddo<a name='2283'>
+               <a name='2284'>
+               b(ll)=b(ll)-b(icol)*dum<a name='2285'>
+               <a name='2286'>
+            endif<a name='2287'>
+         enddo<a name='2288'>
+      enddo<a name='2289'>
+      <a name='2290'>
+      return<a name='2291'>
+      end subroutine gaussjbem<a name='2292'>
+         <a name='2293'>
+<font color=#447700>!====6=8===============================================================72     <a name='2294'></font>
+<font color=#447700>!====6=8===============================================================72     <a name='2295'></font>
+<a name='2296'>
+<A NAME='RADFLUXS'><A href='../../html_code/phys/module_sf_bem.F.html#RADFLUXS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2297'>
+      <font color=#993300>subroutine </font><font color=#cc0000>radfluxs</font>(radflux,alb,rs,em,rl,sigma,twal) <A href='../../call_to/RADFLUXS.html' TARGET='index'>14</A><a name='2298'>
+<a name='2299'>
+      implicit none<a name='2300'>
+<font color=#447700>!-------------------------------------------------------------------<a name='2301'></font>
+<font color=#447700>!This function calculates the radiative fluxe at a surface<a name='2302'></font>
+<font color=#447700>!-------------------------------------------------------------------<a name='2303'></font>
+<a name='2304'>
+	<a name='2305'>
+	real alb	<font color=#447700>!albedo of the surface<a name='2306'></font>
+	real rs		<font color=#447700>!shor wave radiation<a name='2307'></font>
+	real em		<font color=#447700>!emissivity of the surface<a name='2308'></font>
+	real rl 	<font color=#447700>!lon wave radiation<a name='2309'></font>
+	real sigma	<font color=#447700>!parameter (wall is not black body) [W/m2.K4]<a name='2310'></font>
+	real twal	<font color=#447700>!wall temperature [K]<a name='2311'></font>
+	real radflux<a name='2312'>
+	<a name='2313'>
+	 radflux=(1.-alb)*rs+em*rl-em*sigma*twal**4<a name='2314'>
+	<a name='2315'>
+      return<a name='2316'>
+      end subroutine radfluxs<a name='2317'>
+<a name='2318'>
+<font color=#447700>!====6=8==============================================================72 <a name='2319'></font>
+<font color=#447700>!====6=8==============================================================72<a name='2320'></font>
+<font color=#447700>!       <a name='2321'></font>
+<font color=#447700>!       we define the view factors fprl and fnrm, which are the angle <a name='2322'></font>
+<font color=#447700>!       factors between two equal and parallel planes, fprl, and two <a name='2323'></font>
+<font color=#447700>!       equal and orthogonal planes, fnrm, respectively<a name='2324'></font>
+<font color=#447700>!       <a name='2325'></font>
+<A NAME='FPRL_INTS'><A href='../../html_code/phys/module_sf_bem.F.html#FPRL_INTS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2326'>
+        <font color=#993300>subroutine </font><font color=#cc0000>fprl_ints</font>(fprl_int,vx,vy) <A href='../../call_to/FPRL_INTS.html' TARGET='index'>16</A><a name='2327'>
+        <a name='2328'>
+        implicit none<a name='2329'>
+<a name='2330'>
+	real vx,vy<a name='2331'>
+	real fprl_int<a name='2332'>
+        <a name='2333'>
+	fprl_int=(2./(3.141592653*vx*vy))*                       &amp;<a name='2334'>
+             (log(sqrt((1.+vx*vx)*(1.+vy*vy)/(1.+vx*vx+vy*vy)))+ &amp;<a name='2335'>
+              (vy*sqrt(1.+vx*vx)*atan(vy/sqrt(1.+vx*vx)))+       &amp;<a name='2336'>
+              (vx*sqrt(1.+vy*vy)*atan(vx/sqrt(1.+vy*vy)))-       &amp;<a name='2337'>
+              vy*atan(vy)-vx*atan(vx))<a name='2338'>
+<a name='2339'>
+        return<a name='2340'>
+        end subroutine fprl_ints<a name='2341'>
+<a name='2342'>
+<font color=#447700>!====6=8==============================================================72 <a name='2343'></font>
+<font color=#447700>!====6=8==============================================================72<a name='2344'></font>
+<font color=#447700>!       <a name='2345'></font>
+<font color=#447700>!       we define the view factors fprl and fnrm, which are the angle <a name='2346'></font>
+<font color=#447700>!       factors between two equal and parallel planes, fprl, and two <a name='2347'></font>
+<font color=#447700>!       equal and orthogonal planes, fnrm, respectively<a name='2348'></font>
+<font color=#447700>!       <a name='2349'></font>
+<a name='2350'>
+<A NAME='FNRM_INTS'><A href='../../html_code/phys/module_sf_bem.F.html#FNRM_INTS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2351'>
+        <font color=#993300>subroutine </font><font color=#cc0000>fnrm_ints</font>(fnrm_int,wx,wy,wz) <A href='../../call_to/FNRM_INTS.html' TARGET='index'>32</A><a name='2352'>
+<a name='2353'>
+        implicit none<a name='2354'>
+        <a name='2355'>
+	real wx,wy,wz<a name='2356'>
+	real fnrm_int<a name='2357'>
+	<a name='2358'>
+        fnrm_int=(1./(3.141592653*wy))*(wy*atan(1./wy)+wx*atan(1./wx)- &amp;<a name='2359'>
+              (sqrt(wz)*atan(1./sqrt(wz)))+                            &amp;<a name='2360'>
+              (1./4.)*(log((1.+wx*wx)*(1.+wy*wy)/(1.+wz))+             &amp;<a name='2361'>
+              wy*wy*log(wy*wy*(1.+wz)/(wz*(1.+wy*wy)))+                &amp;<a name='2362'>
+              wx*wx*log(wx*wx*(1.+wz)/(wz*(1.+wx*wx)))))<a name='2363'>
+        <a name='2364'>
+        return<a name='2365'>
+        end subroutine fnrm_ints<a name='2366'>
+<a name='2367'>
+<font color=#447700>!====6=8==============================================================72 <a name='2368'></font>
+<font color=#447700>!====6=8==============================================================72<a name='2369'></font>
+END MODULE module_sf_bem<a name='2370'>
+</pre></body></html>

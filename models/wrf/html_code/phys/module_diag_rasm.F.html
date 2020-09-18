@@ -1,0 +1,1259 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#if (NMM_CORE == 1)<a name='2'>
+<A NAME='MODULE_DIAG_RASM'><A href='../../html_code/phys/module_diag_rasm.F.html#MODULE_DIAG_RASM' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='3'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_diag_rasm</font> <A href='../../call_to/MODULE_DIAG_RASM.html' TARGET='index'>1</A><a name='4'>
+CONTAINS<a name='5'>
+<A NAME='DIAG_RASM_STUB'><A href='../../html_code/phys/module_diag_rasm.F.html#DIAG_RASM_STUB' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='6'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>diag_rasm_stub</font><a name='7'>
+   END SUBROUTINE diag_rasm_stub<a name='8'>
+END MODULE module_diag_rasm<a name='9'>
+#else<a name='10'>
+<a name='11'>
+<font color=#447700>!WRF:MEDIATION_LAYER:PHYSICS<a name='12'></font>
+<a name='13'>
+<A NAME='MODULE_DIAG_RASM'><A href='../../html_code/phys/module_diag_rasm.F.html#MODULE_DIAG_RASM' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='14'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_diag_rasm</font> <A href='../../call_to/MODULE_DIAG_RASM.html' TARGET='index'>1</A><a name='15'>
+<font color=#447700>!----------------------------------------------------------------------<a name='16'></font>
+<font color=#447700>! RASM Climate Diagnostics - Jose Renteria, Amy Solomon, Mark Seefeldt <a name='17'></font>
+<font color=#447700>! -October 2016<a name='18'></font>
+<font color=#447700>! -handling of diagnostics controlled through namelist parameters<a name='19'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='20'></font>
+<a name='21'>
+CONTAINS<a name='22'>
+<a name='23'>
+<A NAME='MEAN_OUTPUT_CALC'><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='24'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>mean_output_calc</font>(                    &amp; <A href='../../call_to/MEAN_OUTPUT_CALC.html' TARGET='index'>1</A>,<A href='../../call_from/MEAN_OUTPUT_CALC.html' TARGET='index'>32</A><a name='25'>
+        is_restart, currentTime                   &amp;<a name='26'>
+       ,stats_interval, output_freq, run_days     &amp;<a name='27'>
+       ,dt, xtime                                 &amp;<a name='28'>
+       ,psfc, psfc_mean, tsk, tsk_mean            &amp;<a name='29'>
+       ,pmsl_mean, t2, t2_mean                    &amp;<a name='30'>
+       ,t, p, pb, moist, ht                       &amp; <font color=#447700>! vars for pmsl calc<a name='31'></font>
+       ,th2, th2_mean, q2, q2_mean                &amp;<a name='32'>
+       ,u10, u10_mean, v10, v10_mean              &amp;<a name='33'>
+       ,hfx, hfx_mean, lh, lh_mean                &amp;<a name='34'>
+       ,swdnb, swdnb_mean, glw, glw_mean          &amp; <a name='35'>
+       ,lwupb, lwupb_mean, swupb, swupb_mean      &amp;<a name='36'>
+       ,swupt, swupt_mean, swdnt, swdnt_mean      &amp;<a name='37'>
+       ,lwupt, lwupt_mean, lwdnt, lwdnt_mean      &amp;<a name='38'>
+       ,avgoutalarm, avgOutDateStr   &amp;<a name='39'>
+       ,nsteps                                    &amp;<a name='40'>
+       ,ids, ide, jds, jde, kds, kde              &amp;<a name='41'>
+       ,ims, ime, jms, jme, kms, kme              &amp;<a name='42'>
+       ,ips, ipe, jps, jpe, kps, kpe              &amp; <font color=#447700>! patch  dims<a name='43'></font>
+       ,i_start, i_end, j_start, j_end            &amp;<a name='44'>
+       ,num_tiles                                 &amp;<a name='45'>
+       )<a name='46'>
+    <font color=#447700>!----------------------------------------------------------------------<a name='47'></font>
+<a name='48'>
+    <font color=#447700>! USES:<a name='49'></font>
+    USE module_utility<a name='50'>
+    USE <A href='../../html_code/frame/module_streams.F.html#MODULE_STREAMS'>module_streams</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STREAMS_7"><a name='51'>
+    USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_224">, ONLY : domain_clock_get<a name='52'>
+<a name='53'>
+    IMPLICIT NONE<a name='54'>
+    <font color=#447700>!======================================================================<a name='55'></font>
+    <font color=#447700>! Definitions<a name='56'></font>
+    <font color=#447700>!-----------<a name='57'></font>
+    <font color=#447700>!-- DT            time step (second)<a name='58'></font>
+    <font color=#447700>!-- XTIME         forecast time<a name='59'></font>
+    <font color=#447700>!-- ims           start index for i in memory<a name='60'></font>
+    <font color=#447700>!-- ime           end index for i in memory<a name='61'></font>
+    <font color=#447700>!-- jms           start index for j in memory<a name='62'></font>
+    <font color=#447700>!-- jme           end index for j in memory    <a name='63'></font>
+    <font color=#447700>!-- i_start       start indices for i in tile<a name='64'></font>
+    <font color=#447700>!-- i_end         end indices for i in tile<a name='65'></font>
+    <font color=#447700>!-- j_start       start indices for j in tile<a name='66'></font>
+    <font color=#447700>!-- j_end         end indices for j in tile<a name='67'></font>
+    <font color=#447700>!-- num_tiles     number of tiles<a name='68'></font>
+    <font color=#447700>!<a name='69'></font>
+    <font color=#447700>!======================================================================<a name='70'></font>
+<a name='71'>
+    INTEGER, INTENT(IN)                       :: ims, ime, jms, jme, kms, kme<a name='72'>
+    INTEGER, INTENT(IN)                       :: ids, ide, jds, jde, kds, kde<a name='73'>
+    INTEGER, INTENT(IN)                       :: ips, ipe, jps, jpe, kps, kpe<a name='74'>
+    INTEGER, INTENT(IN)                       :: num_tiles<a name='75'>
+    INTEGER, INTENT(IN)                       :: stats_interval<a name='76'>
+    INTEGER, INTENT(IN)                       :: output_freq            <font color=#447700>! interval type<a name='77'></font>
+    INTEGER, INTENT(IN)                       :: run_days<a name='78'>
+    INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_start, i_end, j_start, j_end<a name='79'>
+    TYPE(WRFU_Time), INTENT(IN)               :: currentTime<a name='80'>
+    TYPE(WRFU_Alarm), INTENT(INOUT)           :: avgOutAlarm<a name='81'>
+    INTEGER, INTENT(INOUT)                    :: nsteps                 <font color=#447700>! number of step accumulated<a name='82'></font>
+    CHARACTER(*), INTENT(INOUT)               :: avgOutDateStr<a name='83'>
+<a name='84'>
+    INTEGER, PARAMETER :: NONE = 0<a name='85'>
+    INTEGER, PARAMETER :: SECS = 1<a name='86'>
+    INTEGER, PARAMETER :: MINS = 2<a name='87'>
+    INTEGER, PARAMETER :: HRS  = 3<a name='88'>
+    INTEGER, PARAMETER :: DAYS = 4<a name='89'>
+    INTEGER, PARAMETER :: MONTHLY = 5<a name='90'>
+<a name='91'>
+    REAL, INTENT(IN)                                  :: dt, xtime<a name='92'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN)  :: ht<a name='93'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN)  :: psfc, tsk, t2, th2, q2 <a name='94'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN)  :: u10, v10<a name='95'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN)  :: hfx, lh<a name='96'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN)  :: swdnb, glw, lwupb, swupb<a name='97'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN)  :: swupt, swdnt, lwupt, lwdnt<a name='98'>
+    REAL, DIMENSION( ims:ime , kms:kme, jms:jme ), INTENT(IN) :: t, p, pb, moist<a name='99'>
+    <a name='100'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: psfc_mean, tsk_mean <a name='101'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: pmsl_mean, t2_mean<a name='102'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: th2_mean, q2_mean<a name='103'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: u10_mean, v10_mean<a name='104'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: hfx_mean, lh_mean <a name='105'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: swdnb_mean, glw_mean<a name='106'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: lwupb_mean, swupb_mean<a name='107'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: swupt_mean, swdnt_mean<a name='108'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: lwupt_mean, lwdnt_mean   <a name='109'>
+<a name='110'>
+    <font color=#447700>! LOCAL  VAR<a name='111'></font>
+    INTEGER     :: i, j, ij<a name='112'>
+    REAL        :: value<a name='113'>
+    LOGICAL     :: is_restart<a name='114'>
+    INTEGER     :: rc<a name='115'>
+<a name='116'>
+    LOGICAL     :: is_reset               <font color=#447700>! reset averages<a name='117'></font>
+    LOGICAL     :: compute_avg            <font color=#447700>! compute averages<a name='118'></font>
+<a name='119'>
+    INTEGER            :: mean_interval   <font color=#447700>! interval (s) of mean calculations<a name='120'></font>
+    <a name='121'>
+    <font color=#447700>! DEBUG LOCAL  VAR<a name='122'></font>
+    CHARACTER (LEN=1024)  :: message<a name='123'>
+   <a name='124'>
+    IF ( output_freq .eq. MONTHLY) THEN  <a name='125'>
+      mean_interval = (run_days + 1) * 24 * 60 * 60<a name='126'>
+      WRITE(message, *) "RASM Diagnostics: Set average output to MONTHLY_INTERVAL ... "<a name='127'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_581">(200, message) <a name='128'>
+    ELSE IF (output_freq .eq. DAYS ) THEN<a name='129'>
+      mean_interval = stats_interval  * 24 * 60 * 60<a name='130'>
+      WRITE(message, *) "RASM Diagnostics: Set average output to DAYS  ... mean_interval (secs) =", mean_interval<a name='131'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_582">(200, message)   <a name='132'>
+    ELSE IF (output_freq .eq. HRS ) THEN    <a name='133'>
+      mean_interval =  stats_interval * 60 * 60<a name='134'>
+      WRITE(message, *) "RASM Diagnostics: Set average output to HRS  ... mean_interval (secs) =", mean_interval<a name='135'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_583">(200, message)  <a name='136'>
+    ELSE IF (output_freq .eq. MINS ) THEN    <a name='137'>
+      mean_interval = stats_interval * 60<a name='138'>
+      WRITE(message, *) "RASM Diagnostics: Set average output to MINS  ... mean_interval (secs) =", mean_interval<a name='139'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_584">(200, message)   <a name='140'>
+    ELSE IF (output_freq .eq. SECS ) THEN <a name='141'>
+      mean_interval = stats_interval<a name='142'>
+      WRITE(message, *) "RASM Diagnostics: Set average output to SECS  ... mean_interval (secs) =", mean_interval<a name='143'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_585">(200, message)    <a name='144'>
+    ELSE<a name='145'>
+      <font color=#447700>!WRITE (wrf_err_message , * )"RASM Diagnostics:: ERROR -- error -- ERROR -- error : NO valid interval provided in namelist.input, please provided"<a name='146'></font>
+      <font color=#447700>!CALL wrf_error_fatal ( TRIM(wrf_err_message) )  <a name='147'></font>
+    END IF<a name='148'>
+ <a name='149'>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#GETRESETSTATE'>getResetState</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GETRESETSTATE_1">(currentTime, xtime, dt, mean_interval, output_freq, is_reset)<a name='150'>
+<a name='151'>
+    IF (is_reset) THEN<a name='152'>
+       DO ij = 1 , num_tiles<a name='153'>
+          DO j = j_start(ij), j_end(ij)<a name='154'>
+             DO i = i_start(ij), i_end(ij)<a name='155'>
+                psfc_mean(i,j)=0.0<a name='156'>
+                tsk_mean(i,j)=0.0<a name='157'>
+                pmsl_mean(i,j)=0.0<a name='158'>
+                t2_mean(i,j)=0.0<a name='159'>
+                th2_mean(i,j)=0.0<a name='160'>
+                q2_mean(i,j)=0.0<a name='161'>
+                u10_mean(i,j)=0.0<a name='162'>
+                v10_mean(i,j)=0.0<a name='163'>
+                hfx_mean(i,j)=0.0<a name='164'>
+                lh_mean(i,j)=0.0<a name='165'>
+                swdnb_mean(i,j)=0.0<a name='166'>
+                glw_mean(i,j)=0.0<a name='167'>
+                lwupb_mean(i,j)=0.0<a name='168'>
+                swupb_mean(i,j)=0.0<a name='169'>
+                swupt_mean(i,j)=0.0<a name='170'>
+                swdnt_mean(i,j)=0.0<a name='171'>
+                lwupt_mean(i,j)=0.0<a name='172'>
+                lwdnt_mean(i,j)=0.0<a name='173'>
+             ENDDO<a name='174'>
+          ENDDO<a name='175'>
+       ENDDO<a name='176'>
+<a name='177'>
+       <font color=#447700>! restart step count <a name='178'></font>
+       nsteps = 0.0<a name='179'>
+<a name='180'>
+       WRITE(message, *) "RASM Statistics: RESET accumaltions and means ..................... nsteps=", nsteps<a name='181'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_586">(200, message)<a name='182'>
+<a name='183'>
+    ENDIF<a name='184'>
+    <a name='185'>
+    nsteps = nsteps+1.0<a name='186'>
+<a name='187'>
+    WRITE(message, *) "RASM Statistics: Start accumulate .........................................................."<a name='188'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_587">(200, message)<a name='189'>
+    WRITE(message, *) "RASM Statistics: nsteps=",nsteps, "time_step=", (xtime+dt/60.)*60./dt, "xtime=", xtime<a name='190'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_588">(200, message)  <a name='191'>
+<a name='192'>
+    <font color=#447700>! Surface Pressure<a name='193'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_1">(psfc,ime-ims+1,jme-jms+1,psfc_mean)<a name='194'>
+    <a name='195'>
+    <font color=#447700>! Surface Skin Temperature<a name='196'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_2">(tsk,ime-ims+1,jme-jms+1,tsk_mean)<a name='197'>
+    <a name='198'>
+    <font color=#447700>! PMSL <a name='199'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#PMSL_ACCUM_01'>PMSL_accum_01</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PMSL_ACCUM_01_1">(ims, ime, jms, jme, kms, kme,    &amp;<a name='200'>
+                       ide, jde, ips, ipe, jps, jpe,    &amp;<a name='201'>
+                       t, p, pb, moist, ht, psfc, pmsl_mean)<a name='202'>
+<a name='203'>
+    <font color=#447700>! Temperature at 2M<a name='204'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_3">(t2,ime-ims+1,jme-jms+1,t2_mean)<a name='205'>
+    <a name='206'>
+    <font color=#447700>! Potential Temperature at 2M<a name='207'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_4">(th2,ime-ims+1,jme-jms+1,th2_mean)<a name='208'>
+    <a name='209'>
+    <font color=#447700>! Water Vapor Mixing Ratio at 2M<a name='210'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_5">(q2,ime-ims+1,jme-jms+1,q2_mean)<a name='211'>
+    <a name='212'>
+    <font color=#447700>! U-component of Wind at 10M<a name='213'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_6">(u10,ime-ims+1,jme-jms+1,u10_mean)<a name='214'>
+<a name='215'>
+    <font color=#447700>! V-component of Wind at 10M<a name='216'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_7">(v10,ime-ims+1,jme-jms+1,v10_mean)<a name='217'>
+<a name='218'>
+    <font color=#447700>! SENSIBLE HEAT FLUX AT THE SURFACE<a name='219'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_8">(hfx,ime-ims+1,jme-jms+1,hfx_mean)<a name='220'>
+<a name='221'>
+    <font color=#447700>! LATENT HEAT FLUX AT THE SURFACE<a name='222'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_9">(lh,ime-ims+1,jme-jms+1,lh_mean)<a name='223'>
+<a name='224'>
+    <font color=#447700>! INCOMING SOLAR AT SURFACE (SHORTWAVE DOWN)<a name='225'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_10">(swdnb,ime-ims+1,jme-jms+1,swdnb_mean)<a name='226'>
+<a name='227'>
+    <font color=#447700>! INCOMING LONGWAVE AT SURFACE (LONGWAVE DOWN)<a name='228'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_11">(glw,ime-ims+1,jme-jms+1,glw_mean)<a name='229'>
+<a name='230'>
+    <font color=#447700>! OUTGOING LONGWAVE AT SURFACE (LONGWAVE FLUX UP)<a name='231'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_12">(lwupb,ime-ims+1,jme-jms+1,lwupb_mean)<a name='232'>
+<a name='233'>
+    <font color=#447700>! REFLECTIVE SHORTWAVE AT SURFACE <a name='234'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_13">(swupb,ime-ims+1,jme-jms+1,swupb_mean)<a name='235'>
+<a name='236'>
+    <font color=#447700>! SWUPT - UPWELLING SHORTWAVE FLUX AT TOP<a name='237'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_14">(swupt,ime-ims+1,jme-jms+1,swupt_mean)<a name='238'>
+<a name='239'>
+    <font color=#447700>! SWDNT - DOWNWELLING SHORTWAVE FLUX AT TOP<a name='240'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_15">(swdnt,ime-ims+1,jme-jms+1,swdnt_mean)<a name='241'>
+<a name='242'>
+    <font color=#447700>! LWUPT - UPWELLING LONGWAVE FLUX AT TOP<a name='243'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_16">(lwupt,ime-ims+1,jme-jms+1,lwupt_mean)<a name='244'>
+<a name='245'>
+    <font color=#447700>! LWDNT - DOWNWELLING LONGWAVE FLUX AT TOP<a name='246'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_17">(lwdnt,ime-ims+1,jme-jms+1,lwdnt_mean)<a name='247'>
+<a name='248'>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#GETAVGSTATE'>getAvgState</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GETAVGSTATE_1">(currentTime, xtime, dt, mean_interval, output_freq, compute_avg, avgOutDateStr)<a name='249'>
+    IF (compute_avg) THEN<a name='250'>
+       psfc_mean=psfc_mean/nsteps<a name='251'>
+       tsk_mean=tsk_mean/nsteps<a name='252'>
+       pmsl_mean=pmsl_mean/nsteps<a name='253'>
+       t2_mean=t2_mean/nsteps<a name='254'>
+       th2_mean=th2_mean/nsteps<a name='255'>
+       q2_mean=q2_mean/nsteps<a name='256'>
+       u10_mean=u10_mean/nsteps<a name='257'>
+       v10_mean=v10_mean/nsteps<a name='258'>
+       hfx_mean=hfx_mean/nsteps<a name='259'>
+       lh_mean=lh_mean/nsteps<a name='260'>
+       swdnb_mean=swdnb_mean/nsteps<a name='261'>
+       glw_mean=glw_mean/nsteps<a name='262'>
+       lwupb_mean=lwupb_mean/nsteps<a name='263'>
+       swupb_mean=swupb_mean/nsteps<a name='264'>
+       swupt_mean=swupt_mean/nsteps<a name='265'>
+       swdnt_mean=swdnt_mean/nsteps<a name='266'>
+       lwupt_mean=lwupt_mean/nsteps<a name='267'>
+       lwdnt_mean=lwdnt_mean/nsteps<a name='268'>
+      <a name='269'>
+       if ( output_freq .EQ. MONTHLY) then<a name='270'>
+             WRITE(message, *) "RASM Statistics: MONTHLY_INTERVAL turn ON ALARM to generate output ........................"<a name='271'>
+             CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_589">(200, message)<a name='272'>
+       endif<a name='273'>
+<a name='274'>
+       CALL WRFU_AlarmRingerOn (avgOutAlarm, rc=rc)<a name='275'>
+      <a name='276'>
+       WRITE(message, *) "RASM Statistics: Mean computed .........................................................."<a name='277'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#MEAN_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_590">(200, message)<a name='278'>
+<a name='279'>
+    END IF<a name='280'>
+<a name='281'>
+  END SUBROUTINE mean_output_calc<a name='282'>
+<a name='283'>
+  <font color=#447700>! RASM: Diurnal<a name='284'></font>
+<A NAME='DIURNALCYCLE_OUTPUT_CALC'><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='285'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>diurnalcycle_output_calc</font>(            &amp; <A href='../../call_to/DIURNALCYCLE_OUTPUT_CALC.html' TARGET='index'>1</A>,<A href='../../call_from/DIURNALCYCLE_OUTPUT_CALC.html' TARGET='index'>43</A><a name='286'>
+        is_restart, currentTime                   &amp;<a name='287'>
+       ,dt, xtime                                 &amp;<a name='288'>
+       ,psfc, psfc_dtmp, tsk, tsk_dtmp            &amp;<a name='289'>
+       ,t2, t2_dtmp                               &amp;<a name='290'>
+       ,t, p, pb, moist                           &amp; <font color=#447700>! vars for pmsl calc<a name='291'></font>
+       ,th2, th2_dtmp, q2, q2_dtmp                &amp;<a name='292'>
+       ,u10, u10_dtmp, v10, v10_dtmp              &amp;<a name='293'>
+       ,hfx, hfx_dtmp, lh, lh_dtmp                &amp;<a name='294'>
+       ,swdnb, swdnb_dtmp, glw, glw_dtmp          &amp; <a name='295'>
+       ,lwupb, lwupb_dtmp, swupb, swupb_dtmp      &amp;<a name='296'>
+       ,swupt, swupt_dtmp, swdnt, swdnt_dtmp      &amp;<a name='297'>
+       ,lwupt, lwupt_dtmp, lwdnt, lwdnt_dtmp      &amp;<a name='298'>
+       ,avgoutalarm                  &amp;<a name='299'>
+       ,diurnOutDateStr, avg_nsteps               &amp;<a name='300'>
+       ,diurnal_nsteps                            &amp;<a name='301'>
+       ,psfc_diurn, tsk_diurn, t2_diurn           &amp;<a name='302'>
+       ,th2_diurn, q2_diurn, u10_diurn, v10_diurn &amp;<a name='303'>
+       ,hfx_diurn, lh_diurn                       &amp;<a name='304'>
+       ,swdnb_diurn, glw_diurn                    &amp;<a name='305'>
+       ,lwupb_diurn, swupb_diurn                  &amp;<a name='306'>
+       ,swupt_diurn, swdnt_diurn                  &amp;<a name='307'>
+       ,lwupt_diurn, lwdnt_diurn                  &amp;<a name='308'>
+       ,ids, ide, jds, jde, kds, kde              &amp;<a name='309'>
+       ,ims, ime, jms, jme, kms, kme              &amp;<a name='310'>
+       ,ips, ipe, jps, jpe, kps, kpe              &amp; <font color=#447700>! patch  dims<a name='311'></font>
+       ,i_start, i_end, j_start, j_end            &amp;<a name='312'>
+       ,num_tiles         )<a name='313'>
+<a name='314'>
+    <font color=#447700>!----------------------------------------------------------------------<a name='315'></font>
+    <font color=#447700>! USES:<a name='316'></font>
+    USE module_utility<a name='317'>
+    USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_225">, ONLY : domain_clock_get<a name='318'>
+<a name='319'>
+    IMPLICIT NONE<a name='320'>
+    <font color=#447700>!======================================================================<a name='321'></font>
+    <font color=#447700>! Definitions<a name='322'></font>
+    <font color=#447700>!-----------<a name='323'></font>
+    <font color=#447700>!-- DT            time step (second)<a name='324'></font>
+    <font color=#447700>!-- XTIME         forecast time<a name='325'></font>
+    <font color=#447700>!-- ims           start index for i in memory<a name='326'></font>
+    <font color=#447700>!-- ime           end index for i in memory<a name='327'></font>
+    <font color=#447700>!-- jms           start index for j in memory<a name='328'></font>
+    <font color=#447700>!-- jme           end index for j in memory    <a name='329'></font>
+    <font color=#447700>!-- i_start       start indices for i in tile<a name='330'></font>
+    <font color=#447700>!-- i_end         end indices for i in tile<a name='331'></font>
+    <font color=#447700>!-- j_start       start indices for j in tile<a name='332'></font>
+    <font color=#447700>!-- j_end         end indices for j in tile<a name='333'></font>
+    <font color=#447700>!-- num_tiles     number of tiles<a name='334'></font>
+    <font color=#447700>!<a name='335'></font>
+    <font color=#447700>!======================================================================<a name='336'></font>
+<a name='337'>
+    INTEGER, INTENT(IN)                       :: ims, ime, jms, jme, kms, kme<a name='338'>
+    INTEGER, INTENT(IN)                       :: ids, ide, jds, jde, kds, kde<a name='339'>
+    INTEGER, INTENT(IN)                       :: ips, ipe, jps, jpe, kps, kpe<a name='340'>
+   <a name='341'>
+    INTEGER, INTENT(IN)                       :: num_tiles<a name='342'>
+    INTEGER, DIMENSION(num_tiles), INTENT(IN) :: i_start, i_end, j_start, j_end<a name='343'>
+    TYPE(WRFU_Time), INTENT(IN)               :: currentTime<a name='344'>
+    TYPE(WRFU_Alarm), INTENT(INOUT)           :: avgOutAlarm<a name='345'>
+    INTEGER, INTENT(INOUT)                    :: avg_nsteps             <font color=#447700>! number of avg steps accumulated<a name='346'></font>
+    INTEGER, INTENT(INOUT)                    :: diurnal_nsteps         <font color=#447700>! number of diurnal steps accumulated<a name='347'></font>
+    CHARACTER(*), INTENT(INOUT)               :: diurnOutDateStr<a name='348'>
+<a name='349'>
+    INTEGER, PARAMETER :: NONE = 0<a name='350'>
+    INTEGER, PARAMETER :: SECS = 1<a name='351'>
+    INTEGER, PARAMETER :: MINS = 2<a name='352'>
+    INTEGER, PARAMETER :: HRS  = 3<a name='353'>
+    INTEGER, PARAMETER :: DAYS = 4<a name='354'>
+    INTEGER, PARAMETER :: MONTHLY = 5<a name='355'>
+    INTEGER, PARAMETER :: NUM_DIURN_CYCLES = 8<a name='356'>
+    INTEGER, PARAMETER :: DIURNAL_3HR      = 10800   <font color=#447700>! three hour period in seconds<a name='357'></font>
+<a name='358'>
+    REAL, INTENT(IN)                                  :: dt, xtime<a name='359'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN)  :: psfc, tsk, t2, th2, q2 <a name='360'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN)  :: u10, v10<a name='361'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN)  :: hfx, lh<a name='362'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN)  :: swdnb, glw, lwupb, swupb<a name='363'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN)  :: swupt, swdnt, lwupt, lwdnt<a name='364'>
+    REAL, DIMENSION( ims:ime , kms:kme, jms:jme ), INTENT(IN) :: t, p, pb, moist<a name='365'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: psfc_dtmp, tsk_dtmp <a name='366'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: t2_dtmp<a name='367'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: th2_dtmp, q2_dtmp<a name='368'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: u10_dtmp, v10_dtmp<a name='369'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: hfx_dtmp, lh_dtmp <a name='370'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: swdnb_dtmp, glw_dtmp<a name='371'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: lwupb_dtmp, swupb_dtmp<a name='372'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: swupt_dtmp, swdnt_dtmp<a name='373'>
+    REAL, DIMENSION( ims:ime , jms:jme ), INTENT(OUT) :: lwupt_dtmp, lwdnt_dtmp   <a name='374'>
+   <a name='375'>
+    REAL, DIMENSION( ims:ime, 1:NUM_DIURN_CYCLES, jms:jme ), INTENT(OUT) :: psfc_diurn, tsk_diurn<a name='376'>
+    REAL, DIMENSION( ims:ime, 1:NUM_DIURN_CYCLES, jms:jme ), INTENT(OUT) :: t2_diurn    <a name='377'>
+    REAL, DIMENSION( ims:ime, 1:NUM_DIURN_CYCLES, jms:jme ), INTENT(OUT) :: th2_diurn, q2_diurn<a name='378'>
+    REAL, DIMENSION( ims:ime, 1:NUM_DIURN_CYCLES, jms:jme ), INTENT(OUT) :: u10_diurn, v10_diurn<a name='379'>
+    REAL, DIMENSION( ims:ime, 1:NUM_DIURN_CYCLES, jms:jme ), INTENT(OUT) :: hfx_diurn, lh_diurn <a name='380'>
+    REAL, DIMENSION( ims:ime, 1:NUM_DIURN_CYCLES, jms:jme ), INTENT(OUT) :: swdnb_diurn, glw_diurn <a name='381'>
+    REAL, DIMENSION( ims:ime, 1:NUM_DIURN_CYCLES, jms:jme ), INTENT(OUT) :: lwupb_diurn, swupb_diurn <a name='382'>
+    REAL, DIMENSION( ims:ime, 1:NUM_DIURN_CYCLES, jms:jme ), INTENT(OUT) :: swupt_diurn, swdnt_diurn <a name='383'>
+    REAL, DIMENSION( ims:ime, 1:NUM_DIURN_CYCLES, jms:jme ), INTENT(OUT) :: lwupt_diurn, lwdnt_diurn <a name='384'>
+<a name='385'>
+    <font color=#447700>! LOCAL  VAR<a name='386'></font>
+    INTEGER     :: i, j, k, ij<a name='387'>
+    REAL        :: value<a name='388'>
+    LOGICAL     :: is_restart<a name='389'>
+    INTEGER     :: rc<a name='390'>
+    INTEGER     :: current_diurn_cycle<a name='391'>
+    INTEGER     :: diurnal_output_freq    <font color=#447700>! diurnal interval type<a name='392'></font>
+    INTEGER     :: mean_output_freq       <font color=#447700>! mean interval type<a name='393'></font>
+    INTEGER     :: mean_interval          <font color=#447700>! mean interval<a name='394'></font>
+    LOGICAL     :: is_avg_reset           <font color=#447700>! reset averages<a name='395'></font>
+    LOGICAL     :: is_diurnal_reset       <font color=#447700>! reset dirurnal cycle<a name='396'></font>
+    LOGICAL     :: compute_avg            <font color=#447700>! compute averages<a name='397'></font>
+    LOGICAL     :: compute_diurnalcycle   <font color=#447700>! compute dirurnal cycle<a name='398'></font>
+<a name='399'>
+    <font color=#447700>! DEBUG LOCAL  VAR<a name='400'></font>
+    CHARACTER (LEN=1024)  :: message<a name='401'>
+    CHARACTER (LEN=1024)  :: EmptyStr<a name='402'>
+    LOGICAL               :: diurn_test<a name='403'>
+    INTEGER               :: diurn_interval <a name='404'>
+   <a name='405'>
+    <font color=#447700>! initialize frequencies and intervals<a name='406'></font>
+    mean_interval = DIURNAL_3HR<a name='407'>
+    mean_output_freq = HRS<a name='408'>
+    diurn_interval = 2 * 24 * 60 * 60 <font color=#447700>! dummy variable only used when testing<a name='409'></font>
+    diurnal_output_freq = MONTHLY<a name='410'>
+    EmptyStr =""                      <font color=#447700>! empty string used for processing <a name='411'></font>
+<a name='412'>
+    <font color=#447700>! intitialize 2 day test <a name='413'></font>
+    diurn_test = .false.       <a name='414'>
+    <font color=#447700>! if testing generate daily instead of monthy     <a name='415'></font>
+    if (diurn_test) then<a name='416'>
+       diurnal_output_freq = DAYS<a name='417'>
+    else<a name='418'>
+       diurnal_output_freq = MONTHLY<a name='419'>
+    endif<a name='420'>
+<a name='421'>
+    <font color=#447700>! get the average state<a name='422'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#GETRESETSTATE'>getResetState</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GETRESETSTATE_2">(currentTime, xtime, dt, mean_interval, mean_output_freq, is_avg_reset)<a name='423'>
+    IF (is_avg_reset) THEN<a name='424'>
+       DO ij = 1 , num_tiles<a name='425'>
+          DO j = j_start(ij), j_end(ij)<a name='426'>
+             DO i = i_start(ij), i_end(ij)<a name='427'>
+                psfc_dtmp(i,j)=0.0<a name='428'>
+                tsk_dtmp(i,j)=0.0<a name='429'>
+                t2_dtmp(i,j)=0.0<a name='430'>
+                th2_dtmp(i,j)=0.0<a name='431'>
+                q2_dtmp(i,j)=0.0<a name='432'>
+                u10_dtmp(i,j)=0.0<a name='433'>
+                v10_dtmp(i,j)=0.0<a name='434'>
+                hfx_dtmp(i,j)=0.0<a name='435'>
+                lh_dtmp(i,j)=0.0<a name='436'>
+                swdnb_dtmp(i,j)=0.0<a name='437'>
+                glw_dtmp(i,j)=0.0<a name='438'>
+                lwupb_dtmp(i,j)=0.0<a name='439'>
+                swupb_dtmp(i,j)=0.0<a name='440'>
+                swupt_dtmp(i,j)=0.0<a name='441'>
+                swdnt_dtmp(i,j)=0.0<a name='442'>
+                lwupt_dtmp(i,j)=0.0<a name='443'>
+                lwdnt_dtmp(i,j)=0.0<a name='444'>
+             ENDDO<a name='445'>
+          ENDDO<a name='446'>
+       ENDDO<a name='447'>
+<a name='448'>
+       <font color=#447700>! restart step count <a name='449'></font>
+       avg_nsteps = 0.0<a name='450'>
+<a name='451'>
+       WRITE(message, *) "RASM Statistics: RESET accumaltions and means ..................... avg_nsteps=", avg_nsteps<a name='452'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_591">(200, message)<a name='453'>
+<a name='454'>
+    ENDIF<a name='455'>
+<a name='456'>
+    <font color=#447700>! get the diurnal state<a name='457'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#GETRESETSTATE'>getResetState</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GETRESETSTATE_3">(currentTime, xtime, dt, diurn_interval, diurnal_output_freq, is_diurnal_reset)<a name='458'>
+    IF (is_diurnal_reset) THEN<a name='459'>
+       DO ij = 1 , num_tiles<a name='460'>
+          DO k = 1 , NUM_DIURN_CYCLES<a name='461'>
+             DO j = j_start(ij), j_end(ij)<a name='462'>
+                DO i = i_start(ij), i_end(ij)<a name='463'>
+                   psfc_diurn(i,k,j)=0.0<a name='464'>
+                   tsk_diurn(i,k,j)=0.0<a name='465'>
+                   t2_diurn(i,k,j)=0.0<a name='466'>
+                   th2_diurn(i,k,j)=0.0<a name='467'>
+                   q2_diurn(i,k,j)=0.0<a name='468'>
+                   u10_diurn(i,k,j)=0.0<a name='469'>
+                   v10_diurn(i,k,j)=0.0<a name='470'>
+                   hfx_diurn(i,k,j)=0.0<a name='471'>
+                   lh_diurn(i,k,j)=0.0<a name='472'>
+                   swdnb_diurn(i,k,j)=0.0<a name='473'>
+                   glw_diurn(i,k,j)=0.0<a name='474'>
+                   lwupb_diurn(i,k,j)=0.0<a name='475'>
+                   swupb_diurn(i,k,j)=0.0<a name='476'>
+                   swupt_diurn(i,k,j)=0.0<a name='477'>
+                   swdnt_diurn(i,k,j)=0.0<a name='478'>
+                   lwupt_diurn(i,k,j)=0.0<a name='479'>
+                   lwdnt_diurn(i,k,j)=0.0<a name='480'>
+                ENDDO<a name='481'>
+             ENDDO<a name='482'>
+          ENDDO<a name='483'>
+       ENDDO<a name='484'>
+<a name='485'>
+       <font color=#447700>! restart step count <a name='486'></font>
+       diurnal_nsteps = 0.0<a name='487'>
+<a name='488'>
+       WRITE(message, *) "RASM Statistics: RESET Diurnal means ..................... diurnal_nsteps=", diurnal_nsteps<a name='489'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_592">(200, message)<a name='490'>
+<a name='491'>
+    ENDIF<a name='492'>
+    <a name='493'>
+    avg_nsteps = avg_nsteps+1.0<a name='494'>
+<a name='495'>
+    <font color=#447700>! Surface Pressure<a name='496'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_18">(psfc,ime-ims+1,jme-jms+1,psfc_dtmp)<a name='497'>
+    <a name='498'>
+    <font color=#447700>! Surface Skin Temperature<a name='499'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_19">(tsk,ime-ims+1,jme-jms+1,tsk_dtmp)<a name='500'>
+    <a name='501'>
+    <font color=#447700>! Temperature at 2M<a name='502'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_20">(t2,ime-ims+1,jme-jms+1,t2_dtmp)<a name='503'>
+<a name='504'>
+    <font color=#447700>! Potential Temperature at 2M<a name='505'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_21">(th2,ime-ims+1,jme-jms+1,th2_dtmp)<a name='506'>
+<a name='507'>
+    <font color=#447700>! WATER VAPOR MIXING RATIO AT 2M<a name='508'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_22">(q2,ime-ims+1,jme-jms+1,q2_dtmp)<a name='509'>
+<a name='510'>
+    <font color=#447700>! U-COMPONENT OF WIND AT 10M<a name='511'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_23">(u10,ime-ims+1,jme-jms+1,u10_dtmp)<a name='512'>
+<a name='513'>
+    <font color=#447700>! V-COMPONENT OF WIND AT 10M<a name='514'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_24">(v10,ime-ims+1,jme-jms+1,v10_dtmp)<a name='515'>
+<a name='516'>
+    <font color=#447700>! SENSIBLE HEAT FLUX AT THE SURFACE<a name='517'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_25">(hfx,ime-ims+1,jme-jms+1,hfx_dtmp)<a name='518'>
+<a name='519'>
+    <font color=#447700>! LATENT HEAT FLUX AT THE SURFACE<a name='520'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_26">(lh,ime-ims+1,jme-jms+1,lh_dtmp)<a name='521'>
+<a name='522'>
+    <font color=#447700>! DOWNWARD SHORT WAVE FLUX AT GROUND SURFACE<a name='523'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_27">(swdnb,ime-ims+1,jme-jms+1,swdnb_dtmp)<a name='524'>
+<a name='525'>
+    <font color=#447700>! DOWNWARD LONG WAVE FLUX AT GROUND SURFACE<a name='526'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_28">(glw,ime-ims+1,jme-jms+1,glw_dtmp)<a name='527'>
+<a name='528'>
+    <font color=#447700>! UPWELLING LONGWAVE FLUX AT BOTTOM<a name='529'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_29">(lwupb,ime-ims+1,jme-jms+1,lwupb_dtmp)<a name='530'>
+<a name='531'>
+    <font color=#447700>! UPWELLING SHORTWAVE FLUX AT BOTTOM <a name='532'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_30">(swupb,ime-ims+1,jme-jms+1,swupb_dtmp)<a name='533'>
+<a name='534'>
+    <font color=#447700>! UPWELLING SHORTWAVE FLUX AT TOP <a name='535'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_31">(swupt,ime-ims+1,jme-jms+1,swupt_dtmp)<a name='536'>
+<a name='537'>
+    <font color=#447700>! DOWNWELLING SHORTWAVE FLUX AT TOP<a name='538'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_32">(swdnt,ime-ims+1,jme-jms+1,swdnt_dtmp)<a name='539'>
+<a name='540'>
+    <font color=#447700>! UPWELLING LONGWAVE FLUX AT TOP <a name='541'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_33">(lwupt,ime-ims+1,jme-jms+1,lwupt_dtmp)<a name='542'>
+<a name='543'>
+    <font color=#447700>! DOWNWELLING LONGWAVE FLUX AT TOP<a name='544'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D'>var_accum_2d</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_2D_34">(lwdnt,ime-ims+1,jme-jms+1,lwdnt_dtmp)<a name='545'>
+<a name='546'>
+    <font color=#447700>! get average state<a name='547'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#GETAVGSTATE'>getAvgState</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GETAVGSTATE_2">(currentTime, xtime, dt, mean_interval, mean_output_freq, compute_avg, EmptyStr)<a name='548'>
+    IF (compute_avg) THEN<a name='549'>
+       psfc_dtmp=psfc_dtmp/avg_nsteps<a name='550'>
+       tsk_dtmp=tsk_dtmp/avg_nsteps<a name='551'>
+       t2_dtmp=t2_dtmp/avg_nsteps<a name='552'>
+       th2_dtmp=th2_dtmp/avg_nsteps<a name='553'>
+       q2_dtmp=q2_dtmp/avg_nsteps<a name='554'>
+       u10_dtmp=u10_dtmp/avg_nsteps<a name='555'>
+       v10_dtmp=v10_dtmp/avg_nsteps<a name='556'>
+       hfx_dtmp=hfx_dtmp/avg_nsteps<a name='557'>
+       lh_dtmp=lh_dtmp/avg_nsteps<a name='558'>
+       swdnb_dtmp=swdnb_dtmp/avg_nsteps<a name='559'>
+       glw_dtmp=glw_dtmp/avg_nsteps<a name='560'>
+       lwupb_dtmp=lwupb_dtmp/avg_nsteps<a name='561'>
+       swupb_dtmp=swupb_dtmp/avg_nsteps<a name='562'>
+       swupt_dtmp=swupt_dtmp/avg_nsteps<a name='563'>
+       swdnt_dtmp=swdnt_dtmp/avg_nsteps<a name='564'>
+       lwupt_dtmp=lwupt_dtmp/avg_nsteps<a name='565'>
+       lwdnt_dtmp=lwdnt_dtmp/avg_nsteps<a name='566'>
+       <a name='567'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#GET_DIURN_CYCLE'>get_diurn_cycle</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_DIURN_CYCLE_1">(currentTime, xtime, dt, current_diurn_cycle)<a name='568'>
+       <font color=#447700>! accummulate averages, increment counter by one<a name='569'></font>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_1">(psfc_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, psfc_diurn) <a name='570'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_2">(tsk_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, tsk_diurn)<a name='571'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_3">(t2_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, t2_diurn)<a name='572'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_4">(th2_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, th2_diurn)<a name='573'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_5">(q2_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, q2_diurn)<a name='574'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_6">(u10_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, u10_diurn)<a name='575'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_7">(v10_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, v10_diurn)<a name='576'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_8">(hfx_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, hfx_diurn) <a name='577'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_9">(lh_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, lh_diurn) <a name='578'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_10">(swdnb_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, swdnb_diurn) <a name='579'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_11">(glw_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, glw_diurn) <a name='580'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_12">(lwupb_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, lwupb_diurn) <a name='581'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_13">(swupb_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, swupb_diurn) <a name='582'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_14">(swupt_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, swupt_diurn) <a name='583'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_15">(swdnt_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, swdnt_diurn) <a name='584'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_16">(lwupt_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, lwupt_diurn) <a name='585'>
+       CALL <A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL'>var_accum_diurnal</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VAR_ACCUM_DIURNAL_17">(lwdnt_dtmp, ime-ims+1,  NUM_DIURN_CYCLES, jme-jms+1, current_diurn_cycle, lwdnt_diurn) <a name='586'>
+       <a name='587'>
+       <font color=#447700>! increment diurnal count once a day, assuming 3hr cycles <a name='588'></font>
+       if (current_diurn_cycle .eq. 8) then<a name='589'>
+          diurnal_nsteps = diurnal_nsteps + 1.0<a name='590'>
+       endif<a name='591'>
+<a name='592'>
+    END IF<a name='593'>
+<a name='594'>
+    <font color=#447700>! get Diurnal average state<a name='595'></font>
+    CALL <A href='../../html_code/phys/module_diag_rasm.F.html#GETDIURNALSTATE'>getDiurnalState</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GETDIURNALSTATE_1">(currentTime, xtime, dt, diurn_interval, diurnal_output_freq, compute_diurnalcycle, diurnOutDateStr)<a name='596'>
+    IF (compute_diurnalcycle) THEN<a name='597'>
+       psfc_diurn=psfc_diurn/diurnal_nsteps<a name='598'>
+       tsk_diurn=tsk_diurn/diurnal_nsteps<a name='599'>
+       t2_diurn=t2_diurn/diurnal_nsteps<a name='600'>
+       th2_diurn=th2_diurn/diurnal_nsteps<a name='601'>
+       q2_diurn=q2_diurn/diurnal_nsteps<a name='602'>
+       u10_diurn=u10_diurn/diurnal_nsteps<a name='603'>
+       v10_diurn=v10_diurn/diurnal_nsteps<a name='604'>
+       hfx_diurn=hfx_diurn/diurnal_nsteps<a name='605'>
+       lh_diurn=lh_diurn/diurnal_nsteps<a name='606'>
+       swdnb_diurn=swdnb_diurn/diurnal_nsteps<a name='607'>
+       glw_diurn=glw_diurn/diurnal_nsteps<a name='608'>
+       lwupb_diurn=lwupb_diurn/diurnal_nsteps<a name='609'>
+       swupb_diurn=swupb_diurn/diurnal_nsteps<a name='610'>
+       swupt_diurn=swupt_diurn/diurnal_nsteps<a name='611'>
+       swdnt_diurn=swdnt_diurn/diurnal_nsteps<a name='612'>
+       lwupt_diurn=lwupt_diurn/diurnal_nsteps<a name='613'>
+       lwdnt_diurn=lwdnt_diurn/diurnal_nsteps<a name='614'>
+<a name='615'>
+       CALL WRFU_AlarmRingerOn (avgOutAlarm, rc=rc)<a name='616'>
+      <a name='617'>
+       WRITE(message, *) "RASM Statistics: Diurnal Mean Cycle computed .........................................................."<a name='618'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#DIURNALCYCLE_OUTPUT_CALC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_593">(200, message)<a name='619'>
+<a name='620'>
+    END IF<a name='621'>
+<a name='622'>
+  END SUBROUTINE diurnalcycle_output_calc<a name='623'>
+<a name='624'>
+<A NAME='VAR_ACCUM_DIURNAL'><A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_DIURNAL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='625'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>var_accum_diurnal</font>(var, dx, dz, dy, current_cycle, var_accum)  <A href='../../call_to/VAR_ACCUM_DIURNAL.html' TARGET='index'>17</A><a name='626'>
+    <font color=#447700>! Subroutine accumulates diurnal variable<a name='627'></font>
+<a name='628'>
+    IMPLICIT NONE<a name='629'>
+<a name='630'>
+    INTEGER, INTENT(IN)                   :: dx, dz, dy, current_cycle<a name='631'>
+    REAL, DIMENSION(dx,dy), INTENT(IN)         :: var<a name='632'>
+    REAL, DIMENSION(dx, dz, dy), INTENT(INOUT) :: var_accum<a name='633'>
+ <a name='634'>
+    <font color=#447700>!local<a name='635'></font>
+    INTEGER :: k, i, j<a name='636'>
+ <a name='637'>
+    k = current_cycle <font color=#447700>! current cycle<a name='638'></font>
+    DO j=1,dy<a name='639'>
+       DO i=1,dx<a name='640'>
+          var_accum(i, k, j) = var_accum(i, k, j) + var(i,j)<a name='641'>
+       ENDDO<a name='642'>
+    ENDDO<a name='643'>
+<a name='644'>
+  END SUBROUTINE var_accum_diurnal<a name='645'>
+<a name='646'>
+<A NAME='VAR_ACCUM_2D'><A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_2D' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='647'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>var_accum_2d</font>(var, dx, dy, var_accum)  <A href='../../call_to/VAR_ACCUM_2D.html' TARGET='index'>34</A><a name='648'>
+    <font color=#447700>! Subroutine accumulates 2D variable<a name='649'></font>
+<a name='650'>
+    IMPLICIT NONE<a name='651'>
+<a name='652'>
+    INTEGER, INTENT(IN)                   :: dx, dy<a name='653'>
+    REAL, DIMENSION(dx,dy), INTENT(IN)    :: var<a name='654'>
+    REAL, DIMENSION(dx,dy), INTENT(INOUT) :: var_accum<a name='655'>
+    <a name='656'>
+    var_accum = var_accum + var <a name='657'>
+<a name='658'>
+  END SUBROUTINE var_accum_2d<a name='659'>
+<a name='660'>
+<A NAME='VAR_ACCUM_3D_01'><A href='../../html_code/phys/module_diag_rasm.F.html#VAR_ACCUM_3D_01' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='661'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>var_accum_3d_01</font>(ims, ime, jms, jme, kms, kme,    &amp;<a name='662'>
+                             ide, jde, ips, ipe, jps, jpe,    &amp;<a name='663'>
+                             var, var_accum) <a name='664'>
+    <font color=#447700>! Subroutine accumulates 3D variable at lowest level resulting in 2D output<a name='665'></font>
+<a name='666'>
+    IMPLICIT NONE<a name='667'>
+<a name='668'>
+    INTEGER, INTENT(IN) :: ims, ime, jms, jme, kms, kme<a name='669'>
+    INTEGER, INTENT(IN) :: ide, jde, ips, ipe, jps, jpe<a name='670'>
+<a name='671'>
+    REAL, DIMENSION(  ims:ime , kms:kme, jms:jme ), INTENT(IN):: var<a name='672'>
+    REAL, DIMENSION(ims:ime , jms:jme), INTENT(INOUT) :: var_accum<a name='673'>
+    <a name='674'>
+    <font color=#447700>!local<a name='675'></font>
+    INTEGER              :: k, i, j, j_end, i_end<a name='676'>
+    CHARACTER (LEN=1024) :: message<a name='677'>
+<a name='678'>
+    j_end = jpe<a name='679'>
+    i_end = ipe<a name='680'>
+    if(j_end.eq.jde) j_end=j_end-1<a name='681'>
+    if(i_end.eq.ide) i_end=i_end-1<a name='682'>
+<a name='683'>
+    k=1 <font color=#447700>! lowest level <a name='684'></font>
+    DO j=jps, j_end            <a name='685'>
+       DO i=ips, i_end<a name='686'>
+          var_accum(i,j) = var_accum(i,j) + var(i,k,j)<a name='687'>
+       ENDDO<a name='688'>
+    ENDDO<a name='689'>
+ <a name='690'>
+  END SUBROUTINE var_accum_3d_01<a name='691'>
+<a name='692'>
+<A NAME='SHUM_ACCUM_01'><A href='../../html_code/phys/module_diag_rasm.F.html#SHUM_ACCUM_01' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='693'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>shum_accum_01</font>(ims, ime, jms, jme, kms, kme,    &amp;<a name='694'>
+                           ide, jde, ips, ipe, jps, jpe,    &amp;<a name='695'>
+                           moist, var_accum) <a name='696'>
+    <font color=#447700>! Subroutine accumulates specific humidity at lowest level resulting in 2D output<a name='697'></font>
+<a name='698'>
+    IMPLICIT NONE<a name='699'>
+<a name='700'>
+    INTEGER, INTENT(IN) :: ims, ime, jms, jme, kms, kme<a name='701'>
+    INTEGER, INTENT(IN) :: ide, jde, ips, ipe, jps, jpe<a name='702'>
+<a name='703'>
+    REAL, DIMENSION(  ims:ime , kms:kme, jms:jme ), INTENT(IN):: moist<a name='704'>
+    REAL, DIMENSION(ims:ime , jms:jme), INTENT(INOUT) :: var_accum<a name='705'>
+<a name='706'>
+    <font color=#447700>!local<a name='707'></font>
+    REAL :: tmp_shum<a name='708'>
+    INTEGER              :: k, i, j, j_end, i_end<a name='709'>
+    CHARACTER (LEN=1024) :: message<a name='710'>
+<a name='711'>
+    j_end = jpe<a name='712'>
+    i_end = ipe<a name='713'>
+    if(j_end.eq.jde) j_end=j_end-1<a name='714'>
+    if(i_end.eq.ide) i_end=i_end-1<a name='715'>
+<a name='716'>
+    k=1 <font color=#447700>! lowest level <a name='717'></font>
+    DO j=jps, j_end            <a name='718'>
+       DO i=ips, i_end<a name='719'>
+          if( moist(i,k,j) .gt. 0 ) then<a name='720'>
+             tmp_shum = moist(i,k,j) / (1+moist(i,k,j)) <a name='721'>
+          else<a name='722'>
+             tmp_shum = 0.0<a name='723'>
+          endif<a name='724'>
+          var_accum(i,j) = var_accum(i,j) + tmp_shum<a name='725'>
+       ENDDO<a name='726'>
+    ENDDO<a name='727'>
+ <a name='728'>
+  END SUBROUTINE shum_accum_01<a name='729'>
+<a name='730'>
+<A NAME='T_ACCUM_01'><A href='../../html_code/phys/module_diag_rasm.F.html#T_ACCUM_01' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='731'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>T_accum_01</font>( ims, ime, jms, jme, kms, kme,    &amp;,<A href='../../call_from/T_ACCUM_01.html' TARGET='index'>2</A><a name='732'>
+                         ide, jde, ips, ipe, jps, jpe,    &amp;<a name='733'>
+                         t, p, pb, t_accum) <a name='734'>
+    <font color=#447700>! Subroutine accumulates Temperature at lowest level resulting in 2D output<a name='735'></font>
+   <a name='736'>
+    USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_diag_rasm.F.html#T_ACCUM_01' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_57">, only: t0,p0<a name='737'>
+    USE <A href='../../html_code/phys/module_cam_shr_const_mod.F.html#SHR_CONST_MOD'>shr_const_mod</A><A href='../../html_code/phys/module_diag_rasm.F.html#T_ACCUM_01' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_CONST_MOD_2"><a name='738'>
+<a name='739'>
+    IMPLICIT NONE<a name='740'>
+<a name='741'>
+    INTEGER, INTENT(IN) :: ims, ime, jms, jme, kms, kme<a name='742'>
+    INTEGER, INTENT(IN) :: ide, jde, ips, ipe, jps, jpe<a name='743'>
+<a name='744'>
+    REAL, DIMENSION(  ims:ime , kms:kme, jms:jme ), INTENT(IN):: t, p, pb<a name='745'>
+    REAL, DIMENSION(ims:ime , jms:jme), INTENT(INOUT) :: t_accum<a name='746'>
+<a name='747'>
+    <font color=#447700>! local<a name='748'></font>
+    REAL     :: t_tmp, cp, rd<a name='749'>
+    INTEGER              :: k, i, j, j_end, i_end<a name='750'>
+    CHARACTER (LEN=1024) :: message<a name='751'>
+<a name='752'>
+    rd=SHR_CONST_RDAIR<a name='753'>
+    cp=SHR_CONST_CPDAIR<a name='754'>
+<a name='755'>
+    j_end = jpe<a name='756'>
+    i_end = ipe<a name='757'>
+    if(j_end.eq.jde) j_end=j_end-1<a name='758'>
+    if(i_end.eq.ide) i_end=i_end-1<a name='759'>
+<a name='760'>
+    k=1 <font color=#447700>! lowest level <a name='761'></font>
+    DO j=jps, j_end            <a name='762'>
+       DO i=ips, i_end<a name='763'>
+          <font color=#447700>! calulate surface tempature at lowest level<a name='764'></font>
+          t_tmp = (t(i,k,j) + t0) * (((p(i,k,j) + pb(i,k,j))/p0) ** (rd/cp))<a name='765'>
+          <font color=#447700>! accumulate surface tempature at lowest level<a name='766'></font>
+          t_accum(i,j) = t_accum(i,j) + t_tmp<a name='767'>
+       ENDDO<a name='768'>
+    ENDDO<a name='769'>
+<a name='770'>
+  END SUBROUTINE T_accum_01<a name='771'>
+<a name='772'>
+<a name='773'>
+<A NAME='PMSL_ACCUM_01'><A href='../../html_code/phys/module_diag_rasm.F.html#PMSL_ACCUM_01' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='774'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>PMSL_accum_01</font>( ims, ime, jms, jme, kms, kme,    &amp; <A href='../../call_to/PMSL_ACCUM_01.html' TARGET='index'>1</A>,<A href='../../call_from/PMSL_ACCUM_01.html' TARGET='index'>2</A><a name='775'>
+                            ide, jde, ips, ipe, jps, jpe,    &amp;<a name='776'>
+                            t, p, pb, moist, ht, psfc, pmsl_accum)<a name='777'>
+    <font color=#447700>! Subroutine calculates and accumulates PMSL resulting in 2D output<a name='778'></font>
+   <a name='779'>
+    USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_diag_rasm.F.html#PMSL_ACCUM_01' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_58">, only: t0,p0<a name='780'>
+    USE <A href='../../html_code/phys/module_cam_shr_const_mod.F.html#SHR_CONST_MOD'>shr_const_mod</A><A href='../../html_code/phys/module_diag_rasm.F.html#PMSL_ACCUM_01' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_CONST_MOD_3"><a name='781'>
+<a name='782'>
+    IMPLICIT NONE<a name='783'>
+<a name='784'>
+    INTEGER, INTENT(IN) :: ims, ime, jms, jme, kms, kme<a name='785'>
+    INTEGER, INTENT(IN) :: ide, jde, ips, ipe, jps, jpe<a name='786'>
+<a name='787'>
+    REAL, DIMENSION(  ims:ime , kms:kme, jms:jme ), INTENT(IN):: t, p, pb, moist<a name='788'>
+    REAL, DIMENSION(  ims:ime , jms:jme ), INTENT(IN):: ht, psfc<a name='789'>
+    REAL, DIMENSION(ims:ime , jms:jme), INTENT(INOUT) :: pmsl_accum<a name='790'>
+<a name='791'>
+    <font color=#447700>! local<a name='792'></font>
+    REAL     :: t_tmp, tmp_pmsl, z, tv, g, cp, rd, xlapse<a name='793'>
+    REAL     :: alpha, tstar, tt0, alph, beta, psfc_tmp, p_tmp<a name='794'>
+    INTEGER              :: k, i, j, j_end, i_end<a name='795'>
+    CHARACTER (LEN=1024) :: message<a name='796'>
+<a name='797'>
+    xlapse = 6.5D-3<a name='798'>
+    rd=SHR_CONST_RDAIR<a name='799'>
+    g=SHR_CONST_G<a name='800'>
+    cp=SHR_CONST_CPDAIR<a name='801'>
+<a name='802'>
+    j_end = jpe<a name='803'>
+    i_end = ipe<a name='804'>
+    if(j_end.eq.jde) j_end=j_end-1<a name='805'>
+    if(i_end.eq.ide) i_end=i_end-1<a name='806'>
+<a name='807'>
+    k=1 <font color=#447700>! lowest level <a name='808'></font>
+    do j=jps, j_end            <a name='809'>
+       do i=ips, i_end<a name='810'>
+<a name='811'>
+             <font color=#447700>! calulate surface tempature at lowest level<a name='812'></font>
+             t_tmp = (t(i,k,j) + t0) * (((p(i,k,j) + pb(i,k,j))/p0) ** (rd/cp))<a name='813'>
+                  <a name='814'>
+             <font color=#447700>! calculate virtual temperature at lowest model level<a name='815'></font>
+             tv = t_tmp * (1 + moist(i,k,j) * 0.61)<a name='816'>
+<a name='817'>
+             <font color=#447700>! Calculate geopotential at surface in m2 s-2<a name='818'></font>
+             z = ht(i,j) * g <font color=#447700>! terrain height in m<a name='819'></font>
+<a name='820'>
+             alpha = rd * xlapse/g <font color=#447700>! 0.1903, no units<a name='821'></font>
+<a name='822'>
+             <font color=#447700>! Get surface pressure in Pa<a name='823'></font>
+             psfc_tmp = psfc(i,j)<a name='824'>
+<a name='825'>
+             <font color=#447700>! Calculate pressure in WRF at lowest model level in Pa<a name='826'></font>
+             p_tmp = (p(i,k,j) + pb(i,k,j))<a name='827'>
+<a name='828'>
+             <font color=#447700>! Use surface pressure for PMSL if we are at sea level.<a name='829'></font>
+             if ( abs(z/g) &lt; 1.0E-4 )then<a name='830'>
+                tmp_pmsl = psfc_tmp<a name='831'>
+                <font color=#447700>! Othewise, calculate based on ECMWF method<a name='832'></font>
+             else<a name='833'>
+                tstar = tv * (1.0 + alpha * (psfc_tmp/p_tmp-1.0)) <a name='834'>
+                tt0 = tstar + xlapse*z/g<a name='835'>
+<a name='836'>
+                if ( tstar &lt;= 290.5 .and. tt0 &gt; 290.5 ) then     <a name='837'>
+                   alph = rd/z * (290.5 - tstar)  <a name='838'>
+                else if (tstar &gt; 290.5  .and. tt0 &gt; 290.5) then  <a name='839'>
+                   alph = 0.0<a name='840'>
+                   tstar = 0.5 * (290.5 + tstar)  <a name='841'>
+                else  <a name='842'>
+                   alph=alpha  <a name='843'>
+                   if (tstar &lt; 255.0) then  <a name='844'>
+                      tstar = 0.5 * (255.0 + tstar)             <a name='845'>
+                   endif<a name='846'>
+                endif<a name='847'>
+                beta = z/(rd*tstar)<a name='848'>
+                tmp_pmsl = psfc_tmp * exp( beta*(1.0 - alph * beta/2.0 + ((alph*beta)**2)/3.0))<a name='849'>
+             end if<a name='850'>
+<a name='851'>
+             <font color=#447700>! accumulate pmsl at lowest level<a name='852'></font>
+             pmsl_accum(i,j) = pmsl_accum(i,j) +  tmp_pmsl<a name='853'>
+         <a name='854'>
+          ENDDO<a name='855'>
+       ENDDO<a name='856'>
+<a name='857'>
+  END SUBROUTINE PMSL_accum_01<a name='858'>
+<a name='859'>
+<a name='860'>
+<A NAME='GETRESETSTATE'><A href='../../html_code/phys/module_diag_rasm.F.html#GETRESETSTATE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='861'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>getResetState</font>(currentTime, xtime, dt, mean_interval, output_freq, is_reset) <A href='../../call_to/GETRESETSTATE.html' TARGET='index'>3</A>,<A href='../../call_from/GETRESETSTATE.html' TARGET='index'>2</A><a name='862'>
+    <font color=#447700>! Subroutine DESCRIPTION:<a name='863'></font>
+    <font color=#447700>! Determine if data stats are to be reset at the current time step<a name='864'></font>
+    <font color=#447700>! True implies that stats are reinitialized<a name='865'></font>
+<a name='866'>
+    <font color=#447700>! USES:<a name='867'></font>
+    USE module_utility<a name='868'>
+    <font color=#447700>!USE ESMF_Mod<a name='869'></font>
+<a name='870'>
+    IMPLICIT NONE<a name='871'>
+<a name='872'>
+    TYPE(WRFU_Time), INTENT(IN)   :: currentTime<a name='873'>
+    INTEGER, INTENT(IN)           :: mean_interval<a name='874'>
+    REAL, INTENT(IN)              :: dt, xtime <a name='875'>
+    INTEGER, INTENT(IN)           :: output_freq<a name='876'>
+    LOGICAL, INTENT(INOUT)        :: is_reset<a name='877'>
+<a name='878'>
+    INTEGER, PARAMETER :: NONE = 0<a name='879'>
+    INTEGER, PARAMETER :: SECS = 1<a name='880'>
+    INTEGER, PARAMETER :: MINS = 2<a name='881'>
+    INTEGER, PARAMETER :: HRS  = 3<a name='882'>
+    INTEGER, PARAMETER :: DAYS = 4<a name='883'>
+    INTEGER, PARAMETER :: MONTHLY = 5<a name='884'>
+   <a name='885'>
+    <font color=#447700>! LOCAL VARIABLES:<a name='886'></font>
+    TYPE(WRFU_TimeInterval) :: off<a name='887'>
+    TYPE(WRFU_Time)         :: prevTime<a name='888'>
+ <a name='889'>
+    integer :: yr         <font color=#447700>!nstep year<a name='890'></font>
+    integer :: mon        <font color=#447700>!nstep months (1 -&gt; 12)   <a name='891'></font>
+    integer :: prevMon    <font color=#447700>!nstep-1 months (1 -&gt; 12)<a name='892'></font>
+    integer :: day        <font color=#447700>!nstep days (1 -&gt; 31)<a name='893'></font>
+    integer :: dtime<a name='894'>
+<a name='895'>
+    CHARACTER (LEN=10) ::str_yr<a name='896'>
+    CHARACTER (LEN=10) ::str_mon<a name='897'>
+    CHARACTER (LEN=10) ::str_day<a name='898'>
+    CHARACTER (LEN=80) ::filedate<a name='899'>
+<a name='900'>
+    CHARACTER (LEN=1024) :: message<a name='901'>
+<a name='902'>
+    dtime = INT (dt)<a name='903'>
+<a name='904'>
+    <font color=#447700>! Determine if time to reset data stats<a name='905'></font>
+    is_reset = .false.<a name='906'>
+<a name='907'>
+    if (output_freq .eq. MONTHLY) then<a name='908'>
+       <font color=#447700>! get date for current time_step<a name='909'></font>
+       call WRFU_TimeGet( currentTime, mm=mon)   <a name='910'>
+<a name='911'>
+       <font color=#447700>! get date for previous time_step<a name='912'></font>
+       call WRFU_TimeIntervalSet( off, s=dtime)<a name='913'>
+       prevTime = currentTime - off<a name='914'>
+       call WRFU_TimeGet( prevTime, mm=prevMon)<a name='915'>
+<a name='916'>
+       if ( (mon-prevMon) /= 0) then<a name='917'>
+          is_reset = .true.<a name='918'>
+<a name='919'>
+          WRITE(message, *) "RASM Statistics: MONTHLY_INTERVAL RESET condition met (return TRUE) "<a name='920'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETRESETSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_594">(200, message) <a name='921'>
+       endif<a name='922'>
+    else<a name='923'>
+       if ( MOD(NINT(xtime*60./dt),NINT(mean_interval/dt)) == 0 ) then<a name='924'>
+          is_reset = .true.<a name='925'>
+   <a name='926'>
+          WRITE(message, *) "RASM Statistics: STATIC_INTERVAL RESET condition met (return TRUE) "<a name='927'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETRESETSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_595">(200, message) <a name='928'>
+       endif<a name='929'>
+    endif<a name='930'>
+<a name='931'>
+  END SUBROUTINE getResetState<a name='932'>
+<a name='933'>
+<A NAME='GETAVGSTATE'><A href='../../html_code/phys/module_diag_rasm.F.html#GETAVGSTATE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='934'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>getAvgState</font>(currentTime, xtime, dt, mean_interval, output_freq, compute_avg, OutDateStr) <A href='../../call_to/GETAVGSTATE.html' TARGET='index'>2</A>,<A href='../../call_from/GETAVGSTATE.html' TARGET='index'>5</A><a name='935'>
+    <font color=#447700>! Subroutine DESCRIPTION:<a name='936'></font>
+    <font color=#447700>! Determine if data averages are to be calculated at the current time step<a name='937'></font>
+    <font color=#447700>! True implies calculate avergaes<a name='938'></font>
+<a name='939'>
+   <font color=#447700>! USES:<a name='940'></font>
+    USE module_utility<a name='941'>
+    <font color=#447700>!USE ESMF_Mod<a name='942'></font>
+<a name='943'>
+    IMPLICIT NONE<a name='944'>
+<a name='945'>
+    TYPE(WRFU_Time), INTENT(IN)   :: currentTime<a name='946'>
+    INTEGER, INTENT(IN)           :: mean_interval<a name='947'>
+    REAL, INTENT(IN)              :: dt, xtime <a name='948'>
+    INTEGER, INTENT(IN)           :: output_freq<a name='949'>
+    LOGICAL, INTENT(INOUT)        :: compute_avg<a name='950'>
+    CHARACTER(*), INTENT(INOUT)   :: OutDateStr<a name='951'>
+<a name='952'>
+    <font color=#447700>! LOCAL VARIABLES:<a name='953'></font>
+    TYPE(WRFU_TimeInterval) :: off<a name='954'>
+    TYPE(WRFU_Time)         :: nextTime<a name='955'>
+    TYPE(WRFU_Time)         :: prevTime<a name='956'>
+<a name='957'>
+    INTEGER, PARAMETER :: NONE = 0<a name='958'>
+    INTEGER, PARAMETER :: SECS = 1<a name='959'>
+    INTEGER, PARAMETER :: MINS = 2<a name='960'>
+    INTEGER, PARAMETER :: HRS  = 3<a name='961'>
+    INTEGER, PARAMETER :: DAYS = 4<a name='962'>
+    INTEGER, PARAMETER :: MONTHLY = 5<a name='963'>
+ <a name='964'>
+    integer :: yr         <font color=#447700>!nstep year<a name='965'></font>
+    integer :: mon        <font color=#447700>!nstep months (1 -&gt; 12)<a name='966'></font>
+    integer :: nextMon    <font color=#447700>!nstep+1 months (1 -&gt; 12)<a name='967'></font>
+    integer :: prevMon    <font color=#447700>!nstep-1 months (1 -&gt; 12)<a name='968'></font>
+    integer :: day        <font color=#447700>!nstep days (1 -&gt; 31)<a name='969'></font>
+    integer :: hr         <font color=#447700>!nstep hrs<a name='970'></font>
+    integer :: min        <font color=#447700>!nstep mins <a name='971'></font>
+    integer :: sec        <font color=#447700>!nstep secs<a name='972'></font>
+    integer :: totalsec   <font color=#447700>!nstep total secs<a name='973'></font>
+    integer :: dtime<a name='974'>
+<a name='975'>
+    CHARACTER (LEN=10) ::str_yr<a name='976'>
+    CHARACTER (LEN=10) ::str_mon<a name='977'>
+    CHARACTER (LEN=10) ::str_day<a name='978'>
+    CHARACTER (LEN=10) ::str_sec<a name='979'>
+    CHARACTER (LEN=80) ::filedate<a name='980'>
+<a name='981'>
+    CHARACTER (LEN=1024) :: message<a name='982'>
+<a name='983'>
+    dtime = INT (dt)<a name='984'>
+<a name='985'>
+    <font color=#447700>! Determine if time to average data <a name='986'></font>
+    compute_avg = .false.<a name='987'>
+    if ( output_freq .EQ. MONTHLY) then<a name='988'>
+<a name='989'>
+       <font color=#447700>! get date for current time_step <a name='990'></font>
+       call WRFU_TimeGet( currentTime, mm=mon)   <a name='991'>
+<a name='992'>
+       <font color=#447700>! get date for next time_step<a name='993'></font>
+       call WRFU_TimeIntervalSet( off, s=dtime)<a name='994'>
+       nextTime = currentTime + off<a name='995'>
+       call WRFU_TimeGet( nextTime, mm=nextMon)<a name='996'>
+<a name='997'>
+       if ( (nextMon-mon) /= 0)  then<a name='998'>
+          compute_avg = .true.<a name='999'>
+<a name='1000'>
+          WRITE(message, *) "RASM Statistics: MONTHLY_INTERVAL AVG condition met (return TRUE) "<a name='1001'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETAVGSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_596">(200, message) <a name='1002'>
+       endif<a name='1003'>
+<a name='1004'>
+    else<a name='1005'>
+       if ((MOD(NINT((xtime+dt/60.)*60./dt),NINT(mean_interval/dt)) == 0)) then<a name='1006'>
+          compute_avg = .true.<a name='1007'>
+   <a name='1008'>
+          WRITE(message, *) "RASM Statistics: STATIC_INTERVAL AVG condition met (return TRUE) "<a name='1009'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETAVGSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_597">(200, message) <a name='1010'>
+       endif<a name='1011'>
+    endif<a name='1012'>
+<a name='1013'>
+    <font color=#447700>! generate date used for hourly, min and sec averages<a name='1014'></font>
+    if (compute_avg) then<a name='1015'>
+       IF ( (output_freq .ne. MONTHLY)  .and. (output_freq .ne. DAYS)) THEN<a name='1016'>
+  <a name='1017'>
+          <font color=#447700>! get date for next time_step<a name='1018'></font>
+          call WRFU_TimeIntervalSet( off, s=dtime)<a name='1019'>
+          nextTime = currentTime + off<a name='1020'>
+          call WRFU_TimeGet( nextTime, yy=yr, mm=mon, dd=day, h=hr, m=min, s=sec)   <a name='1021'>
+<a name='1022'>
+          WRITE(str_yr, '(I4.4)')  yr<a name='1023'>
+          WRITE(str_mon, '(I2.2)')  mon<a name='1024'>
+          WRITE(str_day, '(I2.2)')  day<a name='1025'>
+          totalsec = (hr * 60 * 60) + (min * 60) + sec <a name='1026'>
+          WRITE(str_sec, '(I5.5)')  totalsec<a name='1027'>
+          filedate = trim(str_yr)//"-"//trim(str_mon)//"-"//trim(str_day)//"-"//trim(str_sec) <a name='1028'>
+          OutDateStr = filedate<a name='1029'>
+<a name='1030'>
+          WRITE(message, *) "RASM Statistics:  STATIC_INTERVAL AVG condition met ......... avgOutDateStr:", trim(OutDateStr)<a name='1031'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETAVGSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_598">(200, message)<a name='1032'>
+<a name='1033'>
+       ELSE IF ( output_freq .eq. MONTHLY ) THEN<a name='1034'>
+          <font color=#447700>! get avg date <a name='1035'></font>
+          call WRFU_TimeIntervalSet( off, s=dtime)<a name='1036'>
+          nextTime = currentTime + off<a name='1037'>
+          call WRFU_TimeGet( nextTime, yy=yr, mm=mon)  <a name='1038'>
+          IF (mon .eq. 1) THEN<a name='1039'>
+             mon = 12<a name='1040'>
+             yr = yr - 1<a name='1041'>
+          ELSE<a name='1042'>
+             mon = mon - 1<a name='1043'>
+          ENDIF<a name='1044'>
+          WRITE(str_yr, '(I4.4)')  yr<a name='1045'>
+          WRITE(str_mon, '(I2.2)')  mon<a name='1046'>
+          filedate = trim(str_yr)//"-"//trim(str_mon)<a name='1047'>
+          OutDateStr = filedate<a name='1048'>
+   <a name='1049'>
+          WRITE(message, *) "RASM Statistics:  AVG condition met ......... avgOutDateStr:", trim(OutDateStr)<a name='1050'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETAVGSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_599">(200, message) <a name='1051'>
+          <a name='1052'>
+       ELSE IF (output_freq .eq. DAYS ) THEN<a name='1053'>
+          <font color=#447700>! get avg date <a name='1054'></font>
+          call WRFU_TimeIntervalSet( off, s=mean_interval-dtime)<a name='1055'>
+          prevTime = currentTime - off<a name='1056'>
+          call WRFU_TimeGet( prevTime, yy=yr, mm=mon, dd=day)   <a name='1057'>
+          WRITE(str_yr, '(I4.4)')  yr<a name='1058'>
+          WRITE(str_mon, '(I2.2)')  mon<a name='1059'>
+          WRITE(str_day, '(I2.2)')  day<a name='1060'>
+          filedate = trim(str_yr)//"-"//trim(str_mon)//"-"//trim(str_day)<a name='1061'>
+          OutDateStr = filedate<a name='1062'>
+          <a name='1063'>
+          WRITE(message, *) "RASM Statistics:  AVG condition met ......... avgOutDateStr:", trim(OutDateStr)<a name='1064'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETAVGSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_600">(200, message) <a name='1065'>
+       ENDIF<a name='1066'>
+    endif<a name='1067'>
+<a name='1068'>
+  END SUBROUTINE getAvgState<a name='1069'>
+<a name='1070'>
+<A NAME='GETDIURNALSTATE'><A href='../../html_code/phys/module_diag_rasm.F.html#GETDIURNALSTATE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1071'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>getDiurnalState</font>(currentTime, xtime, dt, diurn_interval, output_freq, compute_diurn, OutDateStr) <A href='../../call_to/GETDIURNALSTATE.html' TARGET='index'>1</A>,<A href='../../call_from/GETDIURNALSTATE.html' TARGET='index'>6</A><a name='1072'>
+    <font color=#447700>! Subroutine DESCRIPTION:<a name='1073'></font>
+    <font color=#447700>! Determine if data diurnal averages are to be calculated at the current time step<a name='1074'></font>
+    <font color=#447700>! True implies that diurnal averages are to be calculated <a name='1075'></font>
+<a name='1076'>
+   <font color=#447700>! USES:<a name='1077'></font>
+    USE module_utility<a name='1078'>
+    <font color=#447700>!USE ESMF_Mod<a name='1079'></font>
+<a name='1080'>
+    IMPLICIT NONE<a name='1081'>
+<a name='1082'>
+    TYPE(WRFU_Time), INTENT(IN)   :: currentTime<a name='1083'>
+    REAL, INTENT(IN)              :: dt, xtime <a name='1084'>
+    INTEGER, INTENT(IN)           :: output_freq<a name='1085'>
+    integer, INTENT(IN)           :: diurn_interval<a name='1086'>
+    LOGICAL, INTENT(INOUT)        :: compute_diurn<a name='1087'>
+    CHARACTER(*), INTENT(INOUT)   :: OutDateStr<a name='1088'>
+<a name='1089'>
+    INTEGER, PARAMETER :: NONE = 0<a name='1090'>
+    INTEGER, PARAMETER :: SECS = 1<a name='1091'>
+    INTEGER, PARAMETER :: MINS = 2<a name='1092'>
+    INTEGER, PARAMETER :: HRS  = 3<a name='1093'>
+    INTEGER, PARAMETER :: DAYS = 4<a name='1094'>
+    INTEGER, PARAMETER :: MONTHLY = 5<a name='1095'>
+<a name='1096'>
+    <font color=#447700>! LOCAL VARIABLES:<a name='1097'></font>
+    TYPE(WRFU_TimeInterval) :: off<a name='1098'>
+    TYPE(WRFU_Time)         :: nextTime<a name='1099'>
+    TYPE(WRFU_Time)         :: prevTime<a name='1100'>
+ <a name='1101'>
+    integer :: yr         <font color=#447700>!nstep year<a name='1102'></font>
+    integer :: mon        <font color=#447700>!nstep months (1 -&gt; 12)<a name='1103'></font>
+    integer :: nextMon    <font color=#447700>!nstep+1 months (1 -&gt; 12)<a name='1104'></font>
+    integer :: dtime<a name='1105'>
+    <a name='1106'>
+<a name='1107'>
+    CHARACTER (LEN=10) ::str_yr<a name='1108'>
+    CHARACTER (LEN=10) ::str_mon<a name='1109'>
+    CHARACTER (LEN=80) ::filedate<a name='1110'>
+<a name='1111'>
+    CHARACTER (LEN=1024) :: message<a name='1112'>
+   <a name='1113'>
+    integer :: mean_interval<a name='1114'>
+    CHARACTER (LEN=10) ::str_day<a name='1115'>
+    integer :: day        <font color=#447700>!nstep days (1 -&gt; 31)<a name='1116'></font>
+<a name='1117'>
+    dtime = INT (dt)<a name='1118'>
+<a name='1119'>
+    <font color=#447700>! Determine if time to average data <a name='1120'></font>
+    compute_diurn = .false.<a name='1121'>
+   <a name='1122'>
+    if ( output_freq .EQ. MONTHLY) then<a name='1123'>
+       <font color=#447700>! get date for current time_step <a name='1124'></font>
+       call WRFU_TimeGet( currentTime, mm=mon)   <a name='1125'>
+<a name='1126'>
+       <font color=#447700>! get date for next time_step<a name='1127'></font>
+       call WRFU_TimeIntervalSet( off, s=dtime)<a name='1128'>
+       nextTime = currentTime + off<a name='1129'>
+       call WRFU_TimeGet( nextTime, mm=nextMon)<a name='1130'>
+       <a name='1131'>
+       if ( (nextMon-mon) /= 0)  then<a name='1132'>
+          compute_diurn = .true.<a name='1133'>
+<a name='1134'>
+          WRITE(message, *) "RASM Statistics: Diurnal AVG condition met (return TRUE) "<a name='1135'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETDIURNALSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_601">(200, message) <a name='1136'>
+       endif<a name='1137'>
+    else<a name='1138'>
+       if ((MOD(NINT((xtime+dt/60.)*60./dt),NINT(diurn_interval/dt)) == 0)) then<a name='1139'>
+          compute_diurn = .true.<a name='1140'>
+   <a name='1141'>
+          WRITE(message, *) "RASM Statistics: Diurnal AVG condition met DAILY TEST (return TRUE) "<a name='1142'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETDIURNALSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_602">(200, message) <a name='1143'>
+       endif<a name='1144'>
+    endif<a name='1145'>
+<a name='1146'>
+    <font color=#447700>! generate date used for hourly, min and sec averages<a name='1147'></font>
+    if (compute_diurn) then<a name='1148'>
+<a name='1149'>
+       if ( output_freq .EQ. MONTHLY) then<a name='1150'>
+          <font color=#447700>! get date <a name='1151'></font>
+          call WRFU_TimeIntervalSet( off, s=dtime)<a name='1152'>
+          nextTime = currentTime + off<a name='1153'>
+          call WRFU_TimeGet( nextTime, yy=yr, mm=mon)  <a name='1154'>
+          IF (mon .eq. 1) THEN<a name='1155'>
+             mon = 12<a name='1156'>
+             yr = yr - 1<a name='1157'>
+          ELSE<a name='1158'>
+             mon = mon - 1<a name='1159'>
+          ENDIF<a name='1160'>
+          WRITE(str_yr, '(I4.4)')  yr<a name='1161'>
+          WRITE(str_mon, '(I2.2)')  mon<a name='1162'>
+          filedate = trim(str_yr)//"-"//trim(str_mon)<a name='1163'>
+          OutDateStr = filedate<a name='1164'>
+   <a name='1165'>
+          WRITE(message, *) "RASM Statistics:  Diurnal ACG condition met ......... avgOutDateStr:", trim(OutDateStr)<a name='1166'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETDIURNALSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_603">(200, message) <a name='1167'>
+       else<a name='1168'>
+          <font color=#447700>! get avg date <a name='1169'></font>
+          call WRFU_TimeIntervalSet( off, s=diurn_interval-dtime)<a name='1170'>
+          prevTime = currentTime - off<a name='1171'>
+          call WRFU_TimeGet( prevTime, yy=yr, mm=mon, dd=day)   <a name='1172'>
+          WRITE(str_yr, '(I4.4)')  yr<a name='1173'>
+          WRITE(str_mon, '(I2.2)')  mon<a name='1174'>
+          WRITE(str_day, '(I2.2)')  day<a name='1175'>
+          filedate = trim(str_yr)//"-"//trim(str_mon)//"-"//trim(str_day)<a name='1176'>
+          OutDateStr = filedate<a name='1177'>
+          <a name='1178'>
+          WRITE(message, *) "RASM Statistics:  Diurnal AVG condition met DAILY TEST......... avgOutDateStr:", trim(OutDateStr)<a name='1179'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETDIURNALSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_604">(200, message) <a name='1180'>
+       endif<a name='1181'>
+    endif<a name='1182'>
+<a name='1183'>
+  END SUBROUTINE getDiurnalState<a name='1184'>
+<a name='1185'>
+<A NAME='GET_DIURN_CYCLE'><A href='../../html_code/phys/module_diag_rasm.F.html#GET_DIURN_CYCLE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1186'>
+  <font color=#993300>SUBROUTINE  </font><font color=#cc0000>get_diurn_cycle</font>(currentTime, xtime, dt, diurn_cycle) <A href='../../call_to/GET_DIURN_CYCLE.html' TARGET='index'>1</A><a name='1187'>
+    <font color=#447700>! Subroutine DESCRIPTION:<a name='1188'></font>
+    <font color=#447700>! Get the current diurnal cycle<a name='1189'></font>
+<a name='1190'>
+    <font color=#447700>! USES:<a name='1191'></font>
+    USE module_utility<a name='1192'>
+    <font color=#447700>!USE ESMF_Mod<a name='1193'></font>
+<a name='1194'>
+    IMPLICIT NONE<a name='1195'>
+<a name='1196'>
+    TYPE(WRFU_Time), INTENT(IN)   :: currentTime<a name='1197'>
+    REAL, INTENT(IN)              :: dt, xtime <a name='1198'>
+    INTEGER, INTENT(INOUT)        :: diurn_cycle<a name='1199'>
+<a name='1200'>
+    INTEGER, PARAMETER :: NONE = 0<a name='1201'>
+    INTEGER, PARAMETER :: SECS = 1<a name='1202'>
+    INTEGER, PARAMETER :: MINS = 2<a name='1203'>
+    INTEGER, PARAMETER :: HRS  = 3<a name='1204'>
+    INTEGER, PARAMETER :: DAYS = 4<a name='1205'>
+    INTEGER, PARAMETER :: MONTHLY = 5<a name='1206'>
+<a name='1207'>
+    <font color=#447700>! LOCAL VARIABLES:<a name='1208'></font>
+    TYPE(WRFU_TimeInterval) :: off<a name='1209'>
+    TYPE(WRFU_Time)         :: nextTime<a name='1210'>
+    TYPE(WRFU_Time)         :: prevTime<a name='1211'>
+ <a name='1212'>
+    integer :: yr         <font color=#447700>!nstep year<a name='1213'></font>
+    integer :: mon        <font color=#447700>!nstep months (1 -&gt; 12)<a name='1214'></font>
+    integer :: day        <font color=#447700>!nstep days (1 -&gt; 31)<a name='1215'></font>
+    integer :: hr         <font color=#447700>!nstep hrs<a name='1216'></font>
+    integer :: dtime<a name='1217'>
+<a name='1218'>
+<a name='1219'>
+    CHARACTER (LEN=1024) :: message<a name='1220'>
+<a name='1221'>
+    dtime = INT (dt)<a name='1222'>
+    diurn_cycle = -1<a name='1223'>
+<a name='1224'>
+    <font color=#447700>! get date for next time_step<a name='1225'></font>
+    call WRFU_TimeIntervalSet( off, s=dtime)<a name='1226'>
+    nextTime = currentTime + off<a name='1227'>
+    call WRFU_TimeGet( nextTime, yy=yr, mm=mon, dd=day, h=hr)   <a name='1228'>
+  <a name='1229'>
+    <font color=#447700>! This is a 3hr cycle, therfore it the diurn_cycle <a name='1230'></font>
+    <font color=#447700>! hr should be either (0,3,6,9,12,15,18 or 21)<a name='1231'></font>
+    if (hr .eq. 3) then<a name='1232'>
+       diurn_cycle = 1<a name='1233'>
+    else if (hr .eq. 6) then<a name='1234'>
+       diurn_cycle = 2<a name='1235'>
+    else if (hr .eq. 9) then<a name='1236'>
+       diurn_cycle = 3<a name='1237'>
+    else if (hr .eq. 12) then<a name='1238'>
+       diurn_cycle = 4<a name='1239'>
+    else if (hr .eq. 15) then<a name='1240'>
+       diurn_cycle = 5<a name='1241'>
+    else if (hr .eq. 18) then<a name='1242'>
+       diurn_cycle = 6<a name='1243'>
+    else if (hr .eq. 21) then<a name='1244'>
+       diurn_cycle = 7<a name='1245'>
+    else if (hr .eq. 0) then<a name='1246'>
+       diurn_cycle = 8<a name='1247'>
+    else<a name='1248'>
+       WRITE (message, * )"RASM Statistics:: DIURNAL ERROR -- error -- ERROR -- error : Did not find valid diurnal cycle"<a name='1249'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETDIURNALSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_605">(0, message) <a name='1250'>
+       WRITE (message, * )"RASM Statistics:: DIURNAL ERROR -- Valid diurnal cycles (0,3,6,9,12,15,18 or 21) ... reported ",  diurn_cycle<a name='1251'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_diag_rasm.F.html#GETDIURNALSTATE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_627"> ( TRIM(message) )  <a name='1252'>
+    endif<a name='1253'>
+<a name='1254'>
+  END SUBROUTINE  get_diurn_cycle<a name='1255'>
+<a name='1256'>
+END MODULE module_diag_rasm<a name='1257'>
+#endif<a name='1258'>
+</pre></body></html>

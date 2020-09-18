@@ -1,0 +1,490 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:MEDIATION_LAYER:PHYSICS<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<a name='4'>
+<A NAME='MODULE_SHALLOWCU_DRIVER'><A href='../../html_code/phys/module_shallowcu_driver.F.html#MODULE_SHALLOWCU_DRIVER' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='5'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_shallowcu_driver</font> <A href='../../call_to/MODULE_SHALLOWCU_DRIVER.html' TARGET='index'>1</A><a name='6'>
+CONTAINS<a name='7'>
+<A NAME='SHALLOWCU_DRIVER'><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='8'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>shallowcu_driver</font>(                                       &amp; <A href='../../call_to/SHALLOWCU_DRIVER.html' TARGET='index'>1</A>,<A href='../../call_from/SHALLOWCU_DRIVER.html' TARGET='index'>13</A><a name='9'>
+                 <font color=#447700>! Order dependent args for domain, mem, and tile dims<a name='10'></font>
+                      ids,ide, jds,jde, kds,kde                       &amp;<a name='11'>
+                     ,ims,ime, jms,jme, kms,kme                       &amp;<a name='12'>
+                     ,ips,ipe, jps,jpe, kps,kpe                       &amp;<a name='13'>
+                     ,i_start,i_end,j_start,j_end,kts,kte,num_tiles   &amp;<a name='14'>
+                 <font color=#447700>! Order independent args (use VAR= in call)<a name='15'></font>
+                 <font color=#447700>! --Prognostic<a name='16'></font>
+                     ,u,v,th,t                                        &amp;<a name='17'>
+                     ,p,pi,rho,moist                                  &amp;<a name='18'>
+                 <font color=#447700>! --Other arguments<a name='19'></font>
+                     ,num_moist                                       &amp;<a name='20'>
+                     ,itimestep,dt,dx,cudt,curr_secs,adapt_step_flag  &amp;<a name='21'>
+                     ,rainsh,pratesh,nca,rainshv                      &amp;<a name='22'>
+                     ,z,z_at_w,dz8w,mavail,pblh,p8w                   &amp;<a name='23'>
+                     ,tke_pbl                                         &amp;<a name='24'>
+                     ,cldfra,cldfra_old,cldfra_old_mp,cldfra_conv     &amp;<a name='25'>
+                     ,cldfrash                                        &amp;<a name='26'>
+                     ,htop,hbot                                       &amp;<a name='27'>
+                 <font color=#447700>! Package selection variables<a name='28'></font>
+                     ,shcu_physics                                    &amp;<a name='29'>
+                 <font color=#447700>! Optional moisture tracers <a name='30'></font>
+                     ,qv_curr, qc_curr, qr_curr                       &amp;<a name='31'>
+                     ,qi_curr, qs_curr, qg_curr                       &amp; <a name='32'>
+                     ,qnc_curr,qni_curr                               &amp;<a name='33'>
+#if ( WRF_CHEM == 1 )<a name='34'>
+                     ,chem, chem_opt                                  &amp;<a name='35'>
+#endif<a name='36'>
+                 <font color=#447700>! Optional output arguments for CAMZM scheme<a name='37'></font>
+                     ,dlf, rliq, rliq2,dlf2  &amp;<a name='38'>
+                     ,cmfmc, cmfmc2       &amp;<a name='39'>
+                 <font color=#447700>! Optional output arguments for CAMUW scheme<a name='40'></font>
+                     ,cush, snowsh, icwmrsh, rprdsh, cbmf, cmfsl      &amp;<a name='41'>
+                     ,cmflq, evapcsh                                  &amp;<a name='42'>
+                 <font color=#447700>! Optional moisture and other tendencies<a name='43'></font>
+                     ,rqvshten,rqcshten,rqrshten                      &amp;<a name='44'>
+                     ,rqishten,rqsshten,rqgshten                      &amp;<a name='45'>
+                     ,rqcnshten,rqinshten                             &amp;<a name='46'>
+                     ,rqvblten,rqvften                                &amp;<a name='47'>
+                     ,rushten,rvshten                                 &amp;<a name='48'>
+                     ,rthshten,rthraten,rthblten,rthften              &amp;<a name='49'>
+                 <font color=#447700>! Optional moisture tracer flags <a name='50'></font>
+                     ,f_qv,f_qc,f_qr                                  &amp;<a name='51'>
+                     ,f_qi,f_qs,f_qg                                  &amp;<a name='52'>
+                     ,ht,shfrc3d,is_CAMMGMP_used                      &amp;<a name='53'>
+                 <font color=#447700>! for grims shallow convection with ysupbl<a name='54'></font>
+                     ,wstar,delta,kpbl,znu,raincv                   &amp;<a name='55'>
+                                                                      )<a name='56'>
+<font color=#447700>!----------------------------------------------------------------------<a name='57'></font>
+   USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_102"><a name='58'>
+   USE <A href='../../html_code/frame/module_state_description.F.html#MODULE_STATE_DESCRIPTION'>module_state_description</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STATE_DESCRIPTION_157">, ONLY: CAMUWSHCUSCHEME    &amp;<a name='59'>
+# if (EM_CORE == 1)<a name='60'>
+                                       , CAMMGMPSCHEME    &amp; <a name='61'>
+# endif<a name='62'>
+                                       , G3SHCUSCHEME     &amp; <a name='63'>
+                                       , GRIMSSHCUSCHEME <a name='64'>
+<font color=#447700>! *** add new modules of schemes here<a name='65'></font>
+<a name='66'>
+   USE <A href='../../html_code/phys/module_shcu_camuwshcu_driver.F.html#MODULE_SHCU_CAMUWSHCU_DRIVER'>module_shcu_camuwshcu_driver</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_SHCU_CAMUWSHCU_DRIVER_1">, ONLY : camuwshcu_driver<a name='67'>
+   USE <A href='../../html_code/phys/module_shcu_grims.F.html#MODULE_SHCU_GRIMS'>module_shcu_grims</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_SHCU_GRIMS_2"><a name='68'>
+   USE <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>module_dm</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_165"><a name='69'>
+   USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_248">, ONLY: domain<a name='70'>
+#if ( WRF_CHEM == 1 )<a name='71'>
+      USE <A href='../../html_code/frame/module_state_description.F.html#MODULE_STATE_DESCRIPTION'>module_state_description</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STATE_DESCRIPTION_158">, ONLY: num_chem<a name='72'>
+#endif<a name='73'>
+<a name='74'>
+   <font color=#447700>!  This driver calls subroutines for the shallow cumulus<a name='75'></font>
+   <font color=#447700>!  parameterizations.<a name='76'></font>
+   <font color=#447700>!<a name='77'></font>
+   <font color=#447700>!  1. G3 shallow cumulus<a name='78'></font>
+   <font color=#447700>!  2. UW shallow cumulus from CAM<a name='79'></font>
+   <font color=#447700>!  3. GRIMs shallow cumulus from GRIMs (available only with ysupbl)<a name='80'></font>
+   <font color=#447700>!<a name='81'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='82'></font>
+   IMPLICIT NONE<a name='83'>
+<font color=#447700>!======================================================================<a name='84'></font>
+<font color=#447700>! Grid structure in physics part of WRF<a name='85'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='86'></font>
+<font color=#447700>! The horizontal velocities used in the physics are unstaggered<a name='87'></font>
+<font color=#447700>! relative to temperature/moisture variables. All predicted<a name='88'></font>
+<font color=#447700>! variables are carried at half levels except w, which is at full<a name='89'></font>
+<font color=#447700>! levels. Some arrays with names (*8w) are at w (full) levels.<a name='90'></font>
+<font color=#447700>!<a name='91'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='92'></font>
+<font color=#447700>! In WRF, kms (smallest number) is the bottom level and kme (largest<a name='93'></font>
+<font color=#447700>! number) is the top level.  In your scheme, if 1 is at the top level,<a name='94'></font>
+<font color=#447700>! then you have to reverse the order in the k direction.<a name='95'></font>
+<font color=#447700>!<a name='96'></font>
+<font color=#447700>!         kme      -   half level (no data at this level)<a name='97'></font>
+<font color=#447700>!         kme    ----- full level<a name='98'></font>
+<font color=#447700>!         kme-1    -   half level<a name='99'></font>
+<font color=#447700>!         kme-1  ----- full level<a name='100'></font>
+<font color=#447700>!         .<a name='101'></font>
+<font color=#447700>!         .<a name='102'></font>
+<font color=#447700>!         .<a name='103'></font>
+<font color=#447700>!         kms+2    -   half level<a name='104'></font>
+<font color=#447700>!         kms+2  ----- full level<a name='105'></font>
+<font color=#447700>!         kms+1    -   half level<a name='106'></font>
+<font color=#447700>!         kms+1  ----- full level<a name='107'></font>
+<font color=#447700>!         kms      -   half level<a name='108'></font>
+<font color=#447700>!         kms    ----- full level<a name='109'></font>
+<font color=#447700>!<a name='110'></font>
+<font color=#447700>!======================================================================<a name='111'></font>
+<font color=#447700>! Definitions<a name='112'></font>
+<font color=#447700>!-----------<a name='113'></font>
+<font color=#447700>! Rho_d      dry density (kg/m^3)<a name='114'></font>
+<font color=#447700>! Theta_m    moist potential temperature (K)<a name='115'></font>
+<font color=#447700>! Qv         water vapor mixing ratio (kg/kg)<a name='116'></font>
+<font color=#447700>! Qc         cloud water mixing ratio (kg/kg)<a name='117'></font>
+<font color=#447700>! Qr         rain water mixing ratio (kg/kg)<a name='118'></font>
+<font color=#447700>! Qi         cloud ice mixing ratio (kg/kg)<a name='119'></font>
+<font color=#447700>! Qs         snow mixing ratio (kg/kg)<a name='120'></font>
+<font color=#447700>!-----------------------------------------------------------------<a name='121'></font>
+<font color=#447700>!-- DT            time step (second)<a name='122'></font>
+<font color=#447700>!-- CUDT          cumulus time step (minute)<a name='123'></font>
+<font color=#447700>!-- curr_secs     current forecast time (seconds)<a name='124'></font>
+<font color=#447700>!-- itimestep     number of time step (integer)   <a name='125'></font>
+<font color=#447700>!-- DX            horizontal space interval (m)<a name='126'></font>
+<font color=#447700>!-- rr            dry air density (kg/m^3)<a name='127'></font>
+<font color=#447700>!<a name='128'></font>
+<font color=#447700>!-- RUSHTEN       Zonal wind tendency due to shallow<a name='129'></font>
+<font color=#447700>!                 cumulus scheme precipitation (m/s/s)<a name='130'></font>
+<font color=#447700>!-- RVSHTEN       Meridional wind tendency due to <a name='131'></font>
+<font color=#447700>!                 cumulus scheme precipitation (m/s/s)<a name='132'></font>
+<font color=#447700>!-- RTHSHTEN      Theta tendency due to shallow<a name='133'></font>
+<font color=#447700>!                 cumulus scheme precipitation (K/s)<a name='134'></font>
+<font color=#447700>!-- RQVSHTEN      Qv tendency due to shallow<a name='135'></font>
+<font color=#447700>!                 cumulus scheme precipitation (kg/kg/s)<a name='136'></font>
+<font color=#447700>!-- RQRSHTEN      Qr tendency due to shallow<a name='137'></font>
+<font color=#447700>!                 cumulus scheme precipitation (kg/kg/s)<a name='138'></font>
+<font color=#447700>!-- RQCSHTEN      Qc tendency due to shallow<a name='139'></font>
+<font color=#447700>!                 cumulus scheme precipitation (kg/kg/s)<a name='140'></font>
+<font color=#447700>!-- RQSSHTEN      Qs tendency due to shallow<a name='141'></font>
+<font color=#447700>!                 cumulus scheme precipitation (kg/kg/s)<a name='142'></font>
+<font color=#447700>!-- RQISHTEN      Qi tendency due to shallow<a name='143'></font>
+<font color=#447700>!                 cumulus scheme precipitation (kg/kg/s)<a name='144'></font>
+<font color=#447700>!-- RQGSHTEN      Qg tendency due to shallow<a name='145'></font>
+<font color=#447700>!                 cumulus scheme precipitation (kg/kg/s)<a name='146'></font>
+<font color=#447700>!<a name='147'></font>
+<font color=#447700>!-- RAINSH        accumulated total shallow cumulus scheme precipitation (mm)<a name='148'></font>
+<font color=#447700>!-- RAINSHV       time-step shallow cumulus scheme precipitation (mm)<a name='149'></font>
+<font color=#447700>!-- PRATESH       precipitiation rate from shallow cumulus scheme (mm/s)<a name='150'></font>
+<font color=#447700>!-- NCA           counter of the cloud relaxation <a name='151'></font>
+<font color=#447700>!                 time in KF cumulus scheme (integer)<a name='152'></font>
+<font color=#447700>!-- u_phy         u-velocity interpolated to theta points (m/s)<a name='153'></font>
+<font color=#447700>!-- v_phy         v-velocity interpolated to theta points (m/s)<a name='154'></font>
+<font color=#447700>!-- th_phy        potential temperature (K)<a name='155'></font>
+<font color=#447700>!-- t_phy         temperature (K)<a name='156'></font>
+<font color=#447700>!-- tke_pbl       turbulent kinetic energy from PBL scheme (m2/s2)<a name='157'></font>
+<font color=#447700>!-- w             vertical velocity (m/s)<a name='158'></font>
+<font color=#447700>!-- moist         moisture array (4D - last index is species) (kg/kg)<a name='159'></font>
+<font color=#447700>!-- z             height above sea level at middle of layers (m)<a name='160'></font>
+<font color=#447700>!-- z_at_w        height above sea level at layer interfaces (m)<a name='161'></font>
+<font color=#447700>!-- dz8w          dz between full levels (m)<a name='162'></font>
+<font color=#447700>!-- pblh          planetary boundary layer height (m)<a name='163'></font>
+<font color=#447700>!-- mavail        soil moisture availability<a name='164'></font>
+<font color=#447700>!-- p8w           pressure at full levels (Pa)<a name='165'></font>
+<font color=#447700>!-- p_phy         pressure (Pa)<a name='166'></font>
+<font color=#447700>!-- pi_phy        the exner function, (p/p0)**(R/Cp) (dimensionless)<a name='167'></font>
+<font color=#447700>!                 points (dimensionless)<a name='168'></font>
+<font color=#447700>!-- hfx           upward heat flux at surface (W/m2)<a name='169'></font>
+<font color=#447700>!-- RTHRATEN      radiative temp forcing for Grell-Devenyi scheme<a name='170'></font>
+<font color=#447700>!-- RTHBLTEN      PBL temp forcing for Grell-Devenyi scheme<a name='171'></font>
+<font color=#447700>!-- RQVBLTEN      PBL moisture forcing for Grell-Devenyi scheme<a name='172'></font>
+<font color=#447700>!-- RTHFTEN<a name='173'></font>
+<font color=#447700>!-- RQVFTEN<a name='174'></font>
+<font color=#447700>!-- cldfra        cloud fraction<a name='175'></font>
+<font color=#447700>!-- cldfra_old    cloud fraction from previous time step<a name='176'></font>
+<font color=#447700>!-- cldfrash      cloud fraction from shallow Cu<a name='177'></font>
+<font color=#447700>!-- cldfra_old_mp cloud fraction from previous time step if CAMMGMP microphysics is used<a name='178'></font>
+<font color=#447700>!-- cldfra_conv   convective cloud fraction<a name='179'></font>
+<font color=#447700>!-- rho           density (kg/m^3)<a name='180'></font>
+<font color=#447700>!-- XLV0          latent heat of vaporization constant <a name='181'></font>
+<font color=#447700>!                 used in temperature dependent formula (J/kg)<a name='182'></font>
+<font color=#447700>!-- XLV1          latent heat of vaporization constant <a name='183'></font>
+<font color=#447700>!                 used in temperature dependent formula (J/kg/K)<a name='184'></font>
+<font color=#447700>!-- XLS0          latent heat of sublimation constant <a name='185'></font>
+<font color=#447700>!                 used in temperature dependent formula (J/kg)<a name='186'></font>
+<font color=#447700>!-- XLS1          latent heat of sublimation constant<a name='187'></font>
+<font color=#447700>!                 used in temperature dependent formula (J/kg/K)<a name='188'></font>
+<font color=#447700>!-- R_d           gas constant for dry air ( 287. J/kg/K)<a name='189'></font>
+<font color=#447700>!-- R_v           gas constant for water vapor (461 J/k/kg)<a name='190'></font>
+<font color=#447700>!-- Cp            specific heat at constant pressure (1004 J/k/kg)<a name='191'></font>
+<font color=#447700>!-- rvovrd        R_v divided by R_d (dimensionless)<a name='192'></font>
+<font color=#447700>!-- G             acceleration due to gravity (m/s^2)<a name='193'></font>
+<font color=#447700>!-- EP_1          constant for virtual temperature <a name='194'></font>
+<font color=#447700>!                 (R_v/R_d - 1) (dimensionless)<a name='195'></font>
+<font color=#447700>!--shfrc3d        Shallow cloud fraction<a name='196'></font>
+<font color=#447700>!-- cmfmc         Deep + Shallow Convective m<a name='197'></font>
+<font color=#447700>!-- ids           start index for i in domain<a name='198'></font>
+<font color=#447700>!-- ide           end index for i in domain<a name='199'></font>
+<font color=#447700>!-- jds           start index for j in domain<a name='200'></font>
+<font color=#447700>!-- jde           end index for j in domain<a name='201'></font>
+<font color=#447700>!-- kds           start index for k in domain<a name='202'></font>
+<font color=#447700>!-- kde           end index for k in domain<a name='203'></font>
+<font color=#447700>!-- ims           start index for i in memory<a name='204'></font>
+<font color=#447700>!-- ime           end index for i in memory<a name='205'></font>
+<font color=#447700>!-- jms           start index for j in memory<a name='206'></font>
+<font color=#447700>!-- jme           end index for j in memory<a name='207'></font>
+<font color=#447700>!-- kms           start index for k in memory<a name='208'></font>
+<font color=#447700>!-- kme           end index for k in memory<a name='209'></font>
+<font color=#447700>!-- i_start       start indices for i in tile<a name='210'></font>
+<font color=#447700>!-- i_end         end indices for i in tile<a name='211'></font>
+<font color=#447700>!-- j_start       start indices for j in tile<a name='212'></font>
+<font color=#447700>!-- j_end         end indices for j in tile<a name='213'></font>
+<font color=#447700>!-- kts           start index for k in tile<a name='214'></font>
+<font color=#447700>!-- kte           end index for k in tile<a name='215'></font>
+<font color=#447700>!-- num_tiles     number of tiles<a name='216'></font>
+<font color=#447700>!-- HBOT          index of lowest model layer with convection<a name='217'></font>
+<font color=#447700>!-- HTOP          index of highest model layer with convection<a name='218'></font>
+<font color=#447700>!-- LBOT          index of lowest model layer with convection<a name='219'></font>
+<font color=#447700>!-- LTOP          index of highest model layer with convection<a name='220'></font>
+<font color=#447700>!-- periodic_x    T/F this is using periodic lateral boundaries in the X direction<a name='221'></font>
+<font color=#447700>!-- periodic_y    T/F this is using periodic lateral boundaries in the Y-direction<a name='222'></font>
+<font color=#447700>!<a name='223'></font>
+<font color=#447700>!======================================================================<a name='224'></font>
+   LOGICAL,      INTENT(IN   )    :: is_CAMMGMP_used <font color=#447700>!BSINGH:01/31/2013: Added for CAMUWSHCU<a name='225'></font>
+   INTEGER,      INTENT(IN   )    ::                             &amp;<a name='226'>
+                                      ids,ide, jds,jde, kds,kde, &amp;<a name='227'>
+                                      ims,ime, jms,jme, kms,kme, &amp;<a name='228'>
+                                                        kts,kte, &amp;<a name='229'>
+                                      itimestep, num_tiles<a name='230'>
+#if ( WRF_CHEM == 1 )<a name='231'>
+   INTEGER,      INTENT(IN   )    :: chem_opt<a name='232'>
+#endif<a name='233'>
+<a name='234'>
+   INTEGER, DIMENSION(num_tiles), INTENT(IN) ::                       &amp;<a name='235'>
+     &amp;           i_start,i_end,j_start,j_end<a name='236'>
+<a name='237'>
+   INTEGER,      INTENT(IN   )    ::                             &amp;<a name='238'>
+                  num_moist<a name='239'>
+<a name='240'>
+   INTEGER,      INTENT(IN   )    ::               shcu_physics<a name='241'>
+<a name='242'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme, num_moist ),      &amp;<a name='243'>
+         INTENT(INOUT)  ::                                       &amp;<a name='244'>
+                                                          moist<a name='245'>
+#if ( WRF_CHEM == 1 )<a name='246'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme, num_chem ),       &amp;<a name='247'>
+         INTENT(INOUT)  ::                                    &amp;<a name='248'>
+                                                          chem<a name='249'>
+#endif<a name='250'>
+   <a name='251'>
+<a name='252'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                 &amp;<a name='253'>
+         INTENT(IN ) ::                                          &amp;<a name='254'>
+                                                         cldfra  &amp;<a name='255'>
+                                                    ,cldfra_old  &amp;<a name='256'>
+                                                  ,cldfra_old_mp &amp;<a name='257'>
+                                                    ,cldfra_conv &amp;<a name='258'>
+                                                      ,       z  &amp;<a name='259'>
+                                                      ,  z_at_w  &amp;<a name='260'>
+                                                      ,    dz8w  &amp;<a name='261'>
+                                                      ,     p8w  &amp;<a name='262'>
+                                                      ,       p  &amp;<a name='263'>
+                                                      ,      pi  &amp;<a name='264'>
+                                                      ,       u  &amp;<a name='265'>
+                                                      ,       v  &amp;<a name='266'>
+                                                      ,      th  &amp;<a name='267'>
+                                                      ,       t  &amp;<a name='268'>
+                                                      , tke_pbl  &amp;<a name='269'>
+                                                      ,     rho<a name='270'>
+<a name='271'>
+<a name='272'>
+   REAL, DIMENSION( ims:ime , jms:jme ), INTENT(IN) ::           &amp;<a name='273'>
+                  MAVAIL,PBLH,ht<a name='274'>
+<a name='275'>
+   REAL, DIMENSION( ims:ime , jms:jme ),                         &amp;<a name='276'>
+          INTENT(INOUT) ::                               RAINSH  &amp;<a name='277'>
+                                                    ,       NCA  &amp; <a name='278'>
+                                                    ,      HTOP  &amp; <a name='279'>
+                                                    ,      HBOT<a name='280'>
+ <a name='281'>
+<a name='282'>
+   REAL, DIMENSION( ims:ime , jms:jme ),INTENT(INOUT),OPTIONAL :: &amp;<a name='283'>
+        PRATESH, RAINSHV<a name='284'>
+   REAL, DIMENSION( ims:ime , jms:jme ) :: tmppratesh<a name='285'>
+                                                    <a name='286'>
+   REAL,  INTENT(IN   ) :: DT, DX<a name='287'>
+   INTEGER,      INTENT(IN   ),OPTIONAL    ::                             &amp;<a name='288'>
+                                      ips,ipe, jps,jpe, kps,kpe<a name='289'>
+   REAL,  INTENT(IN   ),OPTIONAL :: CUDT<a name='290'>
+   REAL,  INTENT(IN   ),OPTIONAL :: CURR_SECS<a name='291'>
+   LOGICAL,INTENT(IN   ),OPTIONAL    ::     adapt_step_flag<a name='292'>
+   REAL   :: cudt_pass, curr_secs_pass<a name='293'>
+   LOGICAL :: adapt_step_flag_pass<a name='294'>
+<a name='295'>
+<font color=#447700>!<a name='296'></font>
+<font color=#447700>! optional arguments<a name='297'></font>
+<font color=#447700>!<a name='298'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                 &amp;<a name='299'>
+         OPTIONAL, INTENT(INOUT) ::                              &amp;<a name='300'>
+                      <font color=#447700>! optional moisture tracers<a name='301'></font>
+                      qv_curr, qc_curr, qr_curr                  &amp;<a name='302'>
+                     ,qi_curr, qs_curr, qg_curr                  &amp; <a name='303'>
+                     <font color=#447700>! optional scalar tracers !BSINGH<a name='304'></font>
+                     ,qnc_curr,qni_curr                          &amp;<a name='305'>
+                      <font color=#447700>! optional moisture and other tendencies<a name='306'></font>
+                     ,rqvshten,rqcshten,rqrshten                 &amp;<a name='307'>
+                     ,rqishten,rqsshten,rqgshten                 &amp;<a name='308'>
+                     ,rqcnshten,rqinshten                        &amp;<a name='309'>
+                     ,rqvblten,rqvften                           &amp;<a name='310'>
+                     ,rthraten,rthblten                          &amp;<a name='311'>
+                     ,rthften,rushten,rvshten,rthshten<a name='312'>
+<a name='313'>
+   REAL, DIMENSION( ims:ime , jms:jme ),                         &amp;<a name='314'>
+                    OPTIONAL, INTENT(INOUT) ::                   &amp;<a name='315'>
+                rliq, rliq2 &amp;<a name='316'>
+               ,cbmf, cush, snowsh<a name='317'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                 &amp;<a name='318'>
+         OPTIONAL, INTENT(INOUT) ::                              &amp;<a name='319'>
+                  cldfrash, cmfsl, cmflq, icwmrsh,               &amp;<a name='320'>
+                  dlf, evapcsh,                                  &amp;<a name='321'>
+                  cmfmc, cmfmc2, rprdsh<a name='322'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                 &amp;<a name='323'>
+        INTENT(OUT) ::                                 &amp;<a name='324'>
+                  dlf2                                             <font color=#447700>! Required by CAMMGMP Microphysics<a name='325'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                 &amp;<a name='326'>
+        INTENT(OUT) ::                                 &amp;<a name='327'>
+                 shfrc3d                                           <font color=#447700>! Required by wet scavenging code in WRF_CHEM<a name='328'></font>
+<font color=#447700>! for grims shallow convection with ysupbl<a name='329'></font>
+<font color=#447700>!<a name='330'></font>
+   REAL, DIMENSION( ims:ime, jms:jme )                         , &amp;<a name='331'>
+         OPTIONAL, INTENT(IN   )                 ::      wstar<a name='332'>
+   REAL, DIMENSION( ims:ime, jms:jme )                         , &amp;<a name='333'>
+         OPTIONAL, INTENT(IN   )                 ::        delta<a name='334'>
+   REAL, DIMENSION( ims:ime, jms:jme )                         , &amp;<a name='335'>
+         OPTIONAL, INTENT(IN   )                 ::       raincv<a name='336'>
+   REAL, DIMENSION( kms:kme )                                  , &amp;<a name='337'>
+         OPTIONAL, INTENT(IN   )       ::                    znu<a name='338'>
+   INTEGER, DIMENSION( ims:ime , jms:jme )                     , &amp;<a name='339'>
+         OPTIONAL, INTENT(IN)                    ::         kpbl<a name='340'>
+<font color=#447700>!<a name='341'></font>
+<font color=#447700>! Flags relating to the optional tendency arrays declared above<a name='342'></font>
+<font color=#447700>! Models that carry the optional tendencies will provdide the<a name='343'></font>
+<font color=#447700>! optional arguments at compile time; these flags all the model<a name='344'></font>
+<font color=#447700>! to determine at run-time whether a particular tracer is in<a name='345'></font>
+<font color=#447700>! use or not.<a name='346'></font>
+<font color=#447700>!<a name='347'></font>
+   LOGICAL, INTENT(IN), OPTIONAL ::                             &amp;<a name='348'>
+                                                      f_qv      &amp;<a name='349'>
+                                                     ,f_qc      &amp;<a name='350'>
+                                                     ,f_qr      &amp;<a name='351'>
+                                                     ,f_qi      &amp;<a name='352'>
+                                                     ,f_qs      &amp;<a name='353'>
+                                                     ,f_qg<a name='354'>
+<a name='355'>
+<a name='356'>
+<font color=#447700>! LOCAL  VAR<a name='357'></font>
+<a name='358'>
+   INTEGER :: i,j,k,its,ite,jts,jte,ij<a name='359'>
+   CHARACTER(len=200) :: message<a name='360'>
+<a name='361'>
+<a name='362'>
+<font color=#447700>!-----------------------------------------------------------------<a name='363'></font>
+<a name='364'>
+   if (.not. PRESENT(CURR_SECS)) then<a name='365'>
+      curr_secs_pass = -1<a name='366'>
+   else <a name='367'>
+      curr_secs_pass = curr_secs<a name='368'>
+   endif<a name='369'>
+<a name='370'>
+   if (.not. PRESENT(CUDT)) then<a name='371'>
+      cudt_pass = -1<a name='372'>
+   else<a name='373'>
+      cudt_pass = cudt<a name='374'>
+   endif<a name='375'>
+<a name='376'>
+   if (.not. PRESENT(adapt_step_flag)) then<a name='377'>
+      adapt_step_flag_pass = .false.<a name='378'>
+   else<a name='379'>
+      adapt_step_flag_pass = adapt_step_flag<a name='380'>
+   endif<a name='381'>
+<a name='382'>
+   <font color=#447700>! Initialize tmppratesh to pratesh<a name='383'></font>
+<a name='384'>
+   if ( PRESENT ( pratesh ) ) then<a name='385'>
+      tmppratesh(:,:) = pratesh(:,:)<a name='386'>
+   else<a name='387'>
+      tmppratesh(:,:) = 0.<a name='388'>
+   end if<a name='389'>
+   <a name='390'>
+<a name='391'>
+   IF (shcu_physics .eq. 0) return<a name='392'>
+   <a name='393'>
+   <a name='394'>
+<font color=#447700>! DON'T JUDGE TIME STEP HERE, SINCE KF NEEDS ACCUMULATED W FIELD.<a name='395'></font>
+<font color=#447700>! DO IT INSIDE THE INDIVIDUAL CUMULUS SCHEME<a name='396'></font>
+<a name='397'>
+<font color=#447700>! SET START AND END POINTS FOR TILES<a name='398'></font>
+<font color=#447700>!$OMP PARALLEL DO   &amp;<a name='399'></font>
+<font color=#447700>!$OMP PRIVATE ( ij ,its,ite,jts,jte, i,j,k)<a name='400'></font>
+   DO ij = 1 , num_tiles<a name='401'>
+      its = i_start(ij)<a name='402'>
+      ite = i_end(ij)<a name='403'>
+      jts = j_start(ij)<a name='404'>
+      jte = j_end(ij)<a name='405'>
+<a name='406'>
+<a name='407'>
+   scps_select: SELECT CASE(shcu_physics)<a name='408'>
+<a name='409'>
+   CASE (G3SHCUSCHEME)<a name='410'>
+      <font color=#447700>! This setting takes the place of ishallow in v3.1.1+<a name='411'></font>
+<a name='412'>
+   CASE (CAMUWSHCUSCHEME)<a name='413'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_838">(100,'in camuw_scps')<a name='414'>
+      IF(.not.f_qi)THEN<a name='415'>
+         WRITE( message , * ) 'This shallow cumulus option requires ice microphysics option: f_qi = ', f_qi<a name='416'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1273"> ( message )<a name='417'>
+      ENDIF<a name='418'>
+      CALL <A href='../../html_code/phys/module_shcu_camuwshcu_driver.F.html#CAMUWSHCU_DRIVER'>camuwshcu_driver</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CAMUWSHCU_DRIVER_1">(                                             &amp;<a name='419'>
+            IDS=ids,IDE=ide,JDS=jds,JDE=jde,KDS=kds,KDE=kde              &amp;<a name='420'>
+           ,IMS=ims,IME=ime,JMS=jms,JME=jme,KMS=kms,KME=kme              &amp;<a name='421'>
+           ,ITS=its,ITE=ite,JTS=jts,JTE=jte,KTS=kts,KTE=kte              &amp;<a name='422'>
+           ,NUM_MOIST=num_moist, DT=dt                                   &amp;<a name='423'>
+           ,P=p, P8W=p8w, PI_PHY=pi                                      &amp;<a name='424'>
+           ,Z=z, Z_AT_W=z_at_w, DZ8W=dz8w                                &amp;<a name='425'>
+           ,T_PHY=t, U_PHY=u, V_PHY=v                                    &amp;<a name='426'>
+           ,MOIST=moist, QV=qv_curr, QC=qc_curr, QI=qi_curr              &amp;<a name='427'>
+           ,QNC=qnc_curr, QNI=qni_curr                                   &amp; <a name='428'>
+#if ( WRF_CHEM == 1 )<a name='429'>
+           ,CHEM=chem, CHEM_OPT=chem_opt                                 &amp;<a name='430'>
+#endif<a name='431'>
+           ,PBLH_IN=pblh, TKE_PBL=tke_pbl                                &amp;<a name='432'>
+           ,CLDFRA=cldfra, CLDFRA_OLD=cldfra_old                         &amp;<a name='433'>
+           ,CLDFRA_OLD_MP=cldfra_old_mp                                  &amp;<a name='434'>
+           ,CLDFRA_CONV=cldfra_conv,IS_CAMMGMP_USED=is_CAMMGMP_used      &amp;<a name='435'>
+           ,CLDFRASH=cldfrash                                            &amp;<a name='436'>
+           ,CUSH_INOUT=cush, PRATESH=tmppratesh                          &amp;<a name='437'>
+           ,SNOWSH=snowsh                                                &amp;<a name='438'>
+           ,ICWMRSH=icwmrsh, CMFMC=cmfmc, CMFMC2_INOUT=cmfmc2            &amp;<a name='439'>
+           ,RPRDSH_INOUT=rprdsh, CBMF_INOUT=cbmf                         &amp;<a name='440'>
+           ,CMFSL=cmfsl, CMFLQ=cmflq, DLF=dlf,DLF2=dlf2                  &amp; <font color=#447700>!DLF2 is required by CAMMGMP microphysics<a name='441'></font>
+           ,EVAPCSH_INOUT=evapcsh                                        &amp;<a name='442'>
+           ,RLIQ=rliq, RLIQ2_INOUT=rliq2, CUBOT=hbot, CUTOP=htop         &amp;<a name='443'>
+           ,RUSHTEN=rushten, RVSHTEN=rvshten, RTHSHTEN=rthshten          &amp;<a name='444'>
+           ,RQVSHTEN=rqvshten, RQCSHTEN=rqcshten, RQRSHTEN=rqrshten      &amp;<a name='445'>
+           ,RQISHTEN=rqishten, RQSSHTEN=rqsshten, RQGSHTEN=rqgshten      &amp;<a name='446'>
+           ,RQCNSHTEN=rqcnshten,RQINSHTEN=rqinshten                      &amp; <a name='447'>
+           ,HT=ht,SHFRC3D=shfrc3d,ITIMESTEP=itimestep                    &amp;<a name='448'>
+                                                                         )<a name='449'>
+<a name='450'>
+   CASE (GRIMSSHCUSCHEME)<a name='451'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_839">(100,'in grims_scps')<a name='452'>
+      IF ( PRESENT( wstar ) ) THEN<a name='453'>
+      CALL <A href='../../html_code/phys/module_shcu_grims.F.html#GRIMS'>grims</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GRIMS_1">(                                                        &amp;<a name='454'>
+            QV3D=qv_curr,T3D=t                                           &amp;<a name='455'>
+           ,P3DI=p8w,P3D=p,PI3D=pi,Z3DI=Z_AT_W                           &amp;<a name='456'>
+           ,WSTAR=wstar,HPBL=pblh,DELTA=delta                        &amp;<a name='457'>
+           ,RTHSHTEN=rthshten,RQVSHTEN=rqvshten                          &amp;<a name='458'>
+           ,DT=dt,G=g,XLV=xlv,RD=r_d,RV=r_v                        &amp;<a name='459'>
+           ,RCP=rcp,P1000MB=p1000mb                                      &amp;<a name='460'>
+           ,KPBL2D=kpbl,ZNU=znu,RAINCV=raincv                            &amp;<a name='461'>
+           ,IDS=ids,IDE=ide,JDS=jds,JDE=jde,KDS=kds,KDE=kde              &amp;<a name='462'>
+           ,IMS=ims,IME=ime,JMS=jms,JME=jme,KMS=kms,KME=kme              &amp;<a name='463'>
+           ,ITS=its,ITE=ite,JTS=jts,JTE=jte,KTS=kts,KTE=kte              &amp;<a name='464'>
+                                                                         )<a name='465'>
+      ENDIF<a name='466'>
+<a name='467'>
+   CASE DEFAULT <a name='468'>
+      WRITE( message , * ) 'The shallow cumulus option does not exist: shcu_physics = ', shcu_physics<a name='469'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_shallowcu_driver.F.html#SHALLOWCU_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1274"> ( message )<a name='470'>
+<a name='471'>
+   END SELECT scps_select<a name='472'>
+<a name='473'>
+   ENDDO<a name='474'>
+   <font color=#447700>!$OMP END PARALLEL DO<a name='475'></font>
+<a name='476'>
+   <font color=#447700>!<a name='477'></font>
+   <font color=#447700>! Copy pratesh back to output array, if necessary.<a name='478'></font>
+   <font color=#447700>!<a name='479'></font>
+   if (PRESENT(PRATESH)) then<a name='480'>
+      pratesh(:,:) = tmppratesh(:,:)<a name='481'>
+      if (PRESENT(RAINSHV)) then<a name='482'>
+         rainshv(:,:) = pratesh(:,:)*dt<a name='483'>
+      endif<a name='484'>
+   endif<a name='485'>
+<a name='486'>
+   END SUBROUTINE shallowcu_driver<a name='487'>
+<a name='488'>
+END MODULE module_shallowcu_driver<a name='489'>
+</pre></body></html>

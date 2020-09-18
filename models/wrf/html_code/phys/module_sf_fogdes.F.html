@@ -1,0 +1,257 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_SF_FOGDES'><A href='../../html_code/phys/module_sf_fogdes.F.html#MODULE_SF_FOGDES' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_sf_fogdes</font> <A href='../../call_to/MODULE_SF_FOGDES.html' TARGET='index'>1</A><a name='3'>
+<a name='4'>
+  USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_sf_fogdes.F.html#module_sf_fogdes.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_91"><a name='5'>
+<font color=#447700>!JOE - add for consistent vdfg calc when grav_settling=1<a name='6'></font>
+  USE <A href='../../html_code/phys/module_bl_mynn.F.html#MODULE_BL_MYNN'>module_bl_mynn</A><A href='../../html_code/phys/module_sf_fogdes.F.html#module_sf_fogdes.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_BL_MYNN_4">, only: qcgmin, gno, gpw<a name='7'>
+<font color=#447700>!JOE-end<a name='8'></font>
+<font color=#447700>!-------------------------------------------------------------------<a name='9'></font>
+  IMPLICIT NONE<a name='10'>
+<font color=#447700>!-------------------------------------------------------------------<a name='11'></font>
+   REAL, PARAMETER :: myu = 1.8e-5  <font color=#447700>! air viscosity (m^2/s)<a name='12'></font>
+<a name='13'>
+CONTAINS<a name='14'>
+<a name='15'>
+<A NAME='SF_FOGDES'><A href='../../html_code/phys/module_sf_fogdes.F.html#SF_FOGDES' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='16'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>sf_fogdes</font>(&amp; <A href='../../call_to/SF_FOGDES.html' TARGET='index'>1</A>,<A href='../../call_from/SF_FOGDES.html' TARGET='index'>1</A><a name='17'>
+               vdfg,fgdp,dfgdp,ivgtyp,lai,wspd,qc_curr,            &amp;<a name='18'>
+               dtbl,rho,dz8w,grav_settling,nlcat,                  &amp;<a name='19'>
+               ids,ide, jds,jde, kds,kde,                          &amp;<a name='20'>
+               ims,ime, jms,jme, kms,kme,                          &amp;<a name='21'>
+               its,ite, jts,jte, kts,kte                           &amp;<a name='22'>
+                                                                   )<a name='23'>
+<a name='24'>
+<font color=#447700>!  This module calculates the cloud water (fog) deposition onto the<a name='25'></font>
+<font color=#447700>!  surface due to turbulent exchange and gravitational settling using <a name='26'></font>
+<font color=#447700>!  simple Fog Deposition EStimation (FogDES) scheme.<a name='27'></font>
+<a name='28'>
+<font color=#447700>! References:<a name='29'></font>
+<font color=#447700>!<a name='30'></font>
+<font color=#447700>!  Katata, G., Nagai, H., Wrzesinsky, T., Klemm, O., Eugster, W.,<a name='31'></font>
+<font color=#447700>!    Burkard, R. (2008), Development of a land surface model <a name='32'></font>
+<font color=#447700>!    including cloud water deposition on vegetation, Journal of <a name='33'></font>
+<font color=#447700>!    Applied Meteorology and Climatology, 47, 2129-2146.<a name='34'></font>
+<font color=#447700>!  Katata, G., Kajino, M., Hiraki, T., Aikawa, M., Kobayashi, T.,<a name='35'></font>
+<font color=#447700>!    Nagai, H. (2011), A method for simple and accurate estimation<a name='36'></font>
+<font color=#447700>!    of fog deposition in a mountain forest using a meteorological<a name='37'></font>
+<font color=#447700>!    model. Journal of Geophysical Research 116, D20102.<a name='38'></font>
+<font color=#447700>!<a name='39'></font>
+<font color=#447700>!-------------------------------------------------------------------<a name='40'></font>
+  IMPLICIT NONE<a name='41'>
+<font color=#447700>!======================================================================<a name='42'></font>
+<font color=#447700>! Definitions<a name='43'></font>
+<font color=#447700>!-----------<a name='44'></font>
+<font color=#447700>!-- vdfg          deposition velocity of fog (m/s)<a name='45'></font>
+<font color=#447700>!-- fgdp          accumulated fog deposition (mm)<a name='46'></font>
+<font color=#447700>!-- dfgdp         fog deposition rate in one timestep (mm)<a name='47'></font>
+<font color=#447700>!-- ivgtyp        dominant vegetation category<a name='48'></font>
+<font color=#447700>!-- lai           leaf area index<a name='49'></font>
+<font color=#447700>!-- wspd          wind speed (m/s)<a name='50'></font>
+<font color=#447700>!-- qc_curr       cloud water mixing ratio (kg/kg)<a name='51'></font>
+<font color=#447700>!-- dqc           cloud water mixing ratio tendency (not used -<a name='52'></font>
+<font color=#447700>!                 claculated in MYNN PBL scheme)<a name='53'></font>
+<font color=#447700>!-- dtbl          timestep (s)<a name='54'></font>
+<font color=#447700>!-- rho           density of the air (kg/m^3)<a name='55'></font>
+<font color=#447700>!-- dp_fog        mean fog droplet diameter (m)<a name='56'></font>
+<font color=#447700>!-- dz8w          dz between full levels (m)<a name='57'></font>
+<font color=#447700>!-- ch            drag coefficient for heat in mynn (m/s)<a name='58'></font>
+<font color=#447700>!-- grav_settling flag for fog deposition at the lowest atmos layer<a name='59'></font>
+<font color=#447700>!           = 2   FogDES scheme<a name='60'></font>
+<font color=#447700>!           = 1   use Duynkerke (1991) - same as in atmos (above k = 1)<a name='61'></font>
+<font color=#447700>!           = 0   No gravitational settling<a name='62'></font>
+<font color=#447700>!-- lad           leaf area density (m^2/m^3)<a name='63'></font>
+<font color=#447700>!-- spcfct        factor of vegetation species for vdfg calculation<a name='64'></font>
+<font color=#447700>!-- vegh          canopy height for vegetative surface (m)<a name='65'></font>
+<font color=#447700>!-- lwc           cloud liquid water content (kg/m^3)<a name='66'></font>
+<font color=#447700>!-- ims           start index for i in memory<a name='67'></font>
+<font color=#447700>!-- ime           end index for i in memory<a name='68'></font>
+<font color=#447700>!-- jms           start index for j in memory<a name='69'></font>
+<font color=#447700>!-- jme           end index for j in memory<a name='70'></font>
+<font color=#447700>!-- kms           start index for k in memory<a name='71'></font>
+<font color=#447700>!-- kme           end index for k in memory<a name='72'></font>
+<font color=#447700>!-- its           start index for i in tile<a name='73'></font>
+<font color=#447700>!-- ite           end index for i in tile<a name='74'></font>
+<font color=#447700>!-- jts           start index for j in tile<a name='75'></font>
+<font color=#447700>!-- jte           end index for j in tile<a name='76'></font>
+<font color=#447700>!-- kts           start index for k in tile<a name='77'></font>
+<font color=#447700>!-- kte           end index for k in tile<a name='78'></font>
+<font color=#447700>!******************************************************************<a name='79'></font>
+<font color=#447700>!------------------------------------------------------------------<a name='80'></font>
+<a name='81'>
+   INTEGER, INTENT(IN)                       :: ims,ime,jms,jme,kms,kme &amp;<a name='82'>
+                                               ,its,ite,jts,jte,kts,kte &amp;<a name='83'>
+                                               ,ids,ide,jds,jde,kds,kde<a name='84'>
+<a name='85'>
+   INTEGER, INTENT(IN)                       :: grav_settling,nlcat<a name='86'>
+<a name='87'>
+   INTEGER,DIMENSION( ims:ime , jms:jme ),INTENT(INOUT)       :: ivgtyp<a name='88'>
+<a name='89'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &amp;<a name='90'>
+                                       INTENT(IN),OPTIONAL    :: qc_curr<a name='91'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &amp;<a name='92'>
+                                       INTENT(IN)             :: rho<a name='93'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &amp;<a name='94'>
+                                       INTENT(IN   )          :: dz8w<a name='95'>
+<a name='96'>
+   REAL, DIMENSION( ims:ime, jms:jme ),INTENT(INOUT),OPTIONAL :: vdfg<a name='97'>
+   REAL, DIMENSION( ims:ime, jms:jme ),INTENT(INOUT),OPTIONAL :: fgdp<a name='98'>
+   REAL, DIMENSION( ims:ime, jms:jme ),INTENT(INOUT),OPTIONAL :: dfgdp<a name='99'>
+   REAL, DIMENSION( ims:ime, jms:jme ),INTENT(INOUT),OPTIONAL :: lai<a name='100'>
+   REAL, DIMENSION( ims:ime, jms:jme ),INTENT(INOUT)          :: wspd<a name='101'>
+<a name='102'>
+   REAL, INTENT(INOUT),OPTIONAL                               :: dtbl<a name='103'>
+<a name='104'>
+<font color=#447700>!JOE-added for Dyunkerke(1991) &amp; Dyunkerke and Driedonks (1988)<a name='105'></font>
+<font color=#447700>!  (grav_settling = 1).<a name='106'></font>
+   REAL,parameter :: gpw2=0.66666666666667<a name='107'>
+<font color=#447700>!JOE-end<a name='108'></font>
+<a name='109'>
+<font color=#447700>! Local variables<a name='110'></font>
+   INTEGER :: i,j<a name='111'>
+   REAL    :: lad, spcfct, vegh, ftmp1, ftmp2, dp_fog, lwc<a name='112'>
+   CHARACTER (LEN=25) :: land_use_type, lu_fogdes<a name='113'>
+<a name='114'>
+<font color=#447700>!------------------------------------------------------------------<a name='115'></font>
+<a name='116'>
+   IF     ((nlcat .eq. 20).or.(nlcat .eq. 21)) THEN <font color=#447700>! includes lake category<a name='117'></font>
+     land_use_type = 'MODIS'<a name='118'>
+   ELSEIF ((nlcat .eq. 24).or.(nlcat .eq. 28)) THEN <font color=#447700>! includes lake category<a name='119'></font>
+     land_use_type = 'USGS'<a name='120'>
+   ELSE<a name='121'>
+     PRINT *, 'Unknown landuse category (sf_fogdes.F): num_land_cat=',nlcat<a name='122'>
+     STOP<a name='123'>
+   END IF<a name='124'>
+<a name='125'>
+   DO j=jts,jte<a name='126'>
+    DO i=its,ite<a name='127'>
+       lwc = rho(i,kts,j)*qc_curr(i,kts,j)<a name='128'>
+<font color=#447700>! *-- FogDES scheme --<a name='129'></font>
+       IF ( grav_settling .eq. 2 ) THEN<a name='130'>
+<font color=#447700>! *-- USGS categories --<a name='131'></font>
+        IF (land_use_type .eq. 'USGS') THEN<a name='132'>
+         IF(  (ivgtyp(i,j) .ge.  2 .and. ivgtyp(i,j) .le. 15)           &amp;<a name='133'>
+         .or. (ivgtyp(i,j) .ge. 17 .and. ivgtyp(i,j) .le. 18)           &amp;<a name='134'>
+         .or. (ivgtyp(i,j) .ge. 20 .and. ivgtyp(i,j) .le. 22) ) THEN<a name='135'>
+          IF    ((ivgtyp(i,j).ge. 2 .and. ivgtyp(i,j).le. 5)            &amp;<a name='136'>
+            .or. (ivgtyp(i,j).eq. 7)                                    &amp;<a name='137'>
+            .or. (ivgtyp(i,j).eq. 17)                                   &amp;<a name='138'>
+            .or. (ivgtyp(i,j).eq. 20)                         ) THEN<a name='139'>
+            lu_fogdes= 'CROP_GRASS'<a name='140'>
+          ELSEIF((ivgtyp(i,j).eq. 6) .or. (ivgtyp(i,j).eq. 9) ) THEN<a name='141'>
+            lu_fogdes= 'MIXED_CROP_GRASS_WOOD'<a name='142'>
+          ELSEIF( ivgtyp(i,j).eq. 8                           ) THEN<a name='143'>
+            lu_fogdes= 'SHRUB'<a name='144'>
+          ELSEIF((ivgtyp(i,j).eq.11) .or. (ivgtyp(i,j).eq.13) ) THEN<a name='145'>
+            lu_fogdes= 'BROAD_FOREST'<a name='146'>
+          ELSEIF((ivgtyp(i,j).eq.15) .or. (ivgtyp(i,j).eq.22) ) THEN<a name='147'>
+            lu_fogdes= 'MIXED_FOREST'<a name='148'>
+          ELSE<a name='149'>
+            lu_fogdes= 'CONIFER_FOREST_ETC'<a name='150'>
+          ENDIF<a name='151'>
+         ELSE<a name='152'>
+            lu_fogdes= 'OTHERS'<a name='153'>
+         ENDIF<a name='154'>
+        ELSE<a name='155'>
+<font color=#447700>! *-- MODIS categories --<a name='156'></font>
+         IF(  (ivgtyp(i,j) .ge.  1 .and. ivgtyp(i,j) .le. 10)           &amp;<a name='157'>
+         .or. (ivgtyp(i,j) .eq. 12)                                     &amp;<a name='158'>
+         .or. (ivgtyp(i,j) .eq. 14)                                     &amp;<a name='159'>
+         .or. (ivgtyp(i,j) .ge. 18 .and. ivgtyp(i,j) .le. 19) ) THEN<a name='160'>
+          IF    ((ivgtyp(i,j).eq.10) .or. (ivgtyp(i,j).eq.12) ) THEN<a name='161'>
+            lu_fogdes= 'CROP_GRASS'<a name='162'>
+          ELSEIF( ivgtyp(i,j).eq.14                           ) THEN<a name='163'>
+            lu_fogdes= 'MIXED_CROP_GRASS_WOOD'<a name='164'>
+          ELSEIF((ivgtyp(i,j).eq. 6) .or. (ivgtyp(i,j).eq. 7) ) THEN<a name='165'>
+            lu_fogdes= 'SHRUB'<a name='166'>
+          ELSEIF((ivgtyp(i,j).eq. 2) .or. (ivgtyp(i,j).eq. 4) ) THEN<a name='167'>
+            lu_fogdes= 'BROAD_FOREST'<a name='168'>
+          ELSEIF((ivgtyp(i,j).eq. 5) .or. (ivgtyp(i,j).eq.19) ) THEN<a name='169'>
+            lu_fogdes= 'MIXED_FOREST'<a name='170'>
+          ELSE<a name='171'>
+            lu_fogdes= 'CONIFER_FOREST_ETC'<a name='172'>
+          ENDIF<a name='173'>
+         ELSE<a name='174'>
+            lu_fogdes= 'OTHERS'<a name='175'>
+         ENDIF<a name='176'>
+        ENDIF<a name='177'>
+<a name='178'>
+<font color=#447700>!       PRINT *,grav_settling,'luse:',land_use_type,lu_fogdes<a name='179'></font>
+<a name='180'>
+<font color=#447700>!  Deposition velocity is computed using the vegetation parameters of LAI<a name='181'></font>
+<font color=#447700>!  and canopy height. Only gravitational settling is considered for non-<a name='182'></font>
+<font color=#447700>!  vegetated landuse categories.<a name='183'></font>
+<a name='184'>
+        IF    ( lu_fogdes .eq. 'OTHERS'                ) THEN<a name='185'>
+         dp_fog= (17.03*lwc*1.e3 + 9.72)*1.e-6 <font color=#447700>! Katata et al. (2008) JAMC<a name='186'></font>
+         vdfg(i,j)= (rhowater-rho(i,kts,j))*dp_fog**2.0*g/(18.0*myu)<a name='187'>
+        ELSE<a name='188'>
+         lu_select: SELECT CASE(lu_fogdes)<a name='189'>
+         CASE ('CROP_GRASS')<a name='190'>
+           spcfct= 0.2170<a name='191'>
+           vegh  = 3.0               <font color=#447700>!// scaled from 3m tree calc.<a name='192'></font>
+         CASE ('MIXED_CROP_GRASS_WOOD')<a name='193'>
+           spcfct= ( 1.0 + 0.2170 )/2.0<a name='194'>
+           vegh  = (20.0 + 3.0    )/2.0<a name='195'>
+         CASE ('SHRUB')<a name='196'>
+           spcfct= 1.0<a name='197'>
+           vegh  = 4.0<a name='198'>
+         CASE ('BROAD_FOREST')<a name='199'>
+           spcfct= 0.8255<a name='200'>
+           vegh  = 20.0<a name='201'>
+         CASE ('MIXED_FOREST')<a name='202'>
+           spcfct= ( 1.0 + 0.8255 )/2.0<a name='203'>
+           vegh  = 20.0<a name='204'>
+         CASE ('CONIFER_FOREST_ETC')<a name='205'>
+           spcfct= 1.0<a name='206'>
+           vegh  = 20.0<a name='207'>
+         END SELECT lu_select<a name='208'>
+ <a name='209'>
+<font color=#447700>!   simple linear functions for deposition velocity (vdfg)<a name='210'></font>
+<font color=#447700>!   for large leaf area density LAD (ftmp1) and small LAD (ftmp2).<a name='211'></font>
+<a name='212'>
+         lad  = lai(i,j)/vegh<a name='213'>
+         ftmp1= 0.0164*lad**(-0.5000 )             <font color=#447700>!// LAD&gt;0.1-0.2<a name='214'></font>
+         ftmp2= 0.0095*lai(i,j)**3.0 - 0.05*lai(i,j)**2.0             &amp;<a name='215'>
+              + 0.0916*lai(i,j) + 0.0082               <font color=#447700>!// LAI&lt;2 (LAD&lt;0.08)<a name='216'></font>
+         vdfg(i,j)= spcfct*MIN( ftmp1, ftmp2 )*wspd(i,j)<a name='217'>
+        ENDIF<a name='218'>
+<a name='219'>
+<font color=#447700>!       PRINT *,'vdfg:',spcfct,vegh,dp_fog,vdfg(i,j)<a name='220'></font>
+<a name='221'>
+       ELSE IF (grav_settling .eq. 0 ) THEN<a name='222'>
+          <font color=#447700>! *-- No settling --<a name='223'></font>
+          vdfg(i,j) = 0.0<a name='224'>
+       ELSE IF (grav_settling .eq. 1 ) THEN<a name='225'>
+          <font color=#447700>!JOE-use the same gravitation settling as in the free atmosphere <a name='226'></font>
+          <font color=#447700>!(taken from the MYNN PBL, Duynkerke (1991))<a name='227'></font>
+          IF ((qc_curr(i,kts,j)/(1.+qc_curr(i,kts,j))) &gt; qcgmin) THEN<a name='228'>
+             vdfg(i,j)=gno*(qc_curr(i,kts,j)/(1.+qc_curr(i,kts,j)))**gpw2<a name='229'>
+          ELSE<a name='230'>
+             vdfg(i,j)=0.<a name='231'>
+          ENDIF<a name='232'>
+       ENDIF<a name='233'>
+<a name='234'>
+<font color=#447700>!   vdfg can advect moisture through the lowest half-sigma layer depth <a name='235'></font>
+<font color=#447700>!   in one time-step.<a name='236'></font>
+       vdfg(i,j)=MIN( 0.5*dz8w(i,kts,j)/dtbl, vdfg(i,j) )<a name='237'>
+<a name='238'>
+       IF ( PRESENT( fgdp ) ) THEN<a name='239'>
+         dfgdp(i,j)= vdfg(i,j)*lwc*dtbl<a name='240'>
+         fgdp(i,j) = fgdp(i,j)+dfgdp(i,j)<a name='241'>
+       ELSE<a name='242'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_sf_fogdes.F.html#SF_FOGDES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1139">('Missing arguments for FGDP in sf_fogdes')<a name='243'>
+       ENDIF<a name='244'>
+<a name='245'>
+       dfgdp(i,j)= MAX (dfgdp(i,j), 0.0)<a name='246'>
+       fgdp(i,j) = MAX (fgdp(i,j),  0.0)<a name='247'>
+<a name='248'>
+     ENDDO<a name='249'>
+   ENDDO<a name='250'>
+<a name='251'>
+  END SUBROUTINE sf_fogdes<a name='252'>
+<a name='253'>
+<font color=#447700>! ==================================================================<a name='254'></font>
+<a name='255'>
+END MODULE module_sf_fogdes<a name='256'>
+</pre></body></html>

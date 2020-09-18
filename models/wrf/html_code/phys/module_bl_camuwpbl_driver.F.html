@@ -1,0 +1,1104 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#define MODAL_AERO<a name='2'>
+<A NAME='MODULE_BL_CAMUWPBL_DRIVER'><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#MODULE_BL_CAMUWPBL_DRIVER' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='3'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_bl_camuwpbl_driver</font> <A href='../../call_to/MODULE_BL_CAMUWPBL_DRIVER.html' TARGET='index'>2</A><a name='4'>
+  <font color=#447700>!Note: Comments starting with "!!" are directly taken from CAM's interface routine for the UW PBL (vertical_diffusion.F90)<a name='5'></font>
+  <font color=#447700>!This modules is based on vertical_diffusion.F90 of CAM5<a name='6'></font>
+<a name='7'>
+  <font color=#447700>!List of possible modifications in the future:<a name='8'></font>
+  <font color=#447700>!_____________________________________________<a name='9'></font>
+  <font color=#447700>!1. Constituents(per Kg of DRY air or "dry" constituents) are not diffused currently. The call which <a name='10'></font>
+  <font color=#447700>!   makes DRY constituents diffusion decision flag 'true' is commented out in camuwpblinit subroutine. <a name='11'></font>
+  <font color=#447700>!   Therefore the flag is ALWAYS false for DRY constituent diffusion.<a name='12'></font>
+  <font color=#447700>!<a name='13'></font>
+  <font color=#447700>!   REASON: DRY constituents are Aerosols and other species (excepts for cloud mass mixing ratios and number concentrations).<a name='14'></font>
+  <font color=#447700>!   ------  In WRF, DRY constituents appear only when WRF_CHEM simulations are run. DRY constituents are vertically mixed(diffused)<a name='15'></font>
+  <font color=#447700>!           in dry_dep_driver of WRF_CHEM. Therefore, DRY constituents are not diffused in this PBL subroutine<a name='16'></font>
+  <font color=#447700>!<a name='17'></font>
+  <font color=#447700>!2. The liquid number concentrations is NOT diffused(or mixed) in PBL to mimic CAM5, which diffuses liquid number <a name='18'></font>
+  <font color=#447700>!   concentrations in dropmixnuc. <a name='19'></font>
+  <font color=#447700>!3. Surface fluxes for ALL the constituents are ZERO except for the water vapours (1st constituent)<a name='20'></font>
+  <font color=#447700>!4. Molecular diffusion is turned off for now<a name='21'></font>
+  <font color=#447700>!5. Mountain stresses are not computed for now (all calls to Mountain stresses currently may hold undefined variables)<a name='22'></font>
+  <font color=#447700>!6. *Formulas used for computing surface stresses is based on the formula given in CAM5's BareGround.F90.<a name='23'></font>
+  <font color=#447700>!   This formula may not work well for ocean surfaces (possible future modification)<a name='24'></font>
+  <font color=#447700>!_____________________________________________<a name='25'></font>
+<a name='26'>
+<a name='27'>
+  <font color=#447700>!!----------------------------------------------------------------------------------------------------- !<a name='28'></font>
+  <font color=#447700>!! Module to compute vertical diffusion of momentum,  moisture, trace constituents                      !<a name='29'></font>
+  <font color=#447700>!! and static energy. Separate modules compute                                                          !  <a name='30'></font>
+  <font color=#447700>!!   1. stresses associated with turbulent flow over orography                                          !<a name='31'></font>
+  <font color=#447700>!!      ( turbulent mountain stress )                                                                   !<a name='32'></font>
+  <font color=#447700>!!   2. eddy diffusivities, including nonlocal tranport terms                                           !<a name='33'></font>
+  <font color=#447700>!!   3. molecular diffusivities                                                                         ! <a name='34'></font>
+  <font color=#447700>!!   4. coming soon... gravity wave drag                                                                !  <a name='35'></font>
+  <font color=#447700>!! Lastly, a implicit diffusion solver is called, and tendencies retrieved by                           !<a name='36'></font>
+  <font color=#447700>!! differencing the diffused and initial states.                                                        !<a name='37'></font>
+  <font color=#447700>!!                                                                                                      ! <a name='38'></font>
+  <font color=#447700>!! Calling sequence:                                                                                    !<a name='39'></font>
+  <font color=#447700>!!                                                                                                      !<a name='40'></font>
+  <font color=#447700>!!  vertical_diffusion_init      Initializes vertical diffustion constants and modules                  !<a name='41'></font>
+  <font color=#447700>!!        init_molec_diff        Initializes molecular diffusivity module                               !<a name='42'></font>
+  <font color=#447700>!!        init_eddy_diff         Initializes eddy diffusivity module (includes PBL)                     !  <a name='43'></font>
+  <font color=#447700>!!        init_tms               Initializes turbulent mountain stress module                           !<a name='44'></font>
+  <font color=#447700>!!        init_vdiff             Initializes diffusion solver module                                    !<a name='45'></font>
+  <font color=#447700>!!  vertical_diffusion_ts_init   Time step initialization (only used for upper boundary condition)      ! <a name='46'></font>
+  <font color=#447700>!!  vertical_diffusion_tend      Computes vertical diffusion tendencies                                 ! <a name='47'></font>
+  <font color=#447700>!!        compute_tms            Computes turbulent mountain stresses                                   !<a name='48'></font>
+  <font color=#447700>!!        compute_eddy_diff      Computes eddy diffusivities and countergradient terms                  !<a name='49'></font>
+  <font color=#447700>!!        compute_vdiff          Solves vertical diffusion equations, including molecular diffusivities !         <a name='50'></font>
+  <font color=#447700>!!                                                                                                      !<a name='51'></font>
+  <font color=#447700>!!---------------------------Code history-------------------------------------------------------------- !<a name='52'></font>
+  <font color=#447700>!! J. Rosinski : Jun. 1992                                                                              !<a name='53'></font>
+  <font color=#447700>!! J. McCaa    : Sep. 2004                                                                              !<a name='54'></font>
+  <font color=#447700>!! S. Park     : Aug. 2006, Dec. 2008. Jan. 2010                                                        !<a name='55'></font>
+  <font color=#447700>!  B. Singh    : Nov. 2010 (ported to WRF by balwinder.singh@pnl.gov)<a name='56'></font>
+  <font color=#447700>!!----------------------------------------------------------------------------------------------------- !<a name='57'></font>
+<a name='58'>
+  use <A href='../../html_code/phys/module_cam_shr_kind_mod.F.html#SHR_KIND_MOD'>shr_kind_mod</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#module_bl_camuwpbl_driver.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_KIND_MOD_1">,       only : r8 =&gt; shr_kind_r8<a name='59'>
+  use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#module_bl_camuwpbl_driver.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_1">, only : pcols, pver, pverp, endrun, iulog,fieldname_len,pcnst =&gt;pcnst_runtime<a name='60'>
+  use <A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS'>constituents</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#module_bl_camuwpbl_driver.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTITUENTS_1">,       only : qmin<a name='61'>
+  use <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#DIFFUSION_SOLVER'>diffusion_solver</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#module_bl_camuwpbl_driver.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DIFFUSION_SOLVER_1">,   only : vdiff_selector<a name='62'>
+  use <A href='../../html_code/phys/module_cam_physconst.F.html#PHYSCONST'>physconst</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#module_bl_camuwpbl_driver.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHYSCONST_1">,          only :          &amp;<a name='63'>
+       cpair  , &amp;     <font color=#447700>! Specific heat of dry air<a name='64'></font>
+       gravit , &amp;     <font color=#447700>! Acceleration due to gravity<a name='65'></font>
+       rair   , &amp;     <font color=#447700>! Gas constant for dry air<a name='66'></font>
+       zvir   , &amp;     <font color=#447700>! rh2o/rair - 1<a name='67'></font>
+       latvap , &amp;     <font color=#447700>! Latent heat of vaporization<a name='68'></font>
+       latice , &amp;     <font color=#447700>! Latent heat of fusion<a name='69'></font>
+       karman , &amp;     <font color=#447700>! von Karman constant <a name='70'></font>
+       mwdry  , &amp;     <font color=#447700>! Molecular weight of dry air<a name='71'></font>
+       avogad , &amp;     <font color=#447700>! Avogadro's number<a name='72'></font>
+       boltz          <font color=#447700>! Boltzman's constant<a name='73'></font>
+  <a name='74'>
+  implicit none<a name='75'>
+  private      <a name='76'>
+  save<a name='77'>
+  <a name='78'>
+  <font color=#447700>!! ----------------- !<a name='79'></font>
+  <font color=#447700>!! Public interfaces !<a name='80'></font>
+  <font color=#447700>!! ----------------- !<a name='81'></font>
+  <a name='82'>
+  public camuwpblinit   <font color=#447700>! Initialization<a name='83'></font>
+  public camuwpbl       <font color=#447700>! Driver for the PBL scheme<a name='84'></font>
+  public vd_register    <font color=#447700>! Init routine for constituents<a name='85'></font>
+  <a name='86'>
+  <font color=#447700>!! ------------ !<a name='87'></font>
+  <font color=#447700>!! Private data !<a name='88'></font>
+  <font color=#447700>!! ------------ !<a name='89'></font>
+  <a name='90'>
+  character(len=16)    :: eddy_scheme                  <font color=#447700>!! Default set in phys_control.F90, use namelist to change<a name='91'></font>
+  <font color=#447700>!!     'HB'       = Holtslag and Boville (default)<a name='92'></font>
+  <font color=#447700>!!     'HBR'      = Holtslag and Boville and Rash <a name='93'></font>
+  <font color=#447700>!!     'diag_TKE' = Bretherton and Park ( UW Moist Turbulence Scheme )<a name='94'></font>
+  integer, parameter   :: nturb = 5                    <font color=#447700>!! Number of iterations for solution ( when 'diag_TKE' scheme is selected )<a name='95'></font>
+  logical, parameter   :: wstarent = .true.            <font color=#447700>!! Use wstar (.true.) or TKE (.false.) entrainment closure ( when 'diag_TKE' scheme is selected )<a name='96'></font>
+  logical              :: do_pseudocon_diff = .false.  <font color=#447700>!! If .true., do pseudo-conservative variables diffusion<a name='97'></font>
+<a name='98'>
+  <a name='99'>
+  character(len=16)    :: shallow_scheme               <font color=#447700>!! For checking compatibility between eddy diffusion and shallow convection schemes<a name='100'></font>
+  <font color=#447700>!!     'Hack'     = Hack Shallow Convection Scheme<a name='101'></font>
+  <font color=#447700>!!     'UW'       = Park and Bretherton ( UW Shallow Convection Scheme )<a name='102'></font>
+  character(len=16)    :: microp_scheme                <font color=#447700>!! Microphysics scheme<a name='103'></font>
+  <a name='104'>
+  logical              :: do_molec_diff = .false.      <font color=#447700>!! Switch for molecular diffusion<a name='105'></font>
+  logical              :: do_tms                       <font color=#447700>!! Switch for turbulent mountain stress<a name='106'></font>
+  real(r8)             :: tms_orocnst                  <font color=#447700>!! Converts from standard deviation to height<a name='107'></font>
+  real(r8)             :: tms_z0fac                    <font color=#447700>! Converts from standard deviation to height<a name='108'></font>
+  <a name='109'>
+  type(vdiff_selector) :: fieldlist_wet                <font color=#447700>!! Logical switches for moist mixing ratio diffusion<a name='110'></font>
+  type(vdiff_selector) :: fieldlist_dry                <font color=#447700>!! Logical switches for dry mixing ratio diffusion<a name='111'></font>
+  integer              :: ntop                         <font color=#447700>!! Top interface level to which vertical diffusion is applied ( = 1 ).<a name='112'></font>
+  integer              :: nbot                         <font color=#447700>!! Bottom interface level to which vertical diffusion is applied ( = pver ).<a name='113'></font>
+  integer              :: tke_idx, kvh_idx, kvm_idx    <font color=#447700>!! TKE and eddy diffusivity indices for fields in the physics buffer<a name='114'></font>
+  integer              :: turbtype_idx, smaw_idx       <font color=#447700>!! Turbulence type and instability functions<a name='115'></font>
+  integer              :: tauresx_idx, tauresy_idx     <font color=#447700>!! Redisual stress for implicit surface stress<a name='116'></font>
+ <a name='117'>
+  integer              :: ixcldice, ixcldliq           <font color=#447700>!! Constituent indices for cloud liquid and ice water<a name='118'></font>
+  integer              :: ixnumice, ixnumliq<a name='119'>
+#ifdef MODAL_AERO<a name='120'>
+  integer              :: ixndrop<a name='121'>
+#endif<a name='122'>
+  integer              :: wgustd_index   <a name='123'>
+CONTAINS<a name='124'>
+  <a name='125'>
+<A NAME='CAMUWPBL'><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='126'>
+  <font color=#993300>subroutine </font><font color=#cc0000>camuwpbl</font>(dt,u_phy,v_phy,th_phy,rho,qv_curr,hfx,qfx,ustar,p8w &amp; <A href='../../call_to/CAMUWPBL.html' TARGET='index'>1</A>,<A href='../../call_from/CAMUWPBL.html' TARGET='index'>19</A><a name='127'>
+       ,p_phy,z,t_phy,qc_curr,qi_curr,z_at_w,cldfra_old_mp,cldfra,ht      &amp;<a name='128'>
+       ,rthratenlw,exner,is_CAMMGMP_used                                  &amp;<a name='129'>
+       ,itimestep,qnc_curr,qni_curr,wsedl3d                               &amp;<a name='130'>
+       ,ids,ide, jds,jde, kds,kde                                         &amp;<a name='131'>
+       ,ims,ime, jms,jme, kms,kme                                         &amp;<a name='132'>
+       ,its,ite, jts,jte, kts,kte                                         &amp;<a name='133'>
+<font color=#447700>!Intent-inout <a name='134'></font>
+       ,tauresx2d,tauresy2d                                               &amp;<a name='135'>
+       ,rublten,rvblten,rthblten,rqiblten,rqniblten,rqvblten,rqcblten     &amp;<a name='136'>
+       ,kvm3d,kvh3d                                                       &amp;<a name='137'>
+<font color=#447700>!Intent-out<a name='138'></font>
+       ,tpert2d,qpert2d,wpert2d,smaw3d,turbtype3d                         &amp;<a name='139'>
+       ,tke_pbl,pblh2d,kpbl2d                                             )  <a name='140'>
+<a name='141'>
+    <font color=#447700>!!---------------------------------------------------- !<a name='142'></font>
+    <font color=#447700>!! This is an interface routine for vertical diffusion !<a name='143'></font>
+    <font color=#447700>!  This subroutine is called by module_pbl_driver and  !<a name='144'></font>
+    <font color=#447700>!  it calls: wrf_error_fatal,compute_tms,              !<a name='145'></font>
+    <font color=#447700>!  compute_eddy_diff,aqsat,compute_vdiff and           !<a name='146'></font>
+    <font color=#447700>!  positive_moisture.<a name='147'></font>
+    <font color=#447700>!!---------------------------------------------------- !<a name='148'></font>
+    use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_2">,    only : pcols<a name='149'>
+    use <A href='../../html_code/phys/module_cam_trb_mtn_stress.F.html#TRB_MTN_STRESS'>trb_mtn_stress</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRB_MTN_STRESS_1">,        only : compute_tms<a name='150'>
+    use <A href='../../html_code/phys/module_cam_bl_eddy_diff.F.html#EDDY_DIFF'>eddy_diff</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EDDY_DIFF_1">,             only : compute_eddy_diff<a name='151'>
+    use <A href='../../html_code/phys/module_cam_wv_saturation.F.html#WV_SATURATION'>wv_saturation</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WV_SATURATION_1">,         only : fqsatd, aqsat<a name='152'>
+    use <A href='../../html_code/phys/module_cam_molec_diff.F.html#MOLEC_DIFF'>molec_diff</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MOLEC_DIFF_1">,            only : compute_molec_diff, vd_lu_qdecomp<a name='153'>
+    use <A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS'>constituents</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTITUENTS_2">,          only : qmincg, qmin<a name='154'>
+    use <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#DIFFUSION_SOLVER'>diffusion_solver</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DIFFUSION_SOLVER_2"> <font color=#447700>!!, only : compute_vdiff, any, operator(.not.)<a name='155'></font>
+#ifdef MODAL_AERO<a name='156'>
+    use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_1"><a name='157'>
+#endif<a name='158'>
+    <a name='159'>
+    implicit none   <a name='160'>
+    <a name='161'>
+    <font color=#447700>!------------------------------------------------------------------------!<a name='162'></font>
+    <font color=#447700>!                             Input                                      !<a name='163'></font>
+    <font color=#447700>!------------------------------------------------------------------------!<a name='164'></font>
+    logical, intent(in) :: is_CAMMGMP_used<a name='165'>
+    integer, intent(in) :: ids,ide, jds,jde, kds,kde<a name='166'>
+    integer, intent(in) :: ims,ime, jms,jme, kms,kme<a name='167'>
+    integer, intent(in) :: its,ite, jts,jte, kts,kte<a name='168'>
+    integer, intent(in) :: itimestep<a name='169'>
+<a name='170'>
+    real, intent(in) :: dt                                                <font color=#447700>! Time step (s)<a name='171'></font>
+    <a name='172'>
+    real, dimension( ims:ime,jms:jme ), intent(in) :: hfx                   <font color=#447700>!Sensible heat flux at surface (w/m2)<a name='173'></font>
+    real, dimension( ims:ime,jms:jme ), intent(in) :: qfx                   <font color=#447700>!Moisture      flux at surface (kg m-2 s-1)<a name='174'></font>
+    real, dimension( ims:ime,jms:jme ), intent(in) :: ustar                 <font color=#447700>!Friction velocity (m/s)<a name='175'></font>
+    real, dimension( ims:ime,jms:jme ), intent(in) :: ht                    <font color=#447700>!Terrain height (m)<a name='176'></font>
+<a name='177'>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: v_phy       <font color=#447700>!Y-component of wind (m/s)<a name='178'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: u_phy       <font color=#447700>!X-component of wind (m/s)<a name='179'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: th_phy      <font color=#447700>!Potential temperature (K)<a name='180'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: rho         <font color=#447700>!Air density (kg/m3)<a name='181'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: qv_curr     <font color=#447700>!Water vapor mixing ratio - Moisture  (kg/kg)<a name='182'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: qc_curr     <font color=#447700>!Cloud water mixing ratio - Cloud liq (kg/kg)<a name='183'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: qi_curr     <font color=#447700>!Ice mixing ratio         - Cloud ice  (kg/kg)<a name='184'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: qnc_curr    <font color=#447700>!Liq # mixing ratio       - Cloud liq #  (#/kg)<a name='185'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: qni_curr    <font color=#447700>!Ice # mixing ratio       - Cloud ice #  (#/kg)<a name='186'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: p_phy       <font color=#447700>!Pressure at mid-level (Pa)<a name='187'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: p8w         <font color=#447700>!Pressure at level interface (Pa)<a name='188'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: z           <font color=#447700>!Height above sea level at mid-level (m) <a name='189'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: t_phy       <font color=#447700>!Temperature (K)<a name='190'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: z_at_w      <font color=#447700>!Height above sea level at layer interfaces (m) <a name='191'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: cldfra_old_mp <font color=#447700>!Cloud fraction [unitless]<a name='192'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: cldfra      <font color=#447700>!Cloud fraction [unitless]<a name='193'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: exner       <font color=#447700>!Dimensionless pressure [unitless]<a name='194'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: rthratenlw  <font color=#447700>!Tendency for LW ( K/s)<a name='195'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(in) :: wsedl3d     <font color=#447700>!Sedimentation velocity of stratiform liquid cloud droplet (m/s)<a name='196'></font>
+<a name='197'>
+    <a name='198'>
+    <a name='199'>
+    <font color=#447700>!------------------------------------------------------------------------!<a name='200'></font>
+    <font color=#447700>!                          Output                                        !<a name='201'></font>
+    <font color=#447700>!------------------------------------------------------------------------!   <a name='202'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(inout) :: rublten     <font color=#447700>!Tendency for u_phy   (Pa m s-2)<a name='203'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(inout) :: rvblten     <font color=#447700>!Tendency for v_phy   (Pa m s-2)<a name='204'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(inout) :: rthblten    <font color=#447700>!Tendency for th_phy  (Pa K s-1)<a name='205'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(inout) :: rqvblten    <font color=#447700>!Tendency for qv_curr (Pa kg kg-1 s-1)<a name='206'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(inout) :: rqcblten    <font color=#447700>!Tendency for qc_curr (Pa kg kg-1 s-1)<a name='207'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(inout) :: rqiblten    <font color=#447700>!Tendency for qi_curr (Pa kg kg-1 s-1)<a name='208'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(inout) :: rqniblten   <font color=#447700>!Tendency for qni_curr(Pa # kg-1 s-1)<a name='209'></font>
+<a name='210'>
+    integer, dimension( ims:ime,jms:jme ), intent(out) :: kpbl2d <font color=#447700>!Layer index containing PBL top within or at the base interface<a name='211'></font>
+    real,    dimension( ims:ime,jms:jme ), intent(out) :: pblh2d <font color=#447700>!Planetary boundary layer height (m)<a name='212'></font>
+<a name='213'>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(out) :: tke_pbl     <font color=#447700>!Turbulence kinetic energy at midpoints  (m^2/s^2)<a name='214'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(out) :: turbtype3d  <font color=#447700>!Turbulent interface types [ no unit ]<a name='215'></font>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(out) :: smaw3d      <font color=#447700>!Normalized Galperin instability function for momentum  ( 0&lt;= &lt;=4.964 and 1 at neutral ) [no units]<a name='216'></font>
+        <a name='217'>
+<a name='218'>
+    <a name='219'>
+    <font color=#447700>!---------------------------------------------------------------------------!<a name='220'></font>
+    <font color=#447700>!     Local, carried on from one timestep to the other (defined in registry)!<a name='221'></font>
+    <font color=#447700>!---------------------------------------------------------------------------!<a name='222'></font>
+    <a name='223'>
+    real, dimension( ims:ime, jms:jme )         , intent(inout ):: tauresx2d,tauresy2d <font color=#447700>!X AND Y-COMP OF RESIDUAL STRESSES(m^2/s^2)<a name='224'></font>
+    real, dimension( ims:ime, jms:jme )         , intent(out)   :: tpert2d             <font color=#447700>! Convective temperature excess (K)<a name='225'></font>
+    real, dimension( ims:ime, jms:jme )         , intent(out)   :: qpert2d             <font color=#447700>! Convective humidity excess (kg/kg)<a name='226'></font>
+    real, dimension( ims:ime, jms:jme )         , intent(out)   :: wpert2d             <font color=#447700>! Turbulent velocity excess (m/s)<a name='227'></font>
+<a name='228'>
+    real, dimension( ims:ime, kms:kme, jms:jme ), intent(inout) :: kvm3d,kvh3d         <font color=#447700>!Eddy diffusivity for momentum and heat(m^2/s)<a name='229'></font>
+<a name='230'>
+<a name='231'>
+    <font color=#447700>!---------------------------------------------------------------------------!<a name='232'></font>
+    <font color=#447700>!                               Local                                       !<a name='233'></font>
+    <font color=#447700>!---------------------------------------------------------------------------!<a name='234'></font>
+<a name='235'>
+    character(128) :: errstring                              <font color=#447700>! Error status for compute_vdiff<a name='236'></font>
+    logical        :: kvinit                                 <font color=#447700>! Tell compute_eddy_diff/ caleddy to initialize kvh, kvm (uses kvf)<a name='237'></font>
+    logical        :: is_first_step                          <font color=#447700>! Flag to know if this a first time step<a name='238'></font>
+    integer        :: i,j,k,itsp1,itile_len,ktep1,kflip,ncol,ips,icnst,m,kp1<a name='239'>
+    integer        :: lchnk                                  <font color=#447700>! Chunk identifier<a name='240'></font>
+    real(r8)       :: tauFac, uMean, dp, multFrc<a name='241'>
+    real(r8)       :: ztodt                                  <font color=#447700>! 2*delta-t (s)<a name='242'></font>
+    real(r8)       :: rztodt                                 <font color=#447700>! 1./ztodt (1/s)<a name='243'></font>
+	real(r8),parameter :: invalidVal = -999888777.0_r8<a name='244'>
+<a name='245'>
+    real(r8) :: topflx(  pcols)                              <font color=#447700>! Molecular heat flux at top interface                                                <a name='246'></font>
+    real(r8) :: wpert(   pcols)                              <font color=#447700>! Turbulent velocity excess (m/s)<a name='247'></font>
+    real(r8) :: tauresx( pcols)                              <font color=#447700>! [Residual stress to be added in vdiff to correct...<a name='248'></font>
+    real(r8) :: tauresy( pcols)                              <font color=#447700>! for turb stress mismatch between sfc and atm accumulated.] (N/m2)<a name='249'></font>
+    real(r8) :: ipbl(    pcols)                              <font color=#447700>! If 1, PBL is CL, while if 0, PBL is STL.<a name='250'></font>
+    real(r8) :: kpblh(   pcols)                              <font color=#447700>! Layer index containing PBL top within or at the base interface<a name='251'></font>
+    real(r8) :: wstarPBL(pcols)                              <font color=#447700>! Convective velocity within PBL (m/s)<a name='252'></font>
+    real(r8) :: sgh(     pcols)                              <font color=#447700>! Standard deviation of orography (m) <a name='253'></font>
+    real(r8) :: landfrac(pcols)                              <font color=#447700>! Land fraction [unitless]<a name='254'></font>
+    real(r8) :: taux(    pcols)                              <font color=#447700>! x surface stress  (N/m2)<a name='255'></font>
+    real(r8) :: tauy(    pcols)                              <font color=#447700>! y surface stress  (N/m2)<a name='256'></font>
+    real(r8) :: tautotx( pcols)                              <font color=#447700>! U component of total surface stress (N/m2)<a name='257'></font>
+    real(r8) :: tautoty( pcols)                              <font color=#447700>! V component of total surface stress (N/m2)<a name='258'></font>
+    real(r8) :: ksrftms( pcols)                              <font color=#447700>! Turbulent mountain stress surface drag coefficient (kg/s/m2)<a name='259'></font>
+    real(r8) :: tautmsx( pcols)                              <font color=#447700>! U component of turbulent mountain stress (N/m2)<a name='260'></font>
+    real(r8) :: tautmsy( pcols)                              <font color=#447700>! V component of turbulent mountain stress (N/m2)<a name='261'></font>
+    real(r8) :: ustar8(  pcols)                              <font color=#447700>! Surface friction velocity (m/s)<a name='262'></font>
+    real(r8) :: pblh(    pcols)                              <font color=#447700>! Planetary boundary layer height (m)<a name='263'></font>
+    real(r8) :: tpert(   pcols)                              <font color=#447700>! Convective temperature excess (K)<a name='264'></font>
+    real(r8) :: qpert(   pcols)                              <font color=#447700>! Convective humidity excess (kg/kg)<a name='265'></font>
+    real(r8) :: shflx(   pcols)                              <font color=#447700>! Surface sensible heat flux  (w/m2)<a name='266'></font>
+    real(r8) :: phis(    pcols)                              <font color=#447700>! Geopotential at terrain height (m2/s2)<a name='267'></font>
+<a name='268'>
+    real(r8) :: cldn8(      pcols,kte)                       <font color=#447700>! New stratus fraction (fraction)<a name='269'></font>
+    real(r8) :: qrl8(       pcols,kte)                       <font color=#447700>! LW radiative cooling rate(W/kg*Pa)<a name='270'></font>
+    real(r8) :: wsedl8(     pcols,kte)                       <font color=#447700>! Sedimentation velocity of stratiform liquid cloud droplet (m/s)<a name='271'></font>
+    real(r8) :: dtk(        pcols,kte)                       <font color=#447700>! T tendency from KE dissipation<a name='272'></font>
+    real(r8) :: qt(         pcols,kte)                       <font color=#447700>!<a name='273'></font>
+    real(r8) :: sl_prePBL(  pcols,kte)                       <font color=#447700>!<a name='274'></font>
+    real(r8) :: qt_prePBL(  pcols,kte)                       <font color=#447700>!<a name='275'></font>
+    real(r8) :: slten(      pcols,kte)                       <font color=#447700>!<a name='276'></font>
+    real(r8) :: qtten(      pcols,kte)                       <font color=#447700>!<a name='277'></font>
+    real(r8) :: sl(         pcols,kte)                       <font color=#447700>!                       <a name='278'></font>
+    real(r8) :: ftem(       pcols,kte)                       <font color=#447700>! Saturation vapor pressure before PBL<a name='279'></font>
+    real(r8) :: ftem_prePBL(pcols,kte)                       <font color=#447700>! Saturation vapor pressure before PBL<a name='280'></font>
+    real(r8) :: ftem_aftPBL(pcols,kte)                       <font color=#447700>! Saturation vapor pressure after PBL<a name='281'></font>
+    real(r8) :: tem2(       pcols,kte)                       <font color=#447700>! Saturation specific humidity and RH<a name='282'></font>
+    real(r8) :: t_aftPBL(   pcols,kte)                       <font color=#447700>! Temperature after PBL diffusion<a name='283'></font>
+    real(r8) :: tten(       pcols,kte)                       <font color=#447700>! Temperature tendency by PBL diffusion<a name='284'></font>
+    real(r8) :: rhten(      pcols,kte)                       <font color=#447700>! RH tendency by PBL diffusion<a name='285'></font>
+    real(r8) :: qv_aft_PBL( pcols,kte)                       <font color=#447700>! qv after PBL diffusion<a name='286'></font>
+    real(r8) :: ql_aft_PBL( pcols,kte)                       <font color=#447700>! ql after PBL diffusion<a name='287'></font>
+    real(r8) :: qi_aft_PBL( pcols,kte)                       <font color=#447700>! qi after PBL diffusion<a name='288'></font>
+    real(r8) :: s_aft_PBL(  pcols,kte)                       <font color=#447700>! s after PBL diffusion<a name='289'></font>
+    real(r8) :: u_aft_PBL(  pcols,kte)                       <font color=#447700>! u after PBL diffusion<a name='290'></font>
+    real(r8) :: v_aft_PBL(  pcols,kte)                       <font color=#447700>! v after PBL diffusion<a name='291'></font>
+    real(r8) :: qv_pro(     pcols,kte)                       <font color=#447700>!<a name='292'></font>
+    real(r8) :: ql_pro(     pcols,kte)                       <font color=#447700>!<a name='293'></font>
+    real(r8) :: qi_pro(     pcols,kte)                       <font color=#447700>!<a name='294'></font>
+    real(r8) :: s_pro(      pcols,kte)                       <font color=#447700>!<a name='295'></font>
+    real(r8) :: t_pro(      pcols,kte)                       <font color=#447700>!<a name='296'></font>
+    real(r8) :: u8(         pcols,kte)                       <font color=#447700>! x component of velocity in CAM's data structure (m/s)<a name='297'></font>
+    real(r8) :: v8(         pcols,kte)                       <font color=#447700>! y component of velocity in CAM's data structure (m/s)<a name='298'></font>
+    real(r8) :: t8(         pcols,kte)                       <font color=#447700>! <a name='299'></font>
+    real(r8) :: pmid8(      pcols,kte)                       <font color=#447700>! Pressure at the midpoints in CAM's data structure (Pa)<a name='300'></font>
+    real(r8) :: pmiddry8(   pcols,kte)                       <font color=#447700>! Dry Pressure at the midpoints in CAM's data structure (Pa)<a name='301'></font>
+    real(r8) :: zm8(        pcols,kte)                       <font color=#447700>! Height at the midpoints in CAM's data structure  (m)<a name='302'></font>
+    real(r8) :: exner8(     pcols,kte)                       <font color=#447700>! exner function in CAM's data structure<a name='303'></font>
+    real(r8) :: s8(         pcols,kte)                       <font color=#447700>! Dry static energy (m2/s2)<a name='304'></font>
+    real(r8) :: rpdel8(     pcols,kte)                       <font color=#447700>! Inverse of pressure difference (1/Pa)<a name='305'></font>
+    real(r8) :: pdel8(      pcols,kte)                       <font color=#447700>! Pressure difference (Pa) <a name='306'></font>
+    real(r8) :: rpdeldry8(  pcols,kte)                       <font color=#447700>! Inverse of dry pressure difference (1/Pa)<a name='307'></font>
+    real(r8) :: pdeldry8(   pcols,kte)                       <font color=#447700>! dry pressure difference (1/Pa)<a name='308'></font>
+    REAL(r8) :: stnd(       pcols,kte)                       <font color=#447700>! Heating rate (dry static energy tendency, W/kg)<a name='309'></font>
+    <a name='310'>
+    real(r8) :: tke8(     pcols,kte+1)                       <font color=#447700>! Turbulent kinetic energy [ m2/s2 ]<a name='311'></font>
+    real(r8) :: turbtype( pcols,kte+1)                       <font color=#447700>! Turbulent interface types [ no unit ]<a name='312'></font>
+    real(r8) :: smaw(     pcols,kte+1)                       <font color=#447700>! Normalized Galperin instability function for momentum  ( 0&lt;= &lt;=4.964 and 1 at neutral ) [no units]<a name='313'></font>
+                                                             <font color=#447700>! This is 1 when neutral condition (Ri=0), 4.964 for maximum unstable case, and 0 when Ri &gt; Ricrit=0.19. <a name='314'></font>
+    real(r8) :: cgs(      pcols,kte+1)                       <font color=#447700>! Counter-gradient star  [ cg/flux ]<a name='315'></font>
+    real(r8) :: cgh(      pcols,kte+1)                       <font color=#447700>! Counter-gradient term for heat [ J/kg/m ]<a name='316'></font>
+    real(r8) :: kvh(      pcols,kte+1)                       <font color=#447700>! Eddy diffusivity for heat [ m2/s ]<a name='317'></font>
+    real(r8) :: kvm(      pcols,kte+1)                       <font color=#447700>! Eddy diffusivity for momentum [ m2/s ]<a name='318'></font>
+    real(r8) :: kvq(      pcols,kte+1)                       <font color=#447700>! Eddy diffusivity for constituents [ m2/s ]<a name='319'></font>
+    real(r8) :: kvh_in(   pcols,kte+1)                       <font color=#447700>! kvh from previous timestep [ m2/s ]<a name='320'></font>
+    real(r8) :: kvm_in(   pcols,kte+1)                       <font color=#447700>! kvm from previous timestep [ m2/s ]<a name='321'></font>
+    real(r8) :: bprod(    pcols,kte+1)                       <font color=#447700>! Buoyancy production of tke [ m2/s3 ]<a name='322'></font>
+    real(r8) :: sprod(    pcols,kte+1)                       <font color=#447700>! Shear production of tke [ m2/s3 ]<a name='323'></font>
+    real(r8) :: sfi(      pcols,kte+1)                       <font color=#447700>! Saturation fraction at interfaces [ fraction ]<a name='324'></font>
+    real(r8) :: pint8(    pcols,kte+1)                       <font color=#447700>! Pressure at the interfaces in CAM's data structure (Pa)<a name='325'></font>
+    real(r8) :: pintdry8( pcols,kte+1)                       <font color=#447700>! Dry pressure at the interfaces in CAM's data structure (Pa)<a name='326'></font>
+    real(r8) :: zi8(      pcols,kte+1)                       <font color=#447700>! Height at the interfacesin CAM's data structure  (m)<a name='327'></font>
+<a name='328'>
+    real(r8) :: cloud(     pcols,kte,pcnst)                      <font color=#447700>! Holder for cloud water and ice (q in cam)<a name='329'></font>
+    real(r8) :: cloudtnd(  pcols,kte,pcnst)                      <font color=#447700>! Holder for cloud tendencies (ptend_loc%q in cam)<a name='330'></font>
+    real(r8) :: wind_tends(pcols,kte,2)                      <font color=#447700>! Wind component tendencies (m/s2)<a name='331'></font>
+<a name='332'>
+    real(r8) :: cflx(pcols,pcnst)                            <font color=#447700>! Surface constituent flux [ kg/m2/s ]<a name='333'></font>
+    <a name='334'>
+#ifdef MODAL_AERO<a name='335'>
+    real(r8) :: tmp1(pcols)                                         <font color=#447700>! Temporary storage<a name='336'></font>
+    integer  :: l, lspec<a name='337'>
+#endif<a name='338'>
+    <font color=#447700>!! ----------------------- !<a name='339'></font>
+    <font color=#447700>!! Main Computation Begins !<a name='340'></font>
+    <font color=#447700>!! ----------------------- !<a name='341'></font>
+<a name='342'>
+    do icnst = 1 , pcnst<a name='343'>
+       <font color=#447700>!Setting curface fluxes for all constituents to be zero. Later, cflx(:,1) is populated by the water vapour surface flux<a name='344'></font>
+       cflx(:pcols,icnst)  = 0.0_r8<a name='345'>
+    enddo<a name='346'>
+<a name='347'>
+    is_first_step  = .false.<a name='348'>
+    if(itimestep == 1) then<a name='349'>
+       is_first_step = .true.<a name='350'>
+    endif<a name='351'>
+    ncol   = pcols<a name='352'>
+    ztodt  = DT<a name='353'>
+    rztodt = 1.0_r8 / ztodt<a name='354'>
+<a name='355'>
+    <font color=#447700>!Few definitions in this subroutine require that ncol==1<a name='356'></font>
+    if(ncol .NE. 1) then<a name='357'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_583">('Number of CAM Columns (NCOL) in CAMUWPBL scheme must be 1')<a name='358'>
+    endif<a name='359'>
+<a name='360'>
+    <font color=#447700>!Initialize errstring<a name='361'></font>
+    errstring = ''<a name='362'>
+<a name='363'>
+    <a name='364'>
+    <font color=#447700>!-------------------------------------------------------------------------------------!<a name='365'></font>
+    <font color=#447700>!Map CAM variables to the corresponding WRF variables                                 !<a name='366'></font>
+    <font color=#447700>!Loop over the points in the tile and treat them each as a CAM Chunk                  !<a name='367'></font>
+    <font color=#447700>!-------------------------------------------------------------------------------------!<a name='368'></font>
+    itsp1     = its - 1 <a name='369'>
+    itile_len = ite - itsp1<a name='370'>
+    do j    = jts , jte<a name='371'>
+       do i = its , ite<a name='372'>
+<a name='373'>
+          lchnk   = (j - jts) * itile_len + (i - itsp1)          <font color=#447700>!1-D index location from a 2-D tile<a name='374'></font>
+          phis(1) = ht(i,j) * gravit                             <font color=#447700>!Used for computing dry static energy<a name='375'></font>
+<a name='376'>
+          <font color=#447700>!Flip vertically quantities computed at the mid points<a name='377'></font>
+          ktep1 = kte + 1<a name='378'>
+          do k  = kts,kte<a name='379'>
+             kflip               = ktep1 - k<a name='380'>
+             <a name='381'>
+             <font color=#447700>!Loop is used as vector assignment may take more computational time<a name='382'></font>
+             do icnst = 1 , pcnst<a name='383'>
+                <font color=#447700>!Setting cloud and cloudtnd to values (obtained from module_cam_support) which should produce errors if used <a name='384'></font>
+                <font color=#447700>!1st,2nd,3rd and 5th constituents are used (see the assignments below) and diffused presently in this scheme<a name='385'></font>
+                cloud(1,kflip,icnst)    = invalidVal<a name='386'>
+                cloudtnd(1,kflip,icnst) = invalidVal<a name='387'>
+             enddo<a name='388'>
+<a name='389'>
+             u8(      1,kflip)   = u_phy(i,k,j)  <font color=#447700>! X-component of velocity at the mid-points (m/s) [state%u in CAM]<a name='390'></font>
+             v8(      1,kflip)   = v_phy(i,k,j)  <font color=#447700>! Y-component of velocity at the mid-points (m/s) [state%v in CAM]<a name='391'></font>
+<a name='392'>
+             pmid8(   1,kflip)   = p_phy(i,k,j)  <font color=#447700>! Pressure     at the mid-points    (Pa)      [state%pmid    in CAM]  <a name='393'></font>
+             <a name='394'>
+             dp                  = p8w(i,k,j) - p8w(i,k+1,j) <font color=#447700>!Change in pressure (Pa) <a name='395'></font>
+             pdel8(  1,kflip)    = dp<a name='396'>
+             rpdel8(  1,kflip)   = 1.0_r8/dp     <font color=#447700>! Reciprocal of pressure difference (1/Pa)     [state%rpdel in CAM]<a name='397'></font>
+             zm8(     1,kflip)   = z(i,k,j)-ht(i,j)      <font color=#447700>! Height above the ground at the midpoints (m) [state%zm    in CAM]<a name='398'></font>
+             t8(      1,kflip)   = t_phy(i,k,j)  <font color=#447700>! Temprature at the mid points (K)             [state%t     in CAM]<a name='399'></font>
+             <a name='400'>
+             s8(      1,kflip)   = cpair *t8(1,kflip) + gravit*zm8(1,kflip) + phis(1) <font color=#447700>! Dry static energy (m2/s2) [state%s in CAM]-Formula tested in vertical_diffusion.F90 of CAM<a name='401'></font>
+             qrl8(    1,kflip)   = rthratenlw(i,k,j)* cpair * dp <font color=#447700>! Long Wave heating rate (W/kg*Pa)- Formula obtained from definition of qrlw(pcols,pver) in eddy_diff.F90 in CAM<a name='402'></font>
+<a name='403'>
+             wsedl8(  1,kflip)   = wsedl3d(i,k,j)               <font color=#447700>! Sedimentation velocity of stratiform liquid cloud droplet (m/s)<a name='404'></font>
+             <a name='405'>
+             <font color=#447700>!Following three formulas are obtained from ported CAM's ZM cumulus scheme<a name='406'></font>
+             <font color=#447700>!Values of 0 cause a crash in entropy<a name='407'></font>
+             multFrc                  =  1._r8/(1._r8 + qv_curr(i,k,j))<a name='408'>
+             cloud( 1,kflip,1)        = max( qv_curr(i,k,j) * multFrc, 1.0e-30_r8 ) <font color=#447700>!Specific humidity                       [state%q(:,:,1) in CAM]<a name='409'></font>
+             cloud( 1,kflip,ixcldliq) = qc_curr(i,k,j)  * multFrc              <font color=#447700>!Convert to moist mix ratio-cloud liquid [state%q(:,:,2) in CAM]<a name='410'></font>
+             cloud( 1,kflip,ixcldice) = qi_curr(i,k,j)  * multFrc              <font color=#447700>!cloud ice                               [state%q(:,:,3) in CAM]<a name='411'></font>
+             cloud( 1,kflip,ixnumliq) = qnc_curr(i,k,j) * multFrc <a name='412'>
+             cloud( 1,kflip,ixnumice) = qni_curr(i,k,j) * multFrc <a name='413'>
+<a name='414'>
+             exner8(1,kflip)   = exner(i,k,j)   <font color=#447700>!Exner function (no units)<a name='415'></font>
+             if(is_CAMMGMP_used) then<a name='416'>
+                cldn8( 1,kflip)   = cldfra_old_mp(i,k,j)  <font color=#447700>!Cloud fraction (no unit)<a name='417'></font>
+             else<a name='418'>
+                cldn8( 1,kflip)   = cldfra(i,k,j)  <font color=#447700>!Cloud fraction (no unit)<a name='419'></font>
+             endif<a name='420'>
+<a name='421'>
+             <font color=#447700>!Following formula is obtained from physics_types.F90 of CAM (CESM101)<a name='422'></font>
+             pdeldry8(1,kflip)    =  pdel8(1,kflip)*(1._r8-cloud(1,kflip,1))            <a name='423'>
+             rpdeldry8(1,kflip)   =  1._r8/pdeldry8(1,kflip)<a name='424'>
+<a name='425'>
+          enddo<a name='426'>
+          <a name='427'>
+          do k = kts,kte+1<a name='428'>
+             kflip = kte - k + 2<a name='429'>
+<a name='430'>
+             pint8(   1,kflip) = p8w(   i,k,j) <font color=#447700>! Pressure at interfaces [state%pint in CAM]<a name='431'></font>
+<a name='432'>
+             zi8(     1,kflip) = z_at_w(i,k,j) -ht(i,j) <font color=#447700>! Height at interfaces [state%zi   in CAM]<a name='433'></font>
+<a name='434'>
+             <font color=#447700>!Initialize Variables to zero, these are outputs from the "compute_eddy_diff" <a name='435'></font>
+             kvq(1,kflip)   = 0.0_r8        <font color=#447700>! Eddy diffusivity for constituents (m2/s)<a name='436'></font>
+             cgh(1,kflip)   = 0.0_r8        <font color=#447700>! Counter-gradient term for heat<a name='437'></font>
+             cgs(1,kflip)   = 0.0_r8        <font color=#447700>! Counter-gradient star     (cg/flux)<a name='438'></font>
+             if( is_first_step ) then<a name='439'>
+                kvm3d(i,k,j) = 0.0_r8     <font color=#447700>! Eddy diffusivity for heat     (m2/s)<a name='440'></font>
+                kvh3d(i,k,j) = 0.0_r8     <font color=#447700>! Eddy diffusivity for momentum (m2/s)<a name='441'></font>
+             endif<a name='442'>
+             kvh(1,kflip)   = kvh3d(i,k,j)  <a name='443'>
+             kvm(1,kflip)   = kvm3d(i,k,j)  <a name='444'>
+          end do<a name='445'>
+<a name='446'>
+          <font color=#447700>!Compute pintdry8 and pmiddry8<a name='447'></font>
+          <font color=#447700>!Following formula is obtained from physics_types.F90 of CAM (CESM101)<a name='448'></font>
+          pintdry8(1,1) = pint8(1,1)          <a name='449'>
+          do k = 1, pver<a name='450'>
+             pintdry8(1,k+1) =  pintdry8(1,k)  + pdeldry8(1,k)<a name='451'>
+             pmiddry8(1,k)   = (pintdry8(1,k+1)+ pintdry8(1,k))*0.5_r8<a name='452'>
+          end do<a name='453'>
+<a name='454'>
+          shflx(   ncol) = hfx(i,j)  <font color=#447700>! Surface sensible heat flux (w/m2) <a name='455'></font>
+<a name='456'>
+          <font color=#447700>!SGH and LANDFRAC are inputs for the compute_tms subroutine. Presently set to zero as do_tms is always false for now<a name='457'></font>
+          sgh(     ncol) = 0.0_r8    <font color=#447700>! Standard deviation of orography (m) <a name='458'></font>
+          landfrac(ncol) = 0.0_r8    <font color=#447700>! Fraction (unitless)                 <a name='459'></font>
+<a name='460'>
+          uMean      = sqrt( u_phy(i,kts,j) * u_phy(i,kts,j) +  v_phy(i,kts,j) * v_phy(i,kts,j) ) <font color=#447700>! Mean velocity<a name='461'></font>
+          tauFac     = rho(i,kts,j) * ustar(i,j) *ustar(i,j)/uMean<a name='462'>
+<a name='463'>
+          taux(ncol) = -tauFac * u_phy(i,kts,j)  <font color=#447700>! x surface stress (N/m2) [Formulation obtained from CAM's BareGround.F90]<a name='464'></font>
+          tauy(ncol) = -tauFac * v_phy(i,kts,j)  <font color=#447700>! y surface stress (N/m2)<a name='465'></font>
+<a name='466'>
+          <font color=#447700>!! Retrieve 'tauresx, tauresy' from from the last timestep<a name='467'></font>
+          if( is_first_step ) then<a name='468'>
+             tauresx2d(i,j) = 0._r8<a name='469'>
+             tauresy2d(i,j) = 0._r8<a name='470'>
+          endif<a name='471'>
+          tauresx(:ncol) = tauresx2d(i,j)<a name='472'>
+          tauresy(:ncol) = tauresy2d(i,j)<a name='473'>
+          <a name='474'>
+          <font color=#447700>!! All variables are modified by vertical diffusion<a name='475'></font>
+          <a name='476'>
+          <font color=#447700>!!------------------------------------------!<a name='477'></font>
+          <font color=#447700>!! Computation of turbulent mountain stress !<a name='478'></font>
+          <font color=#447700>!!------------------------------------------!<a name='479'></font>
+          <a name='480'>
+          <font color=#447700>!! Consistent with the computation of 'normal' drag coefficient, we are using <a name='481'></font>
+          <font color=#447700>!! the raw input (u,v) to compute 'ksrftms', not the provisionally-marched 'u,v' <a name='482'></font>
+          <font color=#447700>!! within the iteration loop of the PBL scheme. <a name='483'></font>
+<a name='484'>
+          if( do_tms ) then<a name='485'>
+             call <A href='../../html_code/phys/module_cam_trb_mtn_stress.F.html#COMPUTE_TMS'>compute_tms</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="COMPUTE_TMS_1">( pcols   , pver    , ncol  , &amp;<a name='486'>
+                  u8      , v8      , t8       , pmid8   , &amp; <a name='487'>
+                  exner8  , zm8     , sgh      , ksrftms , &amp; <a name='488'>
+                  tautmsx , tautmsy , landfrac )<a name='489'>
+             <font color=#447700>!! Here, both 'taux, tautmsx' are explicit surface stresses.        <a name='490'></font>
+             <font color=#447700>!! Note that this 'tautotx, tautoty' are different from the total stress<a name='491'></font>
+             <font color=#447700>!! that has been actually added into the atmosphere. This is because both<a name='492'></font>
+             <font color=#447700>!! taux and tautmsx are fully implicitly treated within compute_vdiff.<a name='493'></font>
+             <font color=#447700>!! However, 'tautotx, tautoty' are not used in the actual numerical<a name='494'></font>
+             <font color=#447700>!! computation in this module.   <a name='495'></font>
+             tautotx(:ncol) = taux(:ncol) + tautmsx(:ncol)<a name='496'>
+             tautoty(:ncol) = tauy(:ncol) + tautmsy(:ncol)<a name='497'>
+          else<a name='498'>
+             ksrftms(:ncol) = 0.0_r8<a name='499'>
+             tautotx(:ncol) = taux(:ncol)<a name='500'>
+             tautoty(:ncol) = tauy(:ncol)<a name='501'>
+          endif<a name='502'>
+          <a name='503'>
+          <font color=#447700>!-------------------------------------------------------------------------------------!<a name='504'></font>
+          <font color=#447700>!We are currenly using just water vapour flux at the surface, rest are set to zero<a name='505'></font>
+          <font color=#447700>!-------------------------------------------------------------------------------------!<a name='506'></font>
+          cflx(:pcols,1)   = qfx(i,j) <font color=#447700>! Surface constituent flux (kg/m2/s)<a name='507'></font>
+          <a name='508'>
+          <font color=#447700>!Following variables are initialized to zero, they are the output from the "compute_eddy_diff" call<a name='509'></font>
+          ustar8(  :pcols) = 0.0_r8   <font color=#447700>! Surface friction velocity       (m/s)<a name='510'></font>
+          pblh(    :pcols) = 0.0_r8   <font color=#447700>! Planetary boundary layer height (m  )<a name='511'></font>
+          ipbl(    :pcols) = 0.0_r8   <font color=#447700>! If 1, PBL is CL, while if 0, PBL is STL.<a name='512'></font>
+          kpblh(   :pcols) = 0.0_r8   <font color=#447700>! Layer index containing PBL top within or at the base interface<a name='513'></font>
+          wstarPBL(:pcols) = 0.0_r8   <font color=#447700>! Convective velocity within PBL  (m/s)<a name='514'></font>
+<a name='515'>
+<a name='516'>
+          <font color=#447700>!!----------------------------------------------------------------------- !<a name='517'></font>
+          <font color=#447700>!!   Computation of eddy diffusivities - Select appropriate PBL scheme    !<a name='518'></font>
+          <font color=#447700>!!----------------------------------------------------------------------- !<a name='519'></font>
+          <a name='520'>
+          select case (eddy_scheme)<a name='521'>
+          case ( 'diag_TKE' ) <a name='522'>
+             <a name='523'>
+             <font color=#447700>!! ---------------------------------------------------------------- !<a name='524'></font>
+             <font color=#447700>!! At first time step, have eddy_diff.F90:caleddy() use kvh=kvm=kvf !<a name='525'></font>
+             <font color=#447700>!! This has to be done in compute_eddy_diff after kvf is calculated !<a name='526'></font>
+             <font color=#447700>!! ---------------------------------------------------------------- !<a name='527'></font>
+             <a name='528'>
+             kvinit = .false.<a name='529'>
+             if(is_first_step) then<a name='530'>
+                kvinit = .true.<a name='531'>
+             endif<a name='532'>
+             <font color=#447700>!! ---------------------------------------------- !<a name='533'></font>
+             <font color=#447700>!! Get LW radiative heating out of physics buffer !<a name='534'></font>
+             <font color=#447700>!! ---------------------------------------------- !<a name='535'></font>
+             <a name='536'>
+             <font color=#447700>!! Retrieve eddy diffusivities for heat and momentum from physics buffer<a name='537'></font>
+             <font color=#447700>!! from last timestep ( if first timestep, has been initialized by inidat.F90 )<a name='538'></font>
+             <a name='539'>
+             kvm_in(:ncol,:) = kvm(:ncol,:) <a name='540'>
+             kvh_in(:ncol,:) = kvh(:ncol,:) <a name='541'>
+             call <A href='../../html_code/phys/module_cam_bl_eddy_diff.F.html#COMPUTE_EDDY_DIFF'>compute_eddy_diff</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="COMPUTE_EDDY_DIFF_1">( lchnk  , pcols  , pver   , ncol   , t8      , cloud(:,:,1)   , ztodt    ,           &amp;<a name='542'>
+                  cloud(:,:,2), cloud(:,:,3), s8     , rpdel8 , cldn8  , qrl8    , wsedl8         , zm8      , zi8     , &amp;<a name='543'>
+                  pmid8       , pint8       , u8     , v8     , taux   , tauy    , shflx          , cflx(:,1), wstarent, &amp;<a name='544'>
+                  nturb       , ustar8      , pblh   , kvm_in , kvh_in , kvm     , kvh            , kvq      , cgh     , &amp;                                                     <a name='545'>
+                  cgs         , tpert       , qpert  , wpert  , tke8   , bprod   , sprod          , sfi      , fqsatd  , &amp;<a name='546'>
+                  kvinit      , tauresx     , tauresy, ksrftms, ipbl(:), kpblh(:), wstarPBL(:)    , turbtype , smaw      )<a name='547'>
+<a name='548'>
+             <font color=#447700>!! ----------------------------------------------- !       <a name='549'></font>
+             <font color=#447700>!! Store TKE in pbuf for use by shallow convection !<a name='550'></font>
+             <font color=#447700>!! ----------------------------------------------- !   <a name='551'></font>
+             <a name='552'>
+             <font color=#447700>!! Store updated kvh, kvm in pbuf to use here on the next timestep <a name='553'></font>
+             do k = kts,kte+1<a name='554'>
+                kflip          = kte - k + 2<a name='555'>
+                <a name='556'>
+                kvh3d(i,k,j)   = kvh(1,kflip)<a name='557'>
+                kvm3d(i,k,j)   = kvm(1,kflip)  <a name='558'>
+             end do<a name='559'>
+             <a name='560'>
+             <a name='561'>
+          end select<a name='562'>
+          <a name='563'>
+          <font color=#447700>!!------------------------------------ ! <a name='564'></font>
+          <font color=#447700>!!    Application of diffusivities     !<a name='565'></font>
+          <font color=#447700>!!------------------------------------ !<a name='566'></font>
+          cloudtnd(  :ncol,:,:) = cloud(:ncol,:,:)<a name='567'>
+          stnd(      :ncol,:  ) = s8(   :ncol,:  )<a name='568'>
+          wind_tends(:ncol,:,1) = u8(   :ncol,:  )<a name='569'>
+          wind_tends(:ncol,:,2) = v8(   :ncol,:  )<a name='570'>
+<a name='571'>
+          <font color=#447700>!!------------------------------------------------------ !<a name='572'></font>
+          <font color=#447700>!! Write profile output before applying diffusion scheme !<a name='573'></font>
+          <font color=#447700>!!------------------------------------------------------ !<a name='574'></font>
+          <a name='575'>
+          sl_prePBL(:ncol,:pver)  = stnd(:ncol,:pver) - latvap * cloudtnd(:ncol,:pver,ixcldliq) &amp;<a name='576'>
+               - ( latvap + latice) * cloudtnd(:ncol,:pver,ixcldice)<a name='577'>
+          qt_prePBL(:ncol,:pver)  = cloudtnd(:ncol,:pver,1) + cloudtnd(:ncol,:pver,ixcldliq) &amp;<a name='578'>
+               + cloudtnd(:ncol,:pver,ixcldice)<a name='579'>
+<a name='580'>
+          call <A href='../../html_code/phys/module_ra_cam_support.F.html#AQSAT'>aqsat</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="AQSAT_1">( t8, pmid8, tem2, ftem, pcols, ncol, pver, 1, pver )<a name='581'>
+          ftem_prePBL(:ncol,:) = cloud(:ncol,:,1)/ftem(:ncol,:)*100._r8<a name='582'>
+<a name='583'>
+          <font color=#447700>!! --------------------------------------------------------------------------------- !<a name='584'></font>
+          <font color=#447700>!! Call the diffusivity solver and solve diffusion equation                          !<a name='585'></font>
+          <font color=#447700>!! The final two arguments are optional function references to                       !<a name='586'></font>
+          <font color=#447700>!! constituent-independent and constituent-dependent moleculuar diffusivity routines !<a name='587'></font>
+          <font color=#447700>!! --------------------------------------------------------------------------------- !<a name='588'></font>
+          <a name='589'>
+          <font color=#447700>!! Modification : We may need to output 'tautotx_im,tautoty_im' from below 'compute_vdiff' and<a name='590'></font>
+          <font color=#447700>!!                separately print out as diagnostic output, because these are different from<a name='591'></font>
+          <font color=#447700>!!                the explicit 'tautotx, tautoty' computed above. <a name='592'></font>
+          <font color=#447700>!! Note that the output 'tauresx,tauresy' from below subroutines are fully implicit ones.<a name='593'></font>
+<a name='594'>
+          if( any(fieldlist_wet) ) then<a name='595'>
+             call <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#COMPUTE_VDIFF'>compute_vdiff</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="COMPUTE_VDIFF_1">( lchnk, pcols, pver, pcnst, ncol, pmid8, pint8, rpdel8, t8, ztodt, &amp;<a name='596'>
+                  taux, tauy, shflx, cflx, ntop, nbot, kvh, kvm, kvq, cgs, cgh, zi8, ksrftms, qmincg, &amp;<a name='597'>
+                  fieldlist_wet, wind_tends(:,:,1), wind_tends(:,:,2), cloudtnd, stnd, tautmsx,       &amp;<a name='598'>
+                  tautmsy, dtk, topflx, errstring, tauresx, tauresy, 1, do_molec_diff,                &amp;<a name='599'>
+                  compute_molec_diff, vd_lu_qdecomp)<a name='600'>
+          end if<a name='601'>
+<a name='602'>
+          if( errstring .ne. '' ) then<a name='603'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_584">(errstring)<a name='604'>
+          endif<a name='605'>
+          <a name='606'>
+          if( any( fieldlist_dry ) ) then<a name='607'>
+             if( do_molec_diff ) then<a name='608'>
+                errstring = "Design flaw: dry vdiff not currently supported with molecular diffusion"<a name='609'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_585">(errstring)<a name='610'>
+             end if<a name='611'>
+             <a name='612'>
+             call <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#COMPUTE_VDIFF'>compute_vdiff</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="COMPUTE_VDIFF_2">( lchnk, pcols, pver, pcnst, ncol, pmiddry8, pintdry8, rpdeldry8, t8, &amp;<a name='613'>
+                  ztodt, taux, tauy, shflx, cflx, ntop, nbot, kvh, kvm, kvq, cgs, cgh, zi8, ksrftms,    &amp;<a name='614'>
+                  qmincg, fieldlist_dry, wind_tends(:,:,1), wind_tends(:,:,2), cloudtnd, stnd, tautmsx, &amp;<a name='615'>
+                  tautmsy, dtk, topflx, errstring, tauresx, tauresy, 1, do_molec_diff,                  &amp;<a name='616'>
+                  compute_molec_diff, vd_lu_qdecomp)<a name='617'>
+<a name='618'>
+             if( errstring .ne. '' ) call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_586">(errstring)<a name='619'>
+<a name='620'>
+          end if<a name='621'>
+          <a name='622'>
+          <font color=#447700>!! Store updated tauresx, tauresy to use here on the next timestep<a name='623'></font>
+          tauresx2d(i,j) = tauresx(ncol)<a name='624'>
+          tauresy2d(i,j) = tauresy(ncol)<a name='625'>
+<a name='626'>
+#ifdef MODAL_AERO<a name='627'>
+          <a name='628'>
+          <font color=#447700>!! Add the explicit surface fluxes to the lowest layer<a name='629'></font>
+          <font color=#447700>!! Modification : I should check whether this explicit adding is consistent with<a name='630'></font>
+          <font color=#447700>!!                the treatment of other tracers.<a name='631'></font>
+<a name='632'>
+          <font color=#447700>!The following code is commented out as the diffusion for the Aerosols and other species is handled by CAMMGMP and WRF_CHEM's dry_dep_driver subroutines          <a name='633'></font>
+          <font color=#447700>!tmp1(:ncol) = ztodt * gravit * rpdel8(:ncol,pver)<a name='634'></font>
+          <font color=#447700>!do m = 1, ntot_amode<a name='635'></font>
+          <font color=#447700>!   l = numptr_amode(m)<a name='636'></font>
+          <font color=#447700>!   cloudtnd(:ncol,pver,l) = cloudtnd(:ncol,pver,l) + tmp1(:ncol) * cflx(:ncol,l)<a name='637'></font>
+          <font color=#447700>!   do lspec = 1, nspec_amode(m)<a name='638'></font>
+          <font color=#447700>!      l = lmassptr_amode(lspec,m)<a name='639'></font>
+          <font color=#447700>!      cloudtnd(:ncol,pver,l) = cloudtnd(:ncol,pver,l) + tmp1(:ncol) * cflx(:ncol,l)<a name='640'></font>
+          <font color=#447700>!   enddo<a name='641'></font>
+          <font color=#447700>!enddo<a name='642'></font>
+          <a name='643'>
+#endif          <a name='644'>
+          <font color=#447700>!! -------------------------------------------------------- !<a name='645'></font>
+          <font color=#447700>!! Diagnostics and output writing after applying PBL scheme !<a name='646'></font>
+          <font color=#447700>!! -------------------------------------------------------- !<a name='647'></font>
+          sl(:ncol,:pver)  = stnd(:ncol,:pver) -   latvap           * cloudtnd(:ncol,:pver,ixcldliq) &amp;<a name='648'>
+               - ( latvap + latice) * cloudtnd(:ncol,:pver,ixcldice)<a name='649'>
+          qt(:ncol,:pver)  = cloudtnd(:ncol,:pver,1) + cloudtnd(:ncol,:pver,ixcldliq) &amp;<a name='650'>
+               + cloudtnd(:ncol,:pver,ixcldice)<a name='651'>
+          <a name='652'>
+          <a name='653'>
+          <a name='654'>
+          <font color=#447700>!! --------------------------------------------------------------- !<a name='655'></font>
+          <font color=#447700>!! Convert the new profiles into vertical diffusion tendencies.    !<a name='656'></font>
+          <font color=#447700>!! Convert KE dissipative heat change into "temperature" tendency. !<a name='657'></font>
+          <font color=#447700>!! --------------------------------------------------------------- !<a name='658'></font>
+<a name='659'>
+          slten(:ncol,:)          = ( sl(:ncol,:)             - sl_prePBL(:ncol,:) )   * rztodt <a name='660'>
+          qtten(:ncol,:)          = ( qt(:ncol,:)             - qt_prePBL(:ncol,:) )   * rztodt <a name='661'>
+          stnd(:ncol,:)           = ( stnd(:ncol,:)           - s8(:ncol,:) )          * rztodt<a name='662'>
+          wind_tends(:ncol,:,1)   = ( wind_tends(:ncol,:,1)   - u8(:ncol,:) )          * rztodt<a name='663'>
+          wind_tends(:ncol,:,2)   = ( wind_tends(:ncol,:,2)   - v8(:ncol,:) )          * rztodt<a name='664'>
+          cloudtnd(:ncol,:pver,:) = ( cloudtnd(:ncol,:pver,:) - cloud(:ncol,:pver,:) ) * rztodt<a name='665'>
+<a name='666'>
+          <font color=#447700>!! ----------------------------------------------------------- !<a name='667'></font>
+          <font color=#447700>!! In order to perform 'pseudo-conservative varible diffusion' !<a name='668'></font>
+          <font color=#447700>!! perform the following two stages:                           !<a name='669'></font>
+          <font color=#447700>!!                                                             !<a name='670'></font>
+          <font color=#447700>!! I.  Re-set (1) 'qvten' by 'qtten', and 'qlten = qiten = 0'  !<a name='671'></font>
+          <font color=#447700>!!            (2) 'sten'  by 'slten', and                      !<a name='672'></font>
+          <font color=#447700>!!            (3) 'qlten = qiten = 0'                          !<a name='673'></font>
+          <font color=#447700>!!                                                             !<a name='674'></font>
+          <font color=#447700>!! II. Apply 'positive_moisture'                               !<a name='675'></font>
+          <font color=#447700>!!                                                             !<a name='676'></font>
+          <font color=#447700>!! ----------------------------------------------------------- !<a name='677'></font>
+          if( eddy_scheme .eq. 'diag_TKE' .and. do_pseudocon_diff ) then<a name='678'>
+             cloudtnd(:ncol,:pver,1) = qtten(:ncol,:pver)<a name='679'>
+             stnd(:ncol,:pver)       = slten(:ncol,:pver)<a name='680'>
+             cloudtnd(:ncol,:pver,ixcldliq) = 0._r8         <a name='681'>
+             cloudtnd(:ncol,:pver,ixcldice) = 0._r8         <a name='682'>
+             cloudtnd(:ncol,:pver,ixnumliq) = 0._r8         <a name='683'>
+             cloudtnd(:ncol,:pver,ixnumice) = 0._r8         <a name='684'>
+             <a name='685'>
+             do ips = 1, ncol<a name='686'>
+                do k = 1, pver<a name='687'>
+                   qv_pro(ips,k) = cloud(ips,k,1)        + cloudtnd(ips,k,1)             * ztodt       <a name='688'>
+                   ql_pro(ips,k) = cloud(ips,k,ixcldliq) + cloudtnd(ips,k,ixcldliq)      * ztodt<a name='689'>
+                   qi_pro(ips,k) = cloud(ips,k,ixcldice) + cloudtnd(ips,k,ixcldice)      * ztodt              <a name='690'>
+                   s_pro(ips,k)  = s8(ips,k)             + stnd(ips,k)                   * ztodt<a name='691'>
+                   t_pro(ips,k)  = t8(ips,k)             + (1._r8/cpair)*stnd(ips,k) * ztodt<a name='692'>
+<a name='693'>
+                end do<a name='694'>
+             end do<a name='695'>
+             call <A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#POSITIVE_MOISTURE'>positive_moisture</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="POSITIVE_MOISTURE_1">( cpair, latvap, latvap+latice, ncol, pver, ztodt, qmin(1), qmin(2), qmin(3),    &amp;<a name='696'>
+                  pdel8(:ncol,pver:1:-1), qv_pro(:ncol,pver:1:-1), ql_pro(:ncol,pver:1:-1), &amp;<a name='697'>
+                  qi_pro(:ncol,pver:1:-1), t_pro(:ncol,pver:1:-1), s_pro(:ncol,pver:1:-1),       &amp;<a name='698'>
+                  cloudtnd(:ncol,pver:1:-1,1), cloudtnd(:ncol,pver:1:-1,ixcldliq),                 &amp;<a name='699'>
+                  cloudtnd(:ncol,pver:1:-1,ixcldice), stnd(:ncol,pver:1:-1) )<a name='700'>
+             <a name='701'>
+          end if<a name='702'>
+          <a name='703'>
+          <font color=#447700>!! ----------------------------------------------------------------- !<a name='704'></font>
+          <font color=#447700>!! Re-calculate diagnostic output variables after vertical diffusion !<a name='705'></font>
+          <font color=#447700>!! ----------------------------------------------------------------- !<a name='706'></font>
+          qv_aft_PBL(:ncol,:pver)  =   cloud(:ncol,:pver,1)         + cloudtnd(:ncol,:pver,1)        * ztodt<a name='707'>
+          ql_aft_PBL(:ncol,:pver)  =   cloud(:ncol,:pver,ixcldliq)  + cloudtnd(:ncol,:pver,ixcldliq) * ztodt<a name='708'>
+          qi_aft_PBL(:ncol,:pver)  =   cloud(:ncol,:pver,ixcldice)  + cloudtnd(:ncol,:pver,ixcldice) * ztodt<a name='709'>
+<a name='710'>
+          s_aft_PBL(:ncol,:pver)   =   s8(:ncol,:pver)           + stnd(:ncol,:pver)          * ztodt<a name='711'>
+          t_aftPBL(:ncol,:pver)    = ( s_aft_PBL(:ncol,:pver) - gravit*zm8(:ncol,:pver) ) / cpair <a name='712'>
+          <a name='713'>
+          u_aft_PBL(:ncol,:pver)   =  u8(:ncol,:pver)          + wind_tends(:ncol,:pver,1)            * ztodt<a name='714'>
+          v_aft_PBL(:ncol,:pver)   =  v8(:ncol,:pver)          + wind_tends(:ncol,:pver,2)            * ztodt<a name='715'>
+          <a name='716'>
+          call <A href='../../html_code/phys/module_ra_cam_support.F.html#AQSAT'>aqsat</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="AQSAT_2">( t_aftPBL, pmid8, tem2, ftem, pcols, ncol, pver, 1, pver )<a name='717'>
+          ftem_aftPBL(:ncol,:pver) = qv_aft_PBL(:ncol,:pver) / ftem(:ncol,:pver) * 100._r8<a name='718'>
+          <a name='719'>
+          tten(:ncol,:pver)        = ( t_aftPBL(:ncol,:pver)    - t8(:ncol,:pver) )              * rztodt     <a name='720'>
+          rhten(:ncol,:pver)       = ( ftem_aftPBL(:ncol,:pver) - ftem_prePBL(:ncol,:pver) )          * rztodt <a name='721'>
+<a name='722'>
+<a name='723'>
+          <font color=#447700>!Post processing of the output from CAM's parameterization<a name='724'></font>
+          do k=kts,kte<a name='725'>
+          <a name='726'>
+             kflip = kte-k+1<a name='727'>
+             <a name='728'>
+             rublten(i,k,j)    = wind_tends(1,kflip,1)<a name='729'>
+             rvblten(i,k,j)    = wind_tends(1,kflip,2)<a name='730'>
+             rthblten(i,k,j)   = stnd(1,kflip)/cpair/exner8(1,kflip)<a name='731'>
+             <a name='732'>
+             multFrc           =  1._r8 + qv_curr(i,k,j)<a name='733'>
+<a name='734'>
+             rqvblten(i,k,j)   = cloudtnd(1,kflip,1       ) * multFrc * multFrc<a name='735'>
+             rqcblten(i,k,j)   = cloudtnd(1,kflip,ixcldliq) * multFrc<a name='736'>
+             rqiblten(i,k,j)   = cloudtnd(1,kflip,ixcldice) * multFrc<a name='737'>
+             <font color=#447700>!*Important* : ixnumliq is mixed in the dropmixnuc, therefore ixnumliq is NOT mixed here (ONLY if CAMMGMP is used for mp_physics)<a name='738'></font>
+             rqniblten(i,k,j)  = cloudtnd(1,kflip,ixnumice) * multFrc<a name='739'>
+<a name='740'>
+             <font color=#447700>!Diffusivity coefficients at the midpoints<a name='741'></font>
+             kp1 = k + 1<a name='742'>
+          end do<a name='743'>
+<a name='744'>
+          do k = kts,kte+1<a name='745'>
+             kflip             = kte - k + 2<a name='746'>
+             <a name='747'>
+             tke_pbl(i,k,j)    = tke8(1,kflip)    <font color=#447700>!TKE at the interfaces<a name='748'></font>
+             turbtype3d(i,k,j) = turbtype(1,kflip)<a name='749'>
+             smaw3d(i,k,j)     = smaw(1,kflip)<a name='750'>
+          end do<a name='751'>
+<a name='752'>
+          <a name='753'>
+<a name='754'>
+          kpbl2d(i,j)  = kte - int(kpblh(1)) + 1  <font color=#447700>!int(kpblh(1)) <a name='755'></font>
+          pblh2d(i,j)  = pblh( 1)<a name='756'>
+          tpert2d(i,j) = tpert(1)<a name='757'>
+          qpert2d(i,j) = qpert(1)<a name='758'>
+          wpert2d(i,j) = wpert(1)<a name='759'>
+          <a name='760'>
+          <font color=#447700>!End Post processing of the output from CAM<a name='761'></font>
+       enddo <font color=#447700>!loop of i<a name='762'></font>
+    enddo <font color=#447700>!loop of j<a name='763'></font>
+    return<a name='764'>
+  end subroutine camuwpbl<a name='765'>
+<a name='766'>
+<a name='767'>
+<a name='768'>
+<a name='769'>
+<font color=#447700>!-----------------------------------------------------------------------------------------   <a name='770'></font>
+<A NAME='POSITIVE_MOISTURE'><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#POSITIVE_MOISTURE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='771'>
+  <font color=#993300>subroutine </font><font color=#cc0000>positive_moisture</font>( cp, xlv, xls, ncol, mkx, dt, qvmin, qlmin, qimin, &amp;  <A href='../../call_to/POSITIVE_MOISTURE.html' TARGET='index'>1</A>,<A href='../../call_from/POSITIVE_MOISTURE.html' TARGET='index'>1</A><a name='772'>
+       dp, qv, ql, qi, t, s, qvten, qlten, qiten, sten )<a name='773'>
+    <font color=#447700>!! ------------------------------------------------------------------------------- !<a name='774'></font>
+    <font color=#447700>!! If any 'ql &lt; qlmin, qi &lt; qimin, qv &lt; qvmin' are developed in any layer,         !<a name='775'></font>
+    <font color=#447700>!! force them to be larger than minimum value by (1) condensating water vapor      !<a name='776'></font>
+    <font color=#447700>!! into liquid or ice, and (2) by transporting water vapor from the very lower     !<a name='777'></font>
+    <font color=#447700>!! layer. '2._r8' is multiplied to the minimum values for safety.                  !<a name='778'></font>
+    <font color=#447700>!! Update final state variables and tendencies associated with this correction.    !<a name='779'></font>
+    <font color=#447700>!! If any condensation happens, update (s,t) too.                                  !<a name='780'></font>
+    <font color=#447700>!! Note that (qv,ql,qi,t,s) are final state variables after applying corresponding !<a name='781'></font>
+    <font color=#447700>!! input tendencies.                                                               !<a name='782'></font>
+    <font color=#447700>!! Be careful the order of k : '1': near-surface layer, 'mkx' : top layer          ! <a name='783'></font>
+    <font color=#447700>!! ------------------------------------------------------------------------------- !<a name='784'></font>
+<font color=#447700>!-----------------------------------------------------------------------------------------   <a name='785'></font>
+    implicit none<a name='786'>
+    integer,  intent(in)     :: ncol, mkx<a name='787'>
+    real(r8), intent(in)     :: cp, xlv, xls<a name='788'>
+    real(r8), intent(in)     :: dt, qvmin, qlmin, qimin<a name='789'>
+    real(r8), intent(in)     :: dp(ncol,mkx)<a name='790'>
+    real(r8), intent(inout)  :: qv(ncol,mkx), ql(ncol,mkx), qi(ncol,mkx), t(ncol,mkx), s(ncol,mkx)<a name='791'>
+    real(r8), intent(inout)  :: qvten(ncol,mkx), qlten(ncol,mkx), qiten(ncol,mkx), sten(ncol,mkx)<a name='792'>
+    integer   i, k<a name='793'>
+    real(r8)  dql, dqi, dqv, sum, aa, dum <a name='794'>
+    <a name='795'>
+    <font color=#447700>!! Modification : I should check whether this is exactly same as the one used in<a name='796'></font>
+    <font color=#447700>!!                shallow convection and cloud macrophysics.<a name='797'></font>
+    <a name='798'>
+    do i = 1, ncol<a name='799'>
+       do k = mkx, 1, -1    <font color=#447700>! From the top to the 1st (lowest) layer from the surface<a name='800'></font>
+          dql        = max(0._r8,1._r8*qlmin-ql(i,k))<a name='801'>
+          dqi        = max(0._r8,1._r8*qimin-qi(i,k))<a name='802'>
+          qlten(i,k) = qlten(i,k) +  dql/dt<a name='803'>
+          qiten(i,k) = qiten(i,k) +  dqi/dt<a name='804'>
+          qvten(i,k) = qvten(i,k) - (dql+dqi)/dt<a name='805'>
+          sten(i,k)  = sten(i,k)  + xlv * (dql/dt) + xls * (dqi/dt)<a name='806'>
+          ql(i,k)    = ql(i,k) +  dql<a name='807'>
+          qi(i,k)    = qi(i,k) +  dqi<a name='808'>
+          qv(i,k)    = qv(i,k) -  dql - dqi<a name='809'>
+          s(i,k)     = s(i,k)  +  xlv * dql + xls * dqi<a name='810'>
+          t(i,k)     = t(i,k)  + (xlv * dql + xls * dqi)/cp<a name='811'>
+          dqv        = max(0._r8,1._r8*qvmin-qv(i,k))<a name='812'>
+          qvten(i,k) = qvten(i,k) + dqv/dt<a name='813'>
+          qv(i,k)    = qv(i,k)    + dqv<a name='814'>
+          if( k .ne. 1 ) then <a name='815'>
+             qv(i,k-1)    = qv(i,k-1)    - dqv*dp(i,k)/dp(i,k-1)<a name='816'>
+             qvten(i,k-1) = qvten(i,k-1) - dqv*dp(i,k)/dp(i,k-1)/dt<a name='817'>
+          endif<a name='818'>
+          qv(i,k) = max(qv(i,k),qvmin)<a name='819'>
+          ql(i,k) = max(ql(i,k),qlmin)<a name='820'>
+          qi(i,k) = max(qi(i,k),qimin)<a name='821'>
+       end do<a name='822'>
+       <font color=#447700>!! Extra moisture used to satisfy 'qv(i,1)=qvmin' is proportionally <a name='823'></font>
+       <font color=#447700>!! extracted from all the layers that has 'qv &gt; 2*qvmin'. This fully<a name='824'></font>
+       <font color=#447700>!! preserves column moisture. <a name='825'></font>
+       if( dqv .gt. 1.e-20_r8 ) then<a name='826'>
+          sum = 0._r8<a name='827'>
+          do k = 1, mkx<a name='828'>
+             if( qv(i,k) .gt. 2._r8*qvmin ) sum = sum + qv(i,k)*dp(i,k)<a name='829'>
+          enddo<a name='830'>
+          aa = dqv*dp(i,1)/max(1.e-20_r8,sum)<a name='831'>
+          if( aa .lt. 0.5_r8 ) then<a name='832'>
+             do k = 1, mkx<a name='833'>
+                if( qv(i,k) .gt. 2._r8*qvmin ) then<a name='834'>
+                   dum        = aa*qv(i,k)<a name='835'>
+                   qv(i,k)    = qv(i,k) - dum<a name='836'>
+                   qvten(i,k) = qvten(i,k) - dum/dt<a name='837'>
+                endif<a name='838'>
+             enddo<a name='839'>
+          else <a name='840'>
+             write(iulog,*) 'Full positive_moisture is impossible in vertical_diffusion'<a name='841'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#POSITIVE_MOISTURE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_533">(iulog)<a name='842'>
+          endif<a name='843'>
+       endif<a name='844'>
+    end do<a name='845'>
+    return<a name='846'>
+    <a name='847'>
+  end subroutine positive_moisture<a name='848'>
+  <a name='849'>
+  <a name='850'>
+ <a name='851'>
+ <font color=#447700>!-----------------------------------------------------------------------------------------   <a name='852'></font>
+<A NAME='CAMUWPBLINIT'><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='853'>
+  <font color=#993300>subroutine </font><font color=#cc0000>camuwpblinit</font>(rublten,rvblten,rthblten,rqvblten, &amp; <A href='../../call_to/CAMUWPBLINIT.html' TARGET='index'>1</A>,<A href='../../call_from/CAMUWPBLINIT.html' TARGET='index'>32</A><a name='854'>
+       restart,tke_pbl,is_CAMMGMP_used,                      &amp;<a name='855'>
+       ids,ide,jds,jde,kds,kde,                              &amp;<a name='856'>
+       ims,ime,jms,jme,kms,kme,                              &amp;<a name='857'>
+       its,ite,jts,jte,kts,kte)<a name='858'>
+    <font color=#447700>!!------------------------------------------------------------------!<a name='859'></font>
+    <font color=#447700>!! Initialization of time independent fields for vertical diffusion !<a name='860'></font>
+    <font color=#447700>!! Calls initialization routines for subsidiary modules             !<a name='861'></font>
+    <font color=#447700>!!----------------------------------------------------------------- !<a name='862'></font>
+<a name='863'>
+    <font color=#447700>!This subroutine is based on vertical_diffusion_init of CAM. This subroutine <a name='864'></font>
+    <font color=#447700>!initializes variables for vertical diffusion subroutine calls. The layout <a name='865'></font>
+    <font color=#447700>!is kept similar to the original CAM subroutine to facillitate future adaptations.<a name='866'></font>
+    <font color=#447700>!Called by : physics_init.F<a name='867'></font>
+    <font color=#447700>!Calls: vd_register, cnst_get_ind, wrf_error_fatal,init_eddy_diff,init_tms,init_vdiff <a name='868'></font>
+<font color=#447700>!-----------------------------------------------------------------------------------------<a name='869'></font>
+<a name='870'>
+    use <A href='../../html_code/phys/module_cam_bl_eddy_diff.F.html#EDDY_DIFF'>eddy_diff</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EDDY_DIFF_2">,              only : init_eddy_diff<a name='871'>
+    use <A href='../../html_code/phys/module_cam_molec_diff.F.html#MOLEC_DIFF'>molec_diff</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MOLEC_DIFF_2">,             only : init_molec_diff<a name='872'>
+    use <A href='../../html_code/phys/module_cam_trb_mtn_stress.F.html#TRB_MTN_STRESS'>trb_mtn_stress</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRB_MTN_STRESS_2">,         only : init_tms<a name='873'>
+    use <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#DIFFUSION_SOLVER'>diffusion_solver</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DIFFUSION_SOLVER_3">,       only : init_vdiff, vdiff_select<a name='874'>
+    use <A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS'>constituents</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTITUENTS_3">,           only : cnst_get_ind, cnst_get_type_byind, cnst_name<a name='875'>
+    use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_3">,     only : masterproc<a name='876'>
+    use <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_38">, only : epsq2<a name='877'>
+#ifdef MODAL_AERO<a name='878'>
+    use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_2"><a name='879'>
+#endif<a name='880'>
+    <a name='881'>
+    implicit none<a name='882'>
+<a name='883'>
+    <font color=#447700>!-------------------------------------------------------------------------------------!<a name='884'></font>
+    <font color=#447700>!Input and output variables                                                           !<a name='885'></font>
+    <font color=#447700>!-------------------------------------------------------------------------------------!<a name='886'></font>
+    logical,intent(in) :: restart,is_CAMMGMP_used <a name='887'>
+    integer,intent(in) :: ids,ide,jds,jde,kds,kde<a name='888'>
+    integer,intent(in) :: ims,ime,jms,jme,kms,kme<a name='889'>
+    integer,intent(in) :: its,ite,jts,jte,kts,kte<a name='890'>
+    <a name='891'>
+    real,dimension(ims:ime,kms:kme,jms:jme),intent(inout) :: &amp;<a name='892'>
+         rublten, rvblten, rthblten, rqvblten<a name='893'>
+    real,dimension(ims:ime,kms:kme,jms:jme),intent(out) :: TKE_PBL<a name='894'>
+<a name='895'>
+    <font color=#447700>!-------------------------------------------------------------------------------------!<a name='896'></font>
+    <font color=#447700>!Local Variables                                                                      ! <a name='897'></font>
+    <font color=#447700>!-------------------------------------------------------------------------------------!<a name='898'></font>
+    integer        :: i,j,k,itf,jtf,ktf <a name='899'>
+    integer        :: ntop_eddy         <font color=#447700>!! Top    interface level to which eddy vertical diffusion is applied ( = 1 )<a name='900'></font>
+    integer        :: nbot_eddy         <font color=#447700>!! Bottom interface level to which eddy vertical diffusion is applied ( = pver )<a name='901'></font>
+    integer        :: ntop_molec        <font color=#447700>!! Top    interface level to which molecular vertical diffusion is applied ( = 1 )<a name='902'></font>
+    integer        :: nbot_molec        <font color=#447700>!! Bottom interface level to which molecular vertical diffusion is applied<a name='903'></font>
+    character(128) :: errstring         <font color=#447700>!! Error status for init_vdiff<a name='904'></font>
+    real(r8)       :: hypm(kte)         <font color=#447700>!! reference state midpoint pressures<a name='905'></font>
+#ifdef MODAL_AERO<a name='906'>
+    integer        :: m, l<a name='907'>
+#endif<a name='908'>
+<a name='909'>
+    <a name='910'>
+    jtf   = min(jte,jde-1)<a name='911'>
+    ktf   = min(kte,kde-1)<a name='912'>
+    itf   = min(ite,ide-1)<a name='913'>
+    <a name='914'>
+    <font color=#447700>!Map CAM veritcal level variables<a name='915'></font>
+    pver  = ktf - kts + 1<a name='916'>
+    pverp = pver + 1<a name='917'>
+    <a name='918'>
+    <font color=#447700>!Initialize flags and add constituents<a name='919'></font>
+    call <A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#VD_REGISTER'>vd_register</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VD_REGISTER_1">()  <a name='920'>
+    <a name='921'>
+    <font color=#447700>!! ----------------------------------------------------------------- !<a name='922'></font>
+    <font color=#447700>!! Get indices of cloud liquid and ice within the constituents array !<a name='923'></font>
+    <font color=#447700>!! ----------------------------------------------------------------- !<a name='924'></font>
+    <a name='925'>
+    call <A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_IND'>cnst_get_ind</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CNST_GET_IND_1">( 'CLDLIQ', ixcldliq )<a name='926'>
+    call <A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_IND'>cnst_get_ind</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CNST_GET_IND_2">( 'CLDICE', ixcldice )<a name='927'>
+    if( microp_scheme .eq. 'MG' ) then<a name='928'>
+       call <A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_IND'>cnst_get_ind</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CNST_GET_IND_3">( 'NUMLIQ', ixnumliq )<a name='929'>
+       call <A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_IND'>cnst_get_ind</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CNST_GET_IND_4">( 'NUMICE', ixnumice )<a name='930'>
+    endif<a name='931'>
+    <a name='932'>
+    if (masterproc) then<a name='933'>
+       write(iulog,*)'Initializing vertical diffusion (vertical_diffusion_init)'<a name='934'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_497">(1,iulog)<a name='935'>
+    end if<a name='936'>
+    <a name='937'>
+    <font color=#447700>!! ---------------------------------------------------------------------------------------- !<a name='938'></font>
+    <font color=#447700>!! Initialize molecular diffusivity module                                                  !<a name='939'></font>
+    <font color=#447700>!! Molecular diffusion turned on above ~60 km (50 Pa) if model top is above ~90 km (.1 Pa). !<a name='940'></font>
+    <font color=#447700>!! Note that computing molecular diffusivities is a trivial expense, but constituent        !<a name='941'></font>
+    <font color=#447700>!! diffusivities depend on their molecular weights. Decomposing the diffusion matric        !<a name='942'></font>
+    <font color=#447700>!! for each constituent is a needless expense unless the diffusivity is significant.        !<a name='943'></font>
+    <font color=#447700>!! ---------------------------------------------------------------------------------------- !<a name='944'></font>
+    <a name='945'>
+    ntop_molec = 1       <font color=#447700>!! Should always be 1<a name='946'></font>
+    nbot_molec = 0       <font color=#447700>!! Should be set below about 70 km<a name='947'></font>
+    <a name='948'>
+    <font color=#447700>!! ---------------------------------- !    <a name='949'></font>
+    <font color=#447700>!! Initialize eddy diffusivity module !<a name='950'></font>
+    <font color=#447700>!! ---------------------------------- !<a name='951'></font>
+    <a name='952'>
+    ntop_eddy  = 1       <font color=#447700>!! No reason not to make this 1, if &gt; 1, must be &lt;= nbot_molec<a name='953'></font>
+    nbot_eddy  = pver    <font color=#447700>!! Should always be pver<a name='954'></font>
+    <a name='955'>
+    if( masterproc ) write(iulog,fmt='(a,i3,5x,a,i3)') 'NTOP_EDDY  =', ntop_eddy, 'NBOT_EDDY  =', nbot_eddy<a name='956'>
+    call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_498">(1,iulog)<a name='957'>
+    <a name='958'>
+    select case ( eddy_scheme )<a name='959'>
+    case ( 'diag_TKE' ) <a name='960'>
+       if( masterproc ) write(iulog,*) 'vertical_diffusion_init: eddy_diffusivity scheme'<a name='961'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_499">(1,iulog)<a name='962'>
+       if( masterproc ) write(iulog,*) 'UW Moist Turbulence Scheme by Bretherton and Park'<a name='963'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_500">(1,iulog)<a name='964'>
+       <font color=#447700>!! Check compatibility of eddy and shallow scheme<a name='965'></font>
+       if( shallow_scheme .ne. 'UW' ) then<a name='966'>
+          write(iulog,*) 'ERROR: shallow convection scheme ', shallow_scheme,' is incompatible with eddy scheme ', eddy_scheme<a name='967'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_534">(iulog)<a name='968'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_587">( 'convect_shallow_init: shallow_scheme and eddy_scheme are incompatible' )<a name='969'>
+       endif<a name='970'>
+       <a name='971'>
+       call <A href='../../html_code/phys/module_cam_bl_eddy_diff.F.html#INIT_EDDY_DIFF'>init_eddy_diff</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INIT_EDDY_DIFF_1">( r8, pver, gravit, cpair, rair, zvir, latvap, latice, &amp;<a name='972'>
+            ntop_eddy, nbot_eddy, hypm, karman )<a name='973'>
+       <a name='974'>
+       if( masterproc ) write(iulog,*) 'vertical_diffusion: nturb, ntop_eddy, nbot_eddy ', nturb, ntop_eddy, nbot_eddy<a name='975'>
+       call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_501">(1,iulog)<a name='976'>
+    end select<a name='977'>
+    <a name='978'>
+    <font color=#447700>!!-------------------------------------------------------------------------------------!<a name='979'></font>
+    <font color=#447700>!! The vertical diffusion solver must operate                                          !<a name='980'></font>
+    <font color=#447700>!! over the full range of molecular and eddy diffusion                                 !<a name='981'></font>
+    <font color=#447700>!!-------------------------------------------------------------------------------------!<a name='982'></font>
+    <a name='983'>
+    ntop = min(ntop_molec,ntop_eddy)<a name='984'>
+    nbot = max(nbot_molec,nbot_eddy)<a name='985'>
+    <a name='986'>
+    <font color=#447700>!! ------------------------------------------- !<a name='987'></font>
+    <font color=#447700>!! Initialize turbulent mountain stress module !<a name='988'></font>
+    <font color=#447700>!! ------------------------------------------- !<a name='989'></font>
+    <a name='990'>
+    if( do_tms ) then<a name='991'>
+       call <A href='../../html_code/phys/module_cam_trb_mtn_stress.F.html#INIT_TMS'>init_tms</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INIT_TMS_1">( r8, tms_orocnst, tms_z0fac, karman, gravit, rair )<a name='992'>
+       if (masterproc) then<a name='993'>
+          write(iulog,*)'Using turbulent mountain stress module'<a name='994'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_535">(iulog)<a name='995'>
+          write(iulog,*)'  tms_orocnst = ',tms_orocnst<a name='996'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_536">(iulog)<a name='997'>
+       end if<a name='998'>
+    endif<a name='999'>
+    <a name='1000'>
+    <font color=#447700>!! ---------------------------------- !<a name='1001'></font>
+    <font color=#447700>!! Initialize diffusion solver module !<a name='1002'></font>
+    <font color=#447700>!! ---------------------------------- !<a name='1003'></font>
+    <a name='1004'>
+    call <A href='../../html_code/phys/module_cam_bl_diffusion_solver.F.html#INIT_VDIFF'>init_vdiff</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INIT_VDIFF_1">( r8, pcnst, rair, gravit, fieldlist_wet, fieldlist_dry, errstring )<a name='1005'>
+    if( errstring .ne. '' ) call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_588">( errstring )<a name='1006'>
+    <a name='1007'>
+    <font color=#447700>!!-------------------------------------------------------------------------------------<a name='1008'></font>
+    <font color=#447700>!! Use fieldlist_wet to select the fields which will be diffused using moist mixing ratios ( all by default )<a name='1009'></font>
+    <font color=#447700>!! Use fieldlist_dry to select the fields which will be diffused using dry   mixing ratios.<a name='1010'></font>
+    <font color=#447700>!!-------------------------------------------------------------------------------------<a name='1011'></font>
+    <a name='1012'>
+    if( vdiff_select( fieldlist_wet, 'u' ) .ne. '' ) call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_589">( vdiff_select( fieldlist_wet, 'u' ) )<a name='1013'>
+    if( vdiff_select( fieldlist_wet, 'v' ) .ne. '' ) call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_590">( vdiff_select( fieldlist_wet, 'v' ) )<a name='1014'>
+    if( vdiff_select( fieldlist_wet, 's' ) .ne. '' ) call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_591">( vdiff_select( fieldlist_wet, 's' ) )<a name='1015'>
+<a name='1016'>
+#ifdef MODAL_AERO<a name='1017'>
+    <font color=#447700>!Get index for the liquid number concentration (#/kg)<a name='1018'></font>
+    call <A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_IND'>cnst_get_ind</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CNST_GET_IND_5">( 'NUMLIQ', ixndrop )<a name='1019'>
+#endif    <a name='1020'>
+<a name='1021'>
+    do k = 1, pcnst<a name='1022'>
+       <a name='1023'>
+#ifdef MODAL_AERO<a name='1024'>
+       <font color=#447700>!! Do not diffuse droplet number - treated in dropmixnuc<a name='1025'></font>
+<a name='1026'>
+       <font color=#447700>!BSINGH:01/31/2013: The following if condition is modified from its original form[which is:if( k == ixndrop ) cycle]<a name='1027'></font>
+       <font color=#447700>!to allow the PBL scheme to mix liquid number when CAMMGMP scheme is not being used<a name='1028'></font>
+<a name='1029'>
+       if(is_CAMMGMP_used) then<font color=#447700>!BSINGH:01/31/2013: Modified this if cond. see comment above<a name='1030'></font>
+          if( k == ixndrop ) cycle <a name='1031'>
+       endif<a name='1032'>
+       <font color=#447700>!BSINGH-08/31/2012: In WRF, Physics init is called before chem init therefore<a name='1033'></font>
+       <font color=#447700>!aerosol species are not yet added. Following condition, skip all other constituents<a name='1034'></font>
+       <font color=#447700>!(which will be added in chem init) except first five (vapor, cld liq, cld ice, liq num and ice num)<a name='1035'></font>
+       if( k &gt; 5 ) cycle<a name='1036'>
+<a name='1037'>
+<a name='1038'>
+       <font color=#447700>!The Following do-loop is commented out as Aerosols and other species are diffused in CAMMGMP and WRF_CHEM's dry_dep_driver subroutines<a name='1039'></font>
+<a name='1040'>
+       <font color=#447700>!! Don't diffuse aerosol - treated in dropmixnuc<a name='1041'></font>
+       <font color=#447700>!do m = 1, ntot_amode<a name='1042'></font>
+       <font color=#447700>!   if( k == numptr_amode(m)   ) cycle<a name='1043'></font>
+          <font color=#447700>!!         if( k == numptrcw_amode(m) ) go to 20<a name='1044'></font>
+       <font color=#447700>!   do l = 1, nspec_amode(m)<a name='1045'></font>
+       <font color=#447700>!      if( k == lmassptr_amode(l,m)   )cycle<a name='1046'></font>
+             <font color=#447700>!!            if( k == lmassptrcw_amode(l,m) ) go to 20<a name='1047'></font>
+       <font color=#447700>!   enddo<a name='1048'></font>
+          <font color=#447700>!!         if( k == lwaterptr_amode(m) ) go to 20<a name='1049'></font>
+       <font color=#447700>!enddo<a name='1050'></font>
+#endif<a name='1051'>
+       <font color=#447700>!endif<a name='1052'></font>
+       if( cnst_get_type_byind(k) .eq. 'wet' ) then<a name='1053'>
+          if( vdiff_select( fieldlist_wet, 'q', k ) .ne. '' ) call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_592">( vdiff_select( fieldlist_wet, 'q', k ) )<a name='1054'>
+       else<a name='1055'>
+          <font color=#447700>!The DRY constituents are not diffused currently in PBL, they are diffused in WRF_CHEM's dry_dep_driver subroutine. Therefore the following line is commented out<a name='1056'></font>
+          <font color=#447700>!if( vdiff_select( fieldlist_dry, 'q', k ) .ne. '' ) call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#CAMUWPBLINIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_593">( vdiff_select( fieldlist_dry, 'q', k ) )<a name='1057'></font>
+       endif<a name='1058'>
+    enddo<a name='1059'>
+    <a name='1060'>
+    <font color=#447700>!Initialize the tendencies<a name='1061'></font>
+    jtf=min0(jte,jde-1)<a name='1062'>
+    ktf=min0(kte,kde-1)<a name='1063'>
+    itf=min0(ite,ide-1)<a name='1064'>
+    <a name='1065'>
+    if(.not.restart)then<a name='1066'>
+       do j = jts , jtf<a name='1067'>
+          do k = kts , ktf<a name='1068'>
+             do i = its , itf<a name='1069'>
+                tke_pbl(i,k,j)  = epsq2<a name='1070'>
+                rublten(i,k,j)  = 0.<a name='1071'>
+                rvblten(i,k,j)  = 0.<a name='1072'>
+                rthblten(i,k,j) = 0.<a name='1073'>
+                rqvblten(i,k,j) = 0.<a name='1074'>
+             enddo<a name='1075'>
+          enddo<a name='1076'>
+       enddo<a name='1077'>
+    endif<a name='1078'>
+  end subroutine camuwpblinit<a name='1079'>
+<a name='1080'>
+<a name='1081'>
+<a name='1082'>
+<font color=#447700>!-----------------------------------------------------------------------------------------<a name='1083'></font>
+<A NAME='VD_REGISTER'><A href='../../html_code/phys/module_bl_camuwpbl_driver.F.html#VD_REGISTER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1084'>
+  <font color=#993300>subroutine </font><font color=#cc0000>vd_register</font>() <A href='../../call_to/VD_REGISTER.html' TARGET='index'>1</A><a name='1085'>
+<font color=#447700>!<a name='1086'></font>
+<font color=#447700>!This subroutine is based on the vd_register subroutine of CAM.<a name='1087'></font>
+<font color=#447700>!-----------------------------------------------------------------------------------------<a name='1088'></font>
+    <a name='1089'>
+    <font color=#447700>!Set flags for the PBL scheme (these flags are obtained using phys_getopts in CAM) <a name='1090'></font>
+    microp_scheme  = 'MG'       <font color=#447700>!Used for adding constituents<a name='1091'></font>
+    eddy_scheme    = 'diag_TKE' <font color=#447700>!Used for calling eddy scheme <a name='1092'></font>
+<a name='1093'>
+    <font color=#447700>!The following flag is deliberately set to UW for now. <a name='1094'></font>
+    shallow_scheme = 'UW'       <font color=#447700>!Eddy scheme is ONLY compaticle with 'UW' shallow scheme; <a name='1095'></font>
+<a name='1096'>
+    do_tms         = .false.    <font color=#447700>!To include stresses due to orography<a name='1097'></font>
+    tms_orocnst    = 1._r8      <font color=#447700>!Orography constant<a name='1098'></font>
+    <a name='1099'>
+  end subroutine vd_register<a name='1100'>
+  <a name='1101'>
+end module module_bl_camuwpbl_driver<a name='1102'>
+<a name='1103'>
+</pre></body></html>

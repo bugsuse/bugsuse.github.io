@@ -1,0 +1,341 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_DATA_CAM_MAM_ASECT'><A href='../../html_code/phys/module_data_cam_mam_asect.F.html#MODULE_DATA_CAM_MAM_ASECT' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+	<font color=#993300>module </font><font color=#cc0000>module_data_cam_mam_asect</font> <A href='../../call_to/MODULE_DATA_CAM_MAM_ASECT.html' TARGET='index'>3</A><a name='3'>
+<a name='4'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='5'></font>
+<font color=#447700>!   New in June 2010, by r.c.easter<a name='6'></font>
+<font color=#447700>!   This file is similar to module_data_mosaic_asect, <a name='7'></font>
+<font color=#447700>!   but works with the CAM modal aerosol packages in WRF-Chem.<a name='8'></font>
+<font color=#447700>!<a name='9'></font>
+<font color=#447700>!   Note that the position/index arrays in this file refer to the "chem" array,<a name='10'></font>
+<font color=#447700>!   while those in file module_data_cam_mam_aero refer to the "q" array<a name='11'></font>
+<font color=#447700>!   used in the CAM modal aerosol routines<a name='12'></font>
+<font color=#447700>!<a name='13'></font>
+<font color=#447700>!   *** Important note on units ***<a name='14'></font>
+<font color=#447700>!   in this file, <a name='15'></font>
+<font color=#447700>!	aerosol densities here are g/cm3<a name='16'></font>
+<font color=#447700>!	aerosol sizes and volumes are cm and cm3<a name='17'></font>
+<font color=#447700>!       thus the density/size/volume variables in the file have the same units<a name='18'></font>
+<font color=#447700>!	    as their counterparts in module_data_mosaic_asect.F and module_data_sorgam.F<a name='19'></font>
+<font color=#447700>!   in module_data_cam_mam_aero.F,<a name='20'></font>
+<font color=#447700>!	aerosol densities here are kg/m3<a name='21'></font>
+<font color=#447700>!	aerosol sizes and volumes are m and m3<a name='22'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='23'></font>
+<a name='24'>
+<a name='25'>
+	use <A href='../../html_code/phys/module_cam_shr_kind_mod.F.html#SHR_KIND_MOD'>shr_kind_mod</A><A href='../../html_code/phys/module_data_cam_mam_asect.F.html#module_data_cam_mam_asect.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_KIND_MOD_27">,    only:  r8 =&gt; shr_kind_r8<a name='26'>
+<a name='27'>
+	use <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_data_cam_mam_asect.F.html#module_data_cam_mam_asect.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_20">, only:  ntot_amode, maxd_aspectype<a name='28'>
+<a name='29'>
+<a name='30'>
+	implicit none<a name='31'>
+<a name='32'>
+<a name='33'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='34'></font>
+<font color=#447700>!<a name='35'></font>
+<font color=#447700>!   The variables in this module provide a means of organizing and accessing<a name='36'></font>
+<font color=#447700>!   aerosol species in the "chem" array by their chemical component, <a name='37'></font>
+<font color=#447700>!   size bin (or mode), "type", and "phase"<a name='38'></font>
+<font color=#447700>!<a name='39'></font>
+<font color=#447700>!   Their purpose is to allow flexible coding of process modules, <a name='40'></font>
+<font color=#447700>!   compared to "hard-coding" using the chem array p_xxx indices<a name='41'></font>
+<font color=#447700>!   (e.g., p_so4_a01, p_so4_a02, ...; p_num_a01, ...)<a name='42'></font>
+<font color=#447700>!<a name='43'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='44'></font>
+<font color=#447700>!<a name='45'></font>
+<font color=#447700>!   rce &amp; sg 2004-dec-03 - added phase and type capability,<a name='46'></font>
+<font color=#447700>!	which changed this module almost completely<a name='47'></font>
+<font color=#447700>!<a name='48'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='49'></font>
+<font color=#447700>!<a name='50'></font>
+<font color=#447700>!   maxd_atype = maximum allowable number of aerosol types<a name='51'></font>
+<font color=#447700>!   maxd_asize = maximum allowable number of aerosol size bins<a name='52'></font>
+<font color=#447700>!   maxd_acomp = maximum allowable number of chemical components<a name='53'></font>
+<font color=#447700>!	in each aerosol size bin<a name='54'></font>
+<font color=#447700>!   maxd_aphase = maximum allowable number of aerosol phases <a name='55'></font>
+<font color=#447700>!	(gas, cloud, ice, rain, ...)<a name='56'></font>
+<font color=#447700>!<a name='57'></font>
+<font color=#447700>!   ntype_aer = number of aerosol types<a name='58'></font>
+<font color=#447700>!	The aerosol type will allow treatment of an externally mixed <a name='59'></font>
+<font color=#447700>!	aerosol.  The current MOSAIC code has only 1 type, with the implicit<a name='60'></font>
+<font color=#447700>!	assumption of internal mixing.  Eventually, multiple types <a name='61'></font>
+<font color=#447700>!	could treat fresh primary BC/OC, fresh SO4 from nucleation, <a name='62'></font>
+<font color=#447700>!	aged BC/OC/SO4/... mixture, soil dust, sea salt, ... <a name='63'></font>
+<font color=#447700>!<a name='64'></font>
+<font color=#447700>!   nphase_aer = number of aerosol phases<a name='65'></font>
+<font color=#447700>!<a name='66'></font>
+<font color=#447700>!   ai_phase = phase (p) index for interstitial (unactivated) aerosol particles<a name='67'></font>
+<font color=#447700>!   cw_phase = phase (p) index for aerosol particles in cloud water<a name='68'></font>
+<font color=#447700>!   ci_phase = phase (p) index for aerosol particles in cloud ice<a name='69'></font>
+<font color=#447700>!   rn_phase = phase (p) index for aerosol particles in rain<a name='70'></font>
+<font color=#447700>!   sn_phase = phase (p) index for aerosol particles in snow<a name='71'></font>
+<font color=#447700>!   gr_phase = phase (p) index for aerosol particles in graupel<a name='72'></font>
+<font color=#447700>!   [Note:  the value of "xx_phase" will be between 1 and nphase_aer <a name='73'></font>
+<font color=#447700>!	for phases that are active in a simulation.  The others<a name='74'></font>
+<font color=#447700>!	will have non-positive values.]<a name='75'></font>
+<font color=#447700>!<a name='76'></font>
+<font color=#447700>!   nsize_aer(t) = number of aerosol size bins for aerosol type t<a name='77'></font>
+<font color=#447700>!<a name='78'></font>
+<font color=#447700>!   ncomp_aer(t) = number of "regular" chemical components for aerosol type t<a name='79'></font>
+<font color=#447700>!   ncomp_plustracer_aer(t) = number of "regular" plus "tracer"<a name='80'></font>
+<font color=#447700>!	chemical components for aerosol type t<a name='81'></font>
+<font color=#447700>!   [Note:  only "regular" components are used for calculating<a name='82'></font>
+<font color=#447700>!	aerosol physical (mass, volume) and chemical properties.<a name='83'></font>
+<font color=#447700>!	"Tracer" components are optional, and can be used to track source <a name='84'></font>
+<font color=#447700>!	regions, source mechanisms, etc.]<a name='85'></font>
+<font color=#447700>!   [Note:  for aerosol type t, all phases have the same number of size<a name='86'></font>
+<font color=#447700>!	bins, and all size bins have the same number of <a name='87'></font>
+<font color=#447700>!	both regular and tracer components.]<a name='88'></font>
+<font color=#447700>!<a name='89'></font>
+<font color=#447700>!   ntot_mastercomp_aer = number of aerosol chemical components defined<a name='90'></font>
+<font color=#447700>!	in the "master component list".<a name='91'></font>
+<font color=#447700>!   [Note:  each aerosol type will use some but not necessarily all<a name='92'></font>
+<font color=#447700>!	of the components in the "master component list".]<a name='93'></font>
+<font color=#447700>!<a name='94'></font>
+<font color=#447700>!   mastercompptr_aer(c,t) = the position/index/i.d. in the <a name='95'></font>
+<font color=#447700>!       "master component list" for chemical component c of aerosol type t.<a name='96'></font>
+<font color=#447700>!	(1=sulfate, others to be defined by user.)<a name='97'></font>
+<font color=#447700>!<a name='98'></font>
+<font color=#447700>!   massptr_aer(c,s,t,p) = the position/index in the chem array for mixing- <a name='99'></font>
+<font color=#447700>!	ratio for chemical component c, size bin s, type t, and phase p.<a name='100'></font>
+<font color=#447700>!<a name='101'></font>
+<font color=#447700>!   lptr_so4_aer(s,t,p) = the position/index in the chem array for mixing-<a name='102'></font>
+<font color=#447700>!	ratio for sulfate for aerosol size bin s, type t, and phase p<a name='103'></font>
+<font color=#447700>!   (similar lptr's are defined for no3, cl, msa, co3, <a name='104'></font>
+<font color=#447700>!	nh4, na, ca, oin, oc, bc, ...)<a name='105'></font>
+<font color=#447700>!   [Note:  the massptr_aer allow you to loop over all species of <a name='106'></font>
+<font color=#447700>!	an aerosol type.  The lptr_so4_aer, etc., allow you to access<a name='107'></font>
+<font color=#447700>!	a specific chemical component.]<a name='108'></font>
+<font color=#447700>!<a name='109'></font>
+<font color=#447700>!   waterptr_aer(s,t) = the position/index in the chem array for mixing-<a name='110'></font>
+<font color=#447700>!	ratio of aerosol water content for size bin s, type t.<a name='111'></font>
+<font color=#447700>!	[Note:  water content is only carried for the interstitial aerosol<a name='112'></font>
+<font color=#447700>!	phase, so there is no p dimension.]<a name='113'></font>
+<font color=#447700>!<a name='114'></font>
+<font color=#447700>!   hyswptr_aer(s,t) = the position/index in the chem array for mixing-<a name='115'></font>
+<font color=#447700>!	ratio of aerosol "hysteresis water" content for size bin s, type t.<a name='116'></font>
+<font color=#447700>!	This is used to determine if aerosol is in the dry or wet state, when<a name='117'></font>
+<font color=#447700>!	the ambient RH is between the crystallization and deliquescence RH.<a name='118'></font>
+<font color=#447700>!	[Note:  hysteresis water content is only carried for the <a name='119'></font>
+<font color=#447700>!	interstitial aerosol phase, so there is no p dimension.]<a name='120'></font>
+<font color=#447700>!<a name='121'></font>
+<font color=#447700>!   numptr_aer(s,t,p) = the position/index in the chem array for mixing- <a name='122'></font>
+<font color=#447700>!	ratio of particle number for size bin s, type t, and phase p.<a name='123'></font>
+<font color=#447700>!<a name='124'></font>
+<font color=#447700>!   mprognum_aer(s,t,p) - if positive, number mixing-ratio for size s, type t,<a name='125'></font>
+<font color=#447700>!       and phase p will be prognosed.  Otherwise, it is diagnosed using<a name='126'></font>
+<font color=#447700>!	mass mixing-ratio add assumed/prescribed size.<a name='127'></font>
+<font color=#447700>!<a name='128'></font>
+<font color=#447700>!	mixing ratio (moles-water/mole-air) for water<a name='129'></font>
+<font color=#447700>!       associated with aerosol size bin s and type t<a name='130'></font>
+<font color=#447700>!<a name='131'></font>
+<font color=#447700>!<a name='132'></font>
+<font color=#447700>!   mastercompindx_so4_aer = the position/index in the <a name='133'></font>
+<font color=#447700>!       "master component list" for sulfate.  <a name='134'></font>
+<font color=#447700>!   (similar lptr's are defined for no3, cl, msa, co3, <a name='135'></font>
+<font color=#447700>!	nh4, na, ca, oin, oc, bc, ...)<a name='136'></font>
+<font color=#447700>!   [Note:  the mastercompindx_xxx_aer are used primarily in <a name='137'></font>
+<font color=#447700>!	initialization routines, and generally aren't needed elsewhere.]<a name='138'></font>
+<font color=#447700>!<a name='139'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='140'></font>
+<font color=#447700>!<a name='141'></font>
+<font color=#447700>!   dens_mastercomp_aer(mc) = dry density (g/cm^3) of component mc <a name='142'></font>
+<font color=#447700>!	of the master component list.<a name='143'></font>
+<font color=#447700>!   dens_aer(c,t) = dry density (g/cm^3) of aerosol chemical component <a name='144'></font>
+<font color=#447700>!	c of type t<a name='145'></font>
+<font color=#447700>!   [Note:  dens_aer(c,t) == dens_mastercomp_aer(mastercompptr_aer(c,t))<a name='146'></font>
+<font color=#447700>!	The dens_mastercomp_aer is used in some initialization routines.<a name='147'></font>
+<font color=#447700>!	The dens_aer is used in most other places because of convenience.]<a name='148'></font>
+<font color=#447700>!<a name='149'></font>
+<font color=#447700>!   mw_mastercomp_aer(mc) = molecular weight (g/mole) of component mc <a name='150'></font>
+<font color=#447700>!	of the master component list.<a name='151'></font>
+<font color=#447700>!   mw_aer(c,t) = molecular weight (g/mole) of aerosol chemical component <a name='152'></font>
+<font color=#447700>!	c of type t<a name='153'></font>
+<font color=#447700>!   [Note:  mw_aer(c,t) == mw_mastercomp_aer(mastercompptr_aer(c,t)) ]<a name='154'></font>
+<font color=#447700>!<a name='155'></font>
+<font color=#447700>!   name_mastercomp_aer(mc) = name of component mc of the <a name='156'></font>
+<font color=#447700>!	master component list (e.g., "sulfate", "nitrate", ...).<a name='157'></font>
+<font color=#447700>!   name_aer(c,t) = molecular weight (g/mole) of aerosol chemical component <a name='158'></font>
+<font color=#447700>!	c of type t<a name='159'></font>
+<font color=#447700>!   [Note:  name_aer(c,t) == name_mastercomp_aer(mastercompptr_aer(c,t)) ]<a name='160'></font>
+<font color=#447700>!<a name='161'></font>
+<font color=#447700>!   hygro_mastercomp_aer(mc) = bulk hygroscopicity (--) at dilute conditions<a name='162'></font>
+<font color=#447700>!	(RH near 100%) of component mc of the master component list.<a name='163'></font>
+<font color=#447700>!   hygro_aer(c,t) = bulk hygroscopicity (--) at dilute conditions <a name='164'></font>
+<font color=#447700>!	(RH near 100%) of aerosol chemical component c of type t<a name='165'></font>
+<font color=#447700>!   [For definition of bulk hygroscopicity, <a name='166'></font>
+<font color=#447700>!	see Abdul-Razzak and Ghan, 2004, J Geophys Res, V105, p. 6837-6844.]<a name='167'></font>
+<font color=#447700>!   [Note:  hygro_aer(c,t) == hygro_mastercomp_aer(mastercompptr_aer(c,t)) ]<a name='168'></font>
+<font color=#447700>!<a name='169'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='170'></font>
+<font color=#447700>!<a name='171'></font>
+<font color=#447700>!   volumlo_sect(s,t) = 1-particle volume (cm^3) at lower boundary of section m<a name='172'></font>
+<font color=#447700>!   volumhi_sect(s,t) = 1-particle volume (cm^3) at upper boundary of section m<a name='173'></font>
+<font color=#447700>!   volumcen_sect(s,t)= 1-particle volume (cm^3) at "center" of section m<a name='174'></font>
+<font color=#447700>!<a name='175'></font>
+<font color=#447700>!   dlo_sect(s,t) = 1-particle diameter (cm) at lower boundary of section m<a name='176'></font>
+<font color=#447700>!   dhi_sect(s,t) = 1-particle diameter (cm) at upper boundary of section m<a name='177'></font>
+<font color=#447700>!   dcen_sect(s,t) = 1-particle diameter (cm) at "center" section m<a name='178'></font>
+<font color=#447700>!<a name='179'></font>
+<font color=#447700>!   [Note:  the "center" values are defined as follows:<a name='180'></font>
+<font color=#447700>!       volumcen_sect == 0.5*(volumlo_sect + volumhi_sect)<a name='181'></font>
+<font color=#447700>!                     == (pi/6) * (dcen_sect**3) ]<a name='182'></font>
+<font color=#447700>!<a name='183'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='184'></font>
+<font color=#447700>!<a name='185'></font>
+<font color=#447700>!   msectional - if positive, each aerosol size bin is a section.<a name='186'></font>
+<font color=#447700>!   if equals 10, use jacobson moving center<a name='187'></font>
+<font color=#447700>!   if equals 20, use tzivion mass-number advection <a name='188'></font>
+<font color=#447700>!	if zero/negative, each size bin is a mode (aitken, accumulation, ...)<a name='189'></font>
+<font color=#447700>!<a name='190'></font>
+<font color=#447700>!   maerosolincw - if positive, both unactivated/interstitial and activated<a name='191'></font>
+<font color=#447700>!       aerosol species are simulated.  if zero/negative, only the<a name='192'></font>
+<font color=#447700>!       unactivated are simulated.  [maerosolincw&gt;0 only when cw_phase&gt;0]<a name='193'></font>
+<font color=#447700>!<a name='194'></font>
+<font color=#447700>!   maerocoag - if positive, aerosol coagulation is done.<a name='195'></font>
+<font color=#447700>!	If zero/negative, it is skipped.<a name='196'></font>
+<font color=#447700>!	(This is not yet implemented in WRF-Chem.)<a name='197'></font>
+<font color=#447700>!<a name='198'></font>
+<font color=#447700>!   maerchem - if positive, aerosol gas-particle condensation/evaporation<a name='199'></font>
+<font color=#447700>!	of inorganic species is done.  If zero/negative, it is skipped.<a name='200'></font>
+<font color=#447700>!	(This is not yet implemented in WRF-Chem.)<a name='201'></font>
+<font color=#447700>!<a name='202'></font>
+<font color=#447700>!   maerchem_boxtest_output - if positive, "boxtest" output is done from<a name='203'></font>
+<font color=#447700>!	the aerchemistry routine.  If zero/negative, it is skipped.<a name='204'></font>
+<font color=#447700>!	(This is not yet implemented in WRF-Chem.)<a name='205'></font>
+<font color=#447700>!<a name='206'></font>
+<font color=#447700>!   maeroptical - if positive, aerosol optical properties are calculated. <a name='207'></font>
+<font color=#447700>!	If zero/negative, it is skipped.<a name='208'></font>
+<font color=#447700>!	(This is not yet implemented in WRF-Chem.)<a name='209'></font>
+<font color=#447700>!<a name='210'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='211'></font>
+<a name='212'>
+	integer, parameter :: maxd_atype = ntot_amode<a name='213'>
+	integer, parameter :: maxd_asize = 1<a name='214'>
+	integer, parameter :: maxd_acomp = maxd_aspectype<a name='215'>
+	integer, parameter :: maxd_aphase = 2<a name='216'>
+<a name='217'>
+	integer, save :: ai_phase = 1<a name='218'>
+	integer, save :: cw_phase = 2<a name='219'>
+	integer, save :: ci_phase = -999888777<a name='220'>
+	integer, save :: rn_phase = -999888777<a name='221'>
+	integer, save :: sn_phase = -999888777<a name='222'>
+	integer, save :: gr_phase = -999888777<a name='223'>
+<a name='224'>
+	integer, save :: ntype_aer = 0 <font color=#447700>! number of types<a name='225'></font>
+	integer, save :: ntot_mastercomp_aer = 0 <font color=#447700>! number of master components<a name='226'></font>
+	integer, save :: nphase_aer = 0 <font color=#447700>! number of phases<a name='227'></font>
+<a name='228'>
+	integer, save ::   &amp;<a name='229'>
+      	  nsize_aer( maxd_atype ),   &amp; <font color=#447700>! number of size bins<a name='230'></font>
+      	  ncomp_aer( maxd_atype ),   &amp; <font color=#447700>! number of chemical components<a name='231'></font>
+      	  ncomp_plustracer_aer( maxd_atype ),   &amp;<a name='232'>
+          mastercompptr_aer(maxd_acomp, maxd_atype), &amp;   <font color=#447700>!  mastercomp index<a name='233'></font>
+      	  massptr_aer( maxd_acomp, maxd_asize, maxd_atype, maxd_aphase ), &amp; <a name='234'>
+		<font color=#447700>! index for mixing ratio<a name='235'></font>
+      	  waterptr_aer( maxd_asize, maxd_atype ), &amp; <font color=#447700>! index for aerosol water<a name='236'></font>
+      	  hyswptr_aer( maxd_asize, maxd_atype ), &amp;<a name='237'>
+      	  numptr_aer( maxd_asize, maxd_atype, maxd_aphase ), &amp; <a name='238'>
+		<font color=#447700>! index for the number mixing ratio<a name='239'></font>
+          mprognum_aer(maxd_asize,maxd_atype,maxd_aphase)<a name='240'>
+<a name='241'>
+<a name='242'>
+<font color=#447700>!   these indices give the location in the "mastercomp list" of<a name='243'></font>
+<font color=#447700>!   the different aerosol chemical (or tracer) components<a name='244'></font>
+	integer, save :: mastercompindx_so4_aer = -999888777<a name='245'>
+	integer, save :: mastercompindx_nh4_aer = -999888777<a name='246'>
+	integer, save :: mastercompindx_no3_aer = -999888777<a name='247'>
+	integer, save :: mastercompindx_pom_aer = -999888777<a name='248'>
+	integer, save :: mastercompindx_soa_aer = -999888777<a name='249'>
+	integer, save :: mastercompindx_bc_aer  = -999888777<a name='250'>
+	integer, save :: mastercompindx_dust_aer = -999888777<a name='251'>
+	integer, save :: mastercompindx_seas_aer = -999888777<a name='252'>
+<a name='253'>
+<a name='254'>
+	real, save ::   &amp;<a name='255'>
+          dens_aer( maxd_acomp, maxd_atype ),  &amp;<a name='256'>
+          dens_mastercomp_aer( maxd_acomp ),   &amp;<a name='257'>
+      	  mw_mastercomp_aer( maxd_acomp ),     &amp;<a name='258'>
+      	  mw_aer( maxd_acomp, maxd_atype ),    &amp;<a name='259'>
+      	  hygro_mastercomp_aer( maxd_acomp ),  &amp;<a name='260'>
+      	  hygro_aer( maxd_acomp, maxd_atype )<a name='261'>
+<a name='262'>
+	real, save ::   &amp;<a name='263'>
+          volumcen_sect( maxd_asize, maxd_atype ),  &amp;<a name='264'>
+          volumlo_sect( maxd_asize, maxd_atype ),   &amp;<a name='265'>
+          volumhi_sect( maxd_asize, maxd_atype ),   &amp;<a name='266'>
+          dcen_sect( maxd_asize, maxd_atype ),      &amp;<a name='267'>
+          dlo_sect( maxd_asize, maxd_atype ),       &amp;<a name='268'>
+          dhi_sect( maxd_asize, maxd_atype ),       &amp;<a name='269'>
+          sigmag_aer(maxd_asize, maxd_atype)<a name='270'>
+<a name='271'>
+	character*10, save ::   &amp;<a name='272'>
+      	  name_mastercomp_aer( maxd_acomp ),  &amp;<a name='273'>
+      	  namebb_mastercomp_aer( maxd_acomp ),  &amp;<a name='274'>
+      	  name_aer( maxd_acomp, maxd_atype )<a name='275'>
+<a name='276'>
+	integer, save ::                     &amp;<a name='277'>
+      	  lptr_so4_aer(maxd_asize, maxd_atype, maxd_aphase),      &amp;<a name='278'>
+      	  lptr_nh4_aer(maxd_asize, maxd_atype, maxd_aphase),      &amp;<a name='279'>
+      	  lptr_no3_aer(maxd_asize, maxd_atype, maxd_aphase),      &amp;<a name='280'>
+      	  lptr_pom_aer(maxd_asize, maxd_atype, maxd_aphase),      &amp;<a name='281'>
+      	  lptr_soa_aer(maxd_asize, maxd_atype, maxd_aphase),      &amp;<a name='282'>
+      	  lptr_bc_aer(maxd_asize, maxd_atype, maxd_aphase),       &amp;<a name='283'>
+      	  lptr_dust_aer(maxd_asize, maxd_atype, maxd_aphase),     &amp;<a name='284'>
+          lptr_seas_aer(maxd_asize, maxd_atype, maxd_aphase)<a name='285'>
+<a name='286'>
+<font color=#447700>! rce 11-sep-2004 - eliminated all of the "..._wrfch" pointers<a name='287'></font>
+<font color=#447700>!    so now there is only one set of pointers ("..._amode")<a name='288'></font>
+<font color=#447700>! sg/rce nov-2004 - totally new pointer system  - "..._aer"<a name='289'></font>
+<a name='290'>
+<a name='291'>
+<font color=#447700>!   the mw_xxx_aer and dens_xxx_aer will be set from <a name='292'></font>
+<font color=#447700>!      the values in module_data_cam_mam_aero<a name='293'></font>
+<font color=#447700>!   molecular weights (g/mol)<a name='294'></font>
+	real, save ::   &amp;<a name='295'>
+          mw_so4_aer, mw_nh4_aer,   &amp;<a name='296'>
+          mw_no3_aer, mw_pom_aer,   &amp;<a name='297'>
+          mw_soa_aer, mw_bc_aer,   &amp;<a name='298'>
+          mw_dust_aer, mw_seas_aer<a name='299'>
+<a name='300'>
+<font color=#447700>!   dry densities (g/cm3)<a name='301'></font>
+	real, save ::   &amp;<a name='302'>
+          dens_so4_aer, dens_nh4_aer,   &amp;<a name='303'>
+          dens_no3_aer, dens_pom_aer,   &amp;<a name='304'>
+          dens_soa_aer, dens_bc_aer,   &amp;<a name='305'>
+          dens_dust_aer, dens_seas_aer<a name='306'>
+<a name='307'>
+<font color=#447700>!   water density (g/cm3)<a name='308'></font>
+<font color=#447700>!	real, parameter :: dens_water_asize  = 1.0<a name='309'></font>
+	real, parameter :: dens_water_aer  = 1.0<a name='310'>
+<a name='311'>
+<a name='312'>
+	integer, save ::   &amp;<a name='313'>
+      	  msectional, maerosolincw,   &amp;<a name='314'>
+      	  maerocoag, maerchem, maeroptical, maerchem_boxtest_output<a name='315'>
+<a name='316'>
+<a name='317'>
+      integer, allocatable ::  &amp;<a name='318'>
+         lptr_chem_to_q(:), lptr_chem_to_qqcw(:)<a name='319'>
+<font color=#447700>! for chem array species l, the corresponding q    array species is lptr_chem_to_q(l)<a name='320'></font>
+<font color=#447700>! for chem array species l, the corresponding qqcw array species is lptr_chem_to_qqcw(l)<a name='321'></font>
+<a name='322'>
+      real, allocatable ::  &amp;<a name='323'>
+         factconv_chem_to_q(:), factconv_chem_to_qqcw(:)<a name='324'>
+<font color=#447700>! factor for converting chem array species l to corresponding q    array species is factconv_chem_to_q(l)<a name='325'></font>
+<font color=#447700>! factor for converting chem array species l to corresponding qqcw array species is factconv_chem_to_qqcw(l)<a name='326'></font>
+<a name='327'>
+<font color=#447700>!     real(r8), allocatable ::  &amp;<a name='328'></font>
+      real, allocatable ::  &amp;<a name='329'>
+         mw_chem_array(:), mw_q_array(:), mw_q_mo_array(:)<a name='330'>
+<font color=#447700>! mw_chem_array = molecular weights for species in wrf-chem chem array (g)<a name='331'></font>
+<font color=#447700>! mw_q_array    = molecular weights for species in cam      q    array (g)<a name='332'></font>
+<font color=#447700>! mw_q_mo_array = molecular weights for species in chemistry portion of the cam q array (g)<a name='333'></font>
+<font color=#447700>!                 (trace gas and aerosol species, but no water species)<a name='334'></font>
+<font color=#447700>! *** note - for gases, value is 1.0 currently, unless the gas is really used by cam_mam routines<a name='335'></font>
+<font color=#447700>!            (e.g., mw for nox/noy and vocs are 1.0)<a name='336'></font>
+<a name='337'>
+<a name='338'>
+	end module module_data_cam_mam_asect<a name='339'>
+<a name='340'>
+</pre></body></html>

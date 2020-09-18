@@ -1,0 +1,2532 @@
+<HTML> <BODY BGCOLOR=#eeeeee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!  Create an initial data set for the WRF model based on real data.  This<a name='2'></font>
+<font color=#447700>!  program is specifically set up for the Eulerian, mass-based coordinate.<a name='3'></font>
+<A NAME='TC_DATA'><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='top_target'><IMG SRC="../../gif/bar_yellow.gif" border=0></A><a name='4'>
+<font color=#993300>PROGRAM </font><font color=#cc0000>tc_data</font>,<A href='../../call_from/TC_DATA.html' TARGET='index'>43</A><a name='5'>
+   USE <A href='../../html_code/frame/module_machine.F.html#MODULE_MACHINE'>module_machine</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MACHINE_21"><a name='6'>
+   USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_213">, ONLY : domain, alloc_and_configure_domain, &amp;<a name='7'>
+        domain_clock_set, head_grid, program_name, domain_clockprint, &amp;<a name='8'>
+        set_current_grid_ptr<a name='9'>
+   USE <A href='../../html_code/share/module_io_domain.F.html#MODULE_IO_DOMAIN'>module_io_domain</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_IO_DOMAIN_18"><a name='10'>
+   USE module_initialize_real, ONLY : wrfu_initialize<a name='11'>
+   USE <A href='../../html_code/frame/module_driver_constants.F.html#MODULE_DRIVER_CONSTANTS'>module_driver_constants</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DRIVER_CONSTANTS_53"><a name='12'>
+   USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>module_configure</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_140">, ONLY : grid_config_rec_type, model_config_rec, &amp;<a name='13'>
+        initial_config, get_config_as_buffer, set_config_as_buffer<a name='14'>
+   USE <A href='../../html_code/frame/module_timing.F.html#MODULE_TIMING'>module_timing</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_TIMING_41"><a name='15'>
+   USE <A href='../../html_code/frame/module_state_description.F.html#MODULE_STATE_DESCRIPTION'>module_state_description</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STATE_DESCRIPTION_106">, ONLY: tconly<a name='16'>
+#ifdef DM_PARALLEL<a name='17'>
+   USE <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>module_dm</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_141">, ONLY: wrf_dm_initialize<a name='18'>
+#endif<a name='19'>
+#ifdef NO_LEAP_CALENDAR<a name='20'>
+   USE module_symbols_util, ONLY: wrfu_cal_noleap<a name='21'>
+#else<a name='22'>
+   USE module_symbols_util, ONLY: wrfu_cal_gregorian<a name='23'>
+#endif<a name='24'>
+   USE module_utility, ONLY : WRFU_finalize<a name='25'>
+<a name='26'>
+   IMPLICIT NONE<a name='27'>
+<a name='28'>
+<a name='29'>
+   REAL    :: time , bdyfrq<a name='30'>
+<a name='31'>
+   INTEGER :: loop , levels_to_process , debug_level<a name='32'>
+<a name='33'>
+<a name='34'>
+   TYPE(domain) , POINTER :: null_domain<a name='35'>
+   TYPE(domain) , POINTER :: grid , another_grid<a name='36'>
+   TYPE(domain) , POINTER :: grid_ptr , grid_ptr2<a name='37'>
+   TYPE (grid_config_rec_type)              :: config_flags<a name='38'>
+   INTEGER                :: number_at_same_level<a name='39'>
+<a name='40'>
+   INTEGER :: max_dom, domain_id , grid_id , parent_id , parent_id1 , id<a name='41'>
+   INTEGER :: e_we , e_sn , i_parent_start , j_parent_start<a name='42'>
+   INTEGER :: idum1, idum2 <a name='43'>
+#ifdef DM_PARALLEL<a name='44'>
+   INTEGER                 :: nbytes<a name='45'>
+   INTEGER, PARAMETER      :: configbuflen = 4* CONFIG_BUF_LEN<a name='46'>
+   INTEGER                 :: configbuf( configbuflen )<a name='47'>
+   LOGICAL , EXTERNAL      :: wrf_dm_on_monitor<a name='48'>
+#endif<a name='49'>
+   LOGICAL found_the_id<a name='50'>
+<a name='51'>
+   INTEGER :: ids , ide , jds , jde , kds , kde<a name='52'>
+   INTEGER :: ims , ime , jms , jme , kms , kme<a name='53'>
+   INTEGER :: ips , ipe , jps , jpe , kps , kpe<a name='54'>
+   INTEGER :: ijds , ijde , spec_bdy_width<a name='55'>
+   INTEGER :: i , j , k , idts, rc<a name='56'>
+   INTEGER :: sibling_count , parent_id_hold , dom_loop<a name='57'>
+<a name='58'>
+   CHARACTER (LEN=80)     :: message<a name='59'>
+<a name='60'>
+   INTEGER :: start_year , start_month , start_day , start_hour , start_minute , start_second<a name='61'>
+   INTEGER ::   end_year ,   end_month ,   end_day ,   end_hour ,   end_minute ,   end_second<a name='62'>
+   INTEGER :: interval_seconds , real_data_init_type<a name='63'>
+   INTEGER :: time_loop_max , time_loop, bogus_id, storm<a name='64'>
+   real::t1,t2<a name='65'>
+   real    :: latc_loc(max_bogus),lonc_loc(max_bogus),vmax(max_bogus),rmax(max_bogus)<a name='66'>
+   real    :: rankine_lid<a name='67'>
+   INTERFACE<a name='68'>
+     SUBROUTINE Setup_Timekeeping( grid )<a name='69'>
+      USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_214">, ONLY : domain<a name='70'>
+      TYPE(domain), POINTER :: grid<a name='71'>
+     END SUBROUTINE Setup_Timekeeping<a name='72'>
+   END INTERFACE<a name='73'>
+<a name='74'>
+#include "<A href='../../html_code/include/version_decl.html'>version_decl</A>"<A NAME="version_decl_1"><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='75'>
+<a name='76'>
+   <font color=#447700>!  Define the name of this program (program_name defined in module_domain)<a name='77'></font>
+<a name='78'>
+   program_name = "TC_EM " // TRIM(release_version) // " PREPROCESSOR"<a name='79'>
+<a name='80'>
+<font color=#447700>!  The TC bogus algorithm assumes that the user defines a central point, and then<a name='81'></font>
+<font color=#447700>!  allows the program to remove a typhoon based on a distance in km.  This is<a name='82'></font>
+<font color=#447700>!  implemented on a single processor only.<a name='83'></font>
+<a name='84'>
+#ifdef DM_PARALLEL<a name='85'>
+   IF ( .NOT. wrf_dm_on_monitor() ) THEN<a name='86'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_438">( 'TC bogus must run with a single processor only, re-run with num procs set to 1' )<a name='87'>
+   END IF<a name='88'>
+#endif<a name='89'>
+<a name='90'>
+#ifdef DM_PARALLEL<a name='91'>
+   CALL <A href='../../html_code/frame/module_io_quilt_old.F.html#DISABLE_QUILTING'>disable_quilting</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DISABLE_QUILTING_7"><a name='92'>
+#endif<a name='93'>
+<a name='94'>
+   <font color=#447700>!  Initialize the modules used by the WRF system.  Many of the CALLs made from the<a name='95'></font>
+   <font color=#447700>!  init_modules routine are NO-OPs.  Typical initializations are: the size of a<a name='96'></font>
+   <font color=#447700>!  REAL, setting the file handles to a pre-use value, defining moisture and<a name='97'></font>
+   <font color=#447700>!  chemistry indices, etc.<a name='98'></font>
+<a name='99'>
+   CALL       wrf_debug ( 100 , 'real_em: calling init_modules ' )<a name='100'>
+   CALL <A href='../../html_code/share/init_modules.F.html#INIT_MODULES'>init_modules</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INIT_MODULES_17">(1)   <font color=#447700>! Phase 1 returns after MPI_INIT() (if it is called)<a name='101'></font>
+#ifdef NO_LEAP_CALENDAR<a name='102'>
+   CALL WRFU_Initialize( defaultCalKind=WRFU_CAL_NOLEAP, rc=rc )<a name='103'>
+#else<a name='104'>
+   CALL WRFU_Initialize( defaultCalKind=WRFU_CAL_GREGORIAN, rc=rc )<a name='105'>
+#endif<a name='106'>
+   CALL <A href='../../html_code/share/init_modules.F.html#INIT_MODULES'>init_modules</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INIT_MODULES_18">(2)   <font color=#447700>! Phase 2 resumes after MPI_INIT() (if it is called)<a name='107'></font>
+<a name='108'>
+   <font color=#447700>!  The configuration switches mostly come from the NAMELIST input.<a name='109'></font>
+<a name='110'>
+#ifdef DM_PARALLEL<a name='111'>
+   IF ( wrf_dm_on_monitor() ) THEN<a name='112'>
+      CALL <A href='../../html_code/frame/module_configure.F.html#INITIAL_CONFIG'>initial_config</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INITIAL_CONFIG_17"><a name='113'>
+   END IF<a name='114'>
+   CALL <A href='../../html_code/frame/module_configure.F.html#GET_CONFIG_AS_BUFFER'>get_config_as_buffer</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_CONFIG_AS_BUFFER_17">( configbuf, configbuflen, nbytes )<a name='115'>
+   CALL <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_BYTES'>wrf_dm_bcast_bytes</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_BYTES_120">( configbuf, nbytes )<a name='116'>
+   CALL <A href='../../html_code/frame/module_configure.F.html#SET_CONFIG_AS_BUFFER'>set_config_as_buffer</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_CONFIG_AS_BUFFER_17">( configbuf, configbuflen )<a name='117'>
+   CALL <A href='../../html_code/frame/module_dm.F.html#WRF_DM_INITIALIZE'>wrf_dm_initialize</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_INITIALIZE_9"><a name='118'>
+#else<a name='119'>
+   CALL <A href='../../html_code/frame/module_configure.F.html#INITIAL_CONFIG'>initial_config</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INITIAL_CONFIG_18"><a name='120'>
+#endif<a name='121'>
+<a name='122'>
+<a name='123'>
+   CALL nl_get_debug_level ( 1, debug_level )<a name='124'>
+   CALL <A href='../../html_code/frame/wrf_debug.F.html#SET_WRF_DEBUG_LEVEL'>set_wrf_debug_level</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_WRF_DEBUG_LEVEL_11"> ( debug_level )<a name='125'>
+<a name='126'>
+   CALL  <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_523"> ( program_name )<a name='127'>
+<a name='128'>
+   <font color=#447700>!  There are variables in the Registry that are only required for the real<a name='129'></font>
+   <font color=#447700>!  program, fields that come from the WPS package.  We define the run-time<a name='130'></font>
+   <font color=#447700>!  flag that says to allocate space for these input-from-WPS-only arrays.<a name='131'></font>
+<a name='132'>
+   CALL nl_set_use_wps_input ( 1 , TCONLY )<a name='133'>
+<a name='134'>
+   <font color=#447700>!  Allocate the space for the mother of all domains.<a name='135'></font>
+<a name='136'>
+   NULLIFY( null_domain )<a name='137'>
+   CALL       wrf_debug ( 100 , 'real_em: calling alloc_and_configure_domain ' )<a name='138'>
+   CALL <A href='../../html_code/frame/module_domain.F.html#ALLOC_AND_CONFIGURE_DOMAIN'>alloc_and_configure_domain</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ALLOC_AND_CONFIGURE_DOMAIN_14"> ( domain_id  = 1           , &amp;<a name='139'>
+                                     grid       = head_grid   , &amp;<a name='140'>
+                                     parent     = null_domain , &amp;<a name='141'>
+                                     kid        = -1            )<a name='142'>
+<a name='143'>
+   grid =&gt; head_grid<a name='144'>
+   CALL nl_get_max_dom ( 1 , max_dom )<a name='145'>
+<a name='146'>
+   IF ( model_config_rec%interval_seconds .LE. 0 ) THEN<a name='147'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_439">( 'namelist value for interval_seconds must be &gt; 0')<a name='148'>
+   END IF<a name='149'>
+<a name='150'>
+   all_domains : DO domain_id = 1 , max_dom<a name='151'>
+<a name='152'>
+      IF ( ( model_config_rec%input_from_file(domain_id) ) .OR. &amp;<a name='153'>
+           ( domain_id .EQ. 1 ) ) THEN<a name='154'>
+<a name='155'>
+         CALL <A href='../../html_code/share/set_timekeeping.F.html#SETUP_TIMEKEEPING'>Setup_Timekeeping</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SETUP_TIMEKEEPING_12"> ( grid )<a name='156'>
+         CALL <A href='../../html_code/frame/module_domain.F.html#SET_CURRENT_GRID_PTR'>set_current_grid_ptr</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_CURRENT_GRID_PTR_10">( grid )<a name='157'>
+         CALL <A href='../../html_code/frame/module_domain.F.html#DOMAIN_CLOCKPRINT'>domain_clockprint</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DOMAIN_CLOCKPRINT_19"> ( 150, grid, &amp;<a name='158'>
+                'DEBUG real:  clock after Setup_Timekeeping,' )<a name='159'>
+         CALL <A href='../../html_code/frame/module_domain.F.html#DOMAIN_CLOCK_SET'>domain_clock_set</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DOMAIN_CLOCK_SET_28">( grid, &amp;<a name='160'>
+                                time_step_seconds=model_config_rec%interval_seconds )<a name='161'>
+         CALL <A href='../../html_code/frame/module_domain.F.html#DOMAIN_CLOCKPRINT'>domain_clockprint</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DOMAIN_CLOCKPRINT_20"> ( 150, grid, &amp;<a name='162'>
+                'DEBUG real:  clock after timeStep set,' )<a name='163'>
+<a name='164'>
+<a name='165'>
+         CALL       wrf_debug ( 100 , 'tc_em: calling set_scalar_indices_from_config ' )<a name='166'>
+         CALL <A href='../../html_code/frame/module_configure.F.html#SET_SCALAR_INDICES_FROM_CONFIG'>set_scalar_indices_from_config</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_SCALAR_INDICES_FROM_CONFIG_18"> ( grid%id , idum1, idum2 )<a name='167'>
+<a name='168'>
+<font color=#447700>!This is goofy but we need to loop through the number of storms to get <a name='169'></font>
+<font color=#447700>!the namelist variables for the tc_bogus.  But then we need to <a name='170'></font>
+<font color=#447700>!call model_to_grid_config_rec with the grid%id = to 1 in order to<a name='171'></font>
+<font color=#447700>!reset to the correct information.<a name='172'></font>
+         CALL       wrf_debug ( 100 , 'tc_em: calling model_to_grid_config_rec ' )<a name='173'>
+         lonc_loc(:) = -999.<a name='174'>
+         latc_loc(:) = -999.<a name='175'>
+         vmax(:)     = -999.<a name='176'>
+         rmax(:)     = -999.<a name='177'>
+         CALL <A href='../../html_code/frame/module_configure.F.html#MODEL_TO_GRID_CONFIG_REC'>model_to_grid_config_rec</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODEL_TO_GRID_CONFIG_REC_43"> ( grid%id , model_config_rec , config_flags )<a name='178'>
+         lonc_loc(1) = config_flags%lonc_loc<a name='179'>
+         latc_loc(1) = config_flags%latc_loc<a name='180'>
+         vmax(1)     = config_flags%vmax_meters_per_second<a name='181'>
+         rmax(1)     = config_flags%rmax<a name='182'>
+         rankine_lid = config_flags%rankine_lid<a name='183'>
+         do storm = 2,config_flags%num_storm<a name='184'>
+             bogus_id = storm<a name='185'>
+             CALL <A href='../../html_code/frame/module_configure.F.html#MODEL_TO_GRID_CONFIG_REC'>model_to_grid_config_rec</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODEL_TO_GRID_CONFIG_REC_44"> ( bogus_id , model_config_rec , config_flags )<a name='186'>
+             lonc_loc(storm) = config_flags%lonc_loc<a name='187'>
+             latc_loc(storm) = config_flags%latc_loc<a name='188'>
+             vmax(storm)     = config_flags%vmax_meters_per_second<a name='189'>
+             rmax(storm)     = config_flags%rmax<a name='190'>
+<font color=#447700>!             print *,"in loop ",storm,lonc_loc(storm),latc_loc(storm),vmax(storm),rmax(storm)<a name='191'></font>
+         end do<a name='192'>
+         CALL <A href='../../html_code/frame/module_configure.F.html#MODEL_TO_GRID_CONFIG_REC'>model_to_grid_config_rec</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODEL_TO_GRID_CONFIG_REC_45"> ( grid%id , model_config_rec , config_flags )<a name='193'>
+<a name='194'>
+         <font color=#447700>!  Initialize the WRF IO: open files, init file handles, etc.<a name='195'></font>
+<a name='196'>
+         CALL       wrf_debug ( 100 , 'tc_em: calling init_wrfio' )<a name='197'>
+         CALL <A href='../../html_code/share/module_io_domain.F.html#INIT_WRFIO'>init_wrfio</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INIT_WRFIO_9"><a name='198'>
+<a name='199'>
+         <font color=#447700>!  Some of the configuration values may have been modified from the initial READ<a name='200'></font>
+         <font color=#447700>!  of the NAMELIST, so we re-broadcast the configuration records.<a name='201'></font>
+<a name='202'>
+#ifdef DM_PARALLEL<a name='203'>
+         CALL       <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_393"> ( 100 , 'tc_em: re-broadcast the configuration records' )<a name='204'>
+         CALL <A href='../../html_code/frame/module_configure.F.html#GET_CONFIG_AS_BUFFER'>get_config_as_buffer</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_CONFIG_AS_BUFFER_18">( configbuf, configbuflen, nbytes )<a name='205'>
+         CALL <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_BYTES'>wrf_dm_bcast_bytes</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_BYTES_121">( configbuf, nbytes )<a name='206'>
+         CALL <A href='../../html_code/frame/module_configure.F.html#SET_CONFIG_AS_BUFFER'>set_config_as_buffer</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_CONFIG_AS_BUFFER_18">( configbuf, configbuflen )<a name='207'>
+#endif<a name='208'>
+<a name='209'>
+         <font color=#447700>!   No looping in this layer.  <a name='210'></font>
+<a name='211'>
+         CALL       <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_394"> ( 100 , 'calling tc_med_sidata_input' )<a name='212'>
+         CALL <A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT'>tc_med_sidata_input</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TC_MED_SIDATA_INPUT_1"> ( grid , config_flags, latc_loc, lonc_loc, &amp;<a name='213'>
+                                    vmax,rmax,rankine_lid)<a name='214'>
+         CALL       <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_395"> ( 100 , 'backfrom tc_med_sidata_input' )<a name='215'>
+<a name='216'>
+      ELSE <a name='217'>
+         CYCLE all_domains<a name='218'>
+      END IF<a name='219'>
+<a name='220'>
+   END DO all_domains<a name='221'>
+<a name='222'>
+   CALL <A href='../../html_code/frame/module_domain.F.html#SET_CURRENT_GRID_PTR'>set_current_grid_ptr</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_CURRENT_GRID_PTR_11">( head_grid )<a name='223'>
+<a name='224'>
+   <font color=#447700>!  We are done.<a name='225'></font>
+<a name='226'>
+   CALL       <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_396"> (   0 , 'tc_em: SUCCESS COMPLETE TC BOGUS' )<a name='227'>
+<a name='228'>
+   CALL <A href='../../html_code/frame/wrf_shutdown.F.html#WRF_SHUTDOWN'>wrf_shutdown</A><A href='../../html_code/main/tc_em.F.html#TC_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_SHUTDOWN_6"><a name='229'>
+<a name='230'>
+   CALL WRFU_Finalize( rc=rc )<a name='231'>
+<a name='232'>
+<a name='233'>
+END PROGRAM tc_data<a name='234'>
+<a name='235'>
+<a name='236'>
+<font color=#447700>!-----------------------------------------------------------------<a name='237'></font>
+<A NAME='TC_MED_SIDATA_INPUT'><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='238'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>tc_med_sidata_input</font> ( grid , config_flags, latc_loc, lonc_loc, &amp; <A href='../../call_to/TC_MED_SIDATA_INPUT.html' TARGET='index'>1</A>,<A href='../../call_from/TC_MED_SIDATA_INPUT.html' TARGET='index'>26</A><a name='239'>
+                                 vmax, rmax,rankine_lid)<a name='240'>
+  <font color=#447700>! Driver layer<a name='241'></font>
+   USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_215"><a name='242'>
+   USE <A href='../../html_code/share/module_io_domain.F.html#MODULE_IO_DOMAIN'>module_io_domain</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_IO_DOMAIN_19"><a name='243'>
+  <font color=#447700>! Model layer<a name='244'></font>
+   USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>module_configure</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_141"><a name='245'>
+   USE <A href='../../html_code/share/module_bc_time_utilities.F.html#MODULE_BC_TIME_UTILITIES'>module_bc_time_utilities</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_BC_TIME_UTILITIES_4"><a name='246'>
+   USE <A href='../../html_code/share/module_optional_input.F.html#MODULE_OPTIONAL_INPUT'>module_optional_input</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_OPTIONAL_INPUT_8"><a name='247'>
+<a name='248'>
+   USE <A href='../../html_code/share/module_date_time.F.html#MODULE_DATE_TIME'>module_date_time</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DATE_TIME_11"><a name='249'>
+   USE module_utility<a name='250'>
+<a name='251'>
+   IMPLICIT NONE<a name='252'>
+<a name='253'>
+<a name='254'>
+  <font color=#447700>! Interface <a name='255'></font>
+   INTERFACE<a name='256'>
+     SUBROUTINE start_domain ( grid , allowed_to_read )  <font color=#447700>! comes from module_start in appropriate dyn_ directory<a name='257'></font>
+       USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_216"><a name='258'>
+       TYPE (domain) grid<a name='259'>
+       LOGICAL, INTENT(IN) :: allowed_to_read<a name='260'>
+     END SUBROUTINE start_domain<a name='261'>
+   END INTERFACE<a name='262'>
+<a name='263'>
+  <font color=#447700>! Arguments<a name='264'></font>
+   TYPE(domain)                :: grid<a name='265'>
+   TYPE (grid_config_rec_type) :: config_flags<a name='266'>
+  <font color=#447700>! Local<a name='267'></font>
+   INTEGER                :: time_step_begin_restart<a name='268'>
+   INTEGER                :: idsi , ierr , myproc, internal_time_loop,iflag<a name='269'>
+<font color=#447700>! Declarations for the netcdf routines.<a name='270'></font>
+   INTEGER                ::nf_inq<a name='271'>
+<font color=#447700>!<a name='272'></font>
+   CHARACTER (LEN=256)    :: si_inpname<a name='273'>
+   CHARACTER (LEN=80)     :: message<a name='274'>
+<a name='275'>
+   CHARACTER(LEN=19) :: start_date_char , end_date_char , current_date_char , next_date_char<a name='276'>
+   CHARACTER(LEN=8)  :: flag_name<a name='277'>
+<a name='278'>
+   INTEGER :: time_loop_max , loop, rc,icnt,itmp<a name='279'>
+   INTEGER :: julyr , julday ,metndims, metnvars, metngatts, nunlimdimid,rcode<a name='280'>
+   REAL    :: gmt<a name='281'>
+   real    :: t1,t2,t3,t4<a name='282'>
+   real    :: latc_loc(max_bogus), lonc_loc(max_bogus)<a name='283'>
+   real    :: vmax(max_bogus),rmax(max_bogus),rankine_lid<a name='284'>
+<a name='285'>
+   grid%input_from_file = .true.<a name='286'>
+   grid%input_from_file = .false.<a name='287'>
+<a name='288'>
+   CALL <A href='../../html_code/main/tc_em.F.html#TC_COMPUTE_SI_START'>tc_compute_si_start</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TC_COMPUTE_SI_START_1"> ( model_config_rec%start_year  (grid%id) , &amp;<a name='289'>
+                                   model_config_rec%start_month (grid%id) , &amp;<a name='290'>
+                                   model_config_rec%start_day   (grid%id) , &amp;<a name='291'>
+                                   model_config_rec%start_hour  (grid%id) , &amp;<a name='292'>
+                                   model_config_rec%start_minute(grid%id) , &amp;<a name='293'>
+                                   model_config_rec%start_second(grid%id) , &amp;<a name='294'>
+                                   model_config_rec%interval_seconds      , &amp;<a name='295'>
+                                   model_config_rec%real_data_init_type   , &amp;<a name='296'>
+                                   start_date_char)<a name='297'>
+<a name='298'>
+   end_date_char = start_date_char<a name='299'>
+   IF ( end_date_char .LT. start_date_char ) THEN<a name='300'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_440">( 'Ending date in namelist ' // end_date_char // ' prior to beginning date ' // start_date_char )<a name='301'>
+   END IF<a name='302'>
+   print *,"the start date char ",start_date_char<a name='303'>
+   print *,"the end date char ",end_date_char<a name='304'>
+<a name='305'>
+   time_loop_max = 1<a name='306'>
+   <font color=#447700>!  Override stop time with value computed above.  <a name='307'></font>
+   CALL <A href='../../html_code/frame/module_domain.F.html#DOMAIN_CLOCK_SET'>domain_clock_set</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DOMAIN_CLOCK_SET_29">( grid, stop_timestr=end_date_char )<a name='308'>
+<a name='309'>
+   <font color=#447700>! TBH:  for now, turn off stop time and let it run data-driven<a name='310'></font>
+   CALL WRFU_ClockStopTimeDisable( grid%domain_clock, rc=rc ) <a name='311'>
+   CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_CHECK_ERROR'>wrf_check_error</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_CHECK_ERROR_9">( WRFU_SUCCESS, rc, &amp;<a name='312'>
+                         'WRFU_ClockStopTimeDisable(grid%domain_clock) FAILED', &amp;<a name='313'>
+                         __FILE__ , &amp;<a name='314'>
+                         __LINE__  )<a name='315'>
+   CALL <A href='../../html_code/frame/module_domain.F.html#DOMAIN_CLOCKPRINT'>domain_clockprint</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DOMAIN_CLOCKPRINT_21"> ( 150, grid, &amp;<a name='316'>
+          'DEBUG med_sidata_input:  clock after stopTime set,' )<a name='317'>
+<a name='318'>
+   <font color=#447700>!  Here we define the initial time to process, for later use by the code.<a name='319'></font>
+   <a name='320'>
+   current_date_char = start_date_char<a name='321'>
+   start_date = start_date_char // '.0000'<a name='322'>
+   current_date = start_date<a name='323'>
+<a name='324'>
+   CALL nl_set_bdyfrq ( grid%id , REAL(model_config_rec%interval_seconds) )<a name='325'>
+<a name='326'>
+<a name='327'>
+   CALL cpu_time ( t1 )<a name='328'>
+   DO loop = 1 , time_loop_max<a name='329'>
+<a name='330'>
+      internal_time_loop = loop<a name='331'>
+      IF ( ( grid%id .GT. 1 ) .AND. ( loop .GT. 1 ) .AND. &amp;<a name='332'>
+           ( model_config_rec%grid_fdda(grid%id) .EQ. 0 ) .AND. &amp;<a name='333'>
+           ( model_config_rec%sst_update .EQ. 0 ) ) EXIT<a name='334'>
+<a name='335'>
+      print *,' '<a name='336'>
+      print *,'-----------------------------------------------------------------------------'<a name='337'>
+      print *,' '<a name='338'>
+      print '(A,I2,A,A,A,I4,A,I4)' , &amp;<a name='339'>
+      ' Domain ',grid%id,': Current date being processed: ',current_date, ', which is loop #',loop,' out of ',time_loop_max<a name='340'>
+<a name='341'>
+      <font color=#447700>!  After current_date has been set, fill in the julgmt stuff.<a name='342'></font>
+<a name='343'>
+      CALL <A href='../../html_code/share/module_date_time.F.html#GETH_JULGMT'>geth_julgmt</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GETH_JULGMT_7"> ( config_flags%julyr , config_flags%julday , config_flags%gmt )<a name='344'>
+<a name='345'>
+        print *,'configflags%julyr, %julday, %gmt:',config_flags%julyr, config_flags%julday, config_flags%gmt<a name='346'>
+      <font color=#447700>!  Now that the specific Julian info is available, save these in the model config record.<a name='347'></font>
+<a name='348'>
+      CALL nl_set_gmt (grid%id, config_flags%gmt)<a name='349'>
+      CALL nl_set_julyr (grid%id, config_flags%julyr)<a name='350'>
+      CALL nl_set_julday (grid%id, config_flags%julday)<a name='351'>
+<a name='352'>
+      <font color=#447700>!  Open the input file for tc stuff.  Either the "new" one or the "old" one.  The "new" one could have<a name='353'></font>
+      <font color=#447700>!  a suffix for the type of the data format.  Check to see if either is around.<a name='354'></font>
+<a name='355'>
+      CALL cpu_time ( t3 )<a name='356'>
+      WRITE ( wrf_err_message , FMT='(A,A)' )'med_sidata_input: calling open_r_dataset for ', &amp;<a name='357'>
+                                             TRIM(config_flags%auxinput1_inname)<a name='358'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_397"> ( 100 , wrf_err_message )<a name='359'>
+      IF ( config_flags%auxinput1_inname(1:8) .NE. 'wrf_real' ) THEN<a name='360'>
+         CALL <A href='../../html_code/share/module_io_domain.F.html#CONSTRUCT_FILENAME4A'>construct_filename4a</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTRUCT_FILENAME4A_7">( si_inpname , config_flags%auxinput1_inname , grid%id , 2 , &amp;<a name='361'>
+                                    current_date_char , config_flags%io_form_auxinput1 )<a name='362'>
+      ELSE<a name='363'>
+         CALL <A href='../../html_code/share/module_io_domain.F.html#CONSTRUCT_FILENAME2A'>construct_filename2a</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTRUCT_FILENAME2A_10">( si_inpname , config_flags%auxinput1_inname , grid%id , 2 , &amp;<a name='364'>
+                                    current_date_char )<a name='365'>
+      END IF<a name='366'>
+      CALL <A href='../../html_code/share/module_io_domain.F.html#OPEN_R_DATASET'>open_r_dataset</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OPEN_R_DATASET_10"> ( idsi, TRIM(si_inpname) , grid , config_flags , "DATASET=AUXINPUT1", ierr )<a name='367'>
+      IF ( ierr .NE. 0 ) THEN<a name='368'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_441">( 'error opening ' // TRIM(si_inpname) // &amp;<a name='369'>
+                               ' for input; bad date in namelist or file not in directory' )<a name='370'>
+      END IF<a name='371'>
+<a name='372'>
+      <font color=#447700>!  Input data.<a name='373'></font>
+<a name='374'>
+      CALL wrf_debug ( 100 , 'med_sidata_input: calling input_auxinput1' )<a name='375'>
+      CALL input_auxinput1 ( idsi ,   grid , config_flags , ierr )<a name='376'>
+      WRITE ( wrf_err_message , FMT='(A,I10,A)' ) 'Timing for input ',NINT(t4-t3) ,' s.'<a name='377'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_398">( 0, wrf_err_message )<a name='378'>
+<a name='379'>
+      <font color=#447700>!  Possible optional SI input.  This sets flags used by init_domain.<a name='380'></font>
+<a name='381'>
+      CALL cpu_time ( t3 )<a name='382'>
+      CALL       wrf_debug ( 100 , 'med_sidata_input: calling init_module_optional_input' )<a name='383'>
+      CALL <A href='../../html_code/share/module_optional_input.F.html#INIT_MODULE_OPTIONAL_INPUT'>init_module_optional_input</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INIT_MODULE_OPTIONAL_INPUT_7"> ( grid , config_flags )<a name='384'>
+      CALL       wrf_debug ( 100 , 'med_sidata_input: calling optional_input' )<a name='385'>
+      CALL <A href='../../html_code/share/module_optional_input.F.html#OPTIONAL_INPUT'>optional_input</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OPTIONAL_INPUT_4"> ( grid , idsi , config_flags )<a name='386'>
+<a name='387'>
+<font color=#447700>!Here we check the flags yet again.  The flags are checked in optional_input but <a name='388'></font>
+<font color=#447700>!the grid% flags are not set.<a name='389'></font>
+      flag_name(1:8) = 'SM000010'<a name='390'>
+      CALL wrf_get_dom_ti_integer ( idsi, 'FLAG_' // flag_name, itmp, 1, icnt, ierr ) <a name='391'>
+      IF ( ierr .EQ. 0 ) THEN<a name='392'>
+          grid%flag_sm000010 = 1<a name='393'>
+      end if<a name='394'>
+<a name='395'>
+       flag_name(1:8) = 'SM010040'<a name='396'>
+       CALL wrf_get_dom_ti_integer ( idsi, 'FLAG_' // flag_name, itmp, 1, icnt, ierr ) <a name='397'>
+       IF ( ierr .EQ. 0 ) THEN<a name='398'>
+          grid%flag_sm010040 = 1<a name='399'>
+       end if<a name='400'>
+<a name='401'>
+       flag_name(1:8) = 'SM040100'<a name='402'>
+       CALL wrf_get_dom_ti_integer ( idsi, 'FLAG_' // flag_name, itmp, 1, icnt, ierr ) <a name='403'>
+       IF ( ierr .EQ. 0 ) THEN<a name='404'>
+            grid%flag_sm040100 = itmp   <a name='405'>
+       end if<a name='406'>
+<a name='407'>
+<a name='408'>
+       flag_name(1:8) = 'SM100200'<a name='409'>
+       CALL wrf_get_dom_ti_integer ( idsi, 'FLAG_' // flag_name, itmp, 1, icnt, ierr ) <a name='410'>
+       IF ( ierr .EQ. 0 ) THEN<a name='411'>
+            grid%flag_sm100200 = itmp  <a name='412'>
+       end if<a name='413'>
+<a name='414'>
+<font color=#447700>!       flag_name(1:8) = 'SM010200'<a name='415'></font>
+<font color=#447700>!       CALL wrf_get_dom_ti_integer ( idsi, 'FLAG_' // flag_name, itmp, 1, icnt, ierr ) <a name='416'></font>
+<font color=#447700>!       IF ( ierr .EQ. 0 ) THEN<a name='417'></font>
+<font color=#447700>!            config_flags%flag_sm010200 = itmp <a name='418'></font>
+<font color=#447700>!            print *,"found the flag_sm010200 "         <a name='419'></font>
+<font color=#447700>!       end if<a name='420'></font>
+<a name='421'>
+<font color=#447700>!Now the soil temperature flags<a name='422'></font>
+        flag_name(1:8) = 'ST000010'<a name='423'>
+        CALL wrf_get_dom_ti_integer ( idsi, 'FLAG_' // flag_name, itmp, 1, icnt, ierr ) <a name='424'>
+        IF ( ierr .EQ. 0 ) THEN<a name='425'>
+            grid%flag_st000010 = 1<a name='426'>
+        END IF<a name='427'>
+<a name='428'>
+<a name='429'>
+         flag_name(1:8) = 'ST010040'<a name='430'>
+         CALL wrf_get_dom_ti_integer ( idsi, 'FLAG_' // flag_name, itmp, 1, icnt, ierr ) <a name='431'>
+         IF ( ierr .EQ. 0 ) THEN<a name='432'>
+            grid%flag_st010040 = 1<a name='433'>
+         END IF<a name='434'>
+<a name='435'>
+         flag_name(1:8) = 'ST040100'<a name='436'>
+         CALL wrf_get_dom_ti_integer ( idsi, 'FLAG_' // flag_name, itmp, 1, icnt, ierr ) <a name='437'>
+         IF ( ierr .EQ. 0 ) THEN<a name='438'>
+            grid%flag_st040100 = 1<a name='439'>
+         END IF<a name='440'>
+<a name='441'>
+<a name='442'>
+         flag_name(1:8) = 'ST100200'<a name='443'>
+         CALL wrf_get_dom_ti_integer ( idsi, 'FLAG_' // flag_name, itmp, 1, icnt, ierr ) <a name='444'>
+         IF ( ierr .EQ. 0 ) THEN<a name='445'>
+            grid%flag_st100200 = 1<a name='446'>
+         END IF<a name='447'>
+<a name='448'>
+         CALL wrf_get_dom_ti_integer ( idsi, 'FLAG_SOIL_LAYERS', itmp, 1, icnt, ierr ) <a name='449'>
+         IF ( ierr .EQ. 0 ) THEN<a name='450'>
+            grid%flag_soil_layers = 1<a name='451'>
+         END IF<a name='452'>
+<a name='453'>
+<a name='454'>
+<a name='455'>
+<a name='456'>
+      CALL <A href='../../html_code/share/module_io_domain.F.html#CLOSE_DATASET'>close_dataset</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CLOSE_DATASET_22"> ( idsi , config_flags , "DATASET=AUXINPUT1" )<a name='457'>
+      CALL cpu_time ( t4 )<a name='458'>
+<a name='459'>
+      <font color=#447700>!  Possible optional SI input.  This sets flags used by init_domain.<a name='460'></font>
+      <font color=#447700>!  We need to call the optional input routines to get the flags that <a name='461'></font>
+      <font color=#447700>!  are in the metgrid output file so they can be put in the tc bogus <a name='462'></font>
+      <font color=#447700>!  output file for real to read.<a name='463'></font>
+      CALL cpu_time ( t3 )<a name='464'>
+      already_been_here = .FALSE.<a name='465'>
+      CALL <A href='../../html_code/frame/module_configure.F.html#MODEL_TO_GRID_CONFIG_REC'>model_to_grid_config_rec</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODEL_TO_GRID_CONFIG_REC_46"> ( grid%id , model_config_rec , config_flags )<a name='466'>
+<a name='467'>
+<a name='468'>
+      CALL cpu_time ( t3 )<a name='469'>
+<a name='470'>
+      CALL <A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT'>assemble_output</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ASSEMBLE_OUTPUT_4"> ( grid , config_flags , loop , time_loop_max, current_date_char, &amp;<a name='471'>
+                             latc_loc, lonc_loc, vmax, rmax, rankine_lid,si_inpname)<a name='472'>
+      CALL cpu_time ( t4 )<a name='473'>
+      WRITE ( wrf_err_message , FMT='(A,I10,A)' ) 'Timing for output ',NINT(t4-t3) ,' s.'<a name='474'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_399">( 0, wrf_err_message )<a name='475'>
+      CALL cpu_time ( t2 )<a name='476'>
+      WRITE ( wrf_err_message , FMT='(A,I4,A,I10,A)' ) 'Timing for loop # ',loop,' = ',NINT(t2-t1) ,' s.'<a name='477'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/tc_em.F.html#TC_MED_SIDATA_INPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_400">( 0, wrf_err_message )<a name='478'>
+<a name='479'>
+      CALL cpu_time ( t1 )<a name='480'>
+   END DO<a name='481'>
+<a name='482'>
+END SUBROUTINE tc_med_sidata_input<a name='483'>
+<a name='484'>
+<a name='485'>
+<font color=#447700>!-------------------------------------------------------------------------------------<a name='486'></font>
+<A NAME='TC_COMPUTE_SI_START'><A href='../../html_code/main/tc_em.F.html#TC_COMPUTE_SI_START' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='487'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>tc_compute_si_start</font>(  &amp; <A href='../../call_to/TC_COMPUTE_SI_START.html' TARGET='index'>1</A>,<A href='../../call_from/TC_COMPUTE_SI_START.html' TARGET='index'>1</A><a name='488'>
+   start_year , start_month , start_day , start_hour , start_minute , start_second , &amp;<a name='489'>
+   interval_seconds , real_data_init_type , &amp;<a name='490'>
+   start_date_char)<a name='491'>
+<a name='492'>
+   USE <A href='../../html_code/share/module_date_time.F.html#MODULE_DATE_TIME'>module_date_time</A><A href='../../html_code/main/tc_em.F.html#TC_COMPUTE_SI_START' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DATE_TIME_12"><a name='493'>
+<a name='494'>
+   IMPLICIT NONE<a name='495'>
+<a name='496'>
+   INTEGER :: start_year , start_month , start_day , start_hour , start_minute , start_second<a name='497'>
+   INTEGER ::   end_year ,   end_month ,   end_day ,   end_hour ,   end_minute ,   end_second<a name='498'>
+   INTEGER :: interval_seconds , real_data_init_type<a name='499'>
+   INTEGER :: time_loop_max , time_loop<a name='500'>
+<a name='501'>
+   CHARACTER(LEN=19) :: current_date_char , start_date_char , end_date_char , next_date_char<a name='502'>
+<a name='503'>
+#ifdef PLANET<a name='504'>
+   WRITE ( start_date_char , FMT = '(I4.4,"-",I5.5,"_",I2.2,":",I2.2,":",I2.2)' ) &amp;<a name='505'>
+           start_year,start_day,start_hour,start_minute,start_second<a name='506'>
+#else<a name='507'>
+   WRITE ( start_date_char , FMT = '(I4.4,"-",I2.2,"-",I2.2,"_",I2.2,":",I2.2,":",I2.2)' ) &amp;<a name='508'>
+           start_year,start_month,start_day,start_hour,start_minute,start_second<a name='509'>
+#endif<a name='510'>
+<a name='511'>
+<a name='512'>
+END SUBROUTINE tc_compute_si_start<a name='513'>
+<a name='514'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='515'></font>
+<A NAME='ASSEMBLE_OUTPUT'><A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='516'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>assemble_output</font> ( grid , config_flags , loop , time_loop_max,current_date_char, &amp; <A href='../../call_to/ASSEMBLE_OUTPUT.html' TARGET='index'>4</A>,<A href='../../call_from/ASSEMBLE_OUTPUT.html' TARGET='index'>248</A><a name='517'>
+                             latc_loc, lonc_loc,vmax,rmax,rankine_lid,si_inpname)<a name='518'>
+<a name='519'>
+   USE <A href='../../html_code/dyn_em/module_big_step_utilities_em.F.html#MODULE_BIG_STEP_UTILITIES_EM'>module_big_step_utilities_em</A><A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_BIG_STEP_UTILITIES_EM_8"><a name='520'>
+   USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_217"><a name='521'>
+   USE <A href='../../html_code/share/module_io_domain.F.html#MODULE_IO_DOMAIN'>module_io_domain</A><A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_IO_DOMAIN_20"><a name='522'>
+   USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>module_configure</A><A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_142"><a name='523'>
+   USE <A href='../../html_code/share/module_date_time.F.html#MODULE_DATE_TIME'>module_date_time</A><A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DATE_TIME_13"><a name='524'>
+   USE <A href='../../html_code/share/module_bc.F.html#MODULE_BC'>module_bc</A><A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_BC_17"><a name='525'>
+   IMPLICIT NONE<a name='526'>
+<a name='527'>
+   TYPE(domain)                 :: grid<a name='528'>
+   TYPE (grid_config_rec_type)  :: config_flags<a name='529'>
+<a name='530'>
+   INTEGER , INTENT(IN)         :: loop , time_loop_max<a name='531'>
+<a name='532'>
+<font color=#447700>!These values are in the name list and are avaiable from<a name='533'></font>
+<font color=#447700>!from the config_flags.<a name='534'></font>
+   real    :: vmax(max_bogus),vmax_ratio,rankine_lid<a name='535'>
+   real    :: rmax(max_bogus),stand_lon,cen_lat,ptop_in_pa<a name='536'>
+   real    :: latc_loc(max_bogus),lonc_loc(max_bogus)<a name='537'>
+<a name='538'>
+   INTEGER :: ijds , ijde , spec_bdy_width<a name='539'>
+   INTEGER :: i , j , k , idts,map_proj,remove_only,storms<a name='540'>
+<a name='541'>
+   INTEGER :: id1 , interval_seconds , ierr, rc, sst_update, grid_fdda<a name='542'>
+   INTEGER , SAVE :: id, id2,  id4 <a name='543'>
+   CHARACTER (LEN=256) :: tcoutname , bdyname,si_inpname<a name='544'>
+   CHARACTER(LEN= 4) :: loop_char<a name='545'>
+   CHARACTER(LEN=19) ::  current_date_char<a name='546'>
+   <a name='547'>
+character *19 :: temp19<a name='548'>
+character *24 :: temp24 , temp24b<a name='549'>
+<a name='550'>
+real::t1,t2,truelat1,truelat2<a name='551'>
+<a name='552'>
+<a name='553'>
+   <font color=#447700>!  Boundary width, scalar value.<a name='554'></font>
+<a name='555'>
+   spec_bdy_width = model_config_rec%spec_bdy_width<a name='556'>
+   interval_seconds = model_config_rec%interval_seconds<a name='557'>
+   sst_update = model_config_rec%sst_update<a name='558'>
+   grid_fdda = model_config_rec%grid_fdda(grid%id)<a name='559'>
+   truelat1  = config_flags%truelat1<a name='560'>
+   truelat2  = config_flags%truelat2<a name='561'>
+<a name='562'>
+   stand_lon = config_flags%stand_lon<a name='563'>
+   cen_lat   = config_flags%cen_lat<a name='564'>
+   map_proj  = config_flags%map_proj<a name='565'>
+<a name='566'>
+   vmax_ratio = config_flags%vmax_ratio<a name='567'>
+   ptop_in_pa = config_flags%p_top_requested<a name='568'>
+   remove_only = 0<a name='569'>
+   if(config_flags%remove_storm) then<a name='570'>
+      remove_only = 1<a name='571'>
+   end if<a name='572'>
+<a name='573'>
+   storms = config_flags%num_storm<a name='574'>
+   print *,"number of storms ",config_flags%num_storm<a name='575'>
+   call <A href='../../html_code/main/tc_em.F.html#TC_BOGUS'>tc_bogus</A><A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TC_BOGUS_1">(cen_lat,stand_lon,map_proj,truelat1,truelat2, &amp;<a name='576'>
+                 grid%dx,grid%e_we,grid%e_sn,grid%num_metgrid_levels,ptop_in_pa, &amp;<a name='577'>
+                 rankine_lid,latc_loc,lonc_loc,vmax,vmax_ratio,rmax,remove_only, &amp;<a name='578'>
+                 storms,grid)<a name='579'>
+<a name='580'>
+<a name='581'>
+<a name='582'>
+   <font color=#447700>!  Open the tc bogused output file. cd <a name='583'></font>
+   CALL <A href='../../html_code/share/module_io_domain.F.html#CONSTRUCT_FILENAME4A'>construct_filename4a</A><A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONSTRUCT_FILENAME4A_8">( tcoutname , config_flags%auxinput1_outname , grid%id , 2 , &amp;<a name='584'>
+                                    current_date_char , config_flags%io_form_auxinput1 )<a name='585'>
+<a name='586'>
+   print *,"outfile name from construct filename ",tcoutname<a name='587'>
+   CALL <A href='../../html_code/share/module_io_domain.F.html#OPEN_W_DATASET'>open_w_dataset</A><A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OPEN_W_DATASET_18"> ( id1, TRIM(tcoutname) , grid , config_flags ,output_auxinput1,"DATASET=AUXINPUT1",ierr )<a name='588'>
+   IF ( ierr .NE. 0 ) THEN<a name='589'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_442">( 'tc_em: error opening tc bogus file for writing' )<a name='590'>
+   END IF<a name='591'>
+   CALL output_auxinput1( id1, grid , config_flags , ierr )<a name='592'>
+   CALL <A href='../../html_code/share/module_io_domain.F.html#CLOSE_DATASET'>close_dataset</A><A href='../../html_code/main/tc_em.F.html#ASSEMBLE_OUTPUT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CLOSE_DATASET_23"> ( id1 , config_flags , "DATASET=AUXINPUT1" )<a name='593'>
+<a name='594'>
+<a name='595'>
+END SUBROUTINE assemble_output<a name='596'>
+<a name='597'>
+<font color=#447700>!----------------------------------------------------------------------------------------------<a name='598'></font>
+<a name='599'>
+<A NAME='TC_BOGUS'><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='600'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>tc_bogus</font>(centerlat,stdlon,nproj,truelat1,truelat2,dsm,ew,ns,nz,ptop_in_pa, &amp; <A href='../../call_to/TC_BOGUS.html' TARGET='index'>1</A>,<A href='../../call_from/TC_BOGUS.html' TARGET='index'>25</A><a name='601'>
+                    rankine_lid,latc_loc,lonc_loc,vmax,vmax_ratio,rmax,remove_only, &amp;<a name='602'>
+                    storms,grid)<a name='603'>
+<a name='604'>
+<font color=#447700>!!Original Author Dave Gill.  Modified by Sherrie Fredrick      <a name='605'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='606'></font>
+<font color=#447700>!These are read in from the netcdf file.<a name='607'></font>
+<font color=#447700>!centerlat  The center latitude from the global attributes in the netcdf file.<a name='608'></font>
+<font color=#447700>!stdlon     The center longitude from the global attributes in the netcdf file.  <a name='609'></font>
+<font color=#447700>!nproj      The map projection from the global attributes in the netcdf file.<a name='610'></font>
+<font color=#447700>!dsm        The spacing in meters from the global attributes in the netcdf file.<a name='611'></font>
+<font color=#447700>!ew         The west_east_stag from the dimensions in the netcdf file..<a name='612'></font>
+<font color=#447700>!ns         The south_north_stag from the dimensions in the netcdf file. .<a name='613'></font>
+<font color=#447700>!nz         The number of metgrid levels from the dimensions in the netcdf file.<a name='614'></font>
+<a name='615'>
+<font color=#447700>!ptop_in_pa This is part of the namelist.input file under the &amp;domains section.<a name='616'></font>
+<a name='617'>
+<font color=#447700>!These values are part of the namelist.input file under the &amp;tc section specifically<a name='618'></font>
+<font color=#447700>!for the tc bogus code.<a name='619'></font>
+<font color=#447700>!NOTES: There can be up to five bogus storms.  The variable max_bogus is set in<a name='620'></font>
+<font color=#447700>!the WRF subroutine called module_driver_constants.F in the ./WRFV3/frame directory.<a name='621'></font>
+<a name='622'>
+<font color=#447700>!latc_loc    The center latitude of the bogus strorm. This is an array dimensioned max_bogus.<a name='623'></font>
+  <a name='624'>
+<font color=#447700>!lonc_loc    The center longitude of the bogus strorm. This is an array dimensioned max_bogus.<a name='625'></font>
+  <a name='626'>
+<font color=#447700>!vmax        The max vortex in meters/second it comes from the namelist entry.<a name='627'></font>
+<font color=#447700>!             This is an array dimensioned max_bogus.<a name='628'></font>
+<a name='629'>
+<font color=#447700>!vmax_ratio  This comes from the namelist entry.<a name='630'></font>
+<a name='631'>
+<font color=#447700>!rmax        The maximum radius this comes from the namelist entry.<a name='632'></font>
+<font color=#447700>!             This is an array dimensioned max_bogus<a name='633'></font>
+<a name='634'>
+<font color=#447700>!remove_only If this is set to true in the namelist.input file a value of 0.1<a name='635'></font>
+<font color=#447700>!             is automatically assigned to vmax. <a name='636'></font>
+<a name='637'>
+<font color=#447700>!rankine_lid This comes from the namelist entry.  It can be used to determine<a name='638'></font>
+<font color=#447700>!            what model levels the bogus storm affects.<a name='639'></font>
+<a name='640'>
+<font color=#447700>!storms      The number of bogus storms. <a name='641'></font>
+<a name='642'>
+<font color=#447700>!grid        This is a Fortran structure which holds all of the field data values<a name='643'></font>
+<font color=#447700>!            for the netcdf that was read in.  <a name='644'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='645'></font>
+<a name='646'>
+<a name='647'>
+<font color=#447700>!module_llxy resides in the share directory.<a name='648'></font>
+  USE <A href='../../html_code/share/module_llxy.F.html#MODULE_LLXY'>module_llxy</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_LLXY_5"><a name='649'>
+<font color=#447700>!This is for the large structure (grid)<a name='650'></font>
+  USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_218"><a name='651'>
+<a name='652'>
+<a name='653'>
+<a name='654'>
+  IMPLICIT NONE <a name='655'>
+  TYPE(domain)                 :: grid<a name='656'>
+  integer ew,ns,nz<a name='657'>
+  integer nproj<a name='658'>
+  integer storms,nstrm<a name='659'>
+  real :: centerlat,stdlon,conef,truelat1,truelat2,dsm,dx,rankine_lid<a name='660'>
+  real :: latc_loc(max_bogus),lonc_loc(max_bogus),vmax(max_bogus),vmax_ratio,rmax(max_bogus)<a name='661'>
+  <a name='662'>
+  real :: press(ew-1,nz,ns-1),rhmx(nz), vwgt(nz),old_slp(ew-1,ns-1)<a name='663'>
+  real, dimension(:,:,:) , allocatable :: u11,v11,t11,rh11,phi11<a name='664'>
+  real, dimension(:,:,:) , allocatable :: u1 , v1 , t1 , rh1 , phi1<a name='665'>
+  real, dimension(ew-1,ns-1) :: lond,terrain,cor,pslx<a name='666'>
+<a name='667'>
+<a name='668'>
+<font color=#447700>!The map scale factors. <a name='669'></font>
+  real, dimension(ew,ns-1)    :: msfu   <font color=#447700>!The mapscale factor for the ew wind staggered grid<a name='670'></font>
+  real, dimension(ew-1,ns)    :: msfv   <font color=#447700>!The mapscale factor for the ns wind staggered grid<a name='671'></font>
+  real, dimension(ew-1,ns-1)  :: msfm   <font color=#447700>!The mapscale factor for the unstaggered grid.<a name='672'></font>
+<a name='673'>
+  CHARACTER*2  jproj<a name='674'>
+  LOGICAL :: l_tcbogus<a name='675'>
+<a name='676'>
+<a name='677'>
+  real :: r_search,r_vor,beta,devps,humidity_max<a name='678'>
+  real :: devpc,const,r_vor2,cnst,alphar,epsilon,vormx , rad , sum_q <a name='679'>
+  real :: avg_q ,q_old,ror,q_new,dph,dphx0<a name='680'>
+  real :: rh_max,min_RH_value,ps<a name='681'>
+  integer :: vert_variation<a name='682'>
+  integer :: i,k,j,kx,remove_only<a name='683'>
+  integer :: k00,kfrm ,kto ,k85,n_iter,ew_mvc,ns_mvc,nct,itr<a name='684'>
+  integer :: strmci(nz), strmcj(nz)<a name='685'>
+  real :: disx,disy,alpha,degran,pie,rovcp,cp<a name='686'>
+  REAL :: rho,pprm,phip0,x0,y0,vmx,xico,xjco,xicn,xjcn,p85,xlo,rconst,ew_gcntr,ns_gcntr<a name='687'>
+  real :: ptop_in_pa,themax,themin<a name='688'>
+  real :: latinc,loninc<a name='689'>
+  real :: rtemp,colat0,colat<a name='690'>
+  REAL :: q1(ew-1,nz,ns-1), psi1(ew-1,nz,ns-1) <a name='691'>
+<a name='692'>
+<font color=#447700>! This is the entire map projection enchilada.<a name='693'></font>
+  TYPE(proj_info) :: proj<a name='694'>
+<a name='695'>
+  <a name='696'>
+<a name='697'>
+  REAL :: lat1 , lon1<a name='698'>
+<font color=#447700>! These values are read in from the data set. <a name='699'></font>
+   real :: knowni,knownj<a name='700'>
+<a name='701'>
+<font color=#447700>!  TC bogus<a name='702'></font>
+   REAL utcr(ew,nz,ns-1),  vtcr(ew-1,nz,ns)<a name='703'>
+   REAL utcp(ew,nz,ns-1),  vtcp(ew-1,nz,ns)<a name='704'>
+   REAL psitc(ew-1,nz,ns-1), psiv(nz)<a name='705'>
+   REAL vortc(ew-1,nz,ns-1), vorv(nz)<a name='706'>
+   REAL tptc(ew-1,nz,ns-1)<a name='707'>
+   REAL phiptc(ew-1,nz,ns-1)<a name='708'>
+<a name='709'>
+<font color=#447700>!  Work arrays<a name='710'></font>
+   REAL uuwork(nz), vvwork(nz), temp2(ew,ns)<a name='711'>
+   REAL vort(ew-1,nz,ns-1), div(ew-1,nz,ns-1)<a name='712'>
+   REAL vortsv(ew-1,nz,ns-1)<a name='713'>
+   REAL theta(ew-1,nz,ns-1), t_reduce(ew-1,nz,ns-1)<a name='714'>
+   REAL ug(ew,nz,ns-1),   vg(ew-1,nz,ns),  vorg(ew-1,nz,ns-1)<a name='715'>
+   REAL delpx(ew-1,ns-1)<a name='716'>
+<a name='717'>
+<font color=#447700>!subroutines for relaxation<a name='718'></font>
+   REAL outold(ew-1,ns-1)<a name='719'>
+   REAL rd(ew-1,ns-1),     ff(ew-1,ns-1)<a name='720'>
+   REAL tmp1(ew-1,ns-1),   tmp2(ew-1,ns-1) <a name='721'>
+<a name='722'>
+<font color=#447700>!  Background fields.<a name='723'></font>
+   REAL , DIMENSION (ew-1,nz,ns-1) :: t0, t00, rh0, q0, phi0, psi0, chi<a name='724'>
+<a name='725'>
+<font color=#447700>!  Perturbations<a name='726'></font>
+   REAL , DIMENSION (ew-1,nz,ns-1) :: psipos, tpos, psi ,phipos, phip<a name='727'>
+      <a name='728'>
+<font color=#447700>!  Final fields.<a name='729'></font>
+   REAL  u2(ew,nz,ns-1),  v2(ew-1,nz,ns)                         <a name='730'>
+   REAL  t2(ew-1,nz,ns-1),z2(ew-1,nz,ns-1)                      <a name='731'>
+   REAL  phi2(ew-1,nz,ns-1),rh2(ew-1,nz,ns-1)<a name='732'>
+      <a name='733'>
+   print *,"the dimensions: north-south = ",ns," east-west =",ew<a name='734'>
+   IF (nproj .EQ. 1) THEN<a name='735'>
+        jproj = 'LC'<a name='736'>
+        print *,"Lambert Conformal projection"<a name='737'>
+   ELSE IF (nproj .EQ. 2) THEN<a name='738'>
+        jproj = 'ST'<a name='739'>
+   ELSE IF (nproj .EQ. 3) THEN<a name='740'>
+        jproj = 'ME'<a name='741'>
+        print *,"A mercator projection"<a name='742'>
+   END IF<a name='743'>
+<a name='744'>
+<a name='745'>
+  knowni = 1.<a name='746'>
+  knownj = 1.<a name='747'>
+  pie     = 3.141592653589793<a name='748'>
+  degran = pie/180.<a name='749'>
+  rconst = 287.04<a name='750'>
+  min_RH_value = 5.0<a name='751'>
+  cp = 1004.0<a name='752'>
+  rovcp = rconst/cp<a name='753'>
+   <a name='754'>
+   r_search = 400000.0<a name='755'>
+   r_vor = 300000.0<a name='756'>
+   r_vor2 = r_vor * 4<a name='757'>
+   beta = 0.5<a name='758'>
+   devpc= 40.0<a name='759'>
+   vert_variation = 1   <a name='760'>
+   humidity_max   = 95.0 <a name='761'>
+   alphar         = 1.8<a name='762'>
+   latinc        = -999.<a name='763'>
+   loninc        = -999.<a name='764'>
+<a name='765'>
+   if(remove_only .eq. 1) then<a name='766'>
+     do nstrm=1,storms<a name='767'>
+         vmax(nstrm) = 0.1<a name='768'>
+     end do<a name='769'>
+   end if<a name='770'>
+<a name='771'>
+  <font color=#447700>!  Set up initializations for map projection so that the lat/lon<a name='772'></font>
+  <font color=#447700>!  of the tropical storm can be put into model (i,j) space.  This needs to be done once per <a name='773'></font>
+  <font color=#447700>!  map projection definition.  Since this is the domain that we are "GOING TO", it is a once<a name='774'></font>
+  <font color=#447700>!  per regridder requirement.  If the user somehow ends up calling this routine for several<a name='775'></font>
+  <font color=#447700>!  time periods, there is no problemos, just a bit of overhead with redundant calls.<a name='776'></font>
+   <a name='777'>
+   dx = dsm<a name='778'>
+   lat1 = grid%xlat_gc(1,1)<a name='779'>
+   lon1 = grid%xlong_gc(1,1)<a name='780'>
+   IF( jproj .EQ. 'ME' )THEN<a name='781'>
+       IF ( lon1  .LT. -180. ) lon1  = lon1  + 360.<a name='782'>
+       IF ( lon1  .GT.  180. ) lon1  = lon1  - 360.<a name='783'>
+       IF ( stdlon .LT. -180. ) stdlon = stdlon + 360.<a name='784'>
+       IF ( stdlon .GT.  180. ) stdlon = stdlon - 360.<a name='785'>
+       CALL <A href='../../html_code/share/module_llxy.F.html#MAP_SET'>map_set</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAP_SET_6"> ( proj_merc, proj, lat1, lon1, lat1, lon1, knowni, knownj, dx, &amp;<a name='786'>
+                      latinc,loninc,stdlon , truelat1 , truelat2)<a name='787'>
+       conef = 0.<a name='788'>
+   ELSE IF ( jproj .EQ. 'LC' ) THEN<a name='789'>
+        if((truelat1 .eq. 0.0)  .and. (truelat2 .eq. 0.0)) then<a name='790'>
+            print *,"Truelat1 and Truelat2 are both 0"<a name='791'>
+            stop<a name='792'>
+         end if<a name='793'>
+        CALL <A href='../../html_code/share/module_llxy.F.html#MAP_SET'>map_set</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAP_SET_7"> (proj_lc,proj, lat1, lon1, lat1, lon1, knowni, knownj, dx, &amp;<a name='794'>
+                       latinc,loninc,stdlon , truelat1 , truelat2)<a name='795'>
+       conef = proj%cone<a name='796'>
+   ELSE IF ( jproj .EQ. 'ST' ) THEN<a name='797'>
+        conef = 1.<a name='798'>
+        CALL <A href='../../html_code/share/module_llxy.F.html#MAP_SET'>map_set</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAP_SET_8"> ( proj_ps,proj,lat1, lon1, lat1, lon1, knowni, knownj, dx, &amp;<a name='799'>
+                      latinc,loninc,stdlon , truelat1 , truelat2)<a name='800'>
+   END IF<a name='801'>
+<a name='802'>
+<font color=#447700>! Load the pressure array.   <a name='803'></font>
+ kx = nz<a name='804'>
+ do j = 1,ns-1<a name='805'>
+    do k = 1,nz<a name='806'>
+       do i = 1,ew-1<a name='807'>
+           press(i,k,j) = grid%p_gc(i,k,j)*0.01<a name='808'>
+       end do<a name='809'>
+    end do<a name='810'>
+ end do<a name='811'>
+<a name='812'>
+<a name='813'>
+<font color=#447700>!  Initialize the vertical profiles for humidity and weighting.<a name='814'></font>
+<font color=#447700>!The ptop variable will be read in from the namelist<a name='815'></font>
+   IF ( ( ptop_in_pa .EQ. 40000. ) .OR. ( ptop_in_pa .EQ. 60000. ) ) THEN<a name='816'>
+         PRINT '(A)','Hold on pardner, your value for PTOP is gonna cause problems for the TC bogus option.'<a name='817'>
+         PRINT '(A)','Make it higher up than 400 mb.'<a name='818'>
+         STOP 'ptop_woes_for_tc_bogus'<a name='819'>
+   END IF<a name='820'>
+<a name='821'>
+ IF ( vert_variation .EQ. 1 ) THEN<a name='822'>
+    DO k=1,kx<a name='823'>
+       IF ( press(1,k,1) .GT. 400. ) THEN<a name='824'>
+               rhmx(k) = humidity_max<a name='825'>
+       ELSE<a name='826'>
+               rhmx(k) = humidity_max * MAX( 0.1 , (press(1,k,1) - ptop_in_pa/100.)/(400.-ptop_in_pa/100.) )<a name='827'>
+       END IF<a name='828'>
+<a name='829'>
+        IF ( press(1,k,1) .GT. 600. ) THEN<a name='830'>
+             vwgt(k) = 1.0<a name='831'>
+        ELSE IF ( press(1,k,1) .LE. 100. ) THEN<a name='832'>
+             vwgt(k) = 0.0001<a name='833'>
+        ELSE<a name='834'>
+             vwgt(k) = MAX ( 0.0001 , (press(1,k,1)-ptop_in_pa/100.)/(600.-ptop_in_pa/100.) )<a name='835'>
+        END IF<a name='836'>
+      END DO<a name='837'>
+<a name='838'>
+ ELSE IF ( vert_variation .EQ. 2 ) THEN<a name='839'>
+         IF ( kx .eq. 24 ) THEN<a name='840'>
+            rhmx = (/ 95.,       95., 95., 95., 95., 95., 95., 95.,      &amp;<a name='841'>
+                      95., 95.,  95., 95., 95., 90., 85., 80., 75.,      &amp;<a name='842'>
+                      70., 66.,  60., 39., 10., 10., 10./)<a name='843'>
+            vwgt = (/ 1.0000,         1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 0.9850,      &amp;<a name='844'>
+                      0.9680, 0.9500, 0.9290, 0.9060, 0.8810, 0.8500, 0.7580, 0.6500, 0.5100,      &amp;<a name='845'>
+                      0.3500, 0.2120, 0.0500, 0.0270, 0.0001, 0.0001, 0.0001/)<a name='846'>
+         ELSE<a name='847'>
+            PRINT '(A)','Number of vertical levels assumed to be 24 for AFWA TC bogus option'<a name='848'>
+            STOP 'AFWA_TC_BOGUS_LEVEL_ERROR'<a name='849'>
+         END IF<a name='850'>
+ END IF<a name='851'>
+<a name='852'>
+<font color=#447700>!Remember that ns = the north south staggered. This is one more than the ns mass point grid.<a name='853'></font>
+<font color=#447700>!              ew = the east west staggered. This is one more than the ew mass point grid.<a name='854'></font>
+<a name='855'>
+<a name='856'>
+<font color=#447700>!Put the U and V into the new arrays.<a name='857'></font>
+<font color=#447700>!Remember that the WRF ordering is ew,vert level,ns<a name='858'></font>
+<font color=#447700>!Vorticity and Divergence calculatins are done on <a name='859'></font>
+<font color=#447700>!the staggered grids so the winds are not destaggered<a name='860'></font>
+ allocate(u11 (1:ew, 1:nz, 1:ns-1))<a name='861'>
+ allocate(u1  (1:ew, 1:nz, 1:ns-1))      <a name='862'>
+ allocate(v11 (1:ew-1, 1:nz, 1:ns))<a name='863'>
+ allocate(v1  (1:ew-1, 1:nz, 1:ns))<a name='864'>
+ do j = 1,ns-1<a name='865'>
+    do k = 1,nz<a name='866'>
+       do i = 1,ew<a name='867'>
+            u11(i,k,j) = grid%u_gc(i,k,j)<a name='868'>
+             u1(i,k,j) = grid%u_gc(i,k,j)<a name='869'>
+             msfu(i,j) = grid%msfu(i,j) <font color=#447700>!map scale factor on the U staggered grid<a name='870'></font>
+       end do<a name='871'>
+    end do<a name='872'>
+ end do<a name='873'>
+<a name='874'>
+<a name='875'>
+ do j = 1,ns<a name='876'>
+    do k = 1,nz<a name='877'>
+       do i = 1,ew-1<a name='878'>
+            v11(i,k,j) = grid%v_gc(i,k,j)<a name='879'>
+             v1(i,k,j) = grid%v_gc(i,k,j)<a name='880'>
+           msfv(i,j)   = grid%msfv(i,j)  <font color=#447700>!map scale factor on the V staggered grid    <a name='881'></font>
+       end do<a name='882'>
+    end do<a name='883'>
+ end do<a name='884'>
+<a name='885'>
+<a name='886'>
+<font color=#447700>!Put the temperature, relative humidity and height fields<a name='887'></font>
+<font color=#447700>!into arrays.  Save the initial fields also.<a name='888'></font>
+<font color=#447700>!These arrays are on the WRF mass points<a name='889'></font>
+ allocate(t11  (1:ew-1, 1:nz, 1:ns-1))<a name='890'>
+ allocate(t1   (1:ew-1, 1:nz, 1:ns-1))<a name='891'>
+ allocate(rh11 (1:ew-1, 1:nz, 1:ns-1))<a name='892'>
+ allocate(rh1  (1:ew-1, 1:nz, 1:ns-1))<a name='893'>
+ allocate(phi11(1:ew-1, 1:nz, 1:ns-1))<a name='894'>
+ allocate(phi1 (1:ew-1, 1:nz, 1:ns-1))<a name='895'>
+ do j = 1,ns-1<a name='896'>
+    do k = 1,nz<a name='897'>
+       do i = 1,ew-1<a name='898'>
+             t11(i,k,j)  =  grid%t_gc(i,k,j)<a name='899'>
+              t1(i,k,j)  =  grid%t_gc(i,k,j)<a name='900'>
+            rh11(i,k,j)  =  grid%rh_gc(i,k,j)<a name='901'>
+             rh1(i,k,j)  =  grid%rh_gc(i,k,j)<a name='902'>
+              msfm(i,j)  = grid%msft(i,j)<a name='903'>
+            if(k .eq. 1)then<a name='904'>
+               phi11(i,k,j) =  grid%ht_gc(i,j)<a name='905'>
+               phi1(i,k,j)  =  grid%ht_gc(i,j) * 9.81<a name='906'>
+            else<a name='907'>
+               phi11(i,k,j) =  grid%ght_gc(i,k,j)<a name='908'>
+               phi1(i,k,j)  =  grid%ght_gc(i,k,j) * 9.81 <a name='909'>
+            end if<a name='910'>
+       end do<a name='911'>
+    end do<a name='912'>
+ end do<a name='913'>
+<a name='914'>
+<font color=#447700>!The two D fields<a name='915'></font>
+<font color=#447700>!The terrain soil height is from ght at level 1<a name='916'></font>
+ do j = 1,ns-1<a name='917'>
+    do i = 1,ew-1<a name='918'>
+       pslx(i,j)    = grid%pslv_gc(i,j) * 0.01<a name='919'>
+       cor(i,j)     = grid%f(i,j)               <font color=#447700>!coreolous<a name='920'></font>
+       lond(i,j)    = grid%xlong_gc(i,j)<a name='921'>
+       terrain(i,j) = grid%ht_gc(i,j)<a name='922'>
+       old_slp(i,j) = grid%pslv_gc(i,j)<a name='923'>
+    end do<a name='924'>
+ end do<a name='925'>
+<a name='926'>
+<a name='927'>
+<a name='928'>
+<font color=#447700>!  Loop over the number of storms to process.<a name='929'></font>
+   <a name='930'>
+ l_tcbogus = .FALSE.<a name='931'>
+ all_storms : DO nstrm=1,storms<a name='932'>
+<a name='933'>
+<a name='934'>
+<font color=#447700>!Make sure the user has defined the rmax variable<a name='935'></font>
+ if(rmax(nstrm) .eq. -999.) then<a name='936'>
+    print *,"Please enter a value for rmax in the namelist"<a name='937'>
+    stop<a name='938'>
+ end if<a name='939'>
+<a name='940'>
+<a name='941'>
+ k00  = 2<a name='942'>
+ kfrm = k00<a name='943'>
+ p85  = 850.<a name='944'>
+<a name='945'>
+ kto  = kfrm<a name='946'>
+ DO k=kfrm+1,kx<a name='947'>
+     IF ( press(1,k,1) .GE. p85 ) THEN<a name='948'>
+           kto = kto + 1<a name='949'>
+     END IF<a name='950'>
+ END DO<a name='951'>
+ k85 = kto <a name='952'>
+<a name='953'>
+<a name='954'>
+<font color=#447700>!  Parameters for max wind<a name='955'></font>
+ rho  = 1.2<a name='956'>
+ pprm = devpc*100.<a name='957'>
+ phip0= pprm/rho <a name='958'>
+<a name='959'>
+<a name='960'>
+<font color=#447700>!latc_loc and lonc_loc come in from the namelist. <a name='961'></font>
+<font color=#447700>!These x0 and y0 points are relative to the mass points. <a name='962'></font>
+ CALL <A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ'>latlon_to_ij</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LATLON_TO_IJ_2"> ( proj , latc_loc(nstrm) , lonc_loc(nstrm) , x0 , y0 )<a name='963'>
+ IF ( ( x0 .LT. 1. ) .OR. ( x0 .GT. REAL(ew-1) ) .OR. &amp;<a name='964'>
+              ( y0 .LT. 1. ) .OR. ( y0 .GT. REAL(ns-1) ) ) THEN<a name='965'>
+         PRINT '(A,I3,A,A,A)','         Storm position is outside the computational domain.'<a name='966'>
+         PRINT '(A,2F6.2,A)' ,'         Storm postion: (x,y) = ',x0,y0,'.'<a name='967'>
+         stop<a name='968'>
+ END IF<a name='969'>
+<a name='970'>
+ l_tcbogus = .TRUE.<a name='971'>
+<font color=#447700>!  Bogus vortex specifications, vmax (m/s); rmax (m);<a name='972'></font>
+ vmx = vmax(nstrm)  * vmax_ratio<a name='973'>
+<a name='974'>
+ IF (  latc_loc(nstrm) .LT. 0.  ) THEN<a name='975'>
+       vmx = -vmx<a name='976'>
+ END IF<a name='977'>
+   <a name='978'>
+ IF (  vmax(nstrm)  .LE. 0.  ) THEN<a name='979'>
+       vmx = SQRT( 2.*(1-beta)*ABS(phip0) )  <a name='980'>
+ END IF<a name='981'>
+<a name='982'>
+ ew_gcntr    = x0  <font color=#447700>!ew center grid location<a name='983'></font>
+ ns_gcntr    = y0  <font color=#447700>!ns center grid location<a name='984'></font>
+<font color=#447700>!For right now we are adding 0.5 to the grid location this<a name='985'></font>
+<font color=#447700>!makes the output of the wrf tc_bogus scheme analogous to the<a name='986'></font>
+<font color=#447700>!ouput of the MM5 tc_bogus scheme.<a name='987'></font>
+ ew_gcntr    = x0 + 0.5<a name='988'>
+ ns_gcntr    = y0 + 0.5<a name='989'>
+<a name='990'>
+ n_iter  = 1<a name='991'>
+<a name='992'>
+<font color=#447700>!  Start computing.<a name='993'></font>
+<a name='994'>
+ PRINT '(/,A,I3,A,A,A)'     ,'---&gt; TC: Processing storm number= ',nstrm<a name='995'>
+ PRINT '(A,F6.2,A,F7.2,A)'  ,'         Storm center lat= ',latc_loc(nstrm),' lon= ',lonc_loc(nstrm),'.'<a name='996'>
+ PRINT '(A,2F6.2,A)'        ,'         Storm center grid position (x,y)= ',ew_gcntr,ns_gcntr,'.'<a name='997'>
+ PRINT '(A,F5.2,F9.2,A)'    ,'         Storm max wind (m/s) and max radius (m)= ',vmx,rmax(nstrm),'.'<a name='998'>
+ PRINT '(A,F5.2,A)'         ,'         Estimated central press dev (mb)= ',devpc,'.'<a name='999'>
+<a name='1000'>
+<a name='1001'>
+<font color=#447700>!  Initialize storm center to (1,1)<a name='1002'></font>
+<a name='1003'>
+  DO k=1,kx<a name='1004'>
+     strmci(k) = 1<a name='1005'>
+     strmcj(k) = 1<a name='1006'>
+  END DO<a name='1007'>
+ <a name='1008'>
+<font color=#447700>!  Define complete field of bogus storm<a name='1009'></font>
+<font color=#447700>!Note dx is spacing in meters.  <a name='1010'></font>
+<font color=#447700>!The output arrays from the rankine subroutine vvwork,uuwork,psiv and vorv<a name='1011'></font>
+<font color=#447700>!are defined on the WRF mass points.<a name='1012'></font>
+  utcp(:,:,:) = 0.0<a name='1013'>
+  vtcp(:,:,:) = 0.0<a name='1014'>
+  print *,"nstrm  ",rmax(nstrm),ew_gcntr,ns_gcntr<a name='1015'>
+  DO j=1,ns-1<a name='1016'>
+     DO i=1,ew-1<a name='1017'>
+        disx = REAL(i) - ew_gcntr <a name='1018'>
+        disy = REAL(j) - ns_gcntr <a name='1019'>
+        CALL <A href='../../html_code/main/tc_em.F.html#RANKINE'>rankine</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RANKINE_1">(disx,disy,dx,kx,vwgt,rmax(nstrm),vmx,uuwork,vvwork,psiv,vorv)<a name='1020'>
+        DO k=1,kx<a name='1021'>
+            utcp(i,k,j) = uuwork(k)<a name='1022'>
+            vtcp(i,k,j) = vvwork(k)<a name='1023'>
+           psitc(i,k,j) = psiv(k)<a name='1024'>
+           vortc(i,k,j) = vorv(k)<a name='1025'>
+        END DO<a name='1026'>
+     END DO<a name='1027'>
+  END DO<a name='1028'>
+  call <A href='../../html_code/main/tc_em.F.html#STAGGER_RANKINE_WINDS'>stagger_rankine_winds</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="STAGGER_RANKINE_WINDS_1">(utcp,vtcp,ew,ns,nz)<a name='1029'>
+<a name='1030'>
+<a name='1031'>
+  utcr(:,:,:) = 0.0<a name='1032'>
+  vtcr(:,:,:) = 0.0<a name='1033'>
+<font color=#447700>! dave Rotate wind to map proj, on the correct staggering<a name='1034'></font>
+  DO j=1,ns-1<a name='1035'>
+     DO i=2,ew-1<a name='1036'>
+        xlo = stdlon-grid%xlong_u(i,j)<a name='1037'>
+        IF ( xlo .GT. 180.)xlo = xlo-360.<a name='1038'>
+        IF ( xlo .LT.-180.)xlo = xlo+360.<a name='1039'>
+   <a name='1040'>
+        alpha = xlo*conef*degran*SIGN(1.,centerlat)<a name='1041'>
+        DO k=1,kx<a name='1042'>
+           utcr(i,k,j) = (vtcp(i-1,k,j)+vtcp(i,k,j)+vtcp(i,k,j+1)+vtcp(i-1,k,j+1))/4 *SIN(alpha)+utcp(i,k,j)*COS(alpha)<a name='1043'>
+           if(utcr(i,k,j) .gt. 300.) then<a name='1044'>
+              print *,i,k,j,"a very bad value of utcr"<a name='1045'>
+              stop<a name='1046'>
+           end if           <a name='1047'>
+        END DO<a name='1048'>
+     END DO<a name='1049'>
+  END DO<a name='1050'>
+<a name='1051'>
+<a name='1052'>
+  DO j=2,ns-1<a name='1053'>
+     DO i=1,ew-1<a name='1054'>
+        xlo = stdlon-grid%xlong_v(i,j)<a name='1055'>
+        IF ( xlo .GT. 180.)xlo = xlo-360.<a name='1056'>
+        IF ( xlo .LT.-180.)xlo = xlo+360.<a name='1057'>
+   <a name='1058'>
+        alpha = xlo*conef*degran*SIGN(1.,centerlat)<a name='1059'>
+        DO k=1,kx<a name='1060'>
+           vtcr(i,k,j) = vtcp(i,k,j)*COS(alpha)-(utcp(i,k,j-1)+utcp(i+1,k,j-1)+utcp(i+1,k,j)+utcp(i,k,j))/4*SIN(alpha)<a name='1061'>
+           if(vtcr(i,k,j) .gt. 300.) then<a name='1062'>
+              print *,i,k,j,"a very bad value of vtcr"<a name='1063'>
+              stop<a name='1064'>
+           end if<a name='1065'>
+        END DO<a name='1066'>
+     END DO<a name='1067'>
+  END DO<a name='1068'>
+<a name='1069'>
+<a name='1070'>
+<font color=#447700>!Fill in UTCR's along the left and right side.<a name='1071'></font>
+  do j = 1,ns-1<a name='1072'>
+     utcr(1,:,j)  = utcr(2,:,j)<a name='1073'>
+     utcr(ew,:,j) = utcr(ew-1,:,j)<a name='1074'>
+ end do<a name='1075'>
+<a name='1076'>
+<font color=#447700>!Fill in V's along the bottom and top.   <a name='1077'></font>
+  do i = 1,ew-1<a name='1078'>
+     vtcr(i,:,1)  = vtcr(i,:,2)<a name='1079'>
+     vtcr(i,:,ns) = vtcr(i,:,ns-1)<a name='1080'>
+  end do<a name='1081'>
+<a name='1082'>
+  <a name='1083'>
+<font color=#447700>!  Compute vorticity of FG.  This is the vorticity of the original winds<a name='1084'></font>
+<font color=#447700>!  on the staggered grid.  The vorticity and divergence are defined at<a name='1085'></font>
+<font color=#447700>!  the mass points when done.<a name='1086'></font>
+   CALL <A href='../../html_code/main/tc_em.F.html#VOR'>vor</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VOR_1">(u1,v1,msfu,msfv,msfm,ew,ns,kx,dx,vort)<a name='1087'>
+<a name='1088'>
+<a name='1089'>
+<font color=#447700>!  Compute divergence of FG<a name='1090'></font>
+   CALL <A href='../../html_code/main/tc_em.F.html#DIVERG'>diverg</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DIVERG_1">(u1,v1,msfu,msfv,msfm,ew,ns,kx,dx,div)<a name='1091'>
+<a name='1092'>
+<a name='1093'>
+<font color=#447700>!  Compute mixing ratio of FG<a name='1094'></font>
+   CALL <A href='../../html_code/main/tc_em.F.html#MXRATPRS'>mxratprs</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MXRATPRS_1">(rh1,t1,press*100.,ew,ns,kx,q1,min_RH_value)<a name='1095'>
+   q1(:,1,:) = q1(:,2,:)<a name='1096'>
+<a name='1097'>
+<a name='1098'>
+<font color=#447700>!  Compute initial streamfunction - PSI1 <a name='1099'></font>
+   vortsv = vort<a name='1100'>
+   q0 = q1<a name='1101'>
+   <a name='1102'>
+<a name='1103'>
+<font color=#447700>!  Solve for streamfunction.<a name='1104'></font>
+   DO k=1,kx <a name='1105'>
+      DO j=1,ns-1<a name='1106'>
+         DO i=1,ew-1<a name='1107'>
+            ff(i,j) = vort(i,k,j)<a name='1108'>
+            tmp1(i,j)= 0.0<a name='1109'>
+         END DO<a name='1110'>
+      END DO<a name='1111'>
+      epsilon = 1.E-2<a name='1112'>
+      CALL <A href='../../html_code/main/tc_em.F.html#RELAX'>relax</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RELAX_1">(tmp1,ff,rd,ew,ns,dx,epsilon,alphar)<a name='1113'>
+      DO j=1,ns-1<a name='1114'>
+         DO i=1,ew-1<a name='1115'>
+            psi1(i,k,j) = tmp1(i,j)<a name='1116'>
+         END DO<a name='1117'>
+      END DO<a name='1118'>
+   END DO<a name='1119'>
+<a name='1120'>
+   <a name='1121'>
+   DO k=1,kx  <font color=#447700>!start of the k loop<a name='1122'></font>
+      IF ( latc_loc(nstrm) .GE. 0. ) THEN<a name='1123'>
+           vormx = -1.e10<a name='1124'>
+      ELSE<a name='1125'>
+           vormx =  1.e10<a name='1126'>
+      END IF<a name='1127'>
+   <a name='1128'>
+      ew_mvc = 1<a name='1129'>
+      ns_mvc = 1<a name='1130'>
+<a name='1131'>
+      DO j=1,ns-1<a name='1132'>
+         DO i=1,ew-1<a name='1133'>
+            rad = SQRT((REAL(i)-ew_gcntr)**2.+(REAL(j)-ns_gcntr)**2.)*dx<a name='1134'>
+            IF ( rad .LE. r_search ) THEN<a name='1135'>
+               IF ( latc_loc(nstrm) .GE. 0. ) THEN<a name='1136'>
+                   IF ( vortsv(i,k,j) .GT. vormx ) THEN<a name='1137'>
+                        vormx = vortsv(i,k,j)<a name='1138'>
+                        ew_mvc = i<a name='1139'>
+                        ns_mvc = j<a name='1140'>
+                    END IF<a name='1141'>
+               ELSE IF (latc_loc(nstrm) .LT. 0. ) THEN<a name='1142'>
+                    IF ( vortsv(i,k,j) .LT. vormx ) THEN<a name='1143'>
+                         vormx = vortsv(i,k,j)<a name='1144'>
+                         ew_mvc = i<a name='1145'>
+                         ns_mvc = j<a name='1146'>
+                    END IF<a name='1147'>
+               END IF<a name='1148'>
+            END IF<a name='1149'>
+         END DO<a name='1150'>
+      END DO<a name='1151'>
+      <a name='1152'>
+      strmci(k) = ew_mvc <a name='1153'>
+      strmcj(k) = ns_mvc<a name='1154'>
+<a name='1155'>
+      DO j=1,ns-1<a name='1156'>
+         DO i=1,ew-1<a name='1157'>
+            rad = SQRT(REAL((i-ew_mvc)**2.+(j-ns_mvc)**2.))*dx<a name='1158'>
+            IF ( rad .GT. r_vor ) THEN<a name='1159'>
+                 vort(i,k,j) = 0.<a name='1160'>
+                 div(i,k,j)  = 0.<a name='1161'>
+            END IF<a name='1162'>
+         END DO<a name='1163'>
+      END DO   <a name='1164'>
+<a name='1165'>
+      DO itr=1,n_iter<a name='1166'>
+         sum_q = 0.<a name='1167'>
+         nct = 0<a name='1168'>
+         DO j=1,ns-1<a name='1169'>
+            DO i=1,ew-1<a name='1170'>
+               rad = SQRT(REAL(i-ew_mvc)**2.+REAL(j-ns_mvc)**2.)*dx<a name='1171'>
+               IF ( (rad .LT. r_vor2).AND.(rad .GE. 0.8*r_vor2) ) THEN<a name='1172'>
+                     sum_q = sum_q + q0(i,k,j)<a name='1173'>
+                     nct = nct + 1<a name='1174'>
+               END IF<a name='1175'>
+             END DO<a name='1176'>
+          END DO<a name='1177'>
+          avg_q = sum_q/MAX(REAL(nct),1.)<a name='1178'>
+   <a name='1179'>
+          DO j=1,ns-1<a name='1180'>
+             DO i=1,ew-1<a name='1181'>
+                 q_old = q0(i,k,j)<a name='1182'>
+                 rad = SQRT(REAL(i-ew_mvc)**2.+REAL(j-ns_mvc)**2.)*dx<a name='1183'>
+                 IF ( rad .LT. r_vor2 ) THEN<a name='1184'>
+                      ror = rad/r_vor2<a name='1185'>
+                      q_new = ((1.-ror)*avg_q) + (ror*q_old)<a name='1186'>
+                      q0(i,k,j) = q_new<a name='1187'>
+                 END IF<a name='1188'>
+              END DO<a name='1189'>
+           END DO<a name='1190'>
+     END DO <font color=#447700>!end of itr loop<a name='1191'></font>
+ END DO <font color=#447700>!of the k loop<a name='1192'></font>
+<a name='1193'>
+<a name='1194'>
+<font color=#447700>!  Compute divergent wind (chi) at the mass points<a name='1195'></font>
+   DO k=1,kx<a name='1196'>
+      DO j=1,ns-1<a name='1197'>
+         DO i=1,ew-1<a name='1198'>
+            ff(i,j) = div(i,k,j)<a name='1199'>
+            tmp1(i,j)= 0.0<a name='1200'>
+         END DO<a name='1201'>
+      END DO<a name='1202'>
+<a name='1203'>
+      epsilon = 1.e-2<a name='1204'>
+      CALL <A href='../../html_code/main/tc_em.F.html#RELAX'>relax</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RELAX_2">(tmp1,ff,rd,ew,ns,dx,epsilon,alphar)<a name='1205'>
+      DO j=1,ns-1<a name='1206'>
+         DO i=1,ew-1<a name='1207'>
+            chi(i,k,j) = tmp1(i,j)<a name='1208'>
+         END DO<a name='1209'>
+      END DO<a name='1210'>
+    END DO <font color=#447700>!of the k loop for divergent winds <a name='1211'></font>
+<a name='1212'>
+<a name='1213'>
+<a name='1214'>
+<font color=#447700>!  Compute background streamfunction (PSI0) and perturbation field (PSI)<a name='1215'></font>
+<font color=#447700>!     print *,"perturbation field (PSI) relax three"<a name='1216'></font>
+     DO k=1,kx <a name='1217'>
+         DO j=1,ns-1<a name='1218'>
+            DO i=1,ew-1<a name='1219'>
+               ff(i,j)=vort(i,k,j)<a name='1220'>
+               tmp1(i,j)=0.0<a name='1221'>
+            END DO<a name='1222'>
+         END DO<a name='1223'>
+         epsilon = 1.e-2<a name='1224'>
+         CALL <A href='../../html_code/main/tc_em.F.html#RELAX'>relax</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RELAX_3">(tmp1,ff,rd,ew,ns,dx,epsilon,alphar)<a name='1225'>
+         DO j=1,ns-1<a name='1226'>
+            DO i=1,ew-1<a name='1227'>
+               psi(i,k,j)=tmp1(i,j)<a name='1228'>
+            END DO<a name='1229'>
+         END DO<a name='1230'>
+     END DO<a name='1231'>
+<a name='1232'>
+<a name='1233'>
+ <font color=#447700>!We can now calculate the final wind fields.<a name='1234'></font>
+   call <A href='../../html_code/main/tc_em.F.html#FINAL_EW_VELOCITY'>final_ew_velocity</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FINAL_EW_VELOCITY_1">(u2,u1,chi,psi,utcr,dx,ew,ns,nz)<a name='1235'>
+   call <A href='../../html_code/main/tc_em.F.html#FINAL_NS_VELOCITY'>final_ns_velocity</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FINAL_NS_VELOCITY_1">(v2,v1,chi,psi,vtcr,dx,ew,ns,nz)<a name='1236'>
+<a name='1237'>
+     DO k=1,kx<a name='1238'>
+        DO j=1,ns-1<a name='1239'>
+           DO i=1,ew-1<a name='1240'>
+              psi0(i,k,j) = psi1(i,k,j)-psi(i,k,j)<a name='1241'>
+           END DO<a name='1242'>
+        END DO<a name='1243'>
+     END DO<a name='1244'>
+<a name='1245'>
+     DO k=k00,kx<a name='1246'>
+        DO j=1,ns-1<a name='1247'>
+           DO i=1,ew-1<a name='1248'>
+              psipos(i,k,j)=<A href='../../html_code/phys/module_ra_cam_support.F.html#PSI'>psi</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PSI_1">(i,k,j)<a name='1249'>
+           END DO<a name='1250'>
+        END DO<a name='1251'>
+     END DO<a name='1252'>
+<a name='1253'>
+<a name='1254'>
+<font color=#447700>!  Geostrophic vorticity.<a name='1255'></font>
+<font color=#447700>!We calculate the ug and vg on the wrf U and V staggered grids<a name='1256'></font>
+<font color=#447700>!since this is where the vorticity subroutine expects them.<a name='1257'></font>
+<a name='1258'>
+     CALL <A href='../../html_code/main/tc_em.F.html#GEOWIND'>geowind</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GEOWIND_1">(phi1,ew,ns,kx,dx,ug,vg)<a name='1259'>
+     CALL <A href='../../html_code/main/tc_em.F.html#VOR'>vor</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VOR_2">(ug,vg,msfu,msfv,msfm,ew,ns,kx,dx,vorg)<a name='1260'>
+<a name='1261'>
+     DO k=1,kx<a name='1262'>
+        ew_mvc = strmci(k)<a name='1263'>
+        ns_mvc = strmcj(k)<a name='1264'>
+<a name='1265'>
+         DO j=1,ns-1<a name='1266'>
+           DO i=1,ew-1<a name='1267'>
+               rad = SQRT(REAL(i-ew_mvc)**2.+REAL(j-ns_mvc)**2.)*dx<a name='1268'>
+               IF ( rad .GT. r_vor ) THEN<a name='1269'>
+                    vorg(i,k,j) = 0.<a name='1270'>
+               END IF<a name='1271'>
+           END DO<a name='1272'>
+         END DO<a name='1273'>
+     END DO<a name='1274'>
+   <a name='1275'>
+      DO k=k00,kx<a name='1276'>
+         DO j=1,ns-1<a name='1277'>
+            DO i=1,ew-1<a name='1278'>
+               ff(i,j) = vorg(i,k,j)<a name='1279'>
+               tmp1(i,j)= 0.0<a name='1280'>
+            END DO<a name='1281'>
+         END DO<a name='1282'>
+         epsilon = 1.e-3<a name='1283'>
+         CALL <A href='../../html_code/main/tc_em.F.html#RELAX'>relax</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RELAX_4">(tmp1,ff,rd,ew,ns,dx,epsilon,alphar)<a name='1284'>
+         DO j=1,ns-1<a name='1285'>
+            DO i=1,ew-1<a name='1286'>
+               phip(i,k,j) = tmp1(i,j)<a name='1287'>
+            END DO<a name='1288'>
+         END DO<a name='1289'>
+     END DO<a name='1290'>
+<a name='1291'>
+<a name='1292'>
+     <font color=#447700>!  Background geopotential.<a name='1293'></font>
+     DO k=k00,kx<a name='1294'>
+         DO j=1,ns-1<a name='1295'>
+            DO i=1,ew-1<a name='1296'>
+               phi0(i,k,j) = phi1(i,k,j) - phip(i,k,j) <a name='1297'>
+            END DO<a name='1298'>
+         END DO<a name='1299'>
+     END DO<a name='1300'>
+<a name='1301'>
+<a name='1302'>
+     <font color=#447700>!  Background temperature<a name='1303'></font>
+     DO k=k00,kx <a name='1304'>
+        DO j=1,ns-1<a name='1305'>
+           DO i=1,ew-1<a name='1306'>
+              IF( k .EQ.  2 ) THEN<a name='1307'>
+                  tpos(i,k,j) = (-1./rconst)*(phip(i,k+1,j)-phip(i,k,j  ))/LOG(press(i,k+1,j)/press(i,k,j))<a name='1308'>
+              ELSE IF ( k .EQ. kx ) THEN<a name='1309'>
+                  tpos(i,k,j) = (-1./rconst)*(phip(i,k  ,j)-phip(i,k-1,j))/LOG(press(i,k,j  )/press(i,k-1,j))<a name='1310'>
+              ELSE<a name='1311'>
+                  tpos(i,k,j) = (-1./rconst)*(phip(i,k+1,j)-phip(i,k-1,j))/LOG(press(i,k+1,j)/press(i,k-1,j))<a name='1312'>
+              END IF<a name='1313'>
+              t0(i,k,j) = t1(i,k,j)-tpos(i,k,j)<a name='1314'>
+              t00(i,k,j) = t0(i,k,j)<a name='1315'>
+              if(t0(i,k,j) .gt. 400) then<a name='1316'>
+                 print *,"interesting temperature ",t0(i,k,j)," at ",i,j,k<a name='1317'>
+                 stop<a name='1318'>
+              end if<a name='1319'>
+           END DO<a name='1320'>
+        END DO<a name='1321'>
+     END DO<a name='1322'>
+<a name='1323'>
+     <font color=#447700>!  New RH.<a name='1324'></font>
+     CALL <A href='../../html_code/main/tc_em.F.html#QVTORH'>qvtorh</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="QVTORH_1"> (q0,t0,press*100.,k00,ew,ns,kx,rh0,min_RH_value)<a name='1325'>
+     call <A href='../../html_code/main/tc_em.F.html#FINAL_RH'>final_RH</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FINAL_RH_1">(rh2,rh0,rhmx,strmci,strmcj,rmax(nstrm),ew,ns,nz,k00,dx,ew_gcntr,ns_gcntr,r_vor2)<a name='1326'>
+<a name='1327'>
+<a name='1328'>
+<a name='1329'>
+     <font color=#447700>! adjust T0<a name='1330'></font>
+     DO k=k00,kx<a name='1331'>
+        DO j=1,ns-1<a name='1332'>
+           DO i=1,ew-1<a name='1333'>
+              theta(i,k,j) = t1(i,k,j)*(1000./press(i,k,j))**rovcp<a name='1334'>
+           END DO<a name='1335'>
+        END DO<a name='1336'>
+     END DO<a name='1337'>
+<a name='1338'>
+<a name='1339'>
+     ew_mvc = strmci(k00)<a name='1340'>
+     ns_mvc = strmcj(k00)<a name='1341'>
+     DO k=kfrm,kto<a name='1342'>
+        DO j=1,ns-1<a name='1343'>
+           DO i=1,ew-1<a name='1344'>
+              rad = SQRT(REAL(i-ew_mvc)**2.+REAL(j-ns_mvc)**2.)*dx<a name='1345'>
+              IF ( rad .LT. r_vor2 ) THEN<a name='1346'>
+                  t_reduce(i,k,j) = <A href='../../html_code/phys/module_diag_afwa.F.html#THETA'>theta</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="THETA_4">(i,k85,j)-0.03*(press(i,k,j)-press(i,k85,j))<a name='1347'>
+                  t0(i,k,j) = t00(i,k,j)*(rad/r_vor2) + (((press(i,k,j)/1000.)**rovcp)*t_reduce(i,k,j))*(1.-(rad/r_vor2))<a name='1348'>
+              END IF<a name='1349'>
+           END DO<a name='1350'>
+        END DO<a name='1351'>
+     END DO<a name='1352'>
+<a name='1353'>
+    <font color=#447700>!  Geopotential perturbation<a name='1354'></font>
+    DO k=1,kx<a name='1355'>
+       DO j=1,ns-1<a name='1356'>
+          DO i=1,ew-1<a name='1357'>
+              tmp1(i,j)=psitc(i,k,j)<a name='1358'>
+          END DO<a name='1359'>
+       END DO<a name='1360'>
+       CALL <A href='../../html_code/main/tc_em.F.html#BALANCE'>balance</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="BALANCE_1">(cor,tmp1,ew,ns,dx,outold)<a name='1361'>
+       DO j=1,ns-1<a name='1362'>
+          DO i=1,ew-1<a name='1363'>
+             ff(i,j)=outold(i,j)<a name='1364'>
+             tmp1(i,j)=0.0<a name='1365'>
+          END DO<a name='1366'>
+       END DO<a name='1367'>
+       epsilon = 1.e-3<a name='1368'>
+       CALL <A href='../../html_code/main/tc_em.F.html#RELAX'>relax</A><A href='../../html_code/main/tc_em.F.html#TC_BOGUS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RELAX_5"> (tmp1,ff,rd,ew,ns,dx,epsilon,alphar)<a name='1369'>
+       DO j=1,ns-1<a name='1370'>
+          DO i=1,ew-1<a name='1371'>
+             phiptc(i,k,j) = tmp1(i,j)<a name='1372'>
+          END DO<a name='1373'>
+       END DO<a name='1374'>
+    END DO     <a name='1375'>
+<a name='1376'>
+<a name='1377'>
+<font color=#447700>!  New geopotential field.<a name='1378'></font>
+   DO j=1,ns-1<a name='1379'>
+      DO k=1,kx<a name='1380'>
+         DO i=1,ew-1<a name='1381'>
+            phi2(i,k,j)  = phi0(i,k,j) + phiptc(i,k,j)<a name='1382'>
+         END DO<a name='1383'>
+      END DO<a name='1384'>
+   END DO<a name='1385'>
+<a name='1386'>
+<a name='1387'>
+   <font color=#447700>!  New temperature field.<a name='1388'></font>
+    DO j=1,ns-1<a name='1389'>
+       DO k=k00,kx<a name='1390'>
+          DO i=1,ew-1<a name='1391'>
+             IF( k .EQ.  2 ) THEN<a name='1392'>
+                 tptc(i,k,j)=(-1./rconst)*(phiptc(i,k+1,j)-phiptc(i,k,j  ))/LOG(press(i,k+1,j)/press(i,k,j))<a name='1393'>
+             ELSE IF ( k .EQ. kx ) THEN<a name='1394'>
+                 tptc(i,k,j)=(-1./rconst)*(phiptc(i,k,j  )-phiptc(i,k-1,j))/LOG(press(i,k,j)/press(i,k-1,j))<a name='1395'>
+             ELSE<a name='1396'>
+                 tptc(i,k,j)=(-1./rconst)*(phiptc(i,k+1,j)-phiptc(i,k-1,j))/LOG(press(i,k+1,j)/press(i,k-1,j))<a name='1397'>
+             END IF<a name='1398'>
+             t2(i,k,j) = t0(i,k,j) + tptc(i,k,j)<a name='1399'>
+             if(t2(i,k,j) .gt. 400) then<a name='1400'>
+                print *,"interesting temperature "<a name='1401'>
+                print *,t2(i,k,j),i,k,j,tptc(i,k,j)<a name='1402'>
+                stop<a name='1403'>
+             end if<a name='1404'>
+           END DO<a name='1405'>
+        END DO<a name='1406'>
+    END DO<a name='1407'>
+<a name='1408'>
+<a name='1409'>
+   <font color=#447700>!  Sea level pressure change.<a name='1410'></font>
+      DO j=1,ns-1<a name='1411'>
+         DO i=1,ew-1<a name='1412'>
+            dph = phi2(i,k00,j)-phi1(i,k00,j)<a name='1413'>
+            delpx(i,j) = rho*dph*0.01<a name='1414'>
+         END DO<a name='1415'>
+      END DO<a name='1416'>
+<a name='1417'>
+<a name='1418'>
+    <font color=#447700>!  New SLP.<a name='1419'></font>
+<font color=#447700>!      print *,"new slp",nstrm<a name='1420'></font>
+      DO j=1,ns-1<a name='1421'>
+         DO i=1,ew-1<a name='1422'>
+            pslx(i,j) = pslx(i,j)+delpx(i,j) <a name='1423'>
+            grid%pslv_gc(i,j) = pslx(i,j) * 100.<a name='1424'>
+<font color=#447700>!            print *,pslx(i,j)<a name='1425'></font>
+         END DO<a name='1426'>
+      END DO<a name='1427'>
+<a name='1428'>
+  <font color=#447700>!  Set new geopotential at surface to terrain elevation.<a name='1429'></font>
+     DO j=1,ns-1<a name='1430'>
+        DO i=1,ew-1<a name='1431'>
+           z2(i,1,j) = terrain(i,j) <a name='1432'>
+        END DO<a name='1433'>
+     END DO<a name='1434'>
+<a name='1435'>
+  <font color=#447700>!  Geopotential back to height.<a name='1436'></font>
+<a name='1437'>
+     DO j=1,ns-1<a name='1438'>
+        DO k=k00,kx<a name='1439'>
+           DO i=1,ew-1<a name='1440'>
+               z2(i,k,j) = phi2(i,k,j)/9.81 <a name='1441'>
+            END DO<a name='1442'>
+         END DO<a name='1443'>
+     END DO<a name='1444'>
+     <a name='1445'>
+<a name='1446'>
+     <font color=#447700>!  New surface temperature, assuming same theta as from 1000 mb.<a name='1447'></font>
+<font color=#447700>!     print *,"new surface temperature"<a name='1448'></font>
+     DO j=1,ns-1<a name='1449'>
+        DO i=1,ew-1<a name='1450'>
+           ps = pslx(i,j)<a name='1451'>
+           t2(i,1,j) = t2(i,k00,j)*((ps/1000.)**rovcp)<a name='1452'>
+           if(t2(i,1,j) .gt. 400) then<a name='1453'>
+              print *,"Interesting surface temperature"<a name='1454'>
+              print *,t2(i,1,j),t2(i,k00,j),ps,i,j<a name='1455'>
+              stop<a name='1456'>
+           end if<a name='1457'>
+        END DO<a name='1458'>
+     END DO<a name='1459'>
+<a name='1460'>
+<a name='1461'>
+     <font color=#447700>!  Set surface RH to the value from 1000 mb.<a name='1462'></font>
+     DO j=1,ns-1<a name='1463'>
+        DO i=1,ew-1<a name='1464'>
+           rh2(i,1,j) = rh2(i,k00,j)<a name='1465'>
+        END DO<a name='1466'>
+     END DO<a name='1467'>
+<a name='1468'>
+    <font color=#447700>!  Modification of tropical storm complete.<a name='1469'></font>
+    PRINT '(A,I3,A)'       ,'         Bogus storm number ',nstrm,' completed.'<a name='1470'>
+<a name='1471'>
+   do j = 1,ns-1<a name='1472'>
+      do k = 1,nz<a name='1473'>
+         do i = 1,ew<a name='1474'>
+            u1(i,k,j) =  u2(i,k,j)<a name='1475'>
+            grid%u_gc(i,k,j) = u2(i,k,j)<a name='1476'>
+         end do<a name='1477'>
+      end do<a name='1478'>
+   end do<a name='1479'>
+<a name='1480'>
+   do j = 1,ns<a name='1481'>
+      do k = 1,nz<a name='1482'>
+         do i = 1,ew-1<a name='1483'>
+            v1(i,k,j)   = v2(i,k,j)<a name='1484'>
+            grid%v_gc(i,k,j) = v2(i,k,j)<a name='1485'>
+         end do<a name='1486'>
+      end do<a name='1487'>
+   end do<a name='1488'>
+<a name='1489'>
+    do j = 1,ns-1<a name='1490'>
+      do k = 1,nz<a name='1491'>
+         do i = 1,ew-1  <a name='1492'>
+            t1(i,k,j)   = t2(i,k,j)<a name='1493'>
+            grid%t_gc(i,k,j) = t2(i,k,j)<a name='1494'>
+            rh1(i,k,j)  = rh2(i,k,j)<a name='1495'>
+            grid%rh_gc(i,k,j)  = rh2(i,k,j)<a name='1496'>
+            phi1(i,k,j) = phi2(i,k,j)<a name='1497'>
+            grid%ght_gc(i,k,j) = z2(i,k,j)<a name='1498'>
+         END DO<a name='1499'>
+      END DO<a name='1500'>
+   END DO<a name='1501'>
+<a name='1502'>
+<a name='1503'>
+END DO all_storms<a name='1504'>
+ deallocate(u11)<a name='1505'>
+ deallocate(v11)<a name='1506'>
+ deallocate(t11)<a name='1507'>
+ deallocate(rh11)<a name='1508'>
+ deallocate(phi11)<a name='1509'>
+ deallocate(u1)<a name='1510'>
+ deallocate(v1)<a name='1511'>
+ deallocate(t1)<a name='1512'>
+ deallocate(rh1)<a name='1513'>
+ deallocate(phi1)<a name='1514'>
+<a name='1515'>
+ do j = 1,ns-1<a name='1516'>
+    do i = 1,ew-1<a name='1517'>
+       if(grid%ht_gc(i,j) .gt. 1) then<a name='1518'>
+         grid%p_gc(i,1,j)  = grid%p_gc(i,1,j)  + (pslx(i,j) * 100. - old_slp(i,j))<a name='1519'>
+         grid%psfc(i,j) = grid%psfc(i,j) + (pslx(i,j) * 100. - old_slp(i,j))<a name='1520'>
+       else <a name='1521'>
+         grid%p_gc(i,1,j)  = pslx(i,j) * 100.<a name='1522'>
+         grid%psfc(i,j) = pslx(i,j) * 100.<a name='1523'>
+       end if<a name='1524'>
+    end do<a name='1525'>
+ end do<a name='1526'>
+<a name='1527'>
+END SUBROUTINE tc_bogus<a name='1528'>
+<a name='1529'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1530'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1531'></font>
+<a name='1532'>
+<A NAME='RANKINE'><A href='../../html_code/main/tc_em.F.html#RANKINE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1533'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>rankine</font>(dx,dy,ds,nlvl,vwgt,rmax,vmax,uu,vv,psi,vor) <A href='../../call_to/RANKINE.html' TARGET='index'>1</A><a name='1534'>
+<a name='1535'>
+   <font color=#447700>!  Define analytical bogus vortex<a name='1536'></font>
+<a name='1537'>
+      IMPLICIT NONE<a name='1538'>
+<a name='1539'>
+      INTEGER nlvl<a name='1540'>
+      REAL , DIMENSION(nlvl) :: uu, vv, psi, vor<a name='1541'>
+      REAL , DIMENSION(nlvl) :: vwgt<a name='1542'>
+      REAL :: dx,dy,ds,rmax,vmax<a name='1543'>
+ <a name='1544'>
+      REAL , PARAMETER :: alpha1= 1.<a name='1545'>
+      REAL , PARAMETER :: alpha2= -0.75<a name='1546'>
+      real :: pi<a name='1547'>
+<a name='1548'>
+<a name='1549'>
+      INTEGER :: k<a name='1550'>
+      REAL :: vr , ang , rr , term1 , bb , term2 , alpha<a name='1551'>
+<a name='1552'>
+<a name='1553'>
+      pi = 3.141592653589793<a name='1554'>
+      <font color=#447700>!  Wind component<a name='1555'></font>
+<a name='1556'>
+      DO k=1,nlvl<a name='1557'>
+         rr = SQRT(dx**2+dy**2)*ds<a name='1558'>
+         IF ( rr .LT. rmax ) THEN<a name='1559'>
+            alpha = 1.<a name='1560'>
+         ELSE IF ( rr .GE. rmax ) THEN<a name='1561'>
+            alpha = alpha2<a name='1562'>
+         END IF<a name='1563'>
+         vr = vmax * (rr/rmax)**(alpha)<a name='1564'>
+         IF ( dx.GE.0. ) THEN<a name='1565'>
+            ang = (pi/2.) - ATAN2(dy,MAX(dx,1.e-6))<a name='1566'>
+            uu(k) = vwgt(k)*(-vr*COS(ang))<a name='1567'>
+            vv(k) = vwgt(k)*( vr*SIN(ang))<a name='1568'>
+         ELSE IF ( dx.LT.0. ) THEN<a name='1569'>
+            ang = ((3.*pi)/2.) + ATAN2(dy,dx)<a name='1570'>
+            uu(k) = vwgt(k)*(-vr*COS(ang))<a name='1571'>
+            vv(k) = vwgt(k)*(-vr*SIN(ang))<a name='1572'>
+         END IF<a name='1573'>
+      END DO<a name='1574'>
+<a name='1575'>
+      <font color=#447700>!  psi<a name='1576'></font>
+      <a name='1577'>
+      DO k=1,nlvl<a name='1578'>
+         rr = SQRT(dx**2+dy**2)*ds<a name='1579'>
+         IF ( rr .LT. rmax ) THEN<a name='1580'>
+            psi(k) = vwgt(k) * (vmax*rr*rr)/(2.*rmax)<a name='1581'>
+         ELSE IF ( rr .GE. rmax ) THEN<a name='1582'>
+            IF (alpha1.EQ.1.0 .AND. alpha2.eq.-1.0) THEN<a name='1583'>
+               psi(k) = vwgt(k) * vmax*rmax*(0.5+LOG(rr/rmax))<a name='1584'>
+            ELSE IF (alpha1.EQ.1.0 .AND. alpha2.NE.-1.0) THEN<a name='1585'>
+               term1 = vmax/(rmax**alpha1)*(rmax**(alpha1+1)/(alpha1+1))<a name='1586'>
+               bb    = (rr**(alpha2+1)/(alpha2+1))-(rmax**(alpha2+1))/(alpha2+1)<a name='1587'>
+               term2 = vmax/(rmax**alpha2)*bb<a name='1588'>
+               psi(k) = vwgt(k) * (term1 + term2)<a name='1589'>
+            END IF<a name='1590'>
+         END IF<a name='1591'>
+      END DO<a name='1592'>
+<a name='1593'>
+      <font color=#447700>! vort<a name='1594'></font>
+<a name='1595'>
+      DO k=1,nlvl<a name='1596'>
+         rr = SQRT(dx**2+dy**2)*ds<a name='1597'>
+         IF ( rr .LT. rmax ) THEN<a name='1598'>
+            vor(k) = vwgt(k) * (2.*vmax)/rmax<a name='1599'>
+         ELSE IF ( rr .GE. rmax ) THEN<a name='1600'>
+            vor(k) = vwgt(k) * ( (vmax/rmax**alpha2)*(rr**(alpha2-1.))*(1.+alpha2) )<a name='1601'>
+         END IF<a name='1602'>
+      END DO<a name='1603'>
+<a name='1604'>
+   END SUBROUTINE rankine<a name='1605'>
+<a name='1606'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1607'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1608'></font>
+<a name='1609'>
+<A NAME='VOR'><A href='../../html_code/main/tc_em.F.html#VOR' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1610'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>vor</font>(uin,vin,msfu,msfv,msfm,ew,ns,nz,ds,vort) <A href='../../call_to/VOR.html' TARGET='index'>2</A><a name='1611'>
+<a name='1612'>
+<font color=#447700>!Here we assume that the U and V's are still on the WRF staggered grid.<a name='1613'></font>
+<font color=#447700>!The vorticity is then calculated at the mass points on the WRF grid.<a name='1614'></font>
+<a name='1615'>
+<a name='1616'>
+      IMPLICIT NONE<a name='1617'>
+<a name='1618'>
+      INTEGER :: jp1,jm1,ip1,im1,i,j,k<a name='1619'>
+      INTEGER :: ns, ew, nz, k1<a name='1620'>
+<a name='1621'>
+      REAL , DIMENSION(ew,nz,ns-1)   :: uin   <font color=#447700>!u values on unstaggered U grid<a name='1622'></font>
+      REAL , DIMENSION(ew-1,nz,ns)   :: vin   <font color=#447700>!v values on unstaggered V grid<a name='1623'></font>
+      REAL , DIMENSION(ew-1,nz,ns-1) :: vort  <font color=#447700>!vort is defined on the mass points<a name='1624'></font>
+<a name='1625'>
+      REAL , DIMENSION(ew,ns-1)    :: msfu  <font color=#447700>!map scale factors on U staggered grid<a name='1626'></font>
+      REAL , DIMENSION(ew-1,ns)    :: msfv  <font color=#447700>!map scale factors on V staggered grid<a name='1627'></font>
+      REAL , DIMENSION(ew-1,ns-1)  :: msfm  <font color=#447700>!map scale factors on unstaggered grid<a name='1628'></font>
+<a name='1629'>
+      real :: u(ew,ns-1),v(ew-1,ns)<a name='1630'>
+      <a name='1631'>
+<a name='1632'>
+      REAL :: ds<a name='1633'>
+<a name='1634'>
+      REAL :: dsx,dsy , u1 , u2 , u3 , u4 , v1 , v2 , v3 , v4<a name='1635'>
+      real :: dudy,dvdx,mm<a name='1636'>
+<a name='1637'>
+      <a name='1638'>
+      vort(:,:,:) = -999.<a name='1639'>
+      do k = 1,nz<a name='1640'>
+<a name='1641'>
+         do j = 1,ns-1<a name='1642'>
+            do i = 1,ew<a name='1643'>
+               u(i,j) = uin(i,k,j)<a name='1644'>
+            end do<a name='1645'>
+         end do<a name='1646'>
+<a name='1647'>
+<a name='1648'>
+         do j = 1,ns<a name='1649'>
+            do i = 1,ew-1<a name='1650'>
+               v(i,j) = vin(i,k,j)<a name='1651'>
+            end do<a name='1652'>
+         end do<a name='1653'>
+<a name='1654'>
+<font color=#447700>!Our indicies are from 2 to ns-2 and ew-2.  This is because out<a name='1655'></font>
+<font color=#447700>!map scale factors are not defined for the entire grid.<a name='1656'></font>
+         do j = 2,ns-2<a name='1657'>
+            do i = 2,ew-2<a name='1658'>
+               mm = msfm(i,j) * msfm(i,j)<a name='1659'>
+               u1 = u(i  ,j-1)/msfu(i  ,j-1)<a name='1660'>
+               u2 = u(i+1,j-1)/msfu(i+1,j-1)<a name='1661'>
+               u3 = u(i+1,j+1)/msfu(i+1,j+1)<a name='1662'>
+               u4 = u(i  ,j+1)/msfu(i  ,j+1)<a name='1663'>
+               dudy = mm * (u4 + u3 -(u1 + u2)) /(4*ds)<a name='1664'>
+<a name='1665'>
+               v1 = v(i-1,j  )/msfv(i-1,j)<a name='1666'>
+               v2 = v(i+1,j  )/msfv(i+1,j)<a name='1667'>
+               v3 = v(i-1 ,j+1)/msfv(i-1,j+1)<a name='1668'>
+               v4 = v(i+1,j+1)/msfv(i+1,j+1)<a name='1669'>
+               dvdx = mm * (v4 + v2 - (v1 + v3))/(4*ds)<a name='1670'>
+<a name='1671'>
+               vort(i,k,j) = dvdx - dudy<a name='1672'>
+            end do<a name='1673'>
+         end do<a name='1674'>
+<font color=#447700>!Our vorticity array goes out to ew-1 and ns-1 which is the <a name='1675'></font>
+<font color=#447700>!mass point grid dimensions.  <a name='1676'></font>
+         do i = 2,ew-2<a name='1677'>
+            vort(i,k,1)    = vort(i,k,2)    <font color=#447700>!bottom not corners<a name='1678'></font>
+            vort(i,k,ns-1) = vort(i,k,ns-2) <font color=#447700>!top not corners<a name='1679'></font>
+         end do<a name='1680'>
+<a name='1681'>
+         do j = 1,ns-1<a name='1682'>
+            vort(ew-1,k,j) = vort(ew-2,k,j) <font color=#447700>!right side including corners<a name='1683'></font>
+            vort(1,k,j)    = vort(2,k,j)    <font color=#447700>!left side including corners<a name='1684'></font>
+         end do<a name='1685'>
+<a name='1686'>
+     end do <font color=#447700>! this is the k loop end <a name='1687'></font>
+<a name='1688'>
+   END SUBROUTINE <a name='1689'>
+<a name='1690'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1691'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1692'></font>
+<a name='1693'>
+<A NAME='DIVERG'><A href='../../html_code/main/tc_em.F.html#DIVERG' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1694'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>diverg</font>(uin,vin,msfu,msfv,msfm,ew,ns,nz,ds,div) <A href='../../call_to/DIVERG.html' TARGET='index'>1</A><a name='1695'>
+<a name='1696'>
+   <font color=#447700>!  Computes divergence on unstaggered grid.  The divergence is calculated<a name='1697'></font>
+   <font color=#447700>!  at the mass points on the WRF grid.<a name='1698'></font>
+   <font color=#447700>!  div = m*m (du/dx + dv/dy)<a name='1699'></font>
+<a name='1700'>
+      IMPLICIT NONE<a name='1701'>
+<a name='1702'>
+      INTEGER :: jp1,jm1,ip1,im1,i,j,k<a name='1703'>
+      INTEGER :: ns, ew, nz, k1<a name='1704'>
+<a name='1705'>
+      REAL , DIMENSION(ew,nz,ns-1)   :: uin   <font color=#447700>!u values on unstaggered U grid<a name='1706'></font>
+      REAL , DIMENSION(ew-1,nz,ns)   :: vin   <font color=#447700>!v values on unstaggered V grid<a name='1707'></font>
+      REAL , DIMENSION(ew-1,nz,ns-1) :: div   <font color=#447700>!divergence is calculate on the mass points<a name='1708'></font>
+      REAL , DIMENSION(ew,ns-1)    :: msfu  <font color=#447700>!map scale factors on U staggered grid<a name='1709'></font>
+      REAL , DIMENSION(ew-1,ns)    :: msfv  <font color=#447700>!map scale factors on V staggered grid<a name='1710'></font>
+      REAL , DIMENSION(ew-1,ns-1)  :: msfm  <font color=#447700>!map scale factors on unstaggered grid<a name='1711'></font>
+<a name='1712'>
+      real :: u(ew,ns-1),v(ew-1,ns)<a name='1713'>
+      <a name='1714'>
+<a name='1715'>
+      REAL :: ds<a name='1716'>
+<a name='1717'>
+      REAL :: dsr,u1,u2,v1,v2<a name='1718'>
+      real :: dudx,dvdy,mm,arg1,arg2<a name='1719'>
+<a name='1720'>
+      dsr = 1/ds<a name='1721'>
+      do k = 1,nz<a name='1722'>
+<a name='1723'>
+         do j = 1,ns-1<a name='1724'>
+            do i = 1,ew<a name='1725'>
+               u(i,j) = uin(i,k,j)<a name='1726'>
+            end do<a name='1727'>
+         end do<a name='1728'>
+<a name='1729'>
+<a name='1730'>
+         do j = 1,ns<a name='1731'>
+            do i = 1,ew-1<a name='1732'>
+               v(i,j) = vin(i,k,j)<a name='1733'>
+            end do<a name='1734'>
+         end do<a name='1735'>
+<font color=#447700>!Our indicies are from 2 to ns-2 and ew-2.  This is because out<a name='1736'></font>
+<font color=#447700>!map scale factors are not defined for the entire grid.<a name='1737'></font>
+         do j = 2,ns-2<a name='1738'>
+            do i = 2,ew-2<a name='1739'>
+               mm = msfm(i,j) * msfm(i,j)<a name='1740'>
+               u1 = u(i+1,j)/msfu(i+1,j)<a name='1741'>
+               u2 = u(i  ,j)/msfu(i  ,j)<a name='1742'>
+       <a name='1743'>
+               v1 = v(i,j+1)/msfv(i,j+1)<a name='1744'>
+               v2 = v(i,j)  /msfv(i,j)<a name='1745'>
+<a name='1746'>
+               div(i,k,j) = mm * (u1 - u2 + v1 - v2) * dsr<a name='1747'>
+            end do<a name='1748'>
+          end do<a name='1749'>
+<a name='1750'>
+<font color=#447700>!Our divergence array is defined on the mass points. <a name='1751'></font>
+         do i = 2,ew-2<a name='1752'>
+            div(i,k,1)    = div(i,k,2)    <font color=#447700>!bottom not corners<a name='1753'></font>
+            div(i,k,ns-1) = div(i,k,ns-2) <font color=#447700>!top not corners<a name='1754'></font>
+         end do<a name='1755'>
+<a name='1756'>
+         do j = 1,ns-1<a name='1757'>
+            div(ew-1,k,j) = div(ew-2,k,j) <font color=#447700>!right side including corners<a name='1758'></font>
+            div(1,k,j)    = div(2,k,j)    <font color=#447700>!left side including corners<a name='1759'></font>
+         end do<a name='1760'>
+<a name='1761'>
+     end do <font color=#447700>!end for the k loop<a name='1762'></font>
+<a name='1763'>
+   END SUBROUTINE diverg<a name='1764'>
+<a name='1765'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1766'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1767'></font>
+<a name='1768'>
+<A NAME='MXRATPRS'><A href='../../html_code/main/tc_em.F.html#MXRATPRS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1769'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>mxratprs</font> (rh, t, ppa, ew, ns, nz, q, min_RH_value) <A href='../../call_to/MXRATPRS.html' TARGET='index'>1</A><a name='1770'>
+<a name='1771'>
+      <a name='1772'>
+      IMPLICIT NONE<a name='1773'>
+<a name='1774'>
+      INTEGER   :: i , ew , j , ns , k , nz<a name='1775'>
+<a name='1776'>
+<a name='1777'>
+      REAL      :: min_RH_value<a name='1778'>
+      REAL      :: ppa(ew-1,nz,ns-1)<a name='1779'>
+      REAL      :: p( ew-1,nz,ns-1 )<a name='1780'>
+      REAL      :: q (ew-1,nz,ns-1),rh(ew-1,nz,ns-1),t(ew-1,nz,ns-1)<a name='1781'>
+<a name='1782'>
+      REAL      :: es<a name='1783'>
+      REAL      :: qs<a name='1784'>
+      REAL      :: cp              = 1004.0<a name='1785'>
+      REAL      :: svp1,svp2,svp3<a name='1786'>
+      REAL      :: celkel<a name='1787'>
+      REAL      :: eps<a name='1788'>
+      <a name='1789'>
+<a name='1790'>
+      <font color=#447700>!  This function is designed to compute (q) from basic variables<a name='1791'></font>
+      <font color=#447700>!  p (mb), t(K) and rh(0-100%) to give (q) in (kg/kg).<a name='1792'></font>
+<a name='1793'>
+      <a name='1794'>
+      p = ppa * 0.01<a name='1795'>
+<a name='1796'>
+      DO j = 1, ns - 1<a name='1797'>
+         DO k = 1, nz<a name='1798'>
+            DO i = 1, ew - 1<a name='1799'>
+                  rh(i,k,j) = MIN ( MAX ( rh(i,k,j) ,min_RH_value ) , 100. ) <a name='1800'>
+            END DO<a name='1801'>
+        END DO<a name='1802'>
+     END DO<a name='1803'>
+<a name='1804'>
+      svp3   =  29.65<a name='1805'>
+      svp1   =  0.6112<a name='1806'>
+      svp2   =  17.67<a name='1807'>
+      celkel =  273.15<a name='1808'>
+         eps =  0.622<a name='1809'>
+<a name='1810'>
+      DO j = 1, ns-1<a name='1811'>
+         DO k = 1, nz  <a name='1812'>
+            DO i = 1,ew-1<a name='1813'>
+               es = svp1 * 10. * EXP(svp2 * (t(i,k,j) - celkel ) / (t(i,k,j) - svp3 ))<a name='1814'>
+               qs = eps * es / (p(i,k,j) - es)<a name='1815'>
+               q(i,k,j) = MAX(0.01 * rh(i,k,j) * qs,0.0)<a name='1816'>
+            END DO<a name='1817'>
+         END DO<a name='1818'>
+      END DO<a name='1819'>
+<a name='1820'>
+   END SUBROUTINE mxratprs<a name='1821'>
+<a name='1822'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1823'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1824'></font>
+<A NAME='MASS2_USTAG'><A href='../../html_code/main/tc_em.F.html#MASS2_USTAG' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1825'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>mass2_Ustag</font>(field,dim1,dim2,dim3)<a name='1826'>
+<a name='1827'>
+   IMPLICIT NONE<a name='1828'>
+<a name='1829'>
+   INTEGER :: dim1 , dim2 , dim3<a name='1830'>
+   REAL , DIMENSION(dim1,dim2,dim3) :: field,dummy<a name='1831'>
+<a name='1832'>
+   dummy = 0.0<a name='1833'>
+   dummy(:,2:dim2-1,:)         = ( field(:,1:dim2-2,:) + &amp;<a name='1834'>
+                                   field(:,2:dim2-1,:) ) * 0.5<a name='1835'>
+   dummy(:,1,:)                = field(:,1,:)<a name='1836'>
+   dummy(:,dim2,:)             = field(:,dim2-1,:)<a name='1837'>
+<a name='1838'>
+   field                       =   dummy<a name='1839'>
+<a name='1840'>
+END SUBROUTINE mass2_Ustag<a name='1841'>
+<a name='1842'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1843'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1844'></font>
+<A NAME='MASS2_VSTAG'><A href='../../html_code/main/tc_em.F.html#MASS2_VSTAG' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1845'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>mass2_Vstag</font>(field,dim1,dim2,dim3)<a name='1846'>
+<a name='1847'>
+   IMPLICIT NONE<a name='1848'>
+<a name='1849'>
+   INTEGER :: dim1 , dim2 , dim3<a name='1850'>
+   REAL , DIMENSION(dim1,dim2,dim3) :: field,dummy<a name='1851'>
+<a name='1852'>
+   dummy = 0.0<a name='1853'>
+   dummy(2:dim1-1,:,:)         = ( field(1:dim1-2,:,:) + &amp;<a name='1854'>
+                                   field(2:dim1-1,:,:) ) * 0.5<a name='1855'>
+   dummy(1,:,:)                = field(1,:,:)<a name='1856'>
+   dummy(dim1,:,:)             = field(dim1-1,:,:)<a name='1857'>
+<a name='1858'>
+   field                       =   dummy<a name='1859'>
+<a name='1860'>
+END SUBROUTINE mass2_Vstag<a name='1861'>
+<a name='1862'>
+<a name='1863'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1864'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1865'></font>
+<a name='1866'>
+<A NAME='RELAX'><A href='../../html_code/main/tc_em.F.html#RELAX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1867'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>relax</font> (chi, ff, rd, ew, ns, ds, smallres, alpha) <A href='../../call_to/RELAX.html' TARGET='index'>5</A><a name='1868'>
+<a name='1869'>
+      IMPLICIT NONE<a name='1870'>
+<a name='1871'>
+      INTEGER, PARAMETER    :: mm = 20000<a name='1872'>
+<a name='1873'>
+      INTEGER               :: i<a name='1874'>
+      INTEGER               :: ie<a name='1875'>
+      INTEGER               :: ew  <font color=#447700>!ew direction<a name='1876'></font>
+      INTEGER               :: iter<a name='1877'>
+      INTEGER               :: j<a name='1878'>
+      INTEGER               :: je<a name='1879'>
+      INTEGER               :: jm<a name='1880'>
+      INTEGER               :: ns  <font color=#447700>!ns direction<a name='1881'></font>
+      INTEGER               :: mi<a name='1882'>
+<a name='1883'>
+      REAL                  :: alpha<a name='1884'>
+      REAL                  :: alphaov4<a name='1885'>
+      REAL                  :: chi(ew-1,ns-1)<a name='1886'>
+      REAL                  :: chimx(ns-1) <a name='1887'>
+      REAL                  :: ds<a name='1888'>
+      REAL                  :: epx<a name='1889'>
+      REAL                  :: fac<a name='1890'>
+      REAL                  :: ff(ew-1,ns-1)<a name='1891'>
+      REAL                  :: rd(ew-1,ns-1)<a name='1892'>
+      REAL                  :: rdmax(ns-1)<a name='1893'>
+      REAL                  :: smallres<a name='1894'>
+<a name='1895'>
+      LOGICAL               :: converged = .FALSE.<a name='1896'>
+<a name='1897'>
+      fac = ds * ds<a name='1898'>
+      alphaov4 = alpha * 0.25<a name='1899'>
+<a name='1900'>
+      ie=ew-2<a name='1901'>
+      je=ns-2<a name='1902'>
+<a name='1903'>
+      DO j = 1, ns-1<a name='1904'>
+         DO i = 1, ew-1<a name='1905'>
+            ff(i,j) = fac * ff(i,j)<a name='1906'>
+            rd(i,j) = 0.0<a name='1907'>
+         END DO<a name='1908'>
+      END DO<a name='1909'>
+<a name='1910'>
+      iter_loop : DO iter = 1, mm<a name='1911'>
+         mi = iter<a name='1912'>
+         chimx = 0.0<a name='1913'>
+<a name='1914'>
+<a name='1915'>
+         DO j = 2, ns-1<a name='1916'>
+            DO i = 2, ew-1<a name='1917'>
+               chimx(j) = MAX(ABS(chi(i,j)),chimx(j))<a name='1918'>
+            END DO<a name='1919'>
+         END DO<a name='1920'>
+<a name='1921'>
+         epx = MAXVAL(chimx) * SMALLRES * 4.0 / alpha<a name='1922'>
+<a name='1923'>
+         DO j = 2, ns-2<a name='1924'>
+            DO i = 2, ew-2<a name='1925'>
+               rd(i,j) = chi(i,j+1) + chi(i,j-1) + chi(i+1,j) + chi(i-1,j) - 4.0 * chi(i,j) - ff(i,j)<a name='1926'>
+               chi(i,j) = chi(i,j) + rd(i,j) * alphaov4<a name='1927'>
+            END DO<a name='1928'>
+         END DO<a name='1929'>
+<a name='1930'>
+         rdmax = 0.0<a name='1931'>
+<a name='1932'>
+         DO j = 2, ns-2<a name='1933'>
+            DO i = 2, ew-2<a name='1934'>
+               rdmax(j) = MAX(ABS(rd(i,j)),rdmax(j))<a name='1935'>
+            END DO<a name='1936'>
+         END DO<a name='1937'>
+<a name='1938'>
+<a name='1939'>
+         IF (MAXVAL(rdmax) .lt. epx) THEN<a name='1940'>
+            converged = .TRUE.<a name='1941'>
+            EXIT iter_loop<a name='1942'>
+         END IF<a name='1943'>
+<a name='1944'>
+      END DO iter_loop<a name='1945'>
+<a name='1946'>
+      IF (converged ) THEN<a name='1947'>
+<font color=#447700>!        PRINT '(A,I5,A)','Relaxation converged in ',mi,' iterations.'<a name='1948'></font>
+      ELSE<a name='1949'>
+         PRINT '(A,I5,A)','Relaxation did not converge in',mm,' iterations.'<a name='1950'>
+         STOP 'no_converge'<a name='1951'>
+      END IF<a name='1952'>
+<a name='1953'>
+<a name='1954'>
+      do i = 2,ew-2<a name='1955'>
+            chi(i,ns-1) = chi(i,ns-2) <font color=#447700>!top not including corners<a name='1956'></font>
+            chi(i,1)    = chi(i,2)    <font color=#447700>!bottom not including corners<a name='1957'></font>
+      end do<a name='1958'>
+<a name='1959'>
+      do j = 2,ns-2<a name='1960'>
+            chi(ew-1,j) = chi(ew-2,j) <font color=#447700>!right side not including corners<a name='1961'></font>
+            chi(1,j)    = chi(2,j)    <font color=#447700>!left side not including corners<a name='1962'></font>
+      end do<a name='1963'>
+<a name='1964'>
+ <font color=#447700>!Fill in the corners <a name='1965'></font>
+      chi(1,1)       = chi(2,1)<a name='1966'>
+      chi(ew-1,1)    = chi(ew-2,1)<a name='1967'>
+      chi(1,ns-1)    = chi(2,ns-1)<a name='1968'>
+      chi(ew-1,ns-1) = chi(ew-2,ns-1)<a name='1969'>
+<a name='1970'>
+<a name='1971'>
+<a name='1972'>
+   END SUBROUTINE relax<a name='1973'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1974'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1975'></font>
+<A NAME='GEOWIND'><A href='../../html_code/main/tc_em.F.html#GEOWIND' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1976'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>geowind</font>(height,ew,ns,nz,ds,ug,vg) <A href='../../call_to/GEOWIND.html' TARGET='index'>1</A><a name='1977'>
+<a name='1978'>
+      IMPLICIT NONE<a name='1979'>
+<a name='1980'>
+      <font color=#447700>!     input       height   geopotential on wrf mass grid points<a name='1981'></font>
+      <font color=#447700>!                 ns       wrf staggered V dimension n-s<a name='1982'></font>
+      <font color=#447700>!                 ew       wrf staggered U dimension e-w<a name='1983'></font>
+      <font color=#447700>!                 nz       number of vertical levels<a name='1984'></font>
+      <font color=#447700>!<a name='1985'></font>
+      <font color=#447700>!     output      ug       u component of geo wind on wrf staggered V points<a name='1986'></font>
+      <font color=#447700>!                 vg       v component of geo wind on wrf staggered U points  <a name='1987'></font>
+<a name='1988'>
+      INTEGER :: ew , ns , nz<a name='1989'>
+      REAL :: ds<a name='1990'>
+      REAL , DIMENSION(ew-1,nz,ns-1) :: height<a name='1991'>
+      REAL , DIMENSION(ew,nz,ns-1) :: ug <a name='1992'>
+      REAL , DIMENSION(ew-1,nz,ns) :: vg<a name='1993'>
+<a name='1994'>
+      REAL :: ds2r , h1 , h2 , h3 , h4, ds4r<a name='1995'>
+      INTEGER :: i , j , k<a name='1996'>
+<a name='1997'>
+      ds4r=1./(4.*ds)<a name='1998'>
+<a name='1999'>
+<font color=#447700>! The height field comes in on the WRF mass points.  <a name='2000'></font>
+<a name='2001'>
+<a name='2002'>
+<a name='2003'>
+<font color=#447700>! ug is the derivative of height in the ns direction  ug = -dheight/dy <a name='2004'></font>
+      ug(:,:,:) = -999.<a name='2005'>
+      do j=2,ns-2<a name='2006'>
+         do k=1,nz<a name='2007'>
+            do i=2,ew-1<a name='2008'>
+              h1 = height(i,k,j+1)<a name='2009'>
+              h2 = height(i-1,k,j+1)<a name='2010'>
+              h3 = height(i  ,k,j-1)<a name='2011'>
+              h4 = height(i-1,k,j-1)<a name='2012'>
+              ug(i,k,j) = -( (h1 + h2) - ( h3 + h4) ) * ds4r<a name='2013'>
+           end do<a name='2014'>
+        end do<a name='2015'>
+      end do<a name='2016'>
+<a name='2017'>
+       do i = 2,ew-1<a name='2018'>
+          ug(i,:,1)    = ug(i,:,2)    <font color=#447700>!bottom not including corner points<a name='2019'></font>
+          ug(i,:,ns-1) = ug(i,:,ns-2) <font color=#447700>!top not including corner points<a name='2020'></font>
+       end do<a name='2021'>
+<a name='2022'>
+       do j = 2,ns-2<a name='2023'>
+          ug(1,:,j)  = ug(2,:,j)    <font color=#447700>!left side <a name='2024'></font>
+          ug(ew,:,j) = ug(ew-1,:,j) <font color=#447700>!right side <a name='2025'></font>
+       end do  <a name='2026'>
+     <a name='2027'>
+       ug(1,:,1)     = ug(2,:,1)         <font color=#447700>!Lower left hand corner<a name='2028'></font>
+       ug(1,:,ns-1)  = ug(2,:,ns-1)      <font color=#447700>!upper left hand corner <a name='2029'></font>
+       ug(ew,:,1)    = ug(ew-1,:,1)      <font color=#447700>!Lower right hand corner<a name='2030'></font>
+       ug(ew,:,ns-1) = ug(ew-1,:,ns-1)   <font color=#447700>!upper right hand corner <a name='2031'></font>
+<a name='2032'>
+<a name='2033'>
+<font color=#447700>! ug is the derivative of height in the ns direction  vg = dheight/dx <a name='2034'></font>
+    vg(:,:,:) = -999.<a name='2035'>
+    DO j=2,ns-1<a name='2036'>
+       DO k=1,nz<a name='2037'>
+          DO i=2,ew-2<a name='2038'>
+              h1 = height(i+1,k,j)<a name='2039'>
+              h2 = height(i-1,k,j)<a name='2040'>
+              h3 = height(i+1,k,j-1)<a name='2041'>
+              h4 = height(i-1,k,j-1)<a name='2042'>
+              vg(i,k,j) = ( (h1 + h3) - ( h2 + h4) ) * ds4r<a name='2043'>
+          end do<a name='2044'>
+       end do<a name='2045'>
+    end do<a name='2046'>
+<a name='2047'>
+    do i = 2,ew-2<a name='2048'>
+       vg(i,:,1)  = vg(i,:,2)    <font color=#447700>!bottom not including corner points<a name='2049'></font>
+       vg(i,:,ns) = vg(i,:,ns-1) <font color=#447700>!top not including corner points<a name='2050'></font>
+    end do   <a name='2051'>
+<a name='2052'>
+    do j = 2,ns-1<a name='2053'>
+       vg(1,:,j)    = vg(2,:,j)    <font color=#447700>!left side not including corner points<a name='2054'></font>
+       vg(ew-1,:,j) = vg(ew-2,:,j) <font color=#447700>!right side not including corner points<a name='2055'></font>
+   end do  <a name='2056'>
+      <a name='2057'>
+   vg(1,:,1)     = vg(2,:,1)        <font color=#447700>!Lower left hand corner<a name='2058'></font>
+   vg(1,:,ns)    = vg(2,:,ns)       <font color=#447700>!upper left hand corner    <a name='2059'></font>
+   vg(ew-1,:,1)  = vg(ew-2,:,1)     <font color=#447700>!Lower right hand corner<a name='2060'></font>
+   vg(ew-1,:,ns) = vg(ew-2,:,ns)    <font color=#447700>!upper right hand corner <a name='2061'></font>
+   <a name='2062'>
+<a name='2063'>
+   END SUBROUTINE geowind<a name='2064'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='2065'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='2066'></font>
+<a name='2067'>
+<A NAME='BALANCE'><A href='../../html_code/main/tc_em.F.html#BALANCE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2068'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>balance</font> (f,psi,ew,ns,ds,out) <A href='../../call_to/BALANCE.html' TARGET='index'>1</A>,<A href='../../call_from/BALANCE.html' TARGET='index'>1</A><a name='2069'>
+<a name='2070'>
+   <font color=#447700>!  Calculates the forcing terms in balance equation<a name='2071'></font>
+<a name='2072'>
+   IMPLICIT NONE<a name='2073'>
+<a name='2074'>
+      <font color=#447700>!  f       coriolis force<a name='2075'></font>
+      <font color=#447700>!  psi     stream function<a name='2076'></font>
+      <font color=#447700>!  ew, ns  grid points in east west, north south direction, respectively<a name='2077'></font>
+      <font color=#447700>!  ds      grid distance<a name='2078'></font>
+      <font color=#447700>!  out     output array<a name='2079'></font>
+  <a name='2080'>
+      INTEGER :: ew , ns,nslast,ewlast,ifill<a name='2081'>
+      REAL , DIMENSION(ew-1,ns-1) :: f,psi,out<a name='2082'>
+      REAL :: ds<a name='2083'>
+<a name='2084'>
+      REAL :: psixx , psiyy , psiy , psix, psixy <a name='2085'>
+      REAL :: dssq , ds2 , dssq4,arg1,arg2,arg3,arg4<a name='2086'>
+<a name='2087'>
+      INTEGER :: i , j<a name='2088'>
+<a name='2089'>
+      dssq  = ds * ds<a name='2090'>
+      ds2   = ds * 2.<a name='2091'>
+      dssq4 = ds * ds * 4.<a name='2092'>
+<a name='2093'>
+<font color=#447700>!The forcing terms are calculated on the WRF mass points.<a name='2094'></font>
+      out(:,:) = -999.0<a name='2095'>
+      DO j=2,ns-2<a name='2096'>
+         DO i=2,ew-2<a name='2097'>
+            psiyy = ( psi(i,j+1) + psi(i,j-1) - 2.*psi(i,j) ) / dssq<a name='2098'>
+            psixx = ( psi(i+1,j) + psi(i-1,j) - 2.*psi(i,j) ) / dssq<a name='2099'>
+            psiy  = ( psi(i,j+1) - psi(i,j-1) ) / ds2<a name='2100'>
+            psix  = ( psi(i+1,j) - psi(i-1,j) ) / ds2<a name='2101'>
+            psixy = ( psi(i+1,j+1)+psi(i-1,j-1)-psi(i-1,j+1)-psi(i+1,j-1)) / dssq4<a name='2102'>
+<a name='2103'>
+            arg1  = <A href='../../html_code/phys/module_mp_full_sbm.F.html#F'>f</A><A href='../../html_code/main/tc_em.F.html#BALANCE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="F_6">(i,j)* (psixx+psiyy)<a name='2104'>
+            arg2  = ( ( f(i,j+1) - f(i,j-1)) / ds2 ) * psiy<a name='2105'>
+            arg3  = ( ( f(i+1,j) - f(i-1,j)) / ds2 ) * psix<a name='2106'>
+            arg4  = 2 *(psixy*psixy-psixx*psiyy)<a name='2107'>
+            out(i,j)= arg1 + arg2  + arg3 - arg4<a name='2108'>
+         END DO<a name='2109'>
+      END DO<a name='2110'>
+<a name='2111'>
+      do i = 2,ew-2<a name='2112'>
+            out(i,ns-1) = out(i,ns-2) <font color=#447700>!top not including corners<a name='2113'></font>
+            out(i,1)    = out(i,2)    <font color=#447700>!bottom not including corners<a name='2114'></font>
+      end do<a name='2115'>
+<a name='2116'>
+      do j = 2,ns-2<a name='2117'>
+            out(ew-1,j) = out(ew-2,j) <font color=#447700>!right side not including corners<a name='2118'></font>
+            out(1,j)    = out(2,j)    <font color=#447700>!left side not including corners<a name='2119'></font>
+      end do<a name='2120'>
+<a name='2121'>
+ <font color=#447700>!Fill in the corners <a name='2122'></font>
+      out(1,1)       = out(2,1)<a name='2123'>
+      out(ew-1,1)    = out(ew-2,1)<a name='2124'>
+      out(1,ns-1)    = out(2,ns-1)<a name='2125'>
+      out(ew-1,ns-1) = out(ew-2,ns-1)<a name='2126'>
+<a name='2127'>
+   END SUBROUTINE balance<a name='2128'>
+<a name='2129'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='2130'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='2131'></font>
+<a name='2132'>
+<A NAME='QVTORH'><A href='../../html_code/main/tc_em.F.html#QVTORH' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2133'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>qvtorh</font> ( q , t , p , k00, ew , ns , nz , rh, min_RH_value   ) <A href='../../call_to/QVTORH.html' TARGET='index'>1</A><a name='2134'>
+<a name='2135'>
+      IMPLICIT NONE<a name='2136'>
+<a name='2137'>
+      INTEGER , INTENT(IN) :: ew , ns , nz , k00<a name='2138'>
+      REAL , INTENT(IN) ,  DIMENSION(ew-1,nz,ns-1) :: q ,t, p<a name='2139'>
+      REAL , INTENT(OUT) , DIMENSION(ew-1,nz,ns-1) :: rh<a name='2140'>
+<a name='2141'>
+      real    min_RH_value<a name='2142'>
+<a name='2143'>
+      <font color=#447700>!  Local variables.<a name='2144'></font>
+<a name='2145'>
+      INTEGER :: i , j , k,fill<a name='2146'>
+      REAL      :: es<a name='2147'>
+      REAL      :: qs<a name='2148'>
+      REAL      :: cp              = 1004.0<a name='2149'>
+      REAL      :: svp1,svp2,svp3<a name='2150'>
+      REAL      :: celkel<a name='2151'>
+      REAL      :: eps<a name='2152'>
+      svp3   =  29.65<a name='2153'>
+      svp1   =  0.6112<a name='2154'>
+      svp2   =  17.67<a name='2155'>
+      celkel =  273.15<a name='2156'>
+         eps =  0.622<a name='2157'>
+<a name='2158'>
+      DO j = 1 , ns - 1<a name='2159'>
+         DO k = k00 , nz<a name='2160'>
+            DO i = 1 , ew -1<a name='2161'>
+               es = svp1 * 10. * EXP(svp2 * (t(i,k,j) - celkel ) / (t(i,k,j) - svp3 ))<a name='2162'>
+               qs = eps*es/(0.01*p(i,k,j) - es)<a name='2163'>
+               rh(i,k,j) = MIN ( 100. , MAX ( 100.*q(i,k,j)/qs , min_RH_value ) )<a name='2164'>
+            END DO<a name='2165'>
+         END DO<a name='2166'>
+      END DO<a name='2167'>
+<a name='2168'>
+   END SUBROUTINE qvtorh<a name='2169'>
+<a name='2170'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='2171'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='2172'></font>
+<a name='2173'>
+<A NAME='STAGGER_RANKINE_WINDS'><A href='../../html_code/main/tc_em.F.html#STAGGER_RANKINE_WINDS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2174'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>stagger_rankine_winds</font>(utcp,vtcp,ew,ns,nz) <A href='../../call_to/STAGGER_RANKINE_WINDS.html' TARGET='index'>1</A><a name='2175'>
+<a name='2176'>
+<a name='2177'>
+<font color=#447700>!utcp and vtcp are the output winds of the rankine subroutine<a name='2178'></font>
+<font color=#447700>!The winds are calculated on the mass points of the WRF grid<a name='2179'></font>
+<font color=#447700>!so they need to be staggered out to the WRF staggering. <a name='2180'></font>
+<font color=#447700>!The utcp is placed on the staggered ew wind grid.<a name='2181'></font>
+<font color=#447700>!The vtcp is placed on the staggered ns wind grid.<a name='2182'></font>
+<a name='2183'>
+<font color=#447700>!ew is the full grid dimension in the ew direction.<a name='2184'></font>
+<font color=#447700>!ns is the full grid dimension in the ns direction.<a name='2185'></font>
+<a name='2186'>
+<font color=#447700>!nz is the number of vertical levels.<a name='2187'></font>
+<a name='2188'>
+ INTEGER :: ew, ns, nz, i,k,j<a name='2189'>
+ REAL utcp(ew,nz,ns-1),  vtcp(ew-1,nz,ns)<a name='2190'>
+<a name='2191'>
+<font color=#447700>!----------------------------------------------------<a name='2192'></font>
+<font color=#447700>!Stagger UTCP<a name='2193'></font>
+  DO j=1,ns-1<a name='2194'>
+     DO i=2,ew-1<a name='2195'>
+        DO k=1,nz<a name='2196'>
+           utcp(i,k,j)  = ( utcp(i-1,k,j) + utcp(i,k,j) ) /2<a name='2197'>
+        end do<a name='2198'>
+    end do<a name='2199'>
+  end do<a name='2200'>
+<a name='2201'>
+<font color=#447700>!Fill in U's along the left and right side.<a name='2202'></font>
+ do j = 1,ns<a name='2203'>
+    utcp(1,:,j)  = utcp(2,:,j)<a name='2204'>
+    utcp(ew,:,j) = utcp(ew-1,:,j)<a name='2205'>
+ end do<a name='2206'>
+<a name='2207'>
+<a name='2208'>
+<font color=#447700>!Stagger VTCP<a name='2209'></font>
+  DO j=2,ns-1<a name='2210'>
+     DO i=1,ew-1<a name='2211'>
+        DO k=1,nz<a name='2212'>
+           vtcp(i,k,j)  = ( vtcp(i,k,j+1) + vtcp(i,k,j-1) ) /2<a name='2213'>
+        end do<a name='2214'>
+    end do<a name='2215'>
+  end do<a name='2216'>
+<a name='2217'>
+<font color=#447700>!Fill in V's along the bottom and bottom.   <a name='2218'></font>
+  do i = 1,ew<a name='2219'>
+     vtcp(i,:,1)  = vtcp(i,:,2)<a name='2220'>
+     vtcp(i,:,ns) = vtcp(i,:,ns-1)<a name='2221'>
+  end do<a name='2222'>
+<a name='2223'>
+<a name='2224'>
+   END SUBROUTINE stagger_rankine_winds<a name='2225'>
+<a name='2226'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='2227'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='2228'></font>
+<a name='2229'>
+<A NAME='FINAL_EW_VELOCITY'><A href='../../html_code/main/tc_em.F.html#FINAL_EW_VELOCITY' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2230'>
+  <font color=#993300>subroutine </font><font color=#cc0000>final_ew_velocity</font>(u2,u1,chi,psi,utcr,dx,ew,ns,nz) <A href='../../call_to/FINAL_EW_VELOCITY.html' TARGET='index'>1</A>,<A href='../../call_from/FINAL_EW_VELOCITY.html' TARGET='index'>2</A><a name='2231'>
+  <a name='2232'>
+<a name='2233'>
+  integer :: ew,ns,nz,i,j,k<a name='2234'>
+  real :: u1(ew,nz,ns-1),utcr(ew,nz,ns-1)<a name='2235'>
+  real :: psi(ew-1,nz,ns-1),chi(ew-1,nz,ns-1)  <a name='2236'>
+<font color=#447700>! input arrays: <a name='2237'></font>
+<font color=#447700>!       u1 is the original wind coming in from the metgrid file.<a name='2238'></font>
+<font color=#447700>!       utcr is the rankine winds rotated to the map projection put on u WRF staggered grid points.<a name='2239'></font>
+<a name='2240'>
+<font color=#447700>! psi comes in on the WRF mass points.  psi is the perturbation field<a name='2241'></font>
+<font color=#447700>! calculated from the relaxation of the vorticity.<a name='2242'></font>
+<a name='2243'>
+<font color=#447700>! chi is the relaxation of the divergent winds on WRF mass points.<a name='2244'></font>
+<a name='2245'>
+<a name='2246'>
+<font color=#447700>! ew is the grid dimension of the WRF ew staggered wind<a name='2247'></font>
+<font color=#447700>! ns is the grid dimension of the WRF ns staggered wind<a name='2248'></font>
+<font color=#447700>! nz is the number of vertical levels<a name='2249'></font>
+<font color=#447700>! dx is the grid spacing<a name='2250'></font>
+<font color=#447700>!-------------------------------------------------------------------------------------------<a name='2251'></font>
+<a name='2252'>
+  real :: u2(ew,nz,ns-1)<a name='2253'>
+<font color=#447700>! output array u2 is the new wind in the ew direction. Is is on WRF staggering.<a name='2254'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------- <a name='2255'></font>
+  <a name='2256'>
+  real upos(ew,nz,ns-1),u0(ew,nz,ns-1),uchi(ew,nz,ns-1) <a name='2257'>
+<font color=#447700>! upos is the derivative of psi in the ns direction  u = -dpsi/dy <a name='2258'></font>
+<font color=#447700>! u0 is the background ew velocity<a name='2259'></font>
+<font color=#447700>! uchi is the array chi on the u staggered grid.<a name='2260'></font>
+<a name='2261'>
+  real    :: dx,arg1,arg2<a name='2262'>
+<a name='2263'>
+<font color=#447700>!-------------------------------------------------------------<a name='2264'></font>
+<font color=#447700>!Take the derivative of chi in the ew direction.<a name='2265'></font>
+   uchi(:,:,:) = -999.<a name='2266'>
+   DO k=1,nz <font color=#447700>!start of k loop<a name='2267'></font>
+      DO j=1,ns-1<a name='2268'>
+         DO i=2,ew-1<a name='2269'>
+            uchi(i,k,j) = ( chi(i,k,j) - chi(i-1,k,j) )/dx<a name='2270'>
+         END DO<a name='2271'>
+      END DO<a name='2272'>
+     <a name='2273'>
+      do j = 1,ns-1<a name='2274'>
+       uchi(1,k,j)    = uchi(2,k,j)    <font color=#447700>!fill in the left side<a name='2275'></font>
+       uchi(ew,k,j)   = uchi(ew-1,k,j) <font color=#447700>!fill in the right side  <a name='2276'></font>
+      end do<a name='2277'>
+   end do <font color=#447700>!k loop<a name='2278'></font>
+<a name='2279'>
+<font color=#447700>!-----------------------------------------------------------------------------------------<a name='2280'></font>
+<font color=#447700>! Take the derivative of psi in the ns direction.<a name='2281'></font>
+    upos(:,:,:) = -999.<a name='2282'>
+    DO k=1,nz<a name='2283'>
+<a name='2284'>
+       DO j=2,ns-2<a name='2285'>
+          DO i=2,ew-1<a name='2286'>
+              arg1 = <A href='../../html_code/phys/module_ra_cam_support.F.html#PSI'>psi</A><A href='../../html_code/main/tc_em.F.html#FINAL_EW_VELOCITY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PSI_2">(i,k,j+1) + psi(i-1,k,j+1)<a name='2287'>
+              arg2 = <A href='../../html_code/phys/module_ra_cam_support.F.html#PSI'>psi</A><A href='../../html_code/main/tc_em.F.html#FINAL_EW_VELOCITY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PSI_3">(i,k,j-1) + psi(i-1,k,j-1)<a name='2288'>
+              upos(i,k,j) = -( arg1 - arg2 )/(4.*dx)<a name='2289'>
+          END DO<a name='2290'>
+       END DO<a name='2291'>
+<a name='2292'>
+       do i = 2,ew-1<a name='2293'>
+          upos(i,k,1)    = upos(i,k,2)    <font color=#447700>!bottom not including corner points<a name='2294'></font>
+          upos(i,k,ns-1) = upos(i,k,ns-2) <font color=#447700>!top not including corner points<a name='2295'></font>
+       end do<a name='2296'>
+<a name='2297'>
+       do j = 1,ns-2<a name='2298'>
+          upos(1,k,j)  = upos(2,k,j)    <font color=#447700>!left side not including corners<a name='2299'></font>
+          upos(ew,k,j) = upos(ew-1,k,j) <font color=#447700>!right side not including corners<a name='2300'></font>
+       end do       <a name='2301'>
+<a name='2302'>
+<a name='2303'>
+       upos(1,k,1)     = upos(2,k,1)         <font color=#447700>!Lower left hand corner<a name='2304'></font>
+       upos(1,k,ns-1)  = upos(2,k,ns-1)      <font color=#447700>!upper left hand corner <a name='2305'></font>
+       upos(ew,k,1)    = upos(ew-1,k,1)      <font color=#447700>!Lower right hand corner<a name='2306'></font>
+       upos(ew,k,ns-1) = upos(ew-1,k,ns-1)   <font color=#447700>!upper right hand corner <a name='2307'></font>
+<a name='2308'>
+    end do  <font color=#447700>!k loop for dspi/dy<a name='2309'></font>
+<a name='2310'>
+<a name='2311'>
+<a name='2312'>
+<font color=#447700>!-----------------------------------------------------------------------------------------<a name='2313'></font>
+<a name='2314'>
+<font color=#447700>!  Background u field.<a name='2315'></font>
+<font color=#447700>!  Subtract the first quess wind field from the original winds.<a name='2316'></font>
+   do j=1,ns-1<a name='2317'>
+      do k=1,nz<a name='2318'>
+         do i=1,ew<a name='2319'>
+            u0(i,k,j) = u1(i,k,j)-(upos(i,k,j)+uchi(i,k,j))<a name='2320'>
+         end do<a name='2321'>
+      end do<a name='2322'>
+   end do<a name='2323'>
+   <a name='2324'>
+<a name='2325'>
+<font color=#447700>!   Calculate the final velocity<a name='2326'></font>
+    do j=1,ns-1<a name='2327'>
+       do k=1,nz<a name='2328'>
+          do i=1,ew<a name='2329'>
+             u2(i,k,j) = u0(i,k,j)+utcr(i,k,j)<a name='2330'>
+          end do<a name='2331'>
+       end do<a name='2332'>
+    end do<a name='2333'>
+<a name='2334'>
+ end subroutine final_ew_velocity<a name='2335'>
+<a name='2336'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='2337'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='2338'></font>
+<a name='2339'>
+<A NAME='FINAL_NS_VELOCITY'><A href='../../html_code/main/tc_em.F.html#FINAL_NS_VELOCITY' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2340'>
+  <font color=#993300>subroutine </font><font color=#cc0000>final_ns_velocity</font>(v2,v1,chi,psi,vtcr,dx,ew,ns,nz) <A href='../../call_to/FINAL_NS_VELOCITY.html' TARGET='index'>1</A>,<A href='../../call_from/FINAL_NS_VELOCITY.html' TARGET='index'>2</A><a name='2341'>
+  <a name='2342'>
+<a name='2343'>
+  integer :: ew,ns,nz,i,j,k<a name='2344'>
+  real :: v1(ew-1,nz,ns),vtcr(ew-1,nz,ns)<a name='2345'>
+  real :: psi(ew-1,nz,ns-1),chi(ew-1,nz,ns-1)  <a name='2346'>
+<font color=#447700>! input arrays: <a name='2347'></font>
+<font color=#447700>!       v1 is the original wind coming in from the metgrid file.<a name='2348'></font>
+<font color=#447700>!       vtcr is the is the rankine winds rotated to the map projection put on v WRF staggered grid points.<a name='2349'></font>
+<a name='2350'>
+<font color=#447700>! psi comes on the WRF mass points.  psi is the perturbation field<a name='2351'></font>
+<font color=#447700>! calculated from the relaxation of the vorticity.<a name='2352'></font>
+<a name='2353'>
+<font color=#447700>! chi is the relaxation of the divergent winds on WRF mass points.<a name='2354'></font>
+<a name='2355'>
+<font color=#447700>! ew is the grid dimension of the WRF ew staggered wind<a name='2356'></font>
+<font color=#447700>! ns is the grid dimension of the WRF ns staggered wind<a name='2357'></font>
+<font color=#447700>! nz is the number of vertical levels<a name='2358'></font>
+<a name='2359'>
+<a name='2360'>
+  real :: v2(ew-1,nz,ns)<a name='2361'>
+<font color=#447700>! output array v2 is the new wind in the ns direction. Is is on WRF staggering.<a name='2362'></font>
+<a name='2363'>
+  <a name='2364'>
+  real vpos(ew-1,nz,ns),v0(ew-1,nz,ns),vchi(ew-1,nz,ns)<a name='2365'>
+<font color=#447700>! vpos is the derivative of psi in the ew direction  v = dpsi/dx <a name='2366'></font>
+<font color=#447700>! v0 is the background ns velocity<a name='2367'></font>
+<font color=#447700>! vchi is the relaxation of the divergent wind put on v WRF staggered grid points.<a name='2368'></font>
+<a name='2369'>
+  real    :: dx,arg1,arg2<a name='2370'>
+<a name='2371'>
+<a name='2372'>
+<font color=#447700>!-----------------------------------------------------------------------------------------<a name='2373'></font>
+ vchi(:,:,:) = -999.0<a name='2374'>
+<font color=#447700>!The derivative dchi in the ns direction.<a name='2375'></font>
+    do k = 1,nz<a name='2376'>
+       DO j=2,ns-1<a name='2377'>
+          DO i=1,ew-1<a name='2378'>
+              vchi(i,k,j) = ( chi(i,k,j) - chi(i,k,j-1))/dx<a name='2379'>
+          END DO<a name='2380'>
+       END DO<a name='2381'>
+<a name='2382'>
+    do i = 1,ew-1<a name='2383'>
+       vchi(i,k,1)  = vchi(i,k,2)<a name='2384'>
+       vchi(i,k,ns) = vchi(i,k,ns-1)<a name='2385'>
+    end do<a name='2386'>
+       <a name='2387'>
+    end do <font color=#447700>!end of k loop<a name='2388'></font>
+<a name='2389'>
+<font color=#447700>!-----------------------------------------------------------------------------------------<a name='2390'></font>
+<font color=#447700>!Take the derivative of psi in the ew direction.<a name='2391'></font>
+    vpos(:,:,:) = -999.<a name='2392'>
+<a name='2393'>
+    DO k=1,nz<a name='2394'>
+       DO j=2,ns-1<a name='2395'>
+          DO i=2,ew-2<a name='2396'>
+              arg1 = <A href='../../html_code/phys/module_ra_cam_support.F.html#PSI'>psi</A><A href='../../html_code/main/tc_em.F.html#FINAL_NS_VELOCITY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PSI_4">(i+1,k,j) + psi(i+1,k,j-1)<a name='2397'>
+              arg2 = <A href='../../html_code/phys/module_ra_cam_support.F.html#PSI'>psi</A><A href='../../html_code/main/tc_em.F.html#FINAL_NS_VELOCITY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PSI_5">(i-1,k,j) + psi(i-1,k,j-1)<a name='2398'>
+              vpos(i,k,j) =  ( arg1 - arg2 )/(4.*dx)<a name='2399'>
+          END DO<a name='2400'>
+       END DO<a name='2401'>
+<a name='2402'>
+       do i = 2,ew-2<a name='2403'>
+          vpos(i,k,1)  = vpos(i,k,2)    <font color=#447700>!bottom not including corner points<a name='2404'></font>
+          vpos(i,k,ns) = vpos(i,k,ns-1) <font color=#447700>!top not including corner points<a name='2405'></font>
+      end do   <a name='2406'>
+<a name='2407'>
+       do j = 1,ns<a name='2408'>
+          vpos(1,k,j)    = vpos(2,k,j)    <font color=#447700>!left side not including corner points<a name='2409'></font>
+          vpos(ew-1,k,j) = vpos(ew-2,k,j) <font color=#447700>!right side not including corner points<a name='2410'></font>
+      end do  <a name='2411'>
+<a name='2412'>
+<a name='2413'>
+      vpos(1,k,1)     = vpos(2,k,1)        <font color=#447700>!Lower left hand corner<a name='2414'></font>
+      vpos(1,k,ns)    = vpos(2,k,ns)       <font color=#447700>!upper left hand corner    <a name='2415'></font>
+      vpos(ew-1,k,1)  = vpos(ew-2,k,1)     <font color=#447700>!Lower right hand corner<a name='2416'></font>
+      vpos(ew-1,k,ns) = vpos(ew-2,k,ns)    <font color=#447700>!upper right hand corner   <a name='2417'></font>
+   <a name='2418'>
+    END DO<font color=#447700>!k loop for dspi/dx<a name='2419'></font>
+    <a name='2420'>
+<a name='2421'>
+    do j=1,ns<a name='2422'>
+       do k=1,nz<a name='2423'>
+          do i=1,ew-1<a name='2424'>
+              v0(i,k,j) = v1(i,k,j)-(vpos(i,k,j)+vchi(i,k,j))<a name='2425'>
+              if( v0(i,k,j) .gt. 100.) then<a name='2426'>
+                print *,vchi(i,k,j),i,k,j<a name='2427'>
+                stop<a name='2428'>
+              end if<a name='2429'>
+          end do<a name='2430'>
+       end do<a name='2431'>
+    end do<a name='2432'>
+    <a name='2433'>
+<a name='2434'>
+<font color=#447700>!   Calculate the final velocity<a name='2435'></font>
+    do j=1,ns<a name='2436'>
+       do k=1,nz<a name='2437'>
+          do i=1,ew-1<a name='2438'>
+             v2(i,k,j) = v0(i,k,j)+vtcr(i,k,j)<a name='2439'>
+          end do<a name='2440'>
+       end do<a name='2441'>
+    end do<a name='2442'>
+<a name='2443'>
+    end subroutine final_ns_velocity<a name='2444'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='2445'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!     <a name='2446'></font>
+<A NAME='FINAL_RH'><A href='../../html_code/main/tc_em.F.html#FINAL_RH' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='2447'>
+<font color=#993300>subroutine </font><font color=#cc0000>final_RH</font>(rh2,rh0,rhmx,strmci,strmcj,rmax_nstrm,ew,ns,nz,k00, &amp; <A href='../../call_to/FINAL_RH.html' TARGET='index'>1</A><a name='2448'>
+                    dx,ew_gcntr,ns_gcntr,r_vor2)<a name='2449'>
+<a name='2450'>
+<a name='2451'>
+<a name='2452'>
+     integer :: ew,ns,nz<a name='2453'>
+     real :: rh2(ew-1,nz,ns-1)  <font color=#447700>!The final output relative humidity.<a name='2454'></font>
+     real :: rh0(ew-1,nz,ns-1)  <font color=#447700>!First quess rh read from the metgrid input file.<a name='2455'></font>
+     real :: rhmx(nz)<a name='2456'>
+     real :: ew_gcntr <font color=#447700>!ew grid center as returned from the map projection routines.<a name='2457'></font>
+     real :: ns_gcntr <font color=#447700>!ns grid center as returned from the map projection routines.<a name='2458'></font>
+     real :: dx       <font color=#447700>!grid spacing <a name='2459'></font>
+     real :: rmax_nstrm<a name='2460'>
+<a name='2461'>
+<a name='2462'>
+<font color=#447700>!Local real variables<a name='2463'></font>
+     real :: sum_rh,avg_rh,rh_min,rhbkg,rhbog,r_ratio<a name='2464'>
+     real :: rad<a name='2465'>
+     real :: rhtc(ew-1,nz,ns-1)<a name='2466'>
+<a name='2467'>
+     integer :: nct,k00,i,j,k,ew_mvc,ns_mvc<a name='2468'>
+     integer :: strmci(nz), strmcj(nz)<a name='2469'>
+<a name='2470'>
+<a name='2471'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='2472'></font>
+     DO k=k00,nz<a name='2473'>
+        rh_max= rhmx(k)<a name='2474'>
+        ew_mvc = strmci(k)<a name='2475'>
+        ns_mvc = strmcj(k)<a name='2476'>
+   <a name='2477'>
+<a name='2478'>
+        sum_rh = 0.<a name='2479'>
+        nct = 0<a name='2480'>
+        DO j=1,ns-1<a name='2481'>
+           DO i=1,ew-1<a name='2482'>
+              rad = SQRT(REAL(i-ew_mvc)**2.+REAL(j-ns_mvc)**2.)*dx<a name='2483'>
+              IF ( (rad .LT. r_vor2).AND.(rad .GE. 0.8*r_vor2) ) THEN<a name='2484'>
+                  sum_rh = sum_rh + rh0(i,k,j)<a name='2485'>
+                  nct = nct + 1<a name='2486'>
+              END IF<a name='2487'>
+           END DO<a name='2488'>
+        END DO<a name='2489'>
+        avg_rh = sum_rh/MAX(REAL(nct),1.)<a name='2490'>
+   <a name='2491'>
+        DO j=1,ns-1<a name='2492'>
+            DO i=1,ew-1<a name='2493'>
+               rh_min = avg_rh <a name='2494'>
+               rad = SQRT((REAL(i)-ew_gcntr)**2.+(REAL(j)-ns_gcntr)**2.)*dx<a name='2495'>
+               IF ( rad .LE. rmax_nstrm ) THEN<a name='2496'>
+                  rhtc(i,k,j) = rh_max<a name='2497'>
+               ELSE<a name='2498'>
+                  rhtc(i,k,j) = (rmax_nstrm/rad)*rh_max+(1.-(rmax_nstrm/rad))*rh_min<a name='2499'>
+               END IF<a name='2500'>
+            END DO<a name='2501'>
+         END DO<a name='2502'>
+     END DO<a name='2503'>
+<a name='2504'>
+<a name='2505'>
+     <font color=#447700>!  New RH.<a name='2506'></font>
+     DO j=1,ns-1<a name='2507'>
+        DO k=k00,nz<a name='2508'>
+           DO i=1,ew-1<a name='2509'>
+              rhbkg = rh0(i,k,j)<a name='2510'>
+              rhbog = rhtc(i,k,j)<a name='2511'>
+              rad = SQRT((REAL(i)-ew_mvc)**2.+(REAL(j)-ns_mvc)**2.)*dx<a name='2512'>
+               IF ( (rad.GT.rmax_nstrm) .AND. (rad.LE.r_vor2) ) THEN<a name='2513'>
+                    r_ratio = (rad-rmax_nstrm)/(r_vor2-rmax_nstrm)<a name='2514'>
+                    rh2(i,k,j) = ((1.-r_ratio)*rhbog) + (r_ratio*rhbkg)<a name='2515'>
+              ELSE IF (rad .LE. rmax_nstrm ) THEN<a name='2516'>
+                    rh2(i,k,j) = rhbog<a name='2517'>
+              ELSE<a name='2518'>
+                    rh2(i,k,j) = rhbkg<a name='2519'>
+              END IF<a name='2520'>
+<a name='2521'>
+          END DO<a name='2522'>
+        END DO<a name='2523'>
+    END DO<a name='2524'>
+<a name='2525'>
+ <a name='2526'>
+<a name='2527'>
+    end subroutine final_RH<a name='2528'>
+<a name='2529'>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='2530'></font>
+<font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! <a name='2531'></font>
+</pre></body></html>

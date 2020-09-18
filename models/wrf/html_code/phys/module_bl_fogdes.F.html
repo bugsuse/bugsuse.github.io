@@ -1,0 +1,168 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_BL_FOGDES'><A href='../../html_code/phys/module_bl_fogdes.F.html#MODULE_BL_FOGDES' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_bl_fogdes</font> <A href='../../call_to/MODULE_BL_FOGDES.html' TARGET='index'>1</A><a name='3'>
+<a name='4'>
+  USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_bl_fogdes.F.html#module_bl_fogdes.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_39"><a name='5'>
+  USE <A href='../../html_code/phys/module_bl_mynn.F.html#MODULE_BL_MYNN'>module_bl_mynn</A><A href='../../html_code/phys/module_bl_fogdes.F.html#module_bl_fogdes.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_BL_MYNN_1">, only: qcgmin, gno, gpw<a name='6'>
+<a name='7'>
+<font color=#447700>!-------------------------------------------------------------------<a name='8'></font>
+  IMPLICIT NONE<a name='9'>
+<font color=#447700>!-------------------------------------------------------------------<a name='10'></font>
+<a name='11'>
+CONTAINS<a name='12'>
+<a name='13'>
+<A NAME='BL_FOGDES'><A href='../../html_code/phys/module_bl_fogdes.F.html#BL_FOGDES' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='14'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>bl_fogdes</font>(&amp; <A href='../../call_to/BL_FOGDES.html' TARGET='index'>1</A><a name='15'>
+               vdfg,qc_curr,dtbl,rho,dz8w,grav_settling,dqc,       &amp;<a name='16'>
+               ids,ide, jds,jde, kds,kde,                          &amp;<a name='17'>
+               ims,ime, jms,jme, kms,kme,                          &amp;<a name='18'>
+               its,ite, jts,jte, kts,kte                           &amp;<a name='19'>
+                                                                   )<a name='20'>
+<a name='21'>
+<font color=#447700>!  This module was written by Joseph Olson (CIRES-NOAA/GSD/AMB) to allow<a name='22'></font>
+<font color=#447700>!  gravitational settling of cloud droplets in the atmosphere for all <a name='23'></font>
+<font color=#447700>!  PBL schemes (when grav_settling &gt; 0). Previously, this option was only <a name='24'></font>
+<font color=#447700>!  available for the MYNN PBL scheme.<a name='25'></font>
+<font color=#447700>!<a name='26'></font>
+<font color=#447700>!  This module is a companion to module_sf_fogdes, which calulcates the <a name='27'></font>
+<font color=#447700>!  (fog) deposition onto the surface, so it uses a consistent formulation<a name='28'></font>
+<font color=#447700>!  at k=1. Currently, it uses a simple form taken from Dyunkerke (1991)<a name='29'></font>
+<font color=#447700>!  and Dyunkerke and Driedonks (1988), but uses a lower settling <a name='30'></font>
+<font color=#447700>!  velocity coefficient (gno = 1.0 instead of 4.6).<a name='31'></font>
+<font color=#447700>!<a name='32'></font>
+<font color=#447700>!    settling velocity:            Vd = gno*(qc)**(2/3)<a name='33'></font>
+<font color=#447700>!    cloud water flux:  gflux = Vd*qc = gno*(qc)**(5/3)<a name='34'></font>
+<font color=#447700>!<a name='35'></font>
+<font color=#447700>!  This form assumes a constant number concentration: 10**8 /m**3 for<a name='36'></font>
+<font color=#447700>!  gno = 4.6 and approx .2*10**8 /m**3 for gno = 1.0.<a name='37'></font>
+<font color=#447700>!<a name='38'></font>
+<font color=#447700>! References:<a name='39'></font>
+<font color=#447700>!<a name='40'></font>
+<font color=#447700>! Dyunkerke, P.G. (1991), Radiation fog: a comparison of model simulations<a name='41'></font>
+<font color=#447700>!     with detailed observations, Mon. Wea. Rev., 119, 324-341.<a name='42'></font>
+<font color=#447700>! Nakanishi, Mikio (2000), Large-eddy simulation of radiation fog,<a name='43'></font>
+<font color=#447700>!     Boundary Layer Meteorology, 94, 461-493. <a name='44'></font>
+<font color=#447700>!<a name='45'></font>
+<font color=#447700>!======================================================================<a name='46'></font>
+<font color=#447700>! Definitions<a name='47'></font>
+<font color=#447700>!-----------<a name='48'></font>
+<font color=#447700>!-- vdfg          deposition velocity of fog (m/s)<a name='49'></font>
+<font color=#447700>!-- qc_curr       cloud water mixing ratio (kg/kg)<a name='50'></font>
+<font color=#447700>!-- dqc           cloud water mixing ratio tendency<a name='51'></font>
+<font color=#447700>!-- dtbl          timestep (s)<a name='52'></font>
+<font color=#447700>!-- rho           density of the air (kg/m^3)<a name='53'></font>
+<font color=#447700>!-- dp_fog        mean fog droplet diameter (m)<a name='54'></font>
+<font color=#447700>!-- dz8w          dz between full levels (m)<a name='55'></font>
+<font color=#447700>!-- grav_settling flag for fog deposition at the lowest atmos layer<a name='56'></font>
+<font color=#447700>!           = 2   FogDES scheme<a name='57'></font>
+<font color=#447700>!           = 1   use Duynkerke (1991) - same as in atmos (above k = 1)<a name='58'></font>
+<font color=#447700>!           = 0   No gravitational settling<a name='59'></font>
+<font color=#447700>!-- lwc           cloud liquid water content (kg/m^3)<a name='60'></font>
+<font color=#447700>!-- ims           start index for i in memory<a name='61'></font>
+<font color=#447700>!-- ime           end index for i in memory<a name='62'></font>
+<font color=#447700>!-- jms           start index for j in memory<a name='63'></font>
+<font color=#447700>!-- jme           end index for j in memory<a name='64'></font>
+<font color=#447700>!-- kms           start index for k in memory<a name='65'></font>
+<font color=#447700>!-- kme           end index for k in memory<a name='66'></font>
+<font color=#447700>!-- its           start index for i in tile<a name='67'></font>
+<font color=#447700>!-- ite           end index for i in tile<a name='68'></font>
+<font color=#447700>!-- jts           start index for j in tile<a name='69'></font>
+<font color=#447700>!-- jte           end index for j in tile<a name='70'></font>
+<font color=#447700>!-- kts           start index for k in tile<a name='71'></font>
+<font color=#447700>!-- kte           end index for k in tile<a name='72'></font>
+<font color=#447700>!******************************************************************<a name='73'></font>
+<font color=#447700>!------------------------------------------------------------------<a name='74'></font>
+<a name='75'>
+   INTEGER, INTENT(IN)                       :: ims,ime,jms,jme,kms,kme &amp;<a name='76'>
+                                               ,its,ite,jts,jte,kts,kte &amp;<a name='77'>
+                                               ,ids,ide,jds,jde,kds,kde<a name='78'>
+<a name='79'>
+   INTEGER, INTENT(IN)                       :: grav_settling<a name='80'>
+<a name='81'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &amp;<a name='82'>
+                                       INTENT(IN),OPTIONAL    :: qc_curr<a name='83'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &amp;<a name='84'>
+                                       INTENT(IN)             :: rho<a name='85'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &amp;<a name='86'>
+                                       INTENT(IN   )          :: dz8w<a name='87'>
+<a name='88'>
+   REAL, DIMENSION( ims:ime, jms:jme ),INTENT(IN),OPTIONAL    :: vdfg<a name='89'>
+<a name='90'>
+   REAL, INTENT(INOUT),OPTIONAL                               :: dtbl<a name='91'>
+<a name='92'>
+<font color=#447700>!JOE-added for Dyunkerke(1991) &amp; Dyunkerke and Driedonks (1988)<a name='93'></font>
+<font color=#447700>!    gravitational settling above the surface (creates qc tendency).<a name='94'></font>
+   REAL,parameter :: gpw2=0.66666666666667<a name='95'>
+   REAL :: gfluxp,gfluxm<a name='96'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &amp;<a name='97'>
+                                       INTENT(INOUT),OPTIONAL :: dqc<a name='98'>
+<font color=#447700>!JOE-end<a name='99'></font>
+<a name='100'>
+<font color=#447700>! Local variables<a name='101'></font>
+   INTEGER :: i,j,k,grav_settling2<a name='102'>
+<font color=#447700>!------------------------------------------------------------------<a name='103'></font>
+<a name='104'>
+  grav_settling2 = MIN(REAL(grav_settling), 1.)<a name='105'>
+<a name='106'>
+   DO j=jts,jte<a name='107'>
+     DO i=its,ite<a name='108'>
+<a name='109'>
+       <font color=#447700>!!====================================================<a name='110'></font>
+       <font color=#447700>!! Calculate gravitational settling in the atmosphere.<a name='111'></font>
+       <font color=#447700>!! This uses Dyunkerke (referenced above). Note that <a name='112'></font>
+       <font color=#447700>!! only the cloud mixing ratio is settled, not the<a name='113'></font>
+       <font color=#447700>!! number concentration. <a name='114'></font>
+       <font color=#447700>!!====================================================<a name='115'></font>
+<a name='116'>
+       k=kts<a name='117'>
+<a name='118'>
+       IF (qc_curr(i,k,j) &gt; qcgmin) THEN<a name='119'>
+          gfluxm=grav_settling2*qc_curr(i,k,j)*vdfg(i,j)<a name='120'>
+       ELSE<a name='121'>
+          gfluxm=0.<a name='122'>
+       ENDIF<a name='123'>
+<a name='124'>
+       IF (.5*(qc_curr(i,k+1,j)+qc_curr(i,k,j)) &gt; qcgmin) THEN<a name='125'>
+          gfluxp=grav_settling2*gno* &amp;<a name='126'>
+                &amp; (.5*(qc_curr(i,k+1,j)+qc_curr(i,k,j)))**gpw<a name='127'>
+       ELSE<a name='128'>
+          gfluxp=0.<a name='129'>
+       ENDIF<a name='130'>
+<a name='131'>
+       dqc(i,k,j)=dqc(i,k,j) + (gfluxp - gfluxm)/dz8w(i,kts,j)    <font color=#447700>!*dtbl<a name='132'></font>
+<a name='133'>
+       <font color=#447700>!print*,"in bl_fogdes: i,j=",i,j<a name='134'></font>
+       <font color=#447700>!print*,"vdfg=",vdfg(i,j)," qc=",qc_curr(i,k,j)," dtbl=",dtbl<a name='135'></font>
+       <font color=#447700>!print*,"dqc=",dqc(i,k,j)," gfluxm=",gfluxm," gfluxp=",gfluxp<a name='136'></font>
+<a name='137'>
+       DO k=kts+1,kte-1<a name='138'>
+<a name='139'>
+          IF (.5*(qc_curr(i,k+1,j)+qc_curr(i,k,j)) &gt; qcgmin) THEN<a name='140'>
+             gfluxp=grav_settling2*gno* &amp;<a name='141'>
+                   &amp; (.5*(qc_curr(i,k+1,j)+qc_curr(i,k,j)))**gpw<a name='142'>
+          ELSE<a name='143'>
+             gfluxp=0.<a name='144'>
+          ENDIF<a name='145'>
+<a name='146'>
+          IF (.5*(qc_curr(i,k-1,j)+qc_curr(i,k,j)) &gt; qcgmin) THEN<a name='147'>
+             gfluxm=grav_settling2*gno* &amp;<a name='148'>
+                   &amp; (.5*(qc_curr(i,k-1,j)+qc_curr(i,k,j)))**gpw<a name='149'>
+          ELSE<a name='150'>
+             gfluxm=0.<a name='151'>
+          ENDIF<a name='152'>
+<a name='153'>
+          dqc(i,k,j)= dqc(i,k,j) + (gfluxp - gfluxm)/dz8w(i,k,j)  <font color=#447700>!*dtbl<a name='154'></font>
+<a name='155'>
+       ENDDO<a name='156'>
+<a name='157'>
+      <font color=#447700>! dqc(i,kte,j)=0.<a name='158'></font>
+<a name='159'>
+     ENDDO<a name='160'>
+   ENDDO<a name='161'>
+<a name='162'>
+  END SUBROUTINE bl_fogdes<a name='163'>
+<a name='164'>
+<font color=#447700>! ==================================================================<a name='165'></font>
+<a name='166'>
+END MODULE module_bl_fogdes<a name='167'>
+</pre></body></html>

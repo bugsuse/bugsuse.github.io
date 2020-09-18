@@ -1,0 +1,664 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:MODEL_LAYER:PHYSICS<a name='2'></font>
+<A NAME='MODULE_FDDAOBS_DRIVER'><A href='../../html_code/phys/module_fddaobs_driver.F.html#MODULE_FDDAOBS_DRIVER' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='3'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_fddaobs_driver</font> <A href='../../call_to/MODULE_FDDAOBS_DRIVER.html' TARGET='index'>2</A><a name='4'>
+<a name='5'>
+<font color=#447700>! This obs-nudging FDDA module (RTFDDA) is developed by the <a name='6'></font>
+<font color=#447700>! NCAR/RAL/NSAP (National Security Application Programs), under the <a name='7'></font>
+<font color=#447700>! sponsorship of ATEC (Army Test and Evaluation Commands). ATEC is <a name='8'></font>
+<font color=#447700>! acknowledged for releasing this capability for WRF community <a name='9'></font>
+<font color=#447700>! research applications.<a name='10'></font>
+<font color=#447700>!<a name='11'></font>
+<font color=#447700>! The NCAR/RAL RTFDDA module was adapted, and significantly modified <a name='12'></font>
+<font color=#447700>! from the obs-nudging module in the standard MM5V3.1 which was originally <a name='13'></font>
+<font color=#447700>! developed by PSU (Stauffer and Seaman, 1994). <a name='14'></font>
+<font color=#447700>! <a name='15'></font>
+<font color=#447700>! Yubao Liu (NCAR/RAL): lead developer of the RTFDDA module <a name='16'></font>
+<font color=#447700>! Al Bourgeois (NCAR/RAL): lead engineer implementing RTFDDA into WRF-ARW<a name='17'></font>
+<font color=#447700>! Nov. 2006<a name='18'></font>
+<font color=#447700>! <a name='19'></font>
+<font color=#447700>! References:<a name='20'></font>
+<font color=#447700>!   <a name='21'></font>
+<font color=#447700>!   Liu, Y., A. Bourgeois, T. Warner, S. Swerdlin and J. Hacker, 2005: An<a name='22'></font>
+<font color=#447700>!     implementation of obs-nudging-based FDDA into WRF for supporting <a name='23'></font>
+<font color=#447700>!     ATEC test operations. 2005 WRF user workshop. Paper 10.7.<a name='24'></font>
+<font color=#447700>!<a name='25'></font>
+<font color=#447700>!   Liu, Y., A. Bourgeois, T. Warner, S. Swerdlin and W. Yu, 2006: An update <a name='26'></font>
+<font color=#447700>!     on "obs-nudging"-based FDDA for WRF-ARW: Verification using OSSE <a name='27'></font>
+<font color=#447700>!     and performance of real-time forecasts. 2006 WRF user workshop. Paper 4.7. <a name='28'></font>
+<a name='29'>
+<font color=#447700>!   <a name='30'></font>
+<font color=#447700>!   Stauffer, D.R., and N.L. Seaman, 1994: Multi-scale four-dimensional data <a name='31'></font>
+<font color=#447700>!     assimilation. J. Appl. Meteor., 33, 416-434.<a name='32'></font>
+<font color=#447700>!<a name='33'></font>
+<font color=#447700>!   http://www.rap.ucar.edu/projects/armyrange/references.html<a name='34'></font>
+<font color=#447700>!<a name='35'></font>
+ <a name='36'>
+CONTAINS<a name='37'>
+<a name='38'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='39'></font>
+<A NAME='FDDAOBS_DRIVER'><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='40'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>fddaobs_driver</font>( inest, domid, parid, restart,         &amp; <A href='../../call_to/FDDAOBS_DRIVER.html' TARGET='index'>1</A>,<A href='../../call_from/FDDAOBS_DRIVER.html' TARGET='index'>13</A><a name='41'>
+               config_flags,                                     &amp;<a name='42'>
+               nudge_opt, iprt_errob, iprt_nudob,                &amp;<a name='43'>
+               fdasta, fdaend,                                   &amp;<a name='44'>
+               nudge_wind, nudge_temp, nudge_mois,               &amp;<a name='45'>
+               nudge_pstr,                                       &amp;<a name='46'>
+               coef_wind, coef_temp, coef_mois,                  &amp;<a name='47'>
+               coef_pstr, rinxy, rinsig,                         &amp;<a name='48'>
+               npfi, ionf,                                       &amp;<a name='49'>
+               obs_prt_max, obs_prt_freq, idynin, dtramp,        &amp;<a name='50'>
+               parent_grid_ratio, maxdom, itimestep,             &amp;<a name='51'>
+               xtime,                                            &amp;<a name='52'>
+               dt, gmt, julday,                                  &amp;<a name='53'>
+#if ( EM_CORE == 1 ) <a name='54'>
+               fdob,                                             &amp;<a name='55'>
+#endif<a name='56'>
+               max_obs, nobs_ndg_vars,                           &amp;<a name='57'>
+               nobs_err_flds, nstat, varobs, errf, dx,           &amp;<a name='58'>
+               KPBL, HT, mut, muu, muv, c1h, c2h,                &amp;<a name='59'>
+               msftx, msfty, msfux, msfuy, msfvx, msfvy, p_phy, t_tendf, t0,             &amp;<a name='60'>
+               ub, vb, tb, qvb, pbase, ptop, pp, phb, ph,        &amp;<a name='61'>
+               uratx, vratx, tratx, ru_tendf, rv_tendf,          &amp;<a name='62'>
+               moist_tend, savwt,                                &amp;<a name='63'>
+               regime, pblh, z_at_w,                             &amp;<a name='64'>
+               z,                                                &amp;<a name='65'>
+               ids,ide, jds,jde, kds,kde,                        &amp; <font color=#447700>! domain dims<a name='66'></font>
+               ims,ime, jms,jme, kms,kme,                        &amp; <font color=#447700>! memory dims<a name='67'></font>
+               its,ite, jts,jte, kts,kte                         ) <font color=#447700>! tile   dims<a name='68'></font>
+<a name='69'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='70'></font>
+  USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_229"><a name='71'>
+  <font color=#447700>! USE module_bc  seems to not be needed<a name='72'></font>
+  USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_63">, ONLY : g, rcp<a name='73'>
+  USE <A href='../../html_code/phys/module_fddaobs_rtfdda.F.html#MODULE_FDDAOBS_RTFDDA'>module_fddaobs_rtfdda</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_FDDAOBS_RTFDDA_1"><a name='74'>
+<a name='75'>
+<font color=#447700>! This driver calls subroutines for fdda obs-nudging and<a name='76'></font>
+<font color=#447700>! returns computed tendencies<a name='77'></font>
+<a name='78'>
+<font color=#447700>!<a name='79'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='80'></font>
+  IMPLICIT NONE<a name='81'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='82'></font>
+<font color=#447700>! taken from MM5 code - 03 Feb 2004.<a name='83'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='84'></font>
+<a name='85'>
+<font color=#447700>!=======================================================================<a name='86'></font>
+<font color=#447700>! Definitions<a name='87'></font>
+<font color=#447700>!-----------<a name='88'></font>
+<font color=#447700>!-- KPBL          vertical layer index for PBL top<a name='89'></font>
+<font color=#447700>!-- HT            terrain height (m)<a name='90'></font>
+<font color=#447700>!-- p_phy         pressure (Pa)<a name='91'></font>
+<font color=#447700>!-- t_tendf       temperature tendency<a name='92'></font>
+<a name='93'>
+  INTEGER, intent(in)  :: ids,ide, jds,jde, kds,kde  <font color=#447700>! domain dims.<a name='94'></font>
+  INTEGER, intent(in)  :: ims,ime, jms,jme, kms,kme  <font color=#447700>! memory dims.<a name='95'></font>
+  INTEGER, intent(in)  :: its,ite, jts,jte, kts,kte  <font color=#447700>! tile   dims.<a name='96'></font>
+<a name='97'>
+  INTEGER, intent(in)  :: inest<a name='98'>
+  INTEGER, intent(in)  :: maxdom<a name='99'>
+  INTEGER, intent(in)  :: domid(maxdom)           <font color=#447700>! Domain IDs<a name='100'></font>
+  INTEGER, intent(in)  :: parid(maxdom)           <font color=#447700>! Parent domain IDs<a name='101'></font>
+  LOGICAL, intent(in)  :: restart<a name='102'>
+  TYPE(grid_config_rec_type),  INTENT(IN   )    :: config_flags<a name='103'>
+  INTEGER, intent(in)  :: itimestep<a name='104'>
+  INTEGER, intent(in)  :: nudge_opt<a name='105'>
+  LOGICAL, intent(in)  :: iprt_errob <a name='106'>
+  LOGICAL, intent(in)  :: iprt_nudob <a name='107'>
+  REAL, intent(in)     :: fdasta<a name='108'>
+  REAL, intent(in)     :: fdaend<a name='109'>
+  INTEGER, intent(in)  :: nudge_wind<a name='110'>
+  INTEGER, intent(in)  :: nudge_temp<a name='111'>
+  INTEGER, intent(in)  :: nudge_mois<a name='112'>
+  INTEGER, intent(in)  :: nudge_pstr<a name='113'>
+  REAL, intent(in) :: coef_wind<a name='114'>
+  REAL, intent(in) :: coef_temp<a name='115'>
+  REAL, intent(in) :: coef_mois<a name='116'>
+  REAL, intent(in) :: coef_pstr<a name='117'>
+  REAL, intent(inout)  :: rinxy<a name='118'>
+  REAL, intent(inout)  :: rinsig<a name='119'>
+  INTEGER, intent(in) :: npfi<a name='120'>
+  INTEGER, intent(in) :: ionf<a name='121'>
+  INTEGER, intent(in) :: obs_prt_max      <font color=#447700>! max number of obs in printout<a name='122'></font>
+  INTEGER, intent(in) :: obs_prt_freq     <font color=#447700>! frequency (in obs index) printout <a name='123'></font>
+  INTEGER, intent(in) :: idynin<a name='124'>
+  REAL, intent(inout) :: dtramp<a name='125'>
+  INTEGER, intent(in) :: parent_grid_ratio<a name='126'>
+  REAL, intent(in)     :: xtime           <font color=#447700>! forecast time in minutes<a name='127'></font>
+  REAL, intent(in)     :: dt<a name='128'>
+  REAL, intent(in)     :: gmt<a name='129'>
+  INTEGER, intent(in)  :: julday<a name='130'>
+  INTEGER, intent(in)  :: max_obs         <font color=#447700>! max number of observations<a name='131'></font>
+  INTEGER, intent(in)  :: nobs_ndg_vars<a name='132'>
+  INTEGER, intent(in)  :: nobs_err_flds<a name='133'>
+  INTEGER, intent(in)  :: nstat<a name='134'>
+  REAL, intent(inout)  :: varobs(nobs_ndg_vars, max_obs)<a name='135'>
+  REAL, intent(inout)  :: errf(nobs_err_flds, max_obs)<a name='136'>
+  REAL, intent(in)     :: dx           <font color=#447700>! this-domain grid cell-size (m)<a name='137'></font>
+  INTEGER, INTENT(IN) :: kpbl( ims:ime, jms:jme ) <font color=#447700>! vertical layer index for PBL top<a name='138'></font>
+  REAL, INTENT(IN) :: ht( ims:ime, jms:jme )<a name='139'>
+  REAL, INTENT(IN) :: mut( ims:ime , jms:jme )   <font color=#447700>! Air mass on t-grid <a name='140'></font>
+  REAL, INTENT(IN) :: muu( ims:ime , jms:jme )   <font color=#447700>! Air mass on u-grid <a name='141'></font>
+  REAL, INTENT(IN) :: muv( ims:ime , jms:jme )   <font color=#447700>! Air mass on v-grid<a name='142'></font>
+  REAL, INTENT(IN) :: msftx( ims:ime , jms:jme )  <font color=#447700>! Map scale on t-grid<a name='143'></font>
+  REAL, INTENT(IN) :: msfty( ims:ime , jms:jme )  <font color=#447700>! Map scale on t-grid<a name='144'></font>
+  REAL, INTENT(IN) :: msfux( ims:ime , jms:jme )  <font color=#447700>! Map scale on u-grid<a name='145'></font>
+  REAL, INTENT(IN) :: msfuy( ims:ime , jms:jme )  <font color=#447700>! Map scale on u-grid<a name='146'></font>
+  REAL, INTENT(IN) :: msfvx( ims:ime , jms:jme )  <font color=#447700>! Map scale on v-grid<a name='147'></font>
+  REAL, INTENT(IN) :: msfvy( ims:ime , jms:jme )  <font color=#447700>! Map scale on v-grid<a name='148'></font>
+<a name='149'>
+  REAL, INTENT(IN) :: c1h( kms:kme )   <font color=#447700>! Hybrid coordinate, weighting function<a name='150'></font>
+  REAL, INTENT(IN) :: c2h( kms:kme )   <font color=#447700>! Hybrid coordinate, weighting function<a name='151'></font>
+<a name='152'>
+  REAL, INTENT(IN) :: p_phy( ims:ime, kms:kme, jms:jme )<a name='153'>
+  REAL, INTENT(INOUT) :: t_tendf( ims:ime, kms:kme, jms:jme )<a name='154'>
+  REAL, INTENT(IN) :: t0<a name='155'>
+  REAL, INTENT(INOUT) :: savwt( nobs_ndg_vars, ims:ime, kms:kme, jms:jme )<a name='156'>
+  REAL, INTENT(INOUT) :: regime( ims:ime, jms:jme )<a name='157'>
+  REAL, INTENT(IN) :: pblh( ims:ime, jms:jme )<a name='158'>
+  REAL, INTENT(IN) :: z_at_w( ims:ime, kms:kme, jms:jme ) <font color=#447700>! Model ht(m) asl, f-levs<a name='159'></font>
+  REAL, INTENT(IN) :: z( ims:ime, kms:kme, jms:jme )  <font color=#447700>! Model ht(m) asl, h-levs<a name='160'></font>
+<a name='161'>
+#if ( EM_CORE == 1 ) <a name='162'>
+  TYPE(fdob_type), intent(inout)  :: fdob<a name='163'>
+#endif<a name='164'>
+<a name='165'>
+  REAL,   INTENT(IN) :: ub( ims:ime, kms:kme, jms:jme )<a name='166'>
+  REAL,   INTENT(IN) :: vb( ims:ime, kms:kme, jms:jme )<a name='167'>
+  REAL,   INTENT(IN) :: tb( ims:ime, kms:kme, jms:jme )<a name='168'>
+  REAL,   INTENT(IN) :: qvb( ims:ime, kms:kme, jms:jme )<a name='169'>
+  REAL,   INTENT(IN) :: pbase( ims:ime, kms:kme, jms:jme ) <font color=#447700>! Base press. (Pa)<a name='170'></font>
+  REAL,   INTENT(IN) :: ptop<a name='171'>
+  REAL,   INTENT(IN) :: pp( ims:ime, kms:kme, jms:jme )  <font color=#447700>! Press. pert. (Pa)<a name='172'></font>
+  REAL,   INTENT(IN) :: phb( ims:ime, kms:kme, jms:jme ) <font color=#447700>! Base geopotential<a name='173'></font>
+  REAL,   INTENT(IN) :: ph( ims:ime, kms:kme, jms:jme )  <font color=#447700>! Perturbation geopotential<a name='174'></font>
+  REAL,   INTENT(IN) :: uratx( ims:ime, jms:jme )     <font color=#447700>! On mass points<a name='175'></font>
+  REAL,   INTENT(IN) :: vratx( ims:ime, jms:jme )     <font color=#447700>!       "<a name='176'></font>
+  REAL,   INTENT(IN) :: tratx( ims:ime, jms:jme )     <font color=#447700>!       "<a name='177'></font>
+  REAL,   INTENT(INOUT) :: ru_tendf( ims:ime, kms:kme, jms:jme )<a name='178'>
+  REAL,   INTENT(INOUT) :: rv_tendf( ims:ime, kms:kme, jms:jme )<a name='179'>
+  REAL,   INTENT(INOUT) :: moist_tend( ims:ime, kms:kme, jms:jme )<a name='180'>
+<a name='181'>
+<font color=#447700>! Local variables<a name='182'></font>
+  logical            :: nudge_flag   <font color=#447700>! Flag for doing nudging <a name='183'></font>
+  integer            :: KTAU         <font color=#447700>! Forecast timestep<a name='184'></font>
+  real               :: dtmin        <font color=#447700>! dt in minutes<a name='185'></font>
+  integer            :: i, j, k      <font color=#447700>! Loop counters.<a name='186'></font>
+  integer            :: idom         <font color=#447700>! Loop counter.<a name='187'></font>
+  integer            :: nsta         <font color=#447700>! Number of observation stations<a name='188'></font>
+  integer            :: infr         <font color=#447700>! Frequency for obs input and error calc <a name='189'></font>
+  integer            :: idarst       <font color=#447700>! Flag for calling sub errob on restart<a name='190'></font>
+  real               :: dtr          <font color=#447700>! Abs value of dtramp (for dynamic init)<a name='191'></font>
+  real               :: tconst       <font color=#447700>! Reciprocal of dtr<a name='192'></font>
+  real    :: vih_uv(its:ite,jts:jte,2) <font color=#447700>! Vert infl heights abv grd for LML obs (wind)<a name='193'></font>
+  real    :: vih_t (its:ite,jts:jte,2) <font color=#447700>! Vert infl heights abv grd for LML obs (temp)<a name='194'></font>
+  real    :: vih_q (its:ite,jts:jte,2) <font color=#447700>! Vert infl heights abv grd for LML obs (mois)<a name='195'></font>
+  integer :: vik_uv(its:ite,jts:jte,2) <font color=#447700>! Vert infl k-levels for LML obs (wind)<a name='196'></font>
+  integer :: vik_t (its:ite,jts:jte,2) <font color=#447700>! Vert infl k-levels for LML obs (temp)<a name='197'></font>
+  integer :: vik_q (its:ite,jts:jte,2) <font color=#447700>! Vert infl k-levels for LML obs (mois)<a name='198'></font>
+  real    :: z_at_p( kms:kme )       <font color=#447700>! Height at p levels<a name='199'></font>
+#ifdef RAL<a name='200'>
+  real    :: HTIJ(ids:ide, jds:jde) = 0.  <font color=#447700>! Terrain ht on global grid<a name='201'></font>
+#endif<a name='202'>
+  character(len=200) :: msg  <font color=#447700>! Argument to wrf_message<a name='203'></font>
+<a name='204'>
+#if ( EM_CORE == 1 ) <a name='205'>
+  nudge_flag = (nudge_opt  .eq. 1)<a name='206'>
+<a name='207'>
+  if (.not. nudge_flag) return<a name='208'>
+<a name='209'>
+<font color=#447700>!----------------------------------------------------------------------<a name='210'></font>
+<font color=#447700>! ***************       BEGIN FDDA SETUP SECTION        ***************<a name='211'></font>
+<a name='212'>
+<font color=#447700>! Calculate forecast time.<a name='213'></font>
+  dtmin = dt/60.     <a name='214'>
+  ktau  = itimestep - 1        <font color=#447700>!ktau corresponds to xtime<a name='215'></font>
+<a name='216'>
+<font color=#447700>! Set NSTA to zero on startup, or else retrieve value from last pass.<a name='217'></font>
+  IF(ktau.EQ.fdob%ktaur) THEN<a name='218'>
+     if (iprt_nudob) then<a name='219'>
+        write(msg,'(a,i2,a)') 'OBS NUDGING is requested on a total of ',   &amp;<a name='220'>
+                              fdob%domain_tot,' domain(s).'<a name='221'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_720">(msg)<a name='222'>
+     endif<a name='223'>
+     nsta=0.<a name='224'>
+  ELSE<a name='225'>
+     nsta=fdob%nstat<a name='226'>
+  ENDIF<a name='227'>
+  <a name='228'>
+  infr = ionf*(parent_grid_ratio**fdob%levidn(inest))<a name='229'>
+  nsta=fdob%nstat<a name='230'>
+  idarst = 0<a name='231'>
+  IF(restart .AND. ktau.EQ.fdob%ktaur) idarst=1<a name='232'>
+<a name='233'>
+  CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_610">(100,'in PSU FDDA scheme')<a name='234'>
+<a name='235'>
+<font color=#447700>! Make sure regime array is set over entire grid<a name='236'></font>
+<font color=#447700>! (ajb: Copied code from fddagd)<a name='237'></font>
+    IF( config_flags%sf_sfclay_physics /= sfclayscheme &amp;<a name='238'>
+  .AND. config_flags%sf_sfclay_physics /= mynnsfcscheme &amp;<a name='239'>
+  .AND. config_flags%sf_sfclay_physics /= pxsfcscheme &amp;<a name='240'>
+  .AND. config_flags%sf_sfclay_physics /= sfclayrevscheme ) THEN<a name='241'>
+      DO j = jts, jte<a name='242'>
+      DO i = its, ite<a name='243'>
+           IF( pblh(i,j) &gt; z_at_w(i,2,j)-ht(i,j) ) THEN<a name='244'>
+             regime(i,j) = 4.0<a name='245'>
+           ELSE<a name='246'>
+             regime(i,j) = 1.0<a name='247'>
+           ENDIF<a name='248'>
+      ENDDO<a name='249'>
+      ENDDO<a name='250'>
+    ENDIF<a name='251'>
+<a name='252'>
+<font color=#447700>! Compute VIF heights for each grid column (used for LML obs)<a name='253'></font>
+   if(fdob%sfc_scheme_vert.EQ.0) then<a name='254'>
+     if(nudge_wind.EQ.1 .AND. NSTA.GT.0)  then<a name='255'>
+       CALL <A href='../../html_code/phys/module_fddaobs_driver.F.html#COMPUTE_VIH'>compute_VIH</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="COMPUTE_VIH_1">( fdob%vif_uv, fdob%vif_max,                &amp;<a name='256'>
+                         fdob%vif_fullmin, fdob%vif_rampmin,       &amp;<a name='257'>
+                         regime, pblh,                             &amp;<a name='258'>
+                         ht, z, vih_uv,                            &amp;<a name='259'>
+                         ids,ide, jds,jde, kds,kde,                &amp;<a name='260'>
+                         ims,ime, jms,jme, kms,kme,                &amp;<a name='261'>
+                         its,ite, jts,jte, kts,kte )<a name='262'>
+     endif<a name='263'>
+     if(nudge_temp.EQ.1 .AND. NSTA.GT.0)  then<a name='264'>
+       CALL <A href='../../html_code/phys/module_fddaobs_driver.F.html#COMPUTE_VIH'>compute_VIH</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="COMPUTE_VIH_2">( fdob%vif_t, fdob%vif_max,                 &amp;<a name='265'>
+                         fdob%vif_fullmin, fdob%vif_rampmin,       &amp;<a name='266'>
+                         regime, pblh,                             &amp;<a name='267'>
+                         ht, z, vih_t,                             &amp;<a name='268'>
+                         ids,ide, jds,jde, kds,kde,                &amp;<a name='269'>
+                         ims,ime, jms,jme, kms,kme,                &amp;<a name='270'>
+                         its,ite, jts,jte, kts,kte )<a name='271'>
+     endif<a name='272'>
+     if(nudge_mois.EQ.1 .AND. NSTA.GT.0)  then<a name='273'>
+       CALL <A href='../../html_code/phys/module_fddaobs_driver.F.html#COMPUTE_VIH'>compute_VIH</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="COMPUTE_VIH_3">( fdob%vif_q, fdob%vif_max,                 &amp;<a name='274'>
+                         fdob%vif_fullmin, fdob%vif_rampmin,       &amp;<a name='275'>
+                         regime, pblh,                             &amp;<a name='276'>
+                         ht, z, vih_q,                             &amp;<a name='277'>
+                         ids,ide, jds,jde, kds,kde,                &amp;<a name='278'>
+                         ims,ime, jms,jme, kms,kme,                &amp;<a name='279'>
+                         its,ite, jts,jte, kts,kte )<a name='280'>
+     endif<a name='281'>
+   endif<a name='282'>
+<font color=#447700>!********************* END AJB MOVE TO SLAB ***************************<a name='283'></font>
+<a name='284'>
+<font color=#447700>! COMPUTE ERROR BETWEEN OBSERVATIONS and MODEL<a name='285'></font>
+  IF( nsta.GT.0 ) THEN<a name='286'>
+    IF( MOD(ktau,infr).EQ.0 .OR. idarst.EQ.1) THEN<a name='287'>
+<a name='288'>
+        CALL <A href='../../html_code/phys/module_fddaobs_rtfdda.F.html#ERROB'>errob</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ERROB_1">(inest, ub, vb, tb, t0, qvb, pbase, pp, rcp,       &amp;<a name='289'>
+                   z,                                                &amp;<a name='290'>
+                   uratx, vratx, tratx, kpbl,                        &amp;<a name='291'>
+                   nobs_ndg_vars, nobs_err_flds, max_obs, maxdom,    &amp;<a name='292'>
+                   fdob%levidn, parid, fdob%nstat, fdob%nstaw,       &amp;<a name='293'>
+                   nudge_wind, nudge_temp, nudge_mois, nudge_pstr,   &amp;<a name='294'>
+                   fdob%timeob, fdob%rio, fdob%rjo, fdob%rko,        &amp;<a name='295'>
+                   varobs, errf, ktau, xtime,                        &amp;<a name='296'>
+                   parent_grid_ratio, npfi,                          &amp;<a name='297'>
+                   obs_prt_max, obs_prt_freq, iprt_errob,            &amp;<a name='298'>
+                   fdob%obsprt, fdob%stnidprt,                       &amp;<a name='299'>
+                   fdob%latprt, fdob%lonprt,                         &amp;<a name='300'>
+                   fdob%mlatprt, fdob%mlonprt,                       &amp;<a name='301'>
+                   ids,ide, jds,jde, kds,kde,                        &amp;<a name='302'>
+                   ims,ime, jms,jme, kms,kme,                        &amp;<a name='303'>
+                   its,ite, jts,jte, kts,kte)<a name='304'>
+    ENDIF<a name='305'>
+  ENDIF<a name='306'>
+<a name='307'>
+  fdob%tfaci=1.0<a name='308'>
+  IF(idynin.EQ.1.AND.nudge_opt.EQ.1) THEN<a name='309'>
+    dtr=ABS(dtramp)<a name='310'>
+    tconst=1./dtr<a name='311'>
+<font color=#447700>! FDAEND(IN) IS THE TIME IN MINUTES TO END THE DYNAMIC INITIALIZATION CY<a name='312'></font>
+    IF(xtime.LT.fdaend-dtr)THEN<a name='313'>
+      fdob%tfaci=1.<a name='314'>
+    ELSEIF(xtime.GE.fdaend-dtr.AND.xtime.LE.fdaend) THEN<a name='315'>
+      fdob%tfaci=(fdaend-xtime)*tconst<a name='316'>
+    ELSE<a name='317'>
+      fdob%tfaci=0.0<a name='318'>
+    ENDIF<a name='319'>
+    IF(ktau.EQ.fdob%ktaur.OR.MOD(ktau,10).EQ.0) THEN<a name='320'>
+      IF (iprt_nudob)                                                  &amp;<a name='321'>
+         PRINT*,' DYNINOBS: IN,KTAU,XTIME,FDAEND,DTRAMP,DTR,TCONST',   &amp;<a name='322'>
+         ',TFACI: ',INEST,KTAU,XTIME,FDAEND,DTRAMP,DTR,TCONST,         &amp;<a name='323'>
+         fdob%TFACI<a name='324'>
+    ENDIF<a name='325'>
+  ENDIF<a name='326'>
+<a name='327'>
+#ifdef RAL<a name='328'>
+<font color=#447700>! MEIXU: collect terrain array HT into a global array HTIJ<a name='329'></font>
+  CALL loc2glob(HT, HTIJ, "2D", "REAL",                  &amp;<a name='330'>
+                ids,ide, jds,jde, kds,kde,               &amp;<a name='331'>
+                ims,ime, jms,jme, kms,kme )<a name='332'>
+<font color=#447700>! MEIXU end<a name='333'></font>
+#endif<a name='334'>
+<font color=#447700>!<a name='335'></font>
+<font color=#447700>! ***************        END FDDA SETUP SECTION         ***************<a name='336'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='337'></font>
+<a name='338'>
+<font color=#447700>!----------------------------------------------------------------------<a name='339'></font>
+<font color=#447700>! ***************         BEGIN NUDGING SECTION         ***************<a name='340'></font>
+<a name='341'>
+  DO J = jts, jte<a name='342'>
+<font color=#447700>!<a name='343'></font>
+<font color=#447700>! IF NUDGING SURFACE WINDS IN THE BOUNDARY LAYER, IF IWINDS(INEST+2)=1<a name='344'></font>
+<font color=#447700>! USE A SIMILARITY CORRECTION BASED ON ROUGHNESS TO APPLY 10M<a name='345'></font>
+<font color=#447700>! WIND TO THE SURFACE LAYER (K=KL) AT 40M.  TO DO THIS WE MUST<a name='346'></font>
+<font color=#447700>! STORE ROUGHNESS AND REGIME FOR EACH J SLICE AFTER THE CALL TO<a name='347'></font>
+<font color=#447700>! HIRPBL FOR LATER USE IN BLNUDGD.<a name='348'></font>
+<font color=#447700>!<a name='349'></font>
+<font color=#447700>!--- OBS NUDGING FOR TEMP AND MOISTURE<a name='350'></font>
+<font color=#447700>!<a name='351'></font>
+     NSTA=NSTAT<a name='352'>
+     IF(J .GT. 2 .and. J .LT. jde-1) THEN<a name='353'>
+       IF(nudge_temp.EQ.1 .AND. NSTA.GT.0)  &amp;<a name='354'>
+       THEN<a name='355'>
+<font color=#447700>!         write(6,*) 'calling nudob: IVAR=3, J = ',j<a name='356'></font>
+          CALL <A href='../../html_code/phys/module_fddaobs_rtfdda.F.html#NUDOB'>nudob</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NUDOB_1">(J, 3, t_tendf(ims,kms,j),                       &amp;<a name='357'>
+                  inest, restart, ktau, fdob%ktaur, xtime,           &amp;<a name='358'>
+                  mut(ims,j), c1h, c2h, msftx(ims,j), msfty(ims,j),  &amp;<a name='359'>
+                  nobs_ndg_vars, nobs_err_flds, max_obs, maxdom,     &amp;<a name='360'>
+                  npfi, ionf, rinxy, fdob%window,                    &amp;<a name='361'>
+                  fdob%nudge_t_pbl,                                  &amp;<a name='362'>
+                  fdob%sfcfact, fdob%sfcfacr,                        &amp;<a name='363'>
+                  fdob%levidn,                                       &amp;<a name='364'>
+                  parid, nstat,                                      &amp;<a name='365'>
+                  fdob%rinfmn, fdob%rinfmx, fdob%pfree,              &amp;<a name='366'>
+                  fdob%dcon, fdob%tfaci,                             &amp;<a name='367'>
+                  fdob%sfc_scheme_horiz, fdob%sfc_scheme_vert,       &amp;<a name='368'>
+                  fdob%max_sndng_gap,                                &amp;<a name='369'>
+                  fdob%lev_in_ob, fdob%plfo, fdob%nlevs_ob,          &amp;<a name='370'>
+                  parent_grid_ratio, dx, dtmin, fdob%rio, fdob%rjo,  &amp;<a name='371'>
+                  fdob%rko, fdob%timeob, varobs, errf,               &amp;<a name='372'>
+                  pbase(ims,kms,j), ptop, pp(ims,kms,j),             &amp;<a name='373'>
+                  nudge_wind, nudge_temp, nudge_mois,                &amp;<a name='374'>
+                  coef_wind, coef_temp, coef_mois,                   &amp;<a name='375'>
+                  savwt(1,ims,kms,j), kpbl(ims,j), 0,                &amp;<a name='376'>
+                  vih_t(its,j,1), vih_t(its,j,2), ht(ims,j),         &amp;<a name='377'>
+                  z(ims,kms,j),                                      &amp;<a name='378'>
+                  iprt_nudob,                                        &amp;<a name='379'>
+                  ids,ide, jds,jde, kds,kde,                         &amp; <font color=#447700>! domain dims<a name='380'></font>
+                  ims,ime, jms,jme, kms,kme,                         &amp; <font color=#447700>! memory dims<a name='381'></font>
+                  its,ite, jts,jte, kts,kte,                         &amp; <font color=#447700>! tile   dims<a name='382'></font>
+                  qvb, config_flags%obs_scl_neg_qv_innov ) <font color=#447700>! Water vapor mixing ratio / scale negative qv innovations<a name='383'></font>
+<font color=#447700>!         write(6,*) 'return from nudob: IVAR=3, J = ',j<a name='384'></font>
+       ENDIF<a name='385'>
+<a name='386'>
+       IF(nudge_mois.EQ.1 .AND. NSTA.GT.0)  &amp;<a name='387'>
+       THEN<a name='388'>
+<font color=#447700>!         write(6,*) 'calling nudob: IVAR=4, J = ',j<a name='389'></font>
+          CALL <A href='../../html_code/phys/module_fddaobs_rtfdda.F.html#NUDOB'>nudob</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NUDOB_2">(J, 4, moist_tend(ims,kms,j),                    &amp;<a name='390'>
+                  inest, restart, ktau, fdob%ktaur, xtime,           &amp;<a name='391'>
+                  mut(ims,j), c1h, c2h, msftx(ims,j), msfty(ims,j),  &amp;<a name='392'>
+                  nobs_ndg_vars, nobs_err_flds, max_obs, maxdom,     &amp;<a name='393'>
+                  npfi, ionf, rinxy, fdob%window,                    &amp;<a name='394'>
+                  fdob%nudge_q_pbl,                                  &amp;<a name='395'>
+                  fdob%sfcfact, fdob%sfcfacr,                        &amp;<a name='396'>
+                  fdob%levidn,                                       &amp;<a name='397'>
+                  parid, nstat,                                      &amp;<a name='398'>
+                  fdob%rinfmn, fdob%rinfmx, fdob%pfree,              &amp;<a name='399'>
+                  fdob%dcon, fdob%tfaci,                             &amp;<a name='400'>
+                  fdob%sfc_scheme_horiz, fdob%sfc_scheme_vert,       &amp;<a name='401'>
+                  fdob%max_sndng_gap,                                &amp;<a name='402'>
+                  fdob%lev_in_ob, fdob%plfo, fdob%nlevs_ob,          &amp;<a name='403'>
+                  parent_grid_ratio, dx, dtmin, fdob%rio, fdob%rjo,  &amp;<a name='404'>
+                  fdob%rko, fdob%timeob, varobs, errf,               &amp;<a name='405'>
+                  pbase(ims,kms,j), ptop, pp(ims,kms,j),             &amp;<a name='406'>
+                  nudge_wind, nudge_temp, nudge_mois,                &amp;<a name='407'>
+                  coef_wind, coef_temp, coef_mois,                   &amp;<a name='408'>
+                  savwt(1,ims,kms,j), kpbl(ims,j), 0,                &amp;<a name='409'>
+                  vih_q(its,j,1), vih_q(its,j,2), ht(ims,j),         &amp;<a name='410'>
+                  z(ims,kms,j),                                      &amp;<a name='411'>
+                  iprt_nudob,                                        &amp;<a name='412'>
+                  ids,ide, jds,jde, kds,kde,                         &amp; <font color=#447700>! domain dims<a name='413'></font>
+                  ims,ime, jms,jme, kms,kme,                         &amp; <font color=#447700>! memory dims<a name='414'></font>
+                  its,ite, jts,jte, kts,kte,                         &amp; <font color=#447700>! tile   dims<a name='415'></font>
+                  qvb, config_flags%obs_scl_neg_qv_innov ) <font color=#447700>! Water vapor mixing ratio / scale negative qv innovations<a name='416'></font>
+<font color=#447700>!         write(6,*) 'return from nudob: IVAR=4, J = ',j<a name='417'></font>
+       ENDIF<a name='418'>
+     ENDIF<a name='419'>
+<a name='420'>
+     IF(nudge_wind.EQ.1 .AND. NSTA.GT.0)    &amp;<a name='421'>
+     THEN<a name='422'>
+<font color=#447700>!         write(6,*) 'calling nudob: IVAR=1, J = ',j<a name='423'></font>
+        CALL <A href='../../html_code/phys/module_fddaobs_rtfdda.F.html#NUDOB'>nudob</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NUDOB_3">(J, 1, ru_tendf(ims,kms,j),                        &amp;<a name='424'>
+                inest, restart, ktau, fdob%ktaur, xtime,             &amp;<a name='425'>
+                muu(ims,j), c1h, c2h, msfux(ims,j), msfuy(ims,j),    &amp;<a name='426'>
+                nobs_ndg_vars, nobs_err_flds, max_obs, maxdom,       &amp;<a name='427'>
+                npfi, ionf, rinxy, fdob%window,                      &amp;<a name='428'>
+                fdob%nudge_uv_pbl,                                   &amp;<a name='429'>
+                fdob%sfcfact, fdob%sfcfacr,                          &amp;<a name='430'>
+                fdob%levidn,                                         &amp;<a name='431'>
+                parid, nstat,                                        &amp;<a name='432'>
+                fdob%rinfmn, fdob%rinfmx, fdob%pfree,                &amp;<a name='433'>
+                fdob%dcon, fdob%tfaci,                               &amp;<a name='434'>
+                fdob%sfc_scheme_horiz, fdob%sfc_scheme_vert,         &amp;<a name='435'>
+                fdob%max_sndng_gap,                                  &amp;<a name='436'>
+                fdob%lev_in_ob, fdob%plfo, fdob%nlevs_ob,            &amp;<a name='437'>
+                parent_grid_ratio, dx, dtmin, fdob%rio, fdob%rjo,    &amp;<a name='438'>
+                fdob%rko, fdob%timeob, varobs, errf,                 &amp;<a name='439'>
+                pbase(ims,kms,j), ptop, pp(ims,kms,j),               &amp;<a name='440'>
+                nudge_wind, nudge_temp, nudge_mois,                  &amp;<a name='441'>
+                coef_wind, coef_temp, coef_mois,                     &amp;<a name='442'>
+                savwt(1,ims,kms,j), kpbl(ims,j), 0,                  &amp;<a name='443'>
+                vih_uv(its,j,1), vih_uv(its,j,2), ht(ims,j),         &amp;<a name='444'>
+                z(ims,kms,j),                                        &amp;<a name='445'>
+                iprt_nudob,                                          &amp;<a name='446'>
+                ids,ide, jds,jde, kds,kde,                           &amp; <font color=#447700>! domain dims<a name='447'></font>
+                ims,ime, jms,jme, kms,kme,                           &amp; <font color=#447700>! memory dims<a name='448'></font>
+                its,ite, jts,jte, kts,kte,                           &amp; <font color=#447700>! tile   dims<a name='449'></font>
+                qvb, config_flags%obs_scl_neg_qv_innov ) <font color=#447700>! Water vapor mixing ratio / scale negative qv innovations<a name='450'></font>
+<font color=#447700>!       write(6,*) 'return from nudob: IVAR=1, J = ',j<a name='451'></font>
+<a name='452'>
+<font color=#447700>!       write(6,*) 'calling nudob: IVAR=2, J = ',j<a name='453'></font>
+        CALL <A href='../../html_code/phys/module_fddaobs_rtfdda.F.html#NUDOB'>nudob</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#FDDAOBS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NUDOB_4">(J, 2, rv_tendf(ims,kms,j),                        &amp;<a name='454'>
+                inest, restart, ktau, fdob%ktaur, xtime,             &amp;<a name='455'>
+                muv(ims,j), c1h, c2h, msfvx(ims,j), msfvy(ims,j),    &amp;<a name='456'>
+                nobs_ndg_vars, nobs_err_flds, max_obs, maxdom,       &amp;<a name='457'>
+                npfi, ionf, rinxy, fdob%window,                      &amp;<a name='458'>
+                fdob%nudge_uv_pbl,                                   &amp;<a name='459'>
+                fdob%sfcfact, fdob%sfcfacr,                          &amp;<a name='460'>
+                fdob%levidn,                                         &amp;<a name='461'>
+                parid, nstat,                                        &amp;<a name='462'>
+                fdob%rinfmn, fdob%rinfmx, fdob%pfree,                &amp;<a name='463'>
+                fdob%dcon, fdob%tfaci,                               &amp;<a name='464'>
+                fdob%sfc_scheme_horiz, fdob%sfc_scheme_vert,         &amp;<a name='465'>
+                fdob%max_sndng_gap,                                  &amp;<a name='466'>
+                fdob%lev_in_ob, fdob%plfo, fdob%nlevs_ob,            &amp;<a name='467'>
+                parent_grid_ratio, dx, dtmin, fdob%rio, fdob%rjo,    &amp;<a name='468'>
+                fdob%rko, fdob%timeob, varobs, errf,                 &amp;<a name='469'>
+                pbase(ims,kms,j), ptop, pp(ims,kms,j),               &amp;<a name='470'>
+                nudge_wind, nudge_temp, nudge_mois,                  &amp;<a name='471'>
+                coef_wind, coef_temp, coef_mois,                     &amp;<a name='472'>
+                savwt(1,ims,kms,j), kpbl(ims,j), 0,                  &amp;<a name='473'>
+                vih_uv(its,j,1), vih_uv(its,j,2), ht(ims,j),         &amp;<a name='474'>
+                z(ims,kms,j),                                        &amp;<a name='475'>
+                iprt_nudob,                                          &amp;<a name='476'>
+                ids,ide, jds,jde, kds,kde,                           &amp; <font color=#447700>! domain dims<a name='477'></font>
+                ims,ime, jms,jme, kms,kme,                           &amp; <font color=#447700>! memory dims<a name='478'></font>
+                its,ite, jts,jte, kts,kte,                           &amp; <font color=#447700>! tile   dims<a name='479'></font>
+                qvb, config_flags%obs_scl_neg_qv_innov ) <font color=#447700>! Water vapor mixing ratio / scale negative qv innovations<a name='480'></font>
+<font color=#447700>!       write(6,*) 'return from nudob: IVAR=2, J = ',j<a name='481'></font>
+     ENDIF<a name='482'>
+  ENDDO<a name='483'>
+<font color=#447700>!<a name='484'></font>
+<font color=#447700>! --- END OF 4DDA<a name='485'></font>
+<font color=#447700>!<a name='486'></font>
+  RETURN<a name='487'>
+#endif<a name='488'>
+  END SUBROUTINE fddaobs_driver<a name='489'>
+<a name='490'>
+<A NAME='COMPUTE_VIH'><A href='../../html_code/phys/module_fddaobs_driver.F.html#COMPUTE_VIH' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='491'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>compute_VIH</font>(vif, hmax, fullmin, rampmin,       &amp; <A href='../../call_to/COMPUTE_VIH.html' TARGET='index'>3</A>,<A href='../../call_from/COMPUTE_VIH.html' TARGET='index'>4</A><a name='492'>
+                         regime, pblh, terrh, z, vih,       &amp;<a name='493'>
+                         ids,ide, jds,jde, kds,kde,         &amp; <font color=#447700>! domain dims<a name='494'></font>
+                         ims,ime, jms,jme, kms,kme,         &amp;<a name='495'>
+                         its,ite, jts,jte, kts,kte)<a name='496'>
+<a name='497'>
+  USE <A href='../../html_code/phys/module_fddaobs_rtfdda.F.html#MODULE_FDDAOBS_RTFDDA'>module_fddaobs_rtfdda</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#COMPUTE_VIH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_FDDAOBS_RTFDDA_2"><a name='498'>
+<a name='499'>
+  IMPLICIT NONE<a name='500'>
+<font color=#447700>!*******************************************************************************<a name='501'></font>
+<font color=#447700>!*****     COMPUTE HEIGHTS FOR SURFACE OBS VERTICAL INFLUENCE FUNCTION     *****<a name='502'></font>
+<font color=#447700>!*******************************************************************************<a name='503'></font>
+<a name='504'>
+  REAL,    INTENT(IN)  :: vif(6)                     <font color=#447700>! Vert infl params for regimes<a name='505'></font>
+  REAL,    INTENT(IN)  :: hmax                       <font color=#447700>! Max height to apply nudging<a name='506'></font>
+  REAL,    INTENT(IN)  :: fullmin                    <font color=#447700>! Min height of full nudging<a name='507'></font>
+  REAL,    INTENT(IN)  :: rampmin                    <font color=#447700>! Min height to ramp full-to-0 <a name='508'></font>
+  REAL,    INTENT(IN)  :: regime(ims:ime,jms:jme)    <font color=#447700>! Stability regime<a name='509'></font>
+  REAL,    INTENT(IN)  :: pblh(ims:ime,jms:jme)      <font color=#447700>! PBL height (m)<a name='510'></font>
+  REAL,    INTENT(IN)  :: terrh(ims:ime,jms:jme)     <font color=#447700>! Terrain ht (m)<a name='511'></font>
+  REAL,    INTENT(IN)  :: z(ims:ime,kms:kme,jms:jme) <font color=#447700>! Ht (m) above sl (half levs)<a name='512'></font>
+  REAL,    INTENT(OUT) :: vih(its:ite,jts:jte,2)     <font color=#447700>! Vt infl hts abv grd for LML obs<a name='513'></font>
+<font color=#447700>! INTEGER, INTENT(OUT) :: vik(its:ite,jts:jte,2)     ! Vert infl k-levels for LML obs<a name='514'></font>
+  INTEGER, INTENT(IN)  :: ids,ide, jds,jde, kds,kde  <font color=#447700>! domain dims.<a name='515'></font>
+  INTEGER, INTENT(IN)  :: ims,ime, jms,jme, kms,kme  <font color=#447700>! memory dims.<a name='516'></font>
+  INTEGER, INTENT(IN)  :: its,ite, jts,jte, kts,kte  <font color=#447700>! tile   dims.<a name='517'></font>
+<a name='518'>
+<font color=#447700>! Local variables<a name='519'></font>
+  real  :: fullr(its:ite)    <font color=#447700>! Height up to full vertical weighting<a name='520'></font>
+  real  :: rampr(its:ite)    <font color=#447700>! Height of ramp-down to zero weighting<a name='521'></font>
+  character(len=200) :: msg  <font color=#447700>! Argument to wrf_message<a name='522'></font>
+  integer:: i, j             <font color=#447700>! Loop counters<a name='523'></font>
+<a name='524'>
+  integer k     <font color=#447700>! ajb test<a name='525'></font>
+<a name='526'>
+<font color=#447700>! Do J-slabs<a name='527'></font>
+  do j = jts, jte<a name='528'>
+<a name='529'>
+<font color=#447700>!   Set fullr and rampr values according to regimes<a name='530'></font>
+    do i = its, ite<a name='531'>
+<a name='532'>
+      if(regime(i,j).eq.1.0) then        <font color=#447700>! REGIME 1<a name='533'></font>
+        fullr(i) = vif(1)<a name='534'>
+        rampr(i) = vif(2)<a name='535'>
+      elseif(regime(i,j).eq.2.0) then    <font color=#447700>! REGIME 2<a name='536'></font>
+        fullr(i) = vif(3)<a name='537'>
+        rampr(i) = vif(4)<a name='538'>
+      elseif(regime(i,j).eq.3.0 .or. regime(i,j).eq.4.0) then    <font color=#447700>! REGIME 4<a name='539'></font>
+        fullr(i) = vif(5)<a name='540'>
+        rampr(i) = vif(6)<a name='541'>
+      else<a name='542'>
+        write(msg,'(a,f5.1,2(a,i4))') 'Unknown regime type ', regime(i,j),    &amp;<a name='543'>
+                                 ' at grid coordinate i = ',i,' j = ',j<a name='544'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#COMPUTE_VIH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_721">(msg)<a name='545'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#COMPUTE_VIH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_678"> ( 'fddaobs_driver: compute_VIH STOP' )<a name='546'>
+        <a name='547'>
+      endif<a name='548'>
+<a name='549'>
+    enddo<a name='550'>
+<a name='551'>
+<font color=#447700>!   Get vert infl heights for LML obs, from fullr, rampr, and pblh<a name='552'></font>
+    CALL <A href='../../html_code/phys/module_fddaobs_driver.F.html#GET_VIF_HTS_SLAB'>get_vif_hts_slab</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#COMPUTE_VIH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_VIF_HTS_SLAB_1">(fullr, rampr, pblh(ims,j),         &amp;<a name='553'>
+                          hmax, fullmin, rampmin,            &amp;<a name='554'>
+                          vih(its,j,1), vih(its,j,2),        &amp;<a name='555'>
+                          ims,ime, its,ite)<a name='556'>
+  enddo<a name='557'>
+  END SUBROUTINE compute_VIH<a name='558'>
+<a name='559'>
+<A NAME='GET_VIF_HTS_SLAB'><A href='../../html_code/phys/module_fddaobs_driver.F.html#GET_VIF_HTS_SLAB' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='560'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>get_vif_hts_slab</font>(fullr, rampr, pblh, hmax, fullmin, rampmin, &amp; <A href='../../call_to/GET_VIF_HTS_SLAB.html' TARGET='index'>1</A><a name='561'>
+                              ht1, ht2, ims,ime, its,ite)<a name='562'>
+<font color=#447700>! Compute VIF heights <a name='563'></font>
+<a name='564'>
+  IMPLICIT NONE<a name='565'>
+<a name='566'>
+  REAL, INTENT(IN)    :: fullr(its:ite)   <font color=#447700>! Height up to full vertical weighting<a name='567'></font>
+  REAL, INTENT(IN)    :: rampr(its:ite)   <font color=#447700>! Height of ramp-down to zero weighting<a name='568'></font>
+  REAL, INTENT(IN)    :: pblh(ims:ime)    <font color=#447700>! PBL height (m)<a name='569'></font>
+  REAL, INTENT(IN)    :: hmax             <font color=#447700>! Max height to apply nudging<a name='570'></font>
+  REAL, INTENT(IN)    :: fullmin          <font color=#447700>! Min height of full nudging<a name='571'></font>
+  REAL, INTENT(IN)    :: rampmin          <font color=#447700>! Min height to ramp full-to-0 <a name='572'></font>
+  REAL, INTENT(OUT)   :: ht1(its:ite)     <font color=#447700>! Vert infl fcn height 1<a name='573'></font>
+  REAL, INTENT(OUT)   :: ht2(its:ite)     <font color=#447700>! Vert infl fcn height 2<a name='574'></font>
+  INTEGER, INTENT(IN) :: ims,ime          <font color=#447700>! Memory dims.<a name='575'></font>
+  INTEGER, INTENT(IN) :: its,ite          <font color=#447700>! Tile   dims.<a name='576'></font>
+<a name='577'>
+<font color=#447700>! Local variables<a name='578'></font>
+  integer :: i<a name='579'>
+<a name='580'>
+  do i = its, ite<a name='581'>
+<a name='582'>
+<font color=#447700>! Determine lower height (below which the VIF=1 for full weighting)<a name='583'></font>
+    if(fullr(i).ge.0.0) then        <font color=#447700>! fullr is height from ground<a name='584'></font>
+      ht1(i) = fullr(i)<a name='585'>
+    else                            <font color=#447700>! fullr is relative to pbl (-5000 bias)<a name='586'></font>
+      ht1(i) = pblh(i) - (fullr(i)+5000.)<a name='587'>
+    endif<a name='588'>
+<a name='589'>
+<font color=#447700>!   Height ht1 can be no smaller than fullmin<a name='590'></font>
+    ht1(i) = max(fullmin,ht1(i))<a name='591'>
+<a name='592'>
+<font color=#447700>! Determine upper height (to which the VIF ramps down to zero weighting)<a name='593'></font>
+<font color=#447700>! NOTE: Height of ramp-down (ht2-ht1) can be no smaller than rampmin<a name='594'></font>
+<a name='595'>
+    if(rampr(i).ge.0.0) then<a name='596'>
+<font color=#447700>!     rampr is height from ht1<a name='597'></font>
+      ht2(i) = ht1(i) + max(rampmin,rampr(i))<a name='598'>
+    else<a name='599'>
+<font color=#447700>!     rampr is relative to pbl (-5000 bias)<a name='600'></font>
+      ht2(i) = max( ht1(i)+rampmin, pblh(i)-(rampr(i)+5000.) )<a name='601'>
+    endif<a name='602'>
+<a name='603'>
+<font color=#447700>! Apply hmax<a name='604'></font>
+    ht1(i) = min(ht1(i), hmax-rampmin)<a name='605'>
+    ht2(i) = min(ht2(i), hmax) <a name='606'>
+  enddo<a name='607'>
+  END SUBROUTINE get_vif_hts_slab<a name='608'>
+<a name='609'>
+<A NAME='GET_VIK_SLAB'><A href='../../html_code/phys/module_fddaobs_driver.F.html#GET_VIK_SLAB' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='610'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>get_vik_slab</font>( h, hlevs, ht, vik, ims,ime, kms,kme, its,ite, kts,kte ),<A href='../../call_from/GET_VIK_SLAB.html' TARGET='index'>1</A><a name='611'>
+<a name='612'>
+<font color=#447700>! Compute VIK values from heights on j-slab <a name='613'></font>
+<a name='614'>
+  IMPLICIT NONE<a name='615'>
+<a name='616'>
+  REAL,    INTENT(IN) :: h(its:ite)          <font color=#447700>! height (m) above ground, on j-slab<a name='617'></font>
+  REAL,    INTENT(IN) :: hlevs(ims:ime,kms:kme) <font color=#447700>! hgt (m) abv grd at modl levs (slab)<a name='618'></font>
+  REAL,    INTENT(IN) :: ht(ims:ime)         <font color=#447700>! terrain height (m) (slab)<a name='619'></font>
+  INTEGER, INTENT(OUT):: vik(its:ite)        <font color=#447700>! vert infl k levels (slab)<a name='620'></font>
+  INTEGER, INTENT(IN) :: ims,ime, kms,kme    <font color=#447700>! memory dims<a name='621'></font>
+  INTEGER, INTENT(IN) :: its,ite, kts,kte    <font color=#447700>! tile   dims<a name='622'></font>
+<a name='623'>
+<font color=#447700>! Local variables<a name='624'></font>
+  integer :: i<a name='625'>
+  integer :: k<a name='626'>
+  real    :: ht_ag(kts:kte)<a name='627'>
+<a name='628'>
+  do i = its, ite<a name='629'>
+<a name='630'>
+<font color=#447700>!   Get column of height-above-ground values for this i coord<a name='631'></font>
+    do k = kts,kte<a name='632'>
+       ht_ag(k) = hlevs(i,k) - ht(i)<a name='633'>
+    enddo<a name='634'>
+<font color=#447700>!   Get k levels that correspond to height values<a name='635'></font>
+    vik(i) = <A href='../../html_code/phys/module_fddaobs_driver.F.html#HT_TO_K'>ht_to_k</A><A href='../../html_code/phys/module_fddaobs_driver.F.html#GET_VIK_SLAB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="HT_TO_K_1">( h(i), ht_ag, kts,kte ) <a name='636'>
+  enddo<a name='637'>
+  END SUBROUTINE get_vik_slab<a name='638'>
+<a name='639'>
+<A NAME='HT_TO_K'><A href='../../html_code/phys/module_fddaobs_driver.F.html#HT_TO_K' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='640'>
+  INTEGER <font color=#993300>FUNCTION </font><font color=#cc0000>ht_to_k</font>( h, hlevs, kts,kte ) <A href='../../call_to/HT_TO_K.html' TARGET='index'>1</A><a name='641'>
+  IMPLICIT NONE<a name='642'>
+<a name='643'>
+  REAL,    INTENT(IN)  :: h                     <font color=#447700>! height value (m)<a name='644'></font>
+  REAL,    INTENT(IN)  :: hlevs(kts:kte)        <font color=#447700>! model height levels<a name='645'></font>
+  INTEGER, INTENT(IN)  :: kts,kte               <font color=#447700>! tile dims<a name='646'></font>
+<a name='647'>
+<font color=#447700>! Local variables<a name='648'></font>
+  INTEGER :: k               <font color=#447700>! loop counter<a name='649'></font>
+  INTEGER :: klo             <font color=#447700>! lower k bound<a name='650'></font>
+<a name='651'>
+  KLEVS: do k = kts, kte<a name='652'>
+    klo = k-1<a name='653'>
+    if(h .le. hlevs(k)) then<a name='654'>
+      EXIT KLEVS<a name='655'>
+    endif<a name='656'>
+  enddo KLEVS<a name='657'>
+  klo = max0(1,klo)<a name='658'>
+  ht_to_k = min0(kte,klo)<a name='659'>
+  RETURN<a name='660'>
+  END FUNCTION ht_to_k<a name='661'>
+<a name='662'>
+END MODULE module_fddaobs_driver<a name='663'>
+</pre></body></html>

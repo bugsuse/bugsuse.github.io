@@ -1,0 +1,173 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<font color=#447700>!<a name='4'></font>
+<font color=#447700>!<a name='5'></font>
+<A NAME='MODULE_SF_SCMFLUX'><A href='../../html_code/phys/module_sf_scmflux.F.html#MODULE_SF_SCMFLUX' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='6'>
+<font color=#993300>module </font><font color=#cc0000>module_sf_scmflux</font> <A href='../../call_to/MODULE_SF_SCMFLUX.html' TARGET='index'>1</A><a name='7'>
+contains<a name='8'>
+<font color=#447700>!<a name='9'></font>
+<font color=#447700>!-------------------------------------------------------------------<a name='10'></font>
+<font color=#447700>!<a name='11'></font>
+<A NAME='SCMFLUX'><A href='../../html_code/phys/module_sf_scmflux.F.html#SCMFLUX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='12'>
+   <font color=#993300>subroutine </font><font color=#cc0000>scmflux</font>(u3d, v3d, t3d, qv3d, p3d, dz8w,                           &amp; <A href='../../call_to/SCMFLUX.html' TARGET='index'>2</A><a name='13'>
+                     cp, rovcp, xlv, psfc, cpm, xland,                          &amp;<a name='14'>
+                     psim, psih, hfx, qfx, lh, tsk, flhc, flqc,                 &amp;<a name='15'>
+                     znt, gz1oz0, wspd,                                         &amp;<a name='16'>
+                     julian_in, karman, p1000mb,                                &amp;<a name='17'>
+                     itimestep,chklowq,                                          &amp;<a name='18'>
+                     ids, ide, jds, jde, kds, kde,                              &amp;<a name='19'>
+                     ims, ime, jms, jme, kms, kme,                              &amp;<a name='20'>
+                     its, ite, jts, jte, kts, kte   )<a name='21'>
+<font color=#447700>!-------------------------------------------------------------------<a name='22'></font>
+      implicit none<a name='23'>
+<font color=#447700>!-------------------------------------------------------------------<a name='24'></font>
+<font color=#447700>!<a name='25'></font>
+   integer, intent(in)   ::                       ids, ide, jds, jde, kds, kde, &amp;<a name='26'>
+                                                  ims, ime, jms, jme, kms, kme, &amp;<a name='27'>
+                                       its, ite, jts, jte, kts, kte, itimestep        <a name='28'>
+<font color=#447700>!   <a name='29'></font>
+   real, intent(in)      ::         cp, rovcp, xlv, julian_in, karman, p1000mb<a name='30'>
+<font color=#447700>!<a name='31'></font>
+   real, dimension( ims:ime, kms:kme, jms:jme )                               , &amp;<a name='32'>
+            intent(in)   ::                                                u3d, &amp;<a name='33'>
+                                                                           v3d, &amp;<a name='34'>
+                                                                           t3d, &amp;<a name='35'>
+                                                                          qv3d, &amp;<a name='36'>
+                                                                           p3d, &amp;<a name='37'>
+                                                                          dz8w<a name='38'>
+   real, dimension( ims:ime, jms:jme )                                        , &amp;<a name='39'>
+            intent(in)   ::                                               psfc, &amp;<a name='40'>
+                                                                         xland, &amp;<a name='41'>
+                                                                          flhc, &amp;<a name='42'>
+                                                                          flqc <a name='43'>
+<font color=#447700>!<a name='44'></font>
+   real, dimension( ims:ime, jms:jme )                                        , &amp;<a name='45'>
+            intent(inout)::                                                cpm, &amp;<a name='46'>
+                                                                           znt, &amp;<a name='47'>
+                                                                        gz1oz0, &amp;<a name='48'>
+                                                                          wspd, &amp;<a name='49'>
+                                                                          psim, &amp;<a name='50'>
+                                                                          psih, &amp;<a name='51'>
+                                                                           hfx, &amp;<a name='52'>
+                                                                           qfx, &amp;<a name='53'>
+                                                                            lh, &amp;<a name='54'>
+                                                                           tsk,&amp;<a name='55'>
+                                                                        chklowq           <a name='56'>
+<font color=#447700>! local vars<a name='57'></font>
+<a name='58'>
+   integer, parameter    ::                                       n_max = 1200<a name='59'>
+   integer               ::                                 i, j, n, nm, nt, m<a name='60'>
+   real, parameter       ::                                           den = 1.<a name='61'>
+   real                  ::                         julian_s, julian_e, fc_int, &amp;<a name='62'>
+                                                            fm, fh, ch, dtdiff<a name='63'>
+   real, dimension( 1:n_max ) ::                     fc_qfx, fc_hfx, fc_julian <font color=#447700>!JP 0 -&gt;1<a name='64'></font>
+   real                       ::                     qfx_interp,hfx_interp <font color=#447700>! JP<a name='65'></font>
+   real, dimension( its:ite, jts:jte) ::                                   u2d, &amp;<a name='66'>
+                                                                           v2d, &amp;<a name='67'>
+                                                                           t2d, &amp;<a name='68'>
+                                                                          qv2d, &amp;<a name='69'>
+                                                                           p2d, &amp;<a name='70'>
+                                                                        dz8w1d, &amp;<a name='71'>
+                                                                            za, &amp;<a name='72'>
+                                                                           thx, &amp;<a name='73'>
+                                                                          thgb<a name='74'>
+   logical               ::                                        end_of_file<a name='75'>
+<font color=#447700>!<a name='76'></font>
+<font color=#447700>!-----open scmflx_bdy and read the julian_s, julian_e, fc_int<a name='77'></font>
+<font color=#447700>!<a name='78'></font>
+   open(unit=11, file='scmflx_bdy', form='formatted', status='old')<a name='79'>
+   print*,'scmflx_bdy' <a name='80'>
+   read(11,*) julian_s, julian_e, fc_int<a name='81'>
+<font color=#447700>!<a name='82'></font>
+     end_of_file = .false.<a name='83'>
+     n=1<a name='84'>
+     do while (.not. end_of_file)<a name='85'>
+       read(11,*,end=100) fc_hfx(n), fc_qfx(n)<a name='86'>
+       fc_julian(n)=julian_s+(n-1)*fc_int/86400.<a name='87'>
+       n=n+1<a name='88'>
+       go to 110<a name='89'>
+ 100   end_of_file = .true.  <a name='90'>
+ 110   continue<a name='91'>
+     enddo<a name='92'>
+     nt=n-1<a name='93'>
+   close(11)<a name='94'>
+<font color=#447700>!<a name='95'></font>
+<font color=#447700>!-----linear interpolation of the fluxes for each time step<a name='96'></font>
+<font color=#447700>!<a name='97'></font>
+   do n=1,nt <a name='98'>
+     if (julian_in.ge.fc_julian(n) .and. julian_in.lt.fc_julian(n+1)) then<a name='99'>
+       qfx_interp= fc_qfx(n)                                                      &amp;<a name='100'>
+                +(fc_qfx(n+1)-fc_qfx(n))*(julian_in-fc_julian(n))/(fc_int/86400.)<a name='101'>
+       hfx_interp= fc_hfx(n)                                                      &amp;<a name='102'>
+                +(fc_hfx(n+1)-fc_hfx(n))*(julian_in-fc_julian(n))/(fc_int/86400.)<a name='103'>
+     endif<a name='104'>
+   enddo<a name='105'>
+<font color=#447700>!<a name='106'></font>
+<font color=#447700>!-----compute surface moisture and heat fluxes, in the unit of [W m-2]<a name='107'></font>
+<font color=#447700>!<a name='108'></font>
+<a name='109'>
+<font color=#447700>!-----compute skin temperature<a name='110'></font>
+<font color=#447700>!<a name='111'></font>
+   do j=jts,jte<a name='112'>
+     do i=its,ite<a name='113'>
+       u2d(i,j)=u3d(i,1,j)<a name='114'>
+       v2d(i,j)=v3d(i,1,j)<a name='115'>
+       t2d(i,j)=t3d(i,1,j)<a name='116'>
+       qv2d(i,j)=qv3d(i,1,j)<a name='117'>
+       p2d(i,j)=p3d(i,1,j)<a name='118'>
+       dz8w1d(i,j)=dz8w(i,1,j)<a name='119'>
+       za(i,j)=0.5*dz8w1d(i,j)<a name='120'>
+     enddo<a name='121'>
+   enddo <a name='122'>
+<a name='123'>
+   do j=jts, jte<a name='124'>
+     do i=its, ite<a name='125'>
+<font color=#447700>!<a name='126'></font>
+<font color=#447700>!-----compute surface moisture flux<a name='127'></font>
+<font color=#447700>!<a name='128'></font>
+       qfx(i,j)=qfx_interp/1000.<a name='129'>
+       qfx(i,j)=amax1(qfx(i,j),0.)<a name='130'>
+       lh(i,j)=xlv*qfx(i,j)<a name='131'>
+<font color=#447700>!<a name='132'></font>
+<a name='133'>
+<a name='134'>
+<font color=#447700>!-----compute surface heat flux<a name='135'></font>
+<font color=#447700>!<a name='136'></font>
+       cpm(i,j)=cp*(1.+0.8*qv2d(i,j))<a name='137'>
+<font color=#447700>!       print*,'i j cpm xland qv2d',i,j,cpm(i,j),xland(i,j), qv2d(i,j)<a name='138'></font>
+<font color=#447700>!       print*,hfx_interp<a name='139'></font>
+       if(xland(i,j)-1.5 .gt. 0.)then<a name='140'>
+         hfx(i,j)=hfx_interp*cpm(i,j)<a name='141'>
+       elseif(xland(i,j)-1.5 .lt. 0.)then<a name='142'>
+         hfx(i,j)=hfx_interp*cpm(i,j)<a name='143'>
+         hfx(i,j)=amax1(hfx(i,j),-250.)<a name='144'>
+       endif<a name='145'>
+     enddo<a name='146'>
+   enddo<a name='147'>
+<font color=#447700>!<a name='148'></font>
+   <a name='149'>
+   if (itimestep .eq. 1) then<a name='150'>
+     psih=0.0<a name='151'>
+     psim=0.0<a name='152'>
+<a name='153'>
+   endif<a name='154'>
+     chklowq=1.0 <font color=#447700>!JP<a name='155'></font>
+<a name='156'>
+   <a name='157'>
+   do j=jts,jte<a name='158'>
+     do i=its,ite<a name='159'>
+       gz1oz0(i,j)=alog(za(i,j)/znt(i,j))<a name='160'>
+       fh=gz1oz0(i,j)-psih(i,j)<a name='161'>
+       fm=gz1oz0(i,j)-psim(i,j)<a name='162'>
+       ch=karman**2/fh/fm<a name='163'>
+       wspd(i,j)=sqrt(u2d(i,j)**2+v2d(i,j)**2)<a name='164'>
+       dtdiff=-hfx(i,j)/den/cpm(i,j)/ch/wspd(i,j)<a name='165'>
+       tsk(i,j)=t2d(i,j)-dtdiff<a name='166'>
+     enddo<a name='167'>
+   enddo<a name='168'>
+   <a name='169'>
+   end subroutine scmflux<a name='170'>
+<font color=#447700>!-------------------------------------------------------------------<a name='171'></font>
+end module module_sf_scmflux<a name='172'>
+</pre></body></html>

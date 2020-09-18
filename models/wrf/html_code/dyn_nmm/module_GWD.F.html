@@ -1,0 +1,1830 @@
+<HTML> <BODY BGCOLOR=#bbeeee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!<a name='2'></font>
+<font color=#447700>!-- Module for Gravity Wave Drag (GWD) and Mountain Blocking (MB)<a name='3'></font>
+<font color=#447700>!<a name='4'></font>
+<font color=#447700>!-- Initially incorporated into the WRF NMM from the GFS by B. Ferrier<a name='5'></font>
+<font color=#447700>!   in April/May 2007.  <a name='6'></font>
+<font color=#447700>!<a name='7'></font>
+<font color=#447700>!   Search for "ORIGINAL DOCUMENTATION BLOCK" for further description.<a name='8'></font>
+<font color=#447700>!<a name='9'></font>
+<font color=#447700>!#######################################################################<a name='10'></font>
+<font color=#447700>!<a name='11'></font>
+<A NAME='MODULE_GWD'><A href='../../html_code/dyn_nmm/module_GWD.F.html#MODULE_GWD' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='12'>
+      <font color=#993300>MODULE </font><font color=#cc0000>module_gwd</font> <A href='../../call_to/MODULE_GWD.html' TARGET='index'>2</A><a name='13'>
+<font color=#447700>!<a name='14'></font>
+<font color=#447700>!      USE MODULE_DM               ! to get processor element<a name='15'></font>
+      USE MODULE_EXT_INTERNAL     <font color=#447700>! to assign fortan unit number<a name='16'></font>
+<font color=#447700>!<a name='17'></font>
+<font color=#447700>!-- Contains subroutines GWD_init, GWD_driver, and GWD_col<a name='18'></font>
+<font color=#447700>!<a name='19'></font>
+<font color=#447700>!#######################################################################<a name='20'></font>
+<font color=#447700>!<a name='21'></font>
+      INTEGER, PARAMETER :: KIND_PHYS=SELECTED_REAL_KIND(13,60) <font color=#447700>! the '60' maps to 64-bit real<a name='22'></font>
+      INTEGER,PRIVATE,SAVE :: IMX, NMTVR, IDBG, JDBG<a name='23'>
+      REAL,PRIVATE,SAVE :: RAD_TO_DEG   <font color=#447700>!-- Convert radians to degrees<a name='24'></font>
+      REAL,PRIVATE,SAVE :: DEG_TO_RAD   <font color=#447700>!-- Convert degrees to radians<a name='25'></font>
+      REAL (KIND=KIND_PHYS),PRIVATE,SAVE :: DELTIM,RDELTIM<a name='26'>
+      REAL(kind=kind_phys),PRIVATE,PARAMETER :: SIGFAC=0.0   <font color=#447700>!-- Key tunable parameter<a name='27'></font>
+<font color=#447700>!dbg      real,private,save :: dumin,dumax,dvmin,dvmax   !dbg<a name='28'></font>
+<font color=#447700>!<a name='29'></font>
+      CONTAINS<a name='30'>
+<font color=#447700>!<a name='31'></font>
+<font color=#447700>!-- Initialize variables used in GWD + MB<a name='32'></font>
+<font color=#447700>!<a name='33'></font>
+<A NAME='GWD_INIT'><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='34'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>GWD_init</font> (DTPHS,DELX,DELY,CEN_LAT,CEN_LON,RESTRT       &amp; <A href='../../call_to/GWD_INIT.html' TARGET='index'>1</A><a name='35'>
+     &amp;                     ,GLAT,GLON,CROT,SROT,HANGL                   &amp;<a name='36'>
+     &amp;                     ,IDS,IDE,JDS,JDE,KDS,KDE                     &amp;<a name='37'>
+     &amp;                     ,IMS,IME,JMS,JME,KMS,KME                     &amp;<a name='38'>
+     &amp;                     ,ITS,ITE,JTS,JTE,KTS,KTE )<a name='39'>
+<a name='40'>
+<font color=#447700>!<a name='41'></font>
+      IMPLICIT NONE<a name='42'>
+<font color=#447700>!<a name='43'></font>
+<font color=#447700>!== INPUT:<a name='44'></font>
+<font color=#447700>!-- DELX, DELY - DX, DY grid resolutions in zonal, meridional directions (m)<a name='45'></font>
+<font color=#447700>!-- CEN_LAT, CEN_LON - central latitude, longitude (degrees)<a name='46'></font>
+<font color=#447700>!-- RESTRT - logical flag for restart file (true) or WRF input file (false)<a name='47'></font>
+<font color=#447700>!-- GLAT, GLON - central latitude, longitude at mass points (radians)<a name='48'></font>
+<font color=#447700>!-- CROT, SROT - cosine and sine of the angle between Earth and model coordinates<a name='49'></font>
+<font color=#447700>!-- HANGL  - angle of the mountain range w/r/t east (convert to degrees)<a name='50'></font>
+<font color=#447700>!<a name='51'></font>
+<font color=#447700>!-- Saved variables within module:<a name='52'></font>
+<font color=#447700>!-- IMX - in the GFS it is an equivalent number of points along a latitude <a name='53'></font>
+<font color=#447700>!         circle (e.g., IMX=3600 for a model resolution of 0.1 deg) <a name='54'></font>
+<font color=#447700>!       =&gt; Calculated at start of model integration in GWD_init<a name='55'></font>
+<font color=#447700>!-- NMTVR - number of input 2D orographic fields<a name='56'></font>
+<font color=#447700>!-- GRAV = gravitational acceleration<a name='57'></font>
+<font color=#447700>!-- DELTIM - physics time step (s)<a name='58'></font>
+<font color=#447700>!-- RDELTIM - reciprocal of physics time step (s)<a name='59'></font>
+<font color=#447700>!<a name='60'></font>
+<font color=#447700>!== INPUT indices:<a name='61'></font>
+<font color=#447700>!-- ids           start index for i in domain<a name='62'></font>
+<font color=#447700>!-- ide           end index for i in domain<a name='63'></font>
+<font color=#447700>!-- jds           start index for j in domain<a name='64'></font>
+<font color=#447700>!-- jde           end index for j in domain<a name='65'></font>
+<font color=#447700>!-- kds           start index for k in domain<a name='66'></font>
+<font color=#447700>!-- kde           end index for k in domain<a name='67'></font>
+<font color=#447700>!-- ims           start index for i in memory<a name='68'></font>
+<font color=#447700>!-- ime           end index for i in memory<a name='69'></font>
+<font color=#447700>!-- jms           start index for j in memory<a name='70'></font>
+<font color=#447700>!-- jme           end index for j in memory<a name='71'></font>
+<font color=#447700>!-- kms           start index for k in memory<a name='72'></font>
+<font color=#447700>!-- kme           end index for k in memory<a name='73'></font>
+<font color=#447700>!-- its           start index for i in tile<a name='74'></font>
+<font color=#447700>!-- ite           end index for i in tile<a name='75'></font>
+<font color=#447700>!-- jts           start index for j in tile<a name='76'></font>
+<font color=#447700>!-- jte           end index for j in tile<a name='77'></font>
+<font color=#447700>!-- kts           start index for k in tile<a name='78'></font>
+<font color=#447700>!-- kte           end index for k in tile<a name='79'></font>
+<font color=#447700>!<a name='80'></font>
+      REAL, INTENT(IN) :: DTPHS,DELX,DELY,CEN_LAT,CEN_LON<a name='81'>
+      LOGICAL, INTENT(IN) :: RESTRT<a name='82'>
+      REAL, INTENT(IN), DIMENSION (ims:ime,jms:jme) :: GLON,GLAT<a name='83'>
+      REAL, INTENT(OUT), DIMENSION (ims:ime,jms:jme) :: CROT,SROT<a name='84'>
+      REAL, INTENT(INOUT), DIMENSION (ims:ime,jms:jme) :: HANGL<a name='85'>
+      INTEGER, INTENT(IN) :: IDS,IDE,JDS,JDE,KDS,KDE                    &amp;<a name='86'>
+     &amp;                      ,IMS,IME,JMS,JME,KMS,KME                    &amp;<a name='87'>
+     &amp;                      ,ITS,ITE,JTS,JTE,KTS,KTE<a name='88'>
+<font color=#447700>!<a name='89'></font>
+<font color=#447700>!-- Local variables:<a name='90'></font>
+<font color=#447700>!<a name='91'></font>
+      REAL, PARAMETER :: POS1=1.,NEG1=-1.<a name='92'>
+      REAL :: DX,DTR,LAT0,LoN0,CLAT0,SLAT0,CLAT,DLON,X,Y,TLON,ROT<a name='93'>
+      INTEGER :: I,J<a name='94'>
+<a name='95'>
+<font color=#447700>!dbg<a name='96'></font>
+<font color=#447700>!dbg real :: xdbg,ydbg,d_x,d_y,dist,dist_min<a name='97'></font>
+<font color=#447700>!dbg data xdbg,ydbg / -118.3,36 / ! 118.3W 36 N<a name='98'></font>
+<a name='99'>
+<font color=#447700>!<a name='100'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='101'></font>
+<font color=#447700>!<a name='102'></font>
+      DX=SQRT((DELX)**2+(DELY)**2)   <font color=#447700>!-- Model resolution in degrees<a name='103'></font>
+<font color=#447700>!-- IMX is the number of grid points along a latitude circle in the GFS<a name='104'></font>
+      IMX=INT(360./DX+.5)<a name='105'>
+<a name='106'>
+<font color=#447700>!dbg IMX=1152     !dbg -- Match the grid point printed from GFS run<a name='107'></font>
+<a name='108'>
+      NMTVR=14            <font color=#447700>!-- 14 input fields for orography<a name='109'></font>
+      DELTIM=DTPHS<a name='110'>
+      RDELTIM=1./DTPHS<a name='111'>
+<font color=#447700>!<a name='112'></font>
+<font color=#447700>!-- Calculate angle of rotation (ROT) between Earth and model coordinates,<a name='113'></font>
+<font color=#447700>!   but pass back out cosine (CROT) and sine (SROT) of this angle<a name='114'></font>
+<font color=#447700>!<a name='115'></font>
+      DTR=ACOS(-1.)/180. <font color=#447700>!-- convert from degrees to radians<a name='116'></font>
+      DEG_TO_RAD=DTR     <font color=#447700>!-- save conversion from degrees to radians<a name='117'></font>
+<font color=#447700>!<a name='118'></font>
+      LAT0=DTR*CEN_LON   <font color=#447700>!-- central latitude of grid in radians<a name='119'></font>
+      LoN0=DTR*CEN_LAT   <font color=#447700>!-- central longitude of grid in radians<a name='120'></font>
+<font color=#447700>!<a name='121'></font>
+      DTR=1./DTR         <font color=#447700>!-- convert from radians to degrees<a name='122'></font>
+      RAD_TO_DEG=DTR     <font color=#447700>!-- save conversion from radians to degrees<a name='123'></font>
+<font color=#447700>!<a name='124'></font>
+      CLAT0=COS(LAT0)<a name='125'>
+      SLAT0=SIN(LAT0)<a name='126'>
+      DO J=JTS,JTE<a name='127'>
+        DO I=ITS,ITE<a name='128'>
+          CLAT=COS(GLAT(I,J))<a name='129'>
+          DLON=GLON(I,J)-LoN0<a name='130'>
+          X=CLAT0*CLAT*COS(DLON)+SLAT0*SIN(GLAT(I,J))<a name='131'>
+          Y=-CLAT*SIN(DLON)<a name='132'>
+          TLON=ATAN(Y/X)              <font color=#447700>!-- model longitude<a name='133'></font>
+          X=SLAT0*SIN(TLON)/CLAT<a name='134'>
+          Y=MIN(POS1, MAX(NEG1, X) )<a name='135'>
+          ROT=ASIN(Y)                 <font color=#447700>!-- angle between geodetic &amp; model coordinates<a name='136'></font>
+          CROT(I,J)=COS(ROT)<a name='137'>
+          SROT(I,J)=SIN(ROT)<a name='138'>
+        ENDDO    <font color=#447700>!-- I<a name='139'></font>
+      ENDDO      <font color=#447700>!-- J<a name='140'></font>
+      IF (.NOT.RESTRT) THEN<a name='141'>
+<font color=#447700>!-- Convert from radians to degrees for WRF input files only.<a name='142'></font>
+<font color=#447700>!   There should have ano further conversion from rad to degree at this<a name='143'></font>
+<font color=#447700>!   point since HANGL read from wrfinput_d01 already in degree even in<a name='144'></font>
+<font color=#447700>!   the non restart mode... Chanh<a name='145'></font>
+<font color=#447700>!<a name='146'></font>
+<font color=#447700>!        DO J=JTS,JTE<a name='147'></font>
+<font color=#447700>!          DO I=ITS,ITE<a name='148'></font>
+<font color=#447700>!            HANGL(I,J)=DTR*HANGL(I,J)  !-- convert to degrees (+/-90 deg)<a name='149'></font>
+<font color=#447700>!          ENDDO    !-- I<a name='150'></font>
+<font color=#447700>!        ENDDO      !-- J<a name='151'></font>
+      ENDIF<a name='152'>
+<font color=#447700>!dbg<a name='153'></font>
+<font color=#447700>!dbg dumin=-1.<a name='154'></font>
+<font color=#447700>!dbg dumax=1.<a name='155'></font>
+<font color=#447700>!dbg dvmin=-1.<a name='156'></font>
+<font color=#447700>!dbg dvmax=1.<a name='157'></font>
+<font color=#447700>!dbg print *,'delx=',delx,'  dely=',dely,'  dx=',dx,'  imx=',imx<a name='158'></font>
+<font color=#447700>!dbg dtr=1./dtr             !-- convert from degrees back to radians<a name='159'></font>
+<font color=#447700>!dbg dist_min=dtr*DX        !-- grid length in radians<a name='160'></font>
+<font color=#447700>!dbg xdbg=dtr*xdbg          !-- convert xdbg to radians<a name='161'></font>
+<font color=#447700>!dbg ydbg=dtr*ydbg          !-- convert ydbg to radians<a name='162'></font>
+<font color=#447700>!dbg idbg=-100<a name='163'></font>
+<font color=#447700>!dbg jdbg=-100<a name='164'></font>
+<font color=#447700>!dbg print *,'dtr,dx,dist_min,xdbg,ydbg=',dtr,dx,dist_min,xdbg,ydbg<a name='165'></font>
+<font color=#447700>!dbg do j=jts,jte<a name='166'></font>
+<font color=#447700>!dbg   do i=its,ite<a name='167'></font>
+<font color=#447700>!dbg !-- Find i,j for xdbg, ydbg<a name='168'></font>
+<font color=#447700>!dbg     d_x=cos(glat(i,j))*(glon(i,j)-xdbg)<a name='169'></font>
+<font color=#447700>!dbg     d_y=(glat(i,j)-ydbg)<a name='170'></font>
+<font color=#447700>!dbg     dist=sqrt(d_x*d_x+d_y*d_y)<a name='171'></font>
+<font color=#447700>!dbg !! print *,'i,j,glon,glat,d_x,d_y,dist=',i,j,glon(i,j),glat(i,j),d_x,d_y,dist<a name='172'></font>
+<font color=#447700>!dbg     if (dist &lt; dist_min) then<a name='173'></font>
+<font color=#447700>!dbg       dist_min=dist<a name='174'></font>
+<font color=#447700>!dbg       idbg=i<a name='175'></font>
+<font color=#447700>!dbg       jdbg=j<a name='176'></font>
+<font color=#447700>!dbg print *,'dist_min,idbg,jdbg=',dist_min,idbg,jdbg<a name='177'></font>
+<font color=#447700>!dbg     endif<a name='178'></font>
+<font color=#447700>!dbg   enddo    !-- I<a name='179'></font>
+<font color=#447700>!dbg enddo      !-- J<a name='180'></font>
+<font color=#447700>!dbg if (idbg&gt;0 .and. jdbg&gt;0) print *,'idbg=',idbg,'  jdbg=',jdbg<a name='181'></font>
+<a name='182'>
+<font color=#447700>!<a name='183'></font>
+      END SUBROUTINE GWD_init<a name='184'>
+<font color=#447700>!<a name='185'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='186'></font>
+<font color=#447700>!<a name='187'></font>
+<A NAME='GWD_DRIVER'><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='188'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>GWD_driver</font>(U,V,T,Q,Z,DP,PINT,PMID,EXNR, KPBL, ITIME    &amp; <A href='../../call_to/GWD_DRIVER.html' TARGET='index'>1</A>,<A href='../../call_from/GWD_DRIVER.html' TARGET='index'>19</A><a name='189'>
+     &amp;                     ,HSTDV,HCNVX,HASYW,HASYS,HASYSW,HASYNW       &amp;<a name='190'>
+     &amp;                     ,HLENW,HLENS,HLENSW,HLENNW                   &amp;<a name='191'>
+     &amp;                     ,HANGL,HANIS,HSLOP,HZMAX,CROT,SROT           &amp;<a name='192'>
+     &amp;                     ,DUDT,DVDT,UGWDsfc,VGWDsfc,XLAND             &amp;      <font color=#447700>!ADDED XLAND FOR SKIPPING OCEAN POINTS(KWON)<a name='193'></font>
+     &amp;                     ,IDS,IDE,JDS,JDE,KDS,KDE                     &amp;<a name='194'>
+     &amp;                     ,IMS,IME,JMS,JME,KMS,KME                     &amp;<a name='195'>
+     &amp;                     ,ITS,ITE,JTS,JTE,KTS,KTE )<a name='196'>
+<font color=#447700>!<a name='197'></font>
+<font color=#447700>!== INPUT:<a name='198'></font>
+<font color=#447700>!-- U, V - zonal (U), meridional (V) winds at mass points (m/s)<a name='199'></font>
+<font color=#447700>!-- T, Q - temperature (C), specific humidity (kg/kg)<a name='200'></font>
+<font color=#447700>!-- DP - pressure thickness (Pa)<a name='201'></font>
+<font color=#447700>!-- Z - geopotential height (m)<a name='202'></font>
+<font color=#447700>!-- PINT, PMID - interface and midlayer pressures, respectively (Pa)<a name='203'></font>
+<font color=#447700>!-- EXNR - (p/p0)**(Rd/Cp)<a name='204'></font>
+<font color=#447700>!-- KPBL - vertical index at PBL top<a name='205'></font>
+<font color=#447700>!-- ITIME - model time step (=NTSD)<a name='206'></font>
+<font color=#447700>!-- HSTDV - orographic standard deviation<a name='207'></font>
+<font color=#447700>!-- HCNVX - normalized 4th moment of the orographic convexity<a name='208'></font>
+<font color=#447700>!-- Template for the next two sets of 4 arrays:<a name='209'></font>
+<font color=#447700>!             NWD  1   2   3   4   5   6   7   8<a name='210'></font>
+<font color=#447700>!              WD  W   S  SW  NW   E   N  NE  SE<a name='211'></font>
+<font color=#447700>!-- Orographic asymmetry (HASYx, x=1-4) for upstream &amp; downstream flow (4 planes)<a name='212'></font>
+<font color=#447700>!-- * HASYW - orographic asymmetry for upstream &amp; downstream flow in W-E plane<a name='213'></font>
+<font color=#447700>!-- * HASYS - orographic asymmetry for upstream &amp; downstream flow in S-N plane<a name='214'></font>
+<font color=#447700>!-- * HASYSW - orographic asymmetry for upstream &amp; downstream flow in SW-NE plane<a name='215'></font>
+<font color=#447700>!-- * HASYNW - orographic asymmetry for upstream &amp; downstream flow in NW-SE plane<a name='216'></font>
+<font color=#447700>!-- Orographic length scale or mountain width (4 planes)<a name='217'></font>
+<font color=#447700>!-- * HLENW - orographic length scale for upstream &amp; downstream flow in W-E plane<a name='218'></font>
+<font color=#447700>!-- * HLENS - orographic length scale for upstream &amp; downstream flow in S-N plane<a name='219'></font>
+<font color=#447700>!-- * HLENSW - orographic length scale for upstream &amp; downstream flow in SW-NE plane<a name='220'></font>
+<font color=#447700>!-- * HLENNW - orographic length scale for upstream &amp; downstream flow in NW-SE plane<a name='221'></font>
+<font color=#447700>!-- HANGL  - angle (degrees) of the mountain range w/r/t east<a name='222'></font>
+<font color=#447700>!-- HANIS - anisotropy/aspect ratio of orography<a name='223'></font>
+<font color=#447700>!-- HSLOP - slope of orography<a name='224'></font>
+<font color=#447700>!-- HZMAX - max height above mean orography<a name='225'></font>
+<font color=#447700>!-- CROT, SROT - cosine &amp; sine of the angle between Earth &amp; model coordinates<a name='226'></font>
+<font color=#447700>!<a name='227'></font>
+<font color=#447700>!== OUTPUT:<a name='228'></font>
+<font color=#447700>!-- DUDT, DVDT - zonal, meridional wind tendencies<a name='229'></font>
+<font color=#447700>!-- UGWDsfc, VGWDsfc - zonal, meridional surface wind stresses (N/m**2)<a name='230'></font>
+<font color=#447700>!<a name='231'></font>
+<font color=#447700>!== INPUT indices:<a name='232'></font>
+<font color=#447700>!-- ids           start index for i in domain<a name='233'></font>
+<font color=#447700>!-- ide           end index for i in domain<a name='234'></font>
+<font color=#447700>!-- jds           start index for j in domain<a name='235'></font>
+<font color=#447700>!-- jde           end index for j in domain<a name='236'></font>
+<font color=#447700>!-- kds           start index for k in domain<a name='237'></font>
+<font color=#447700>!-- kde           end index for k in domain<a name='238'></font>
+<font color=#447700>!-- ims           start index for i in memory<a name='239'></font>
+<font color=#447700>!-- ime           end index for i in memory<a name='240'></font>
+<font color=#447700>!-- jms           start index for j in memory<a name='241'></font>
+<font color=#447700>!-- jme           end index for j in memory<a name='242'></font>
+<font color=#447700>!-- kms           start index for k in memory<a name='243'></font>
+<font color=#447700>!-- kme           end index for k in memory<a name='244'></font>
+<font color=#447700>!-- its           start i index for tile<a name='245'></font>
+<font color=#447700>!-- ite           end i index for tile<a name='246'></font>
+<font color=#447700>!-- jts           start j index for tile<a name='247'></font>
+<font color=#447700>!-- jte           end j index for tile<a name='248'></font>
+<font color=#447700>!-- kts           start index for k in tile<a name='249'></font>
+<font color=#447700>!-- kte           end index for k in tile<a name='250'></font>
+<font color=#447700>!<a name='251'></font>
+<font color=#447700>!-- INPUT variables:<a name='252'></font>
+<font color=#447700>!<a name='253'></font>
+      REAL, INTENT(IN), DIMENSION (ims:ime, kms:kme, jms:jme) ::        &amp;<a name='254'>
+     &amp;                                   U,V,T,Q,Z,DP,PINT,PMID,EXNR<a name='255'>
+      REAL, INTENT(IN), DIMENSION (ims:ime, jms:jme) :: HSTDV,HCNVX     &amp;<a name='256'>
+     &amp;      ,HASYW,HASYS,HASYSW,HASYNW,HLENW,HLENS,HLENSW,HLENNW,HANGL  &amp;<a name='257'>
+     &amp;      ,HANIS,HSLOP,HZMAX,CROT,SROT, XLAND                           <font color=#447700>!ADDED XLAND BY KWON<a name='258'></font>
+      INTEGER, INTENT(IN), DIMENSION (ims:ime, jms:jme) :: KPBL<a name='259'>
+      INTEGER, INTENT(IN) :: ids,ide,jds,jde,kds,kde                    &amp;<a name='260'>
+     &amp;,                      ims,ime,jms,jme,kms,kme                    &amp;<a name='261'>
+     &amp;,                      its,ite,jts,jte,kts,kte,ITIME<a name='262'>
+<a name='263'>
+<font color=#447700>!<a name='264'></font>
+<font color=#447700>!-- OUTPUT variables:<a name='265'></font>
+<font color=#447700>!<a name='266'></font>
+      REAL, INTENT(OUT), DIMENSION (ims:ime, kms:kme, jms:jme) ::       &amp;<a name='267'>
+     &amp;                                                        DUDT,DVDT<a name='268'>
+      REAL, INTENT(OUT), DIMENSION (ims:ime, jms:jme) :: UGWDsfc,VGWDsfc<a name='269'>
+<font color=#447700>!<a name='270'></font>
+<font color=#447700>!-- Local variables<a name='271'></font>
+<font color=#447700>!-- DUsfc, DVsfc - zonal, meridional wind stresses (diagnostics)<a name='272'></font>
+<font color=#447700>!<a name='273'></font>
+      INTEGER, PARAMETER :: IM=1    <font color=#447700>!-- Reduces changes in subroutine GWPDS<a name='274'></font>
+      REAL(KIND=KIND_PHYS), PARAMETER :: G=9.806, GHALF=.5*G            &amp;<a name='275'>
+     &amp;,                                  THRESH=1.E-6, dtlarge=1.   <font color=#447700>!dbg<a name='276'></font>
+      INTEGER, DIMENSION (IM) :: LPBL<a name='277'>
+      REAL(KIND=KIND_PHYS), DIMENSION (IM,4) :: OA4,CLX4<a name='278'>
+      REAL(KIND=KIND_PHYS), DIMENSION (IM) :: DUsfc,DVsfc               &amp;<a name='279'>
+     &amp;,                              HPRIME,OC,THETA,SIGMA,GAMMA,ELVMAX<a name='280'>
+      REAL(KIND=KIND_PHYS), DIMENSION (IM,KTS:KTE) :: DUDTcol,DVDTcol   &amp;<a name='281'>
+     &amp;,                    Ucol,Vcol,Tcol,Qcol,DPcol,Pcol,EXNcol,PHIcol<a name='282'>
+      REAL(KIND=KIND_PHYS), DIMENSION (IM,KTS:KTE+1) :: PINTcol,PHILIcol<a name='283'>
+      INTEGER :: I,J,IJ,K,Imid,Jmid                             <a name='284'>
+      REAL :: Ugeo,Vgeo,Umod,Vmod, TERRtest,TERRmin<a name='285'>
+      REAL(KIND=KIND_PHYS) :: TEST<a name='286'>
+      CHARACTER(LEN=255) :: message<a name='287'>
+<a name='288'>
+<font color=#447700>!dbg<a name='289'></font>
+logical :: lprnt  <font color=#447700>!dbg<a name='290'></font>
+character (len=26) :: label<a name='291'>
+integer :: kpblmin,kpblmax, mype, iunit<a name='292'>
+real :: hzmaxmin,hzmaxmax,hanglmin,hanglmax,hslopmin,hslopmax,hanismin,hanismax  &amp;<a name='293'>
+,hstdvmin,hstdvmax,hcnvxmin,hcnvxmax,hasywmin,hasywmax,hasysmin,hasysmax  &amp;<a name='294'>
+,hasyswmin,hasyswmax,hasynwmin,hasynwmax,hlenwmin,hlenwmax,hlensmin,hlensmax  &amp;<a name='295'>
+,hlenswmin,hlenswmax,hlennwmin,hlennwmax,zsmin,zsmax,delu,delv<a name='296'>
+<font color=#447700>! Added this declaration<a name='297'></font>
+real :: helvmin,helvmax<a name='298'>
+<font color=#447700>!dbg<a name='299'></font>
+<a name='300'>
+<font color=#447700>!<a name='301'></font>
+<font color=#447700>!--------------------------  Executable below  -------------------------<a name='302'></font>
+<font color=#447700>!<a name='303'></font>
+<a name='304'>
+<a name='305'>
+lprnt=.false.<a name='306'>
+<font color=#447700>!dbg<a name='307'></font>
+if (itime &lt;= 1) then<a name='308'>
+  CALL <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_GET_MYPROC'>WRF_GET_MYPROC</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_GET_MYPROC_4">(MYPE)   <font color=#447700>!-- Get processor number<a name='309'></font>
+  kpblmin=100<a name='310'>
+  kpblmax=-100<a name='311'>
+  hzmaxmin=1.e6<a name='312'>
+  hzmaxmax=-1.e6<a name='313'>
+  hanglmin=1.e6<a name='314'>
+  hanglmax=-1.e6<a name='315'>
+  hslopmin=1.e6<a name='316'>
+  hslopmax=-1.e6<a name='317'>
+  hanismin=1.e6<a name='318'>
+  hanismax=-1.e6<a name='319'>
+  hstdvmin=1.e6<a name='320'>
+  hstdvmax=-1.e6<a name='321'>
+  hcnvxmin=1.e6<a name='322'>
+  hcnvxmax=-1.e6<a name='323'>
+  hasywmin=1.e6<a name='324'>
+  hasywmax=-1.e6<a name='325'>
+  hasysmin=1.e6<a name='326'>
+  hasysmax=-1.e6<a name='327'>
+  hasyswmin=1.e6<a name='328'>
+  hasyswmax=-1.e6<a name='329'>
+  hasynwmin=1.e6<a name='330'>
+  hasynwmax=-1.e6<a name='331'>
+  hlenwmin=1.e6<a name='332'>
+  hlenwmax=-1.e6<a name='333'>
+  hlensmin=1.e6<a name='334'>
+  hlensmax=-1.e6<a name='335'>
+  hlenswmin=1.e6<a name='336'>
+  hlenswmax=-1.e6<a name='337'>
+  hlennwmin=1.e6<a name='338'>
+  hlennwmax=-1.e6<a name='339'>
+  zsmin=1.e6<a name='340'>
+  zsmax=-1.e6<a name='341'>
+<font color=#447700>! Added initialization of helvmin and helvmax<a name='342'></font>
+  helvmin=1.e6<a name='343'>
+  helvmax=-1.e6<a name='344'>
+  do j=jts,jte<a name='345'>
+    do i=its,ite<a name='346'>
+      kpblmin=min(kpblmin,kpbl(i,j))<a name='347'>
+      kpblmax=max(kpblmax,kpbl(i,j))<a name='348'>
+      helvmin=min(helvmin,hzmax(i,j))<a name='349'>
+      helvmax=max(helvmax,hzmax(i,j))<a name='350'>
+      hanglmin=min(hanglmin,hangl(i,j))<a name='351'>
+      hanglmax=max(hanglmax,hangl(i,j))<a name='352'>
+      hslopmin=min(hslopmin,hslop(i,j))<a name='353'>
+      hslopmax=max(hslopmax,hslop(i,j))<a name='354'>
+      hanismin=min(hanismin,hanis(i,j))<a name='355'>
+      hanismax=max(hanismax,hanis(i,j))<a name='356'>
+      hstdvmin=min(hstdvmin,hstdv(i,j))<a name='357'>
+      hstdvmax=max(hstdvmax,hstdv(i,j))<a name='358'>
+      hcnvxmin=min(hcnvxmin,hcnvx(i,j))<a name='359'>
+      hcnvxmax=max(hcnvxmax,hcnvx(i,j))<a name='360'>
+      hasywmin=min(hasywmin,hasyw(i,j))<a name='361'>
+      hasywmax=max(hasywmax,hasyw(i,j))<a name='362'>
+      hasysmin=min(hasysmin,hasys(i,j))<a name='363'>
+      hasysmax=max(hasysmax,hasys(i,j))<a name='364'>
+      hasyswmin=min(hasyswmin,hasysw(i,j))<a name='365'>
+      hasyswmax=max(hasyswmax,hasysw(i,j))<a name='366'>
+      hasynwmin=min(hasynwmin,hasynw(i,j))<a name='367'>
+      hasynwmax=max(hasynwmax,hasynw(i,j))<a name='368'>
+      hlenwmin=min(hlenwmin,hlenw(i,j))<a name='369'>
+      hlenwmax=max(hlenwmax,hlenw(i,j))<a name='370'>
+      hlensmin=min(hlensmin,hlens(i,j))<a name='371'>
+      hlensmax=max(hlensmax,hlens(i,j))<a name='372'>
+      hlenswmin=min(hlenswmin,hlensw(i,j))<a name='373'>
+      hlenswmax=max(hlenswmax,hlensw(i,j))<a name='374'>
+      hlennwmin=min(hlennwmin,hlennw(i,j))<a name='375'>
+      hlennwmax=max(hlennwmax,hlennw(i,j))<a name='376'>
+      zsmin=min(zsmin,z(i,1,j))<a name='377'>
+      zsmax=max(zsmax,z(i,1,j))<a name='378'>
+    enddo<a name='379'>
+  enddo<a name='380'>
+  write(message,*) 'Maximum and minimum values within GWD-driver for MYPE=',MYPE<a name='381'>
+  write(message,"(i3,2(a,e12.5))") mype,':  deltim=',deltim,'  rdeltim=',rdeltim<a name='382'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_86">(trim(message))<a name='383'>
+  write(message,"(i3,2(a,i3))")    mype,':  kpblmin=',kpblmin,'  kpblmax=',kpblmax<a name='384'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_87">(trim(message))<a name='385'>
+  write(message,"(i3,2(a,e12.5))") mype,':  helvmin=',helvmin,'  helvmax=',helvmax<a name='386'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_88">(trim(message))<a name='387'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hanglmin=',hanglmin,'  hanglmax=',hanglmax<a name='388'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_89">(trim(message))<a name='389'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hslopmin=',hslopmin,'  hslopmax=',hslopmax<a name='390'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_90">(trim(message))<a name='391'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hanismin=',hanismin,'  hanismax=',hanismax<a name='392'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_91">(trim(message))<a name='393'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hstdvmin=',hstdvmin,'  hstdvmax=',hstdvmax<a name='394'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_92">(trim(message))<a name='395'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hcnvxmin=',hcnvxmin,'  hcnvxmax=',hcnvxmax<a name='396'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_93">(trim(message))<a name='397'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hasywmin=',hasywmin,'  hasywmax=',hasywmax<a name='398'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_94">(trim(message))<a name='399'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hasysmin=',hasysmin,'  hasysmax=',hasysmax<a name='400'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_95">(trim(message))<a name='401'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hasyswmin=',hasyswmin,'  hasyswmax=',hasyswmax<a name='402'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_96">(trim(message))<a name='403'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hasynwmin=',hasynwmin,'  hasynwmax=',hasynwmax<a name='404'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_97">(trim(message))<a name='405'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hlenwmin=',hlenwmin,'  hlenwmax=',hlenwmax<a name='406'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_98">(trim(message))<a name='407'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hlensmin=',hlensmin,'  hlensmax=',hlensmax<a name='408'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_99">(trim(message))<a name='409'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hlenswmin=',hlenswmin,'  hlenswmax=',hlenswmax<a name='410'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_100">(trim(message))<a name='411'>
+  write(message,"(i3,2(a,e12.5))") mype,':  hlennwmin=',hlennwmin,'  hlennwmax=',hlennwmax<a name='412'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_101">(trim(message))<a name='413'>
+  write(message,"(i3,2(a,e12.5))") mype,':  zsmin=',zsmin,'  zsmax=',zsmax<a name='414'>
+  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_102">(trim(message))<a name='415'>
+<a name='416'>
+endif   <font color=#447700>! if (itime &lt;= 1) then<a name='417'></font>
+<font color=#447700>!dbg<a name='418'></font>
+<a name='419'>
+<font color=#447700>!<a name='420'></font>
+<font color=#447700>!-- Initialize variables<a name='421'></font>
+<font color=#447700>!<a name='422'></font>
+      DO J=JMS,JME<a name='423'>
+      DO K=KMS,KME<a name='424'>
+      DO I=IMS,IME<a name='425'>
+        DUDT(I,K,J)=0.<a name='426'>
+        DVDT(I,K,J)=0.<a name='427'>
+      ENDDO<a name='428'>
+      ENDDO<a name='429'>
+      ENDDO<a name='430'>
+<font color=#447700>!<a name='431'></font>
+      DO J=JMS,JME<a name='432'>
+      DO I=IMS,IME<a name='433'>
+        UGWDsfc(I,J)=0.<a name='434'>
+        VGWDsfc(I,J)=0.<a name='435'>
+<font color=#447700>!        IF(ITIMIE.LE.2.OR.ITIME.GE.900) THEN<a name='436'></font>
+<font color=#447700>!        PRINT *,'KWON: I J HSTDV  IN GWD_DRIVER ',ITIME,I,J,HSTDV(I,J)<a name='437'></font>
+<font color=#447700>!        ENDIF<a name='438'></font>
+      ENDDO<a name='439'>
+      ENDDO<a name='440'>
+<font color=#447700>!<a name='441'></font>
+<font color=#447700>!-- For debugging, find approximate center point within each tile<a name='442'></font>
+<font color=#447700>!<a name='443'></font>
+<font color=#447700>!dbg       Imid=.5*(ITS+ITE)<a name='444'></font>
+<font color=#447700>!dbg       Jmid=.5*(JTS+JTE)<a name='445'></font>
+<font color=#447700>!<a name='446'></font>
+<font color=#447700>!INITIALIZE THE OUPUT OF GWD_COL  KWON<a name='447'></font>
+          DO K=KTS,KTE<a name='448'>
+            DUDTcol(IM,K)=0.<a name='449'>
+            DVDTcol(IM,K)=0.<a name='450'>
+          ENDDO<a name='451'>
+          DUsfc(IM)=0.             <font color=#447700>!-- U wind stress<a name='452'></font>
+          DVsfc(IM)=0.             <font color=#447700>!-- V wind stress<a name='453'></font>
+<a name='454'>
+<a name='455'>
+      DO J=JTS,JTE<a name='456'>
+        DO I=ITS,ITE<a name='457'>
+          if (kpbl(i,j)&lt;kts .or. kpbl(i,j)&gt;kte) go to 100<a name='458'>
+<font color=#447700>!<a name='459'></font>
+<font color=#447700>!-- Initial test to see if GWD calculations should be made, otherwise skip<a name='460'></font>
+<font color=#447700>!<a name='461'></font>
+          TERRtest=HZMAX(I,J)+SIGFAC*HSTDV(I,J)<a name='462'>
+          TERRmin=Z(I,2,J)-Z(I,1,J)<a name='463'>
+          IF (TERRtest &lt; TERRmin) GO TO 100<a name='464'>
+<font color=#447700>!  ADDED BY KWON TO SKIP OCEAN POINTS<a name='465'></font>
+          IF (XLAND(I,J).GE.1.5)  GO TO 100<a name='466'>
+<font color=#447700>!<a name='467'></font>
+<font color=#447700>!-- For debugging:<a name='468'></font>
+<font color=#447700>!<a name='469'></font>
+<font color=#447700>!dbg lprnt=.false.<a name='470'></font>
+<font color=#447700>!dbg if (i==idbg .and. j==jdbg .and. itime&lt;=1) lprnt=.true.<a name='471'></font>
+<font color=#447700>!dbg ! 200   CONTINUE<a name='472'></font>
+<font color=#447700>!<a name='473'></font>
+          DO K=KTS,KTE<a name='474'>
+            DUDTcol(IM,K)=0.<a name='475'>
+            DVDTcol(IM,K)=0.<a name='476'>
+<font color=#447700>!<a name='477'></font>
+<font color=#447700>!-- Transform/rotate winds from model to geodetic (Earth) coordinates<a name='478'></font>
+<font color=#447700>!<a name='479'></font>
+            Ucol(IM,K)=U(I,K,J)*CROT(I,J)+V(I,K,J)*SROT(I,J)<a name='480'>
+            Vcol(IM,K)=V(I,K,J)*CROT(I,J)-U(I,K,J)*SROT(I,J)<a name='481'>
+<font color=#447700>!<a name='482'></font>
+            Tcol(IM,K)=T(I,K,J)<a name='483'>
+            Qcol(IM,K)=Q(I,K,J)<a name='484'>
+<font color=#447700>!<a name='485'></font>
+<font color=#447700>!-- Convert from Pa to centibars, which is what's used in subroutine GWD_col<a name='486'></font>
+<font color=#447700>!<a name='487'></font>
+            DPcol(IM,K)=.001*DP(I,K,J)<a name='488'>
+            PINTcol(IM,K)=.001*PINT(I,K,J)<a name='489'>
+            Pcol(IM,K)=.001*PMID(I,K,J)<a name='490'>
+            EXNcol(IM,K)=EXNR(I,K,J)<a name='491'>
+<font color=#447700>!<a name='492'></font>
+<font color=#447700>!-- Next 2 fields are geopotential above the surface at the lower interface <a name='493'></font>
+<font color=#447700>!   and at midlayer<a name='494'></font>
+<font color=#447700>!<a name='495'></font>
+            PHILIcol(IM,K)=G*(Z(I,K,J)-Z(I,1,J))<a name='496'>
+            PHIcol(IM,K)=GHALF*(Z(I,K,J)+Z(I,K+1,J))-G*Z(I,1,J)<a name='497'>
+          ENDDO   <font color=#447700>!- K<a name='498'></font>
+<font color=#447700>!<a name='499'></font>
+          PINTcol(IM,KTE+1)=.001*PINT(I,KTE+1,J)<a name='500'>
+          PHILIcol(IM,KTE+1)=G*(Z(I,KTE+1,J)-Z(I,1,J))<a name='501'>
+<font color=#447700>!<a name='502'></font>
+<font color=#447700>!-- Terrain-specific inputs:<a name='503'></font>
+<font color=#447700>!<a name='504'></font>
+          HPRIME(IM)=HSTDV(I,J)   <font color=#447700>!-- standard deviation of orography<a name='505'></font>
+          OC(IM)=HCNVX(I,J)       <font color=#447700>!-- Normalized convexity<a name='506'></font>
+          OA4(IM,1)=HASYW(I,J)    <font color=#447700>!-- orographic asymmetry in W-E plane<a name='507'></font>
+          OA4(IM,2)=HASYS(I,J)    <font color=#447700>!-- orographic asymmetry in S-N plane<a name='508'></font>
+          OA4(IM,3)=HASYSW(I,J)   <font color=#447700>!-- orographic asymmetry in SW-NE plane<a name='509'></font>
+          OA4(IM,4)=HASYNW(I,J)   <font color=#447700>!-- orographic asymmetry in NW-SE plane<a name='510'></font>
+          CLX4(IM,1)=HLENW(I,J)   <font color=#447700>!-- orographic length scale in W-E plane<a name='511'></font>
+          CLX4(IM,2)=HLENS(I,J)   <font color=#447700>!-- orographic length scale in S-N plane<a name='512'></font>
+          CLX4(IM,3)=HLENSW(I,J)  <font color=#447700>!-- orographic length scale in SW-NE plane<a name='513'></font>
+          CLX4(IM,4)=HLENNW(I,J)  <font color=#447700>!-- orographic length scale in NW-SE plane<a name='514'></font>
+          THETA(IM)=HANGL(I,J)       <font color=#447700>!<a name='515'></font>
+          SIGMA(IM)=HSLOP(I,J)       <font color=#447700>!<a name='516'></font>
+          GAMMA(IM)=HANIS(I,J)       <font color=#447700>!<a name='517'></font>
+          ELVMAX(IM)=HZMAX(I,J)      <font color=#447700>!<a name='518'></font>
+          LPBL(IM)=KPBL(I,J)      <font color=#447700>!<a name='519'></font>
+<font color=#447700>!dbg           IF (LPBL(IM)&lt;KTS .OR. LPBL(IM)&gt;KTE)     &amp;<a name='520'></font>
+<font color=#447700>!dbg      &amp; print *,'Wacky values for KPBL: I,J,N,LPBL=',I,J,ITIME,LPBL(IM)<a name='521'></font>
+<font color=#447700>!<a name='522'></font>
+<font color=#447700>!-- Output (diagnostics)<a name='523'></font>
+<font color=#447700>!<a name='524'></font>
+          DUsfc(IM)=0.             <font color=#447700>!-- U wind stress<a name='525'></font>
+          DVsfc(IM)=0.             <font color=#447700>!-- V wind stress<a name='526'></font>
+<font color=#447700>!<a name='527'></font>
+<font color=#447700>!dbg<a name='528'></font>
+<font color=#447700>!dbg if (LPRNT) then<a name='529'></font>
+<font color=#447700>!dbg !<a name='530'></font>
+<font color=#447700>!dbg !-- Following code is for ingesting GFS-derived inputs for final testing<a name='531'></font>
+<font color=#447700>!dbg !<a name='532'></font>
+<font color=#447700>!dbg   CALL INT_GET_FRESH_HANDLE(iunit)<a name='533'></font>
+<font color=#447700>!dbg   close(iunit)<a name='534'></font>
+<font color=#447700>!dbg   open(unit=iunit,file='gfs_gwd.input',form='formatted',iostat=ier)<a name='535'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='536'></font>
+<font color=#447700>!dbg   read(iunit,*) (Ucol(im,k), k=kts,kte)<a name='537'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='538'></font>
+<font color=#447700>!dbg   read(iunit,*) (Vcol(im,k), k=kts,kte)<a name='539'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='540'></font>
+<font color=#447700>!dbg   read(iunit,*) (Tcol(im,k), k=kts,kte)<a name='541'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='542'></font>
+<font color=#447700>!dbg   read(iunit,*) (Qcol(im,k), k=kts,kte)<a name='543'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='544'></font>
+<font color=#447700>!dbg   read(iunit,*) (PINTcol(im,k), k=kts,kte+1)<a name='545'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='546'></font>
+<font color=#447700>!dbg   read(iunit,*) (DPcol(im,k), k=kts,kte)<a name='547'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='548'></font>
+<font color=#447700>!dbg   read(iunit,*) (Pcol(im,k), k=kts,kte)<a name='549'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='550'></font>
+<font color=#447700>!dbg   read(iunit,*) (EXNcol(im,k), k=kts,kte)<a name='551'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='552'></font>
+<font color=#447700>!dbg   read(iunit,*) (PHILIcol(im,k), k=kts,kte+1)<a name='553'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='554'></font>
+<font color=#447700>!dbg   read(iunit,*) (PHIcol(im,k), k=kts,kte)<a name='555'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='556'></font>
+<font color=#447700>!dbg   read(iunit,*) hprime(im)<a name='557'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='558'></font>
+<font color=#447700>!dbg   read(iunit,*) oc(im)<a name='559'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='560'></font>
+<font color=#447700>!dbg   read(iunit,*) (oa4(im,k), k=1,4)<a name='561'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='562'></font>
+<font color=#447700>!dbg   read(iunit,*) (clx4(im,k), k=1,4)<a name='563'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='564'></font>
+<font color=#447700>!dbg   read(iunit,*) theta(im)<a name='565'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='566'></font>
+<font color=#447700>!dbg   read(iunit,*) sigma(im)<a name='567'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='568'></font>
+<font color=#447700>!dbg   read(iunit,*) gamma(im)<a name='569'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='570'></font>
+<font color=#447700>!dbg   read(iunit,*) elvmax(im)<a name='571'></font>
+<font color=#447700>!dbg   read(iunit,*)    ! skip line<a name='572'></font>
+<font color=#447700>!dbg   read(iunit,*) lpbl(im)<a name='573'></font>
+<font color=#447700>!dbg   close(iunit)<a name='574'></font>
+write(label,"('GWD:i,j,n=',2i5,i6)") I,J,ITIME<a name='575'>
+<font color=#447700>!dbg   write(6,"(2a)") LABEL,' in GWD_driver: K U V T Q Pi DP P EX PHIi PHI'<a name='576'></font>
+<font color=#447700>!dbg   do k=kts,kte<a name='577'></font>
+<font color=#447700>!dbg     write(6,"(i3,10e12.4)") k,Ucol(im,k),Vcol(im,k),Tcol(im,k)          &amp;<a name='578'></font>
+<font color=#447700>!dbg     ,Qcol(im,k),PINTcol(im,k),DPcol(im,k),Pcol(im,k),EXNcol(im,k)  &amp;<a name='579'></font>
+<font color=#447700>!dbg     ,PHILIcol(im,k),PHIcol(im,k)<a name='580'></font>
+<font color=#447700>!dbg   enddo<a name='581'></font>
+<font color=#447700>!dbg   write(6,"(2(a,e12.4),2(a,4e12.4/),4(a,e12.4),a,i3) )")         &amp;<a name='582'></font>
+<font color=#447700>!dbg    'GWD_driver:  hprime(im)=',hprime(im),'  oc(im)=',oc(im)    &amp;<a name='583'></font>
+<font color=#447700>!dbg   ,'  oa4(im,1-4)=',(oa4(im,k),k=1,4)                          &amp;<a name='584'></font>
+<font color=#447700>!dbg   ,'  clx4(im,1-4)=',(clx4(im,k),k=1,4)                        &amp;<a name='585'></font>
+<font color=#447700>!dbg   ,'  theta=',theta(im),'  sigma(im)=',sigma(im)               &amp;<a name='586'></font>
+<font color=#447700>!dbg   ,'  gamma(im)=',gamma(im),'  elvmax(im)=',elvmax(im)         &amp;<a name='587'></font>
+<font color=#447700>!dbg   ,'  lpbl(im)=',lpbl(im)<a name='588'></font>
+<font color=#447700>!dbg endif<a name='589'></font>
+<font color=#447700>!dbg<a name='590'></font>
+<font color=#447700>!=======================================================================<a name='591'></font>
+<font color=#447700>!<a name='592'></font>
+          CALL <A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_COL'>GWD_col</A><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GWD_COL_1">(DVDTcol,DUDTcol, DUsfc,DVsfc                     &amp; <font color=#447700>! Output<a name='593'></font>
+     &amp;,              Ucol,Vcol,Tcol,Qcol,PINTcol,DPcol,Pcol,EXNcol      &amp; <font color=#447700>! Met input<a name='594'></font>
+     &amp;,              PHILIcol,PHIcol                                    &amp; <font color=#447700>! Met input<a name='595'></font>
+     &amp;,              HPRIME,OC,OA4,CLX4,THETA,SIGMA,GAMMA,ELVMAX        &amp; <font color=#447700>! Topo input<a name='596'></font>
+     &amp;,              LPBL,IM,KTS,KTE,LABEL,LPRNT )                        <font color=#447700>! Indices + debugging<a name='597'></font>
+<font color=#447700>!<a name='598'></font>
+<font color=#447700>!=======================================================================<a name='599'></font>
+<font color=#447700>!<a name='600'></font>
+<font color=#447700>!dbg<a name='601'></font>
+<font color=#447700>!dbg !<a name='602'></font>
+<font color=#447700>!dbg ! IF (.NOT.LPRNT) THEN<a name='603'></font>
+<font color=#447700>!dbg !   TEST=0.<a name='604'></font>
+<font color=#447700>!dbg !   DO K=KTS,KTE<a name='605'></font>
+<font color=#447700>!dbg !     TEST=MAX( TEST, ABS(DUDTcol(IM,K)), ABS(DVDTcol(IM,K)) )<a name='606'></font>
+<font color=#447700>!dbg !     if ( ABS(DUDTcol(IM,K)) &gt; RDELTIM) print *,'k,DUDTcol=',k,DUDTcol(IM,K)<a name='607'></font>
+<font color=#447700>!dbg !     if ( ABS(DVDTcol(IM,K)) &gt; RDELTIM) print *,'k,DVDTcol=',k,DVDTcol(IM,K)<a name='608'></font>
+<font color=#447700>!dbg !   ENDDO<a name='609'></font>
+<font color=#447700>!dbg !   IF (TEST&gt;RDELTIM) THEN<a name='610'></font>
+<font color=#447700>!dbg !     LPRNT=.TRUE.<a name='611'></font>
+<font color=#447700>!dbg !     Imid=I<a name='612'></font>
+<font color=#447700>!dbg !     Jmid=J<a name='613'></font>
+<font color=#447700>!dbg !     GO TO 200<a name='614'></font>
+<font color=#447700>!dbg !   ENDIF<a name='615'></font>
+<font color=#447700>!dbg ! ENDIF<a name='616'></font>
+<font color=#447700>!dbg ! TEST=ABS(DUsfc(IM))+ABS(DVsfc(IM))<a name='617'></font>
+<font color=#447700>!dbg ! if (.not.lprnt) then<a name='618'></font>
+<font color=#447700>!dbg !   do k=kts,kte<a name='619'></font>
+<font color=#447700>!dbg !     du=DUDTcol(IM,K)*DELTIM<a name='620'></font>
+<font color=#447700>!dbg !     dv=DVDTcol(IM,K)*DELTIM<a name='621'></font>
+<font color=#447700>!dbg !     if (du &lt; dumin) then<a name='622'></font>
+<font color=#447700>!dbg !       lprnt=.true.<a name='623'></font>
+<font color=#447700>!dbg !       dumin=1.5*du<a name='624'></font>
+<font color=#447700>!dbg !     endif<a name='625'></font>
+<font color=#447700>!dbg !     if (du &gt; dumax) then<a name='626'></font>
+<font color=#447700>!dbg !       lprnt=.true.<a name='627'></font>
+<font color=#447700>!dbg !       dumax=1.5*du<a name='628'></font>
+<font color=#447700>!dbg !     endif<a name='629'></font>
+<font color=#447700>!dbg !     if (dv &lt; dvmin) then<a name='630'></font>
+<font color=#447700>!dbg !       lprnt=.true.<a name='631'></font>
+<font color=#447700>!dbg !       dvmin=1.5*dv<a name='632'></font>
+<font color=#447700>!dbg !     endif<a name='633'></font>
+<font color=#447700>!dbg !     if (dv &gt; dvmax) then<a name='634'></font>
+<font color=#447700>!dbg !       lprnt=.true.<a name='635'></font>
+<font color=#447700>!dbg !       dvmax=1.5*dv<a name='636'></font>
+<font color=#447700>!dbg !     endif<a name='637'></font>
+<font color=#447700>!dbg !   enddo<a name='638'></font>
+<font color=#447700>!dbg !   if (lprnt) go to 200<a name='639'></font>
+<font color=#447700>!dbg ! else<a name='640'></font>
+<font color=#447700>!dbg if (lprnt) then<a name='641'></font>
+<font color=#447700>!dbg   print *,'DUsfc,DVsfc,CROT,SROT,DELTIM=',DUsfc(IM),DVsfc(IM) &amp;<a name='642'></font>
+<font color=#447700>!dbg   &amp;,CROT(I,J),SROT(I,J),DELTIM<a name='643'></font>
+<font color=#447700>!dbg   print *,' K  P     |     Ucol      Ugeo  DUDTcol*DT   U        Umod    DU=DUDT*DT ' &amp;<a name='644'></font>
+<font color=#447700>!dbg                    ,'|     Vcol      Vgeo  DVDTcol*DT   V        Vmod    DV=DVDT*DT'<a name='645'></font>
+<font color=#447700>!dbg ENDIF<a name='646'></font>
+<a name='647'>
+          DO K=KTS,KTE<a name='648'>
+            TEST=ABS(DUDTcol(IM,K))+ABS(DVDTcol(IM,K))<a name='649'>
+            IF (TEST &gt; THRESH) THEN<a name='650'>
+<a name='651'>
+<font color=#447700>!dbg<a name='652'></font>
+<font color=#447700>!dbg if (lprnt) then<a name='653'></font>
+<font color=#447700>!dbg !dbg  DUDTcol(IM,K)=0.   !-- Test rotation<a name='654'></font>
+<font color=#447700>!dbg !dbg  DVDTcol(IM,K)=0.   !-- Test rotation<a name='655'></font>
+<font color=#447700>!dbg !-- Now replace with the original winds before they were written over by<a name='656'></font>
+<font color=#447700>!dbg !   the values from the GFS<a name='657'></font>
+<font color=#447700>!dbg   Ucol(IM,K)=U(I,K,J)*CROT(I,J)+V(I,K,J)*SROT(I,J)<a name='658'></font>
+<font color=#447700>!dbg   Vcol(IM,K)=V(I,K,J)*CROT(I,J)-U(I,K,J)*SROT(I,J)<a name='659'></font>
+<font color=#447700>!dbg endif<a name='660'></font>
+<a name='661'>
+<font color=#447700>!<a name='662'></font>
+<font color=#447700>!-- First update winds in geodetic coordinates<a name='663'></font>
+<font color=#447700>!<a name='664'></font>
+              Ugeo=Ucol(IM,K)+DUDTcol(IM,K)*DELTIM<a name='665'>
+              Vgeo=Vcol(IM,K)+DVDTcol(IM,K)*DELTIM<a name='666'>
+<font color=#447700>!<a name='667'></font>
+<font color=#447700>!-- Transform/rotate winds from geodetic back to model coordinates<a name='668'></font>
+<font color=#447700>!<a name='669'></font>
+              Umod=Ugeo*CROT(I,J)-Vgeo*SROT(I,J)<a name='670'>
+              Vmod=Ugeo*SROT(I,J)+Vgeo*CROT(I,J)<a name='671'>
+<font color=#447700>!<a name='672'></font>
+<font color=#447700>!-- Calculate wind tendencies from the updated model winds<a name='673'></font>
+<font color=#447700>!<a name='674'></font>
+              DUDT(I,K,J)=RDELTIM*(Umod-U(I,K,J))<a name='675'>
+              DVDT(I,K,J)=RDELTIM*(Vmod-V(I,K,J))<a name='676'>
+<font color=#447700>!<a name='677'></font>
+<font color=#447700>!dbg<a name='678'></font>
+<a name='679'>
+test=abs(dudt(i,k,j))+abs(dvdt(i,k,j))<a name='680'>
+if (test &gt; dtlarge) write(6,"(2a,i2,2(a,e12.4))")  &amp;<a name='681'>
+label,' =&gt; k=',k,'  dudt=',dudt(i,k,j),'  dvdt=',dvdt(i,k,j)<a name='682'>
+<a name='683'>
+<font color=#447700>!dbg if (lprnt) write(6,"(i2,f8.2,2(' | ',6f10.4)")  K,10.*Pcol(IM,K)  &amp;<a name='684'></font>
+<font color=#447700>!dbg ,Ucol(IM,K),Ugeo,DUDTcol(IM,K)*DELTIM,U(I,K,J),Umod,DUDT(I,K,J)*DELTIM    &amp;<a name='685'></font>
+<font color=#447700>!dbg ,Vcol(IM,K),Vgeo,DVDTcol(IM,K)*DELTIM,V(I,K,J),Vmod,DVDT(I,K,J)*DELTIM<a name='686'></font>
+<font color=#447700>!dbg<a name='687'></font>
+            ENDIF     <font color=#447700>!- IF (TEST &gt; THRESH) THEN<a name='688'></font>
+<font color=#447700>!<a name='689'></font>
+          ENDDO   <font color=#447700>!- K<a name='690'></font>
+<font color=#447700>!<a name='691'></font>
+<font color=#447700>!-- Transform/rotate surface wind stresses from geodetic to model coordinates<a name='692'></font>
+<font color=#447700>!<a name='693'></font>
+          UGWDsfc(I,J)=DUsfc(IM)*CROT(I,J)-DVsfc(IM)*SROT(I,J)<a name='694'>
+          VGWDsfc(I,J)=DUsfc(IM)*SROT(I,J)+DVsfc(IM)*CROT(I,J)<a name='695'>
+<font color=#447700>!<a name='696'></font>
+100       CONTINUE<a name='697'>
+        ENDDO     <font color=#447700>!- I<a name='698'></font>
+      ENDDO       <font color=#447700>!- J<a name='699'></font>
+<font color=#447700>!<a name='700'></font>
+      END SUBROUTINE GWD_driver<a name='701'>
+<font color=#447700>!<a name='702'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='703'></font>
+<font color=#447700>!<a name='704'></font>
+<font color=#447700>!-- "A", "B" (from GFS) in GWD_col are DVDTcol, DUDTcol, respectively in GWD_driver<a name='705'></font>
+<font color=#447700>!<a name='706'></font>
+<A NAME='GWD_COL'><A href='../../html_code/dyn_nmm/module_GWD.F.html#GWD_COL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='707'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>GWD_col</font> (A,B, DUsfc,DVsfc                              &amp;  <font color=#447700>!-- Output <A href='../../call_to/GWD_COL.html' TARGET='index'>1</A><a name='708'></font>
+     &amp;, U1,V1,T1,Q1, PRSI,DEL,PRSL,PRSLK, PHII,PHIL                     &amp;  <font color=#447700>!-- Met inputs<a name='709'></font>
+     &amp;, HPRIME,OC,OA4,CLX4,THETA,SIGMA,GAMMA,ELVMAX                     &amp;  <font color=#447700>!-- Topo inputs<a name='710'></font>
+     &amp;, KPBL,IM,KTS,KTE, LABEL,LPRNT )                                     <font color=#447700>!-- Input indices, debugging<a name='711'></font>
+<font color=#447700>!<a name='712'></font>
+<font color=#447700>!=== Output fields<a name='713'></font>
+<font color=#447700>!<a name='714'></font>
+<font color=#447700>!-- A (DUDT), B (DVDT) - output zonal &amp; meridional wind tendencies in Earth coordinates (m s^-2)<a name='715'></font>
+<font color=#447700>!-- DUsfc, DVsfc - surface zonal meridional wind stresses in Earth coordinates (m s^-1?)<a name='716'></font>
+<font color=#447700>!<a name='717'></font>
+<font color=#447700>!=== Input fields<a name='718'></font>
+<font color=#447700>!<a name='719'></font>
+<font color=#447700>!-- U1, V1 - zonal, meridional wind (m/s)<a name='720'></font>
+<font color=#447700>!-- T1 - temperature (deg K)<a name='721'></font>
+<font color=#447700>!-- Q1 - specific humidity (kg/kg)<a name='722'></font>
+<font color=#447700>!-- PRSI - lower interface pressure in centibars (1000 Pa)<a name='723'></font>
+<font color=#447700>!-- DEL - pressure thickness of layer in centibars (1000 Pa)<a name='724'></font>
+<font color=#447700>!-- PRSL - midlayer pressure in centibars (1000 Pa)<a name='725'></font>
+<font color=#447700>!-- PRSLK - Exner function, (P/P0)**(Rd/CP)<a name='726'></font>
+<font color=#447700>!-- PHII - lower interface geopotential in mks units<a name='727'></font>
+<font color=#447700>!-- PHIL - midlayer geopotential in mks units<a name='728'></font>
+<font color=#447700>!-- KDT - number of time steps into integration for diagnostics<a name='729'></font>
+<font color=#447700>!-- HPRIME - orographic standard deviation<a name='730'></font>
+<font color=#447700>!-- OC - normalized 4th moment of the orographic convexity<a name='731'></font>
+<font color=#447700>!-- OA4 - orographic asymmetry for upstream &amp; downstream flow measured <a name='732'></font>
+<font color=#447700>!         along 4 vertical planes (W-E, S-N, SW-NE, NW-SE)<a name='733'></font>
+<font color=#447700>!-- CLX4 - orographic length scale or mountain width measured along<a name='734'></font>
+<font color=#447700>!          4 vertical planes (W-E, S-N, SW-NE, NW-SE)<a name='735'></font>
+<font color=#447700>!-- THETA - angle of the mountain range w/r/t east<a name='736'></font>
+<font color=#447700>!-- SIGMA - slope of orography<a name='737'></font>
+<font color=#447700>!-- GAMMA - anisotropy/aspect ratio<a name='738'></font>
+<font color=#447700>!-- ELVMAX - max height above mean orography<a name='739'></font>
+<font color=#447700>!-- KPBL(IM) - vertical index at the top of the PBL<a name='740'></font>
+<font color=#447700>!-- KM - number of vertical levels<a name='741'></font>
+<font color=#447700>!<a name='742'></font>
+<font color=#447700>!== For diagnostics<a name='743'></font>
+<font color=#447700>!-- LABEL - character string for diagnostic prints<a name='744'></font>
+<font color=#447700>!-- LPRNT - logical flag for prints<a name='745'></font>
+<font color=#447700>!<a name='746'></font>
+<font color=#447700>!#######################################################################<a name='747'></font>
+<font color=#447700>!##################  ORIGINAL DOCUMENTATION BLOCK  #####################<a name='748'></font>
+<font color=#447700>!######  The following comments are from the original GFS code  ########<a name='749'></font>
+<font color=#447700>!#######################################################################<a name='750'></font>
+<font color=#447700>!   ********************************************************************<a name='751'></font>
+<font color=#447700>! -----&gt;  I M P L E M E N T A T I O N    V E R S I O N   &lt;----------<a name='752'></font>
+<font color=#447700>!<a name='753'></font>
+<font color=#447700>!          --- Not in this code --  History of GWDP at NCEP----<a name='754'></font>
+<font color=#447700>!              ----------------     -----------------------<a name='755'></font>
+<font color=#447700>!  VERSION 3  MODIFIED FOR GRAVITY WAVES, LOCATION: .FR30(V3GWD)  *J*<a name='756'></font>
+<font color=#447700>!---       3.1 INCLUDES VARIABLE SATURATION FLUX PROFILE CF ISIGST<a name='757'></font>
+<font color=#447700>!---       3.G INCLUDES PS COMBINED W/ PH (GLAS AND GFDL)<a name='758'></font>
+<font color=#447700>!-----         ALSO INCLUDED IS RI  SMOOTH OVER A THICK LOWER LAYER<a name='759'></font>
+<font color=#447700>!-----         ALSO INCLUDED IS DECREASE IN DE-ACC AT TOP BY 1/2<a name='760'></font>
+<font color=#447700>!-----     THE NMC GWD INCORPORATING BOTH GLAS(P&amp;S) AND GFDL(MIGWD)<a name='761'></font>
+<font color=#447700>!-----        MOUNTAIN INDUCED GRAVITY WAVE DRAG <a name='762'></font>
+<font color=#447700>!-----    CODE FROM .FR30(V3MONNX) FOR MONIN3<a name='763'></font>
+<font color=#447700>!-----        THIS VERSION (06 MAR 1987)<a name='764'></font>
+<font color=#447700>!-----        THIS VERSION (26 APR 1987)    3.G<a name='765'></font>
+<font color=#447700>!-----        THIS VERSION (01 MAY 1987)    3.9<a name='766'></font>
+<font color=#447700>!-----    CHANGE TO FORTRAN 77 (FEB 1989)     --- HANN-MING HENRY JUANG<a name='767'></font>
+<font color=#447700>!----- <a name='768'></font>
+<font color=#447700>!<a name='769'></font>
+<font color=#447700>!   VERSION 4<a name='770'></font>
+<font color=#447700>!                ----- This code -----<a name='771'></font>
+<font color=#447700>!<a name='772'></font>
+<font color=#447700>!-----   MODIFIED TO IMPLEMENT THE ENHANCED LOW TROPOSPHERIC GRAVITY<a name='773'></font>
+<font color=#447700>!-----   WAVE DRAG DEVELOPED BY KIM AND ARAKAWA(JAS, 1995).<a name='774'></font>
+<font color=#447700>!        Orographic Std Dev (hprime), Convexity (OC), Asymmetry (OA4)<a name='775'></font>
+<font color=#447700>!        and Lx (CLX4) are input topographic statistics needed.<a name='776'></font>
+<font color=#447700>!<a name='777'></font>
+<font color=#447700>!-----   PROGRAMMED AND DEBUGGED BY HONG, ALPERT AND KIM --- JAN 1996.<a name='778'></font>
+<font color=#447700>!-----   debugged again - moorthi and iredell --- may 1998.<a name='779'></font>
+<font color=#447700>!-----<a name='780'></font>
+<font color=#447700>!       Further Cleanup, optimization and modification<a name='781'></font>
+<font color=#447700>!                                       - S. Moorthi May 98, March 99.<a name='782'></font>
+<font color=#447700>!-----   modified for usgs orography data (ncep office note 424)<a name='783'></font>
+<font color=#447700>!        and with several bugs fixed  - moorthi and hong --- july 1999.<a name='784'></font>
+<font color=#447700>!<a name='785'></font>
+<font color=#447700>!-----   Modified &amp; implemented into NRL NOGAPS<a name='786'></font>
+<font color=#447700>!                                       - Young-Joon Kim, July 2000<a name='787'></font>
+<font color=#447700>!-----<a name='788'></font>
+<font color=#447700>!   VERSION lm MB  (6): oz fix 8/2003<a name='789'></font>
+<font color=#447700>!                ----- This code -----<a name='790'></font>
+<font color=#447700>!<a name='791'></font>
+<font color=#447700>!------   Changed to include the Lott and Miller Mtn Blocking<a name='792'></font>
+<font color=#447700>!         with some modifications by (*j*)  4/02<a name='793'></font>
+<font color=#447700>!        From a Principal Coordinate calculation using the<a name='794'></font>
+<font color=#447700>!        Hi Res 8 minute orography, the Angle of the<a name='795'></font>
+<font color=#447700>!        mtn with that to the East (x) axis is THETA, the slope<a name='796'></font>
+<font color=#447700>!        parameter SIGMA. The anisotropy is in GAMMA - all  are input<a name='797'></font>
+<font color=#447700>!        topographic statistics needed.  These are calculated off-line<a name='798'></font>
+<font color=#447700>!        as a function of model resolution in the fortran code ml01rg2.f,<a name='799'></font>
+<font color=#447700>!        with script mlb2.sh.   (*j*)<a name='800'></font>
+<font color=#447700>!-----   gwdps_mb.f version (following lmi) elvmax &lt; hncrit (*j*)<a name='801'></font>
+<font color=#447700>!        MB3a expt to enhance elvmax mtn hgt see sigfac &amp; hncrit<a name='802'></font>
+<font color=#447700>!-----<a name='803'></font>
+<font color=#447700>!----------------------------------------------------------------------C<a name='804'></font>
+<font color=#447700>!==== Below in "!GFS " are the original subroutine call and comments from <a name='805'></font>
+<font color=#447700>!     /nwprod/sorc/global_fcst.fd/gwdps_v.f as of April 2007<a name='806'></font>
+<font color=#447700>!GFS       SUBROUTINE GWDPS(IM,IX,IY,KM,A,B,U1,V1,T1,Q1,KPBL,<a name='807'></font>
+<font color=#447700>!GFS      &amp;               PRSI,DEL,PRSL,PRSLK,PHII, PHIL,RCL,DELTIM,KDT,<a name='808'></font>
+<font color=#447700>!GFS      &amp;               HPRIME,OC,OA4,CLX4,THETA,SIGMA,GAMMA,ELVMAX,<a name='809'></font>
+<font color=#447700>!GFS      &amp;               DUsfc,DVsfc,G, CP, RD, RV, IMX,<a name='810'></font>
+<font color=#447700>!GFS      &amp;               nmtvr, me, lprnt, ipr)<a name='811'></font>
+<font color=#447700>!GFS !------------------------------------------------------------------<a name='812'></font>
+<font color=#447700>!GFS !    USE<a name='813'></font>
+<font color=#447700>!GFS !        ROUTINE IS CALLED FROM GBPHYS  (AFTER CALL TO MONNIN)<a name='814'></font>
+<font color=#447700>!GFS !<a name='815'></font>
+<font color=#447700>!GFS !    PURPOSE<a name='816'></font>
+<font color=#447700>!GFS !        USING THE GWD PARAMETERIZATIONS OF PS-GLAS AND PH-<a name='817'></font>
+<font color=#447700>!GFS !        GFDL TECHNIQUE.  THE TIME TENDENCIES OF U V<a name='818'></font>
+<font color=#447700>!GFS !        ARE ALTERED TO INCLUDE THE EFFECT OF MOUNTAIN INDUCED<a name='819'></font>
+<font color=#447700>!GFS !        GRAVITY WAVE DRAG FROM SUB-GRID SCALE OROGRAPHY INCLUDING<a name='820'></font>
+<font color=#447700>!GFS !        CONVECTIVE BREAKING, SHEAR BREAKING AND THE PRESENCE OF<a name='821'></font>
+<font color=#447700>!GFS !        CRITICAL LEVELS<a name='822'></font>
+<font color=#447700>!GFS !<a name='823'></font>
+<font color=#447700>!GFS !  INPUT<a name='824'></font>
+<font color=#447700>!GFS !        A(IY,KM)  NON-LIN TENDENCY FOR V WIND COMPONENT<a name='825'></font>
+<font color=#447700>!GFS !        B(IY,KM)  NON-LIN TENDENCY FOR U WIND COMPONENT<a name='826'></font>
+<font color=#447700>!GFS !        U1(IX,KM) ZONAL WIND / SQRT(RCL)  M/SEC  AT T0-DT<a name='827'></font>
+<font color=#447700>!GFS !        V1(IX,KM) MERIDIONAL WIND / SQRT(RCL) M/SEC AT T0-DT<a name='828'></font>
+<font color=#447700>!GFS !        T1(IX,KM) TEMPERATURE DEG K AT T0-DT<a name='829'></font>
+<font color=#447700>!GFS !        Q1(IX,KM) SPECIFIC HUMIDITY AT T0-DT<a name='830'></font>
+<font color=#447700>!GFS !<a name='831'></font>
+<font color=#447700>!GFS !        RCL     A scaling factor = RECIPROCAL OF SQUARE OF COS(LAT)<a name='832'></font>
+<font color=#447700>!GFS !                FOR MRF GFS.  <a name='833'></font>
+<font color=#447700>!GFS !        DELTIM  TIME STEP    SECS<a name='834'></font>
+<font color=#447700>!GFS !        SI(N)   P/PSFC AT BASE OF LAYER N<a name='835'></font>
+<font color=#447700>!GFS !        SL(N)   P/PSFC AT MIDDLE OF LAYER N<a name='836'></font>
+<font color=#447700>!GFS !        DEL(N)  POSITIVE INCREMENT OF P/PSFC ACROSS LAYER N<a name='837'></font>
+<font color=#447700>!GFS !        KPBL(IM) is the index of the top layer of the PBL<a name='838'></font>
+<font color=#447700>!GFS !        ipr &amp; lprnt for diagnostics<a name='839'></font>
+<font color=#447700>!GFS !<a name='840'></font>
+<font color=#447700>!GFS !  OUTPUT<a name='841'></font>
+<font color=#447700>!GFS !        A, B    AS AUGMENTED BY TENDENCY DUE TO GWDPS<a name='842'></font>
+<font color=#447700>!GFS !                OTHER INPUT VARIABLES UNMODIFIED.<a name='843'></font>
+<font color=#447700>!GFS !   ********************************************************************<a name='844'></font>
+<font color=#447700>!<a name='845'></font>
+      IMPLICIT NONE<a name='846'>
+<font color=#447700>!<a name='847'></font>
+<font color=#447700>!-- INPUT:<a name='848'></font>
+<font color=#447700>!<a name='849'></font>
+      INTEGER, INTENT(IN) :: IM,KTS,KTE<a name='850'>
+      REAL(kind=kind_phys), INTENT(IN), DIMENSION(IM,KTS:KTE) ::        &amp;<a name='851'>
+     &amp;                                 U1,V1,T1,Q1,DEL,PRSL,PRSLK,PHIL<a name='852'>
+      REAL(kind=kind_phys), INTENT(IN), DIMENSION(IM,KTS:KTE+1) ::      &amp;<a name='853'>
+     &amp;                                                       PRSI,PHII<a name='854'>
+      REAL(kind=kind_phys), INTENT(IN), DIMENSION(IM,4) :: OA4,CLX4<a name='855'>
+      REAL(kind=kind_phys), INTENT(IN), DIMENSION(IM) ::                &amp;<a name='856'>
+     &amp;                              HPRIME,OC,THETA,SIGMA,GAMMA,ELVMAX<a name='857'>
+      INTEGER, INTENT(IN), DIMENSION(IM) :: KPBL<a name='858'>
+      CHARACTER (LEN=26), INTENT(IN) :: LABEL<a name='859'>
+      LOGICAL, INTENT(IN) :: LPRNT<a name='860'>
+<font color=#447700>!<a name='861'></font>
+<font color=#447700>!-- OUTPUT:<a name='862'></font>
+<font color=#447700>!<a name='863'></font>
+      REAL(kind=kind_phys), INTENT(INOUT), DIMENSION(IM,KTS:KTE) :: A,B<a name='864'>
+      REAL(kind=kind_phys), INTENT(INOUT), DIMENSION(IM) :: DUsfc,DVsfc<a name='865'>
+<font color=#447700>!<a name='866'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='867'></font>
+<font color=#447700>!-- LOCAL variables:<a name='868'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='869'></font>
+<font color=#447700>!<a name='870'></font>
+<font color=#447700>!     Some constants<a name='871'></font>
+<font color=#447700>!<a name='872'></font>
+<font color=#447700>!<a name='873'></font>
+      REAL(kind=kind_phys), PARAMETER :: PI=3.1415926535897931        &amp;<a name='874'>
+     &amp;,        G=9.806, CP=1004.6, RD=287.04, RV=461.6                &amp;<a name='875'>
+     &amp;,        FV=RV/RD-1., RDI=1./RD, GOR=G/RD, GR2=G*GOR, GOCP=G/CP &amp;<a name='876'>
+     &amp;,        ROG=1./G, ROG2=ROG*ROG                                 &amp;<a name='877'>
+     &amp;,        DW2MIN=1., RIMIN=-100., RIC=0.25, BNV2MIN=1.0E-5       &amp;<a name='878'>
+     &amp;,        EFMIN=0.0, EFMAX=10.0, hpmax=200.0                     &amp; <font color=#447700>! or hpmax=2500.0<a name='879'></font>
+     &amp;,        FRC=1.0, CE=0.8, CEOFRC=CE/FRC, frmax=100.             &amp;<a name='880'>
+     &amp;,        CG=0.5, GMAX=1.0, CRITAC=5.0E-4, VELEPS=1.0            &amp;<a name='881'>
+     &amp;,        FACTOP=0.5, RLOLEV=500.0, HZERO=0., HONE=1.            &amp; <font color=#447700>! or RLOLEV=0.5<a name='882'></font>
+     &amp;,        HE_4=.0001, HE_2=.01                                   &amp; <a name='883'>
+<font color=#447700>!<a name='884'></font>
+<font color=#447700>!-- Lott &amp; Miller mountain blocking =&gt; aka "lm mtn blocking"<a name='885'></font>
+<font color=#447700>!<a name='886'></font>
+     &amp;,  cdmb = 1.0        &amp;    <font color=#447700>! non-dim sub grid mtn drag Amp (*j*)<a name='887'></font>
+<font color=#447700>!  hncrit set to 8000m and sigfac added to enhance elvmax mtn hgt<a name='888'></font>
+     &amp;,  hncrit=8000.      &amp;    <font color=#447700>! Max value in meters for ELVMAX (*j*)<a name='889'></font>
+<font color=#447700>!module top!     &amp;,  sigfac=3.0        &amp;    ! MB3a expt test for ELVMAX factor (*j*)  =&gt; control value is 0.1<a name='890'></font>
+<font color=#447700>!module top    &amp;,  sigfac=0.         &amp;    ! MB3a expt test for ELVMAX factor (*j*)  =&gt; control value is 0.1<a name='891'></font>
+     &amp;,  hminmt=50.        &amp;    <font color=#447700>! min mtn height (*j*)<a name='892'></font>
+     &amp;,  hstdmin=25.       &amp;    <font color=#447700>! min orographic std dev in height<a name='893'></font>
+     &amp;,  minwnd=0.1        &amp;    <font color=#447700>! min wind component (*j*)<a name='894'></font>
+     &amp;,  dpmin=5.0              <font color=#447700>! Minimum thickness of the reference layer (centibars)<a name='895'></font>
+                                <font color=#447700>! values of dpmin=0, 20 have also been used<a name='896'></font>
+<font color=#447700>!<a name='897'></font>
+      integer, parameter :: mdir=8<a name='898'>
+      real(kind=kind_phys), parameter :: FDIR=mdir/(PI+PI)<a name='899'>
+<font color=#447700>!<a name='900'></font>
+<font color=#447700>!-- Template:<a name='901'></font>
+<font color=#447700>!             NWD  1   2   3   4   5   6   7   8<a name='902'></font>
+<font color=#447700>!              WD  W   S  SW  NW   E   N  NE  SE<a name='903'></font>
+<font color=#447700>!<a name='904'></font>
+      integer,save :: nwdir(mdir)<a name='905'>
+      data nwdir /6,7,5,8,2,3,1,4/<a name='906'>
+<font color=#447700>!<a name='907'></font>
+      LOGICAL ICRILV(IM)<a name='908'>
+<font color=#447700>!<a name='909'></font>
+<font color=#447700>!----   MOUNTAIN INDUCED GRAVITY WAVE DRAG<a name='910'></font>
+<font color=#447700>!<a name='911'></font>
+<font color=#447700>!<a name='912'></font>
+<font color=#447700>! for lm mtn blocking<a name='913'></font>
+      real(kind=kind_phys), DIMENSION(IM) :: WK,PE,EK,ZBK,UP,TAUB,XN    &amp;<a name='914'>
+     &amp; ,YN,UBAR,VBAR,ULOW,OA,CLX,ROLL,ULOI,DTFAC,XLINV,DELKS,DELKS1     &amp;<a name='915'>
+     &amp; ,SCOR,BNV2bar, ELEVMX   <font color=#447700>! ,PSTAR<a name='916'></font>
+<font color=#447700>!<a name='917'></font>
+      real(kind=kind_phys), DIMENSION(IM,KTS:KTE) ::                    &amp;<a name='918'>
+     &amp;                      BNV2LM,DB,ANG,UDS,BNV2,RI_N,TAUD,RO,VTK,VTJ<a name='919'>
+      real(kind=kind_phys), DIMENSION(IM,KTS:KTE-1) :: VELCO<a name='920'>
+      real(kind=kind_phys), DIMENSION(IM,KTS:KTE+1) :: TAUP<a name='921'>
+      real(kind=kind_phys), DIMENSION(KTE-1) :: VELKO<a name='922'>
+<font color=#447700>!<a name='923'></font>
+      integer, DIMENSION(IM) ::                                         &amp;<a name='924'>
+     &amp;                 kref,kint,iwk,iwk2,ipt,kreflm,iwklm,iptlm,idxzb<a name='925'>
+<font color=#447700>!<a name='926'></font>
+<font color=#447700>! for lm mtn blocking<a name='927'></font>
+<font color=#447700>!<a name='928'></font>
+      real(kind=kind_phys) :: ZLEN, DBTMP, R, PHIANG, DBIM              &amp;<a name='929'>
+     &amp;,                   xl,     rcsks, bnv,   fr                      &amp;<a name='930'>
+     &amp;,                   brvf,   cleff, tem,   tem1,  tem2, temc, temv &amp;<a name='931'>
+     &amp;,                   wdir,   ti,    rdz,   dw2,   shr2, bvf2       &amp;<a name='932'>
+     &amp;,                   rdelks, wtkbj, efact, coefm, gfobnv           &amp;<a name='933'>
+     &amp;,                   scork,  rscor, hd,    fro,   rim,  sira       &amp;<a name='934'>
+     &amp;,                   dtaux,  dtauy, pkp1log, pklog<a name='935'>
+<font color=#447700>!<a name='936'></font>
+      integer :: ncnt, kmm1, kmm2, lcap, lcapp1, kbps, kbpsp1,kbpsm1    &amp;<a name='937'>
+     &amp;, kmps, kmpsp1, idir, nwd, i, j, k, klcap, kp1, kmpbl, npt, npr   &amp;<a name='938'>
+     &amp;, idxm1, ktrial, klevm1, kmll,kmds, KM                            &amp;<a name='939'>
+<font color=#447700>!     &amp;, ihit,jhit                                                       &amp;<a name='940'></font>
+     &amp;, ME              <font color=#447700>!-- processor element for debugging<a name='941'></font>
+<a name='942'>
+real :: rcl,rcs  <font color=#447700>!dbg<a name='943'></font>
+<a name='944'>
+<font color=#447700>!<a name='945'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='946'></font>
+<font color=#447700>!<a name='947'></font>
+      KM = KTE<a name='948'>
+      npr = 0<a name='949'>
+      DO I = 1, IM<a name='950'>
+         DUsfc(I) = 0.<a name='951'>
+         DVsfc(I) = 0.<a name='952'>
+<font color=#447700>!<a name='953'></font>
+<font color=#447700>!-- ELEVMX is a local array that could be changed below<a name='954'></font>
+<font color=#447700>!<a name='955'></font>
+         ELEVMX(I) = ELVMAX(I)<a name='956'>
+      ENDDO<a name='957'>
+<font color=#447700>!<a name='958'></font>
+<font color=#447700>!-- Note that A, B already set to zero as DUDTcol, DVDTcol in subroutine GWD_driver<a name='959'></font>
+<font color=#447700>!<a name='960'></font>
+      ipt = 0<a name='961'>
+      npt = 0<a name='962'>
+      IF (NMTVR &gt;= 14) then <a name='963'>
+        DO I = 1,IM<a name='964'>
+          IF (elvmax(i) &gt; HMINMT .AND. hprime(i) &gt; HE_4) then<a name='965'>
+             npt = npt + 1<a name='966'>
+             ipt(npt) = i<a name='967'>
+          ENDIF<a name='968'>
+        ENDDO<a name='969'>
+      ELSE<a name='970'>
+        DO I = 1,IM<a name='971'>
+          IF (hprime(i) &gt; HE_4) then<a name='972'>
+            npt = npt + 1<a name='973'>
+            ipt(npt) = i<a name='974'>
+          ENDIF<a name='975'>
+        ENDDO<a name='976'>
+      ENDIF    <font color=#447700>!-- IF (NMTVR &gt;= 14) then <a name='977'></font>
+<font color=#447700>!<a name='978'></font>
+<a name='979'>
+<font color=#447700>!dbg<a name='980'></font>
+rcl=1.<a name='981'>
+rcs=1.<a name='982'>
+<font color=#447700>!dbg if (lprnt) then<a name='983'></font>
+<font color=#447700>!dbg !-- Match what's in the GFS:<a name='984'></font>
+<font color=#447700>!dbg !dbg  rcl=1.53028780126139008   ! match GFS point at 36N<a name='985'></font>
+<font color=#447700>!dbg !dbg  rcs=sqrt(rcl)<a name='986'></font>
+<font color=#447700>!dbg   i=im<a name='987'></font>
+<font color=#447700>!dbg   write(6,"(a,a)") LABEL,' in GWD_col: K U V T Q Pi DP P EX PHIi PHI'<a name='988'></font>
+<font color=#447700>!dbg   do k=kts,kte<a name='989'></font>
+<font color=#447700>!dbg     write(6,"(i3,10e12.4)") k,U1(i,k),V1(i,k),T1(i,k),Q1(i,k),PRSI(i,k)   &amp;<a name='990'></font>
+<font color=#447700>!dbg     ,DEL(i,k),PRSL(i,k),PRSLK(i,k),PHII(i,k),PHIL(i,k)<a name='991'></font>
+<font color=#447700>!dbg   enddo<a name='992'></font>
+<font color=#447700>!dbg   write(6,"(2(a,e12.4),2(a,4e12.4/),4(a,e12.4),a,i3) )")   &amp;<a name='993'></font>
+<font color=#447700>!dbg    'GWD_col:  hprime(i)=',hprime(i),'  oc(i)=',oc(i)       &amp;<a name='994'></font>
+<font color=#447700>!dbg   ,'  oa4(i,1-4)=',(oa4(i,k),k=1,4)                        &amp;<a name='995'></font>
+<font color=#447700>!dbg   ,'  clx4(i,1-4)=',(clx4(i,k),k=1,4)                      &amp;<a name='996'></font>
+<font color=#447700>!dbg   ,'  theta(i)=',theta(i),'  sigma(i)=',sigma(i)           &amp;<a name='997'></font>
+<font color=#447700>!dbg   ,'  gamma(i)=',gamma(i),'  elvmax(i)=',elvmax(i)         &amp;<a name='998'></font>
+<font color=#447700>!dbg   ,'  lpbl(i)=',kpbl(i)<a name='999'></font>
+<font color=#447700>!dbg endif<a name='1000'></font>
+<font color=#447700>!dbg if (lprnt) CALL WRF_GET_MYPROC(ME)<a name='1001'></font>
+<a name='1002'>
+<font color=#447700>!<a name='1003'></font>
+<font color=#447700>!-- Note important criterion for immediately exiting routine!<a name='1004'></font>
+<font color=#447700>!<a name='1005'></font>
+      IF (npt &lt;= 0) RETURN     <font color=#447700>! No gwd/mb calculation done!<a name='1006'></font>
+<font color=#447700>!<a name='1007'></font>
+      do i=1,npt<a name='1008'>
+        IDXZB(i) = 0<a name='1009'>
+      enddo<a name='1010'>
+<font color=#447700>!<a name='1011'></font>
+      DO K = 1, KM<a name='1012'>
+      DO I = 1, IM<a name='1013'>
+      DB(I,K) = 0.<a name='1014'>
+      ANG(I,K) = 0.<a name='1015'>
+      UDS(I,K) = 0.<a name='1016'>
+      ENDDO<a name='1017'>
+      ENDDO<a name='1018'>
+<font color=#447700>!<a name='1019'></font>
+<font color=#447700>!<a name='1020'></font>
+<font color=#447700>!     NCNT   = 0<a name='1021'></font>
+      KMM1   = KM - 1<a name='1022'>
+      KMM2   = KM - 2<a name='1023'>
+      LCAP   = KM<a name='1024'>
+      LCAPP1 = LCAP + 1<a name='1025'>
+<font color=#447700>!<a name='1026'></font>
+<font color=#447700>!<a name='1027'></font>
+      IF (NMTVR .eq. 14) then <a name='1028'>
+<font color=#447700>! ----  for lm and gwd calculation points<a name='1029'></font>
+<font color=#447700>!<a name='1030'></font>
+<font color=#447700>! --- iwklm is the level above the height of the mountain.<a name='1031'></font>
+<font color=#447700>! --- idxzb is the level of the dividing streamline.<a name='1032'></font>
+<font color=#447700>! INITIALIZE DIVIDING STREAMLINE (DS) CONTROL VECTOR<a name='1033'></font>
+<font color=#447700>!<a name='1034'></font>
+        do i=1,npt<a name='1035'>
+          iwklm(i) = 2<a name='1036'>
+          kreflm(i) = 0<a name='1037'>
+        enddo<a name='1038'>
+<font color=#447700>!<a name='1039'></font>
+<font color=#447700>!<a name='1040'></font>
+<font color=#447700>! start lm mtn blocking (mb) section<a name='1041'></font>
+<font color=#447700>!<a name='1042'></font>
+<font color=#447700>!..............................<a name='1043'></font>
+<font color=#447700>!..............................<a name='1044'></font>
+<font color=#447700>!<a name='1045'></font>
+<font color=#447700>!  (*j*)  11/03:  test upper limit on KMLL=km - 1<a name='1046'></font>
+<font color=#447700>!      then do not need hncrit -- test with large hncrit first.<a name='1047'></font>
+<font color=#447700>!       KMLL  = km / 2 ! maximum mtnlm height : # of vertical levels / 2<a name='1048'></font>
+        KMLL = kmm1<a name='1049'>
+<font color=#447700>! --- No mtn should be as high as KMLL (so we do not have to start at <a name='1050'></font>
+<font color=#447700>! --- the top of the model but could do calc for all levels).<a name='1051'></font>
+<font color=#447700>!<a name='1052'></font>
+<a name='1053'>
+<font color=#447700>!dbg<a name='1054'></font>
+<font color=#447700>!dbg if (lprnt) print *,'k   pkp1log   pklog    vtj(i,k)     vtk(i,k)    ro(i,k)'<a name='1055'></font>
+<a name='1056'>
+        DO I = 1, npt<a name='1057'>
+          j = ipt(i)<a name='1058'>
+          ELEVMX(J) = min (ELEVMX(J) + sigfac * hprime(j), hncrit)<a name='1059'>
+<a name='1060'>
+<font color=#447700>!dbg<a name='1061'></font>
+<font color=#447700>!dbg if (lprnt) print *,'k=',k,'  elevmx(j)=',elevmx(j),'  elvmax(j)=',elvmax(j)  &amp;<a name='1062'></font>
+<font color=#447700>!dbg ,'  sigfac*hprime(j)=',sigfac*hprime(j)<a name='1063'></font>
+<a name='1064'>
+        ENDDO<a name='1065'>
+<a name='1066'>
+        DO K = 1,KMLL<a name='1067'>
+          DO I = 1, npt<a name='1068'>
+            j = ipt(i)<a name='1069'>
+<font color=#447700>! --- interpolate to max mtn height for index, iwklm(I) wk[gz]<a name='1070'></font>
+<font color=#447700>! --- ELEVMX is limited to hncrit because to hi res topo30 orog.<a name='1071'></font>
+            pkp1log =  phil(j,k+1) * ROG<a name='1072'>
+            pklog =  phil(j,k) * ROG<a name='1073'>
+            if ( ( ELEVMX(j) .le.  pkp1log ) .and.                      &amp;<a name='1074'>
+     &amp;           ( ELEVMX(j) .ge.   pklog  ) ) THEN<a name='1075'>
+<font color=#447700>! ---        wk for diags but can be saved and reused.  <a name='1076'></font>
+               wk(i)  = G * ELEVMX(j) / ( phil(j,k+1) - phil(j,k) )<a name='1077'>
+               iwklm(I)  =  MAX(iwklm(I), k+1 ) <a name='1078'>
+<a name='1079'>
+<font color=#447700>!dbg if (lprnt) print *,'k,wk(i),iwklm(i)=',k,wk(i),iwklm(i)    !dbg<a name='1080'></font>
+<a name='1081'>
+            endif<a name='1082'>
+<font color=#447700>!<a name='1083'></font>
+<font color=#447700>! ---        find at prsl levels large scale environment variables<a name='1084'></font>
+<font color=#447700>! ---        these cover all possible mtn max heights<a name='1085'></font>
+            VTJ(I,K)  = T1(J,K)  * (1.+FV*Q1(J,K))  <font color=#447700>! virtual temperature<a name='1086'></font>
+            VTK(I,K)  = VTJ(I,K) / PRSLK(J,K)       <font color=#447700>! potential temperature<a name='1087'></font>
+            RO(I,K)   = RDI * PRSL(J,K) / VTJ(I,K)  <font color=#447700>! DENSITY (1.e-3 kg m^-3)<a name='1088'></font>
+<a name='1089'>
+<font color=#447700>!dbg if (lprnt) write(6,"(i2,5e12.4)") k,pkp1log,pklog,vtj(i,k),vtk(i,k),ro(i,k)   !dbg<a name='1090'></font>
+<a name='1091'>
+          ENDDO    <font color=#447700>!-- DO I = 1, npt<a name='1092'></font>
+<font color=#447700>!<a name='1093'></font>
+        ENDDO      <font color=#447700>!-- DO K = 1,KMLL<a name='1094'></font>
+<font color=#447700>!<a name='1095'></font>
+<font color=#447700>! testing for highest model level of mountain top<a name='1096'></font>
+<font color=#447700>!<a name='1097'></font>
+<font color=#447700>!         ihit = 2<a name='1098'></font>
+<font color=#447700>!         jhit = 0<a name='1099'></font>
+<font color=#447700>!        do i = 1, npt<a name='1100'></font>
+<font color=#447700>!        j=ipt(i)<a name='1101'></font>
+<font color=#447700>!          if ( iwklm(i) .gt. ihit ) then <a name='1102'></font>
+<font color=#447700>!            ihit = iwklm(i)<a name='1103'></font>
+<font color=#447700>!            jhit = j<a name='1104'></font>
+<font color=#447700>!          endif<a name='1105'></font>
+<font color=#447700>!        enddo<a name='1106'></font>
+<font color=#447700>!     if (lprnt) print *, ' mb: kdt,max(iwklm),jhit,phil,me=',   &amp;<a name='1107'></font>
+<font color=#447700>!    &amp;          kdt,ihit,jhit,phil(jhit,ihit),me<a name='1108'></font>
+<font color=#447700>!        <a name='1109'></font>
+<font color=#447700>!dbg if (lprnt) print *,'k    rdz    bnv2lm(i,k)'   !dbg<a name='1110'></font>
+        klevm1 = KMLL - 1<a name='1111'>
+        DO K = 1, klevm1  <a name='1112'>
+          DO I = 1, npt<a name='1113'>
+           j   = ipt(i)<a name='1114'>
+            RDZ  = g   / ( phil(j,k+1) - phil(j,k) )<a name='1115'>
+<font color=#447700>! ---                               Brunt-Vaisala Frequency<a name='1116'></font>
+            BNV2LM(I,K) = (G+G) * RDZ * ( VTK(I,K+1)-VTK(I,K) )         &amp;<a name='1117'>
+     &amp;                     / ( VTK(I,K+1)+VTK(I,K) )<a name='1118'>
+            bnv2lm(i,k) = max( bnv2lm(i,k), bnv2min )<a name='1119'>
+<a name='1120'>
+<font color=#447700>!dbg if (lprnt) write(6,"(i2,2e12.4)") k,rdz,bnv2lm(i,k)   !dbg<a name='1121'></font>
+<a name='1122'>
+          ENDDO<a name='1123'>
+        ENDDO<a name='1124'>
+<font color=#447700>!<a name='1125'></font>
+        DO I = 1, npt<a name='1126'>
+          J   = ipt(i)<a name='1127'>
+          DELKS(I)  = 1.0 / (PRSI(J,1) - PRSI(J,iwklm(i)))<a name='1128'>
+          DELKS1(I) = 1.0 / (PRSL(J,1) - PRSL(J,iwklm(i)))<a name='1129'>
+          UBAR (I)  = 0.0<a name='1130'>
+          VBAR (I)  = 0.0<a name='1131'>
+          ROLL (I)  = 0.0<a name='1132'>
+          PE   (I)  = 0.0<a name='1133'>
+          EK   (I)  = 0.0<a name='1134'>
+          BNV2bar(I) = (PRSL(J,1)-PRSL(J,2)) * DELKS1(I) * BNV2LM(I,1)<a name='1135'>
+        ENDDO<a name='1136'>
+<font color=#447700>!<a name='1137'></font>
+<font color=#447700>! --- find the dividing stream line height <a name='1138'></font>
+<font color=#447700>! --- starting from the level above the max mtn downward<a name='1139'></font>
+<font color=#447700>! --- iwklm(i) is the k-index of mtn elevmx elevation<a name='1140'></font>
+<font color=#447700>!<a name='1141'></font>
+        DO Ktrial = KMLL, 1, -1<a name='1142'>
+          DO I = 1, npt<a name='1143'>
+             IF ( Ktrial .LT. iwklm(I) .and. kreflm(I) .eq. 0 ) then<a name='1144'>
+                kreflm(I) = Ktrial<a name='1145'>
+<a name='1146'>
+if (lprnt) print *,'Ktrial,iwklm(i),kreflm(i)=',Ktrial,iwklm(i),kreflm(I)<a name='1147'>
+<a name='1148'>
+             ENDIF<a name='1149'>
+          ENDDO<a name='1150'>
+        ENDDO<a name='1151'>
+<font color=#447700>!<a name='1152'></font>
+<font color=#447700>! --- in the layer kreflm(I) to 1 find PE (which needs N, ELEVMX)<a name='1153'></font>
+<font color=#447700>! ---  make averages, guess dividing stream (DS) line layer.<a name='1154'></font>
+<font color=#447700>! ---  This is not used in the first cut except for testing and<a name='1155'></font>
+<font color=#447700>! --- is the vert ave of quantities from the surface to mtn top.<a name='1156'></font>
+<font color=#447700>!   <a name='1157'></font>
+<a name='1158'>
+<font color=#447700>!dbg<a name='1159'></font>
+<font color=#447700>!dbg if (lprnt) print *,' k      rdelks      ubar        vbar     roll       ' &amp;<a name='1160'></font>
+<font color=#447700>!dbg ,'bnv2bar      rcsks       rcs'<a name='1161'></font>
+<a name='1162'>
+        DO I = 1, npt<a name='1163'>
+          DO K = 1, Kreflm(I)<a name='1164'>
+            J        = ipt(i)<a name='1165'>
+            RDELKS     = DEL(J,K) * DELKS(I)<a name='1166'>
+<a name='1167'>
+<font color=#447700>!dbg<a name='1168'></font>
+            RCSKS      = RCS      * RDELKS<a name='1169'>
+            UBAR(I)    = UBAR(I)  + RCSKS  * U1(J,K) <font color=#447700>! trial Mean U below <a name='1170'></font>
+            VBAR(I)    = VBAR(I)  + RCSKS  * V1(J,K) <font color=#447700>! trial Mean V below <a name='1171'></font>
+<a name='1172'>
+            ROLL(I)    = ROLL(I)  + RDELKS * RO(I,K) <font color=#447700>! trial Mean RO below <a name='1173'></font>
+            RDELKS     = (PRSL(J,K)-PRSL(J,K+1)) * DELKS1(I)<a name='1174'>
+            BNV2bar(I) = BNV2bar(I) + BNV2lm(I,K) * RDELKS<a name='1175'>
+<font color=#447700>! --- these vert ave are for diags, testing and GWD to follow (*j*).<a name='1176'></font>
+<a name='1177'>
+<font color=#447700>!dbg<a name='1178'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(i2,7e12.4)") k,rdelks,ubar(i),vbar(i),roll(i)  &amp;<a name='1179'></font>
+<font color=#447700>!dbg ,bnv2bar(i),rcsks,rcs<a name='1180'></font>
+<a name='1181'>
+          ENDDO<a name='1182'>
+        ENDDO<a name='1183'>
+<a name='1184'>
+<font color=#447700>!dbg<a name='1185'></font>
+<font color=#447700>!dbg if (lprnt) print *, 'kreflm(npt)=',kreflm(npt)  &amp;<a name='1186'></font>
+<font color=#447700>!dbg ,'  bnv2bar(npt)=',bnv2bar(npt)  &amp;<a name='1187'></font>
+<font color=#447700>!dbg ,'  ubar(npt)=',ubar(npt)  &amp;<a name='1188'></font>
+<font color=#447700>!dbg ,'  vbar(npt)=',vbar(npt)  &amp;<a name='1189'></font>
+<font color=#447700>!dbg ,'  roll(npt)=',roll(npt)  &amp;<a name='1190'></font>
+<font color=#447700>!dbg ,'  delks(npt)=',delks(npt)  &amp;<a name='1191'></font>
+<font color=#447700>!dbg ,'  delks1(npt)=',delks1(npt)<a name='1192'></font>
+<a name='1193'>
+<font color=#447700>!<a name='1194'></font>
+<font color=#447700>! --- integrate to get PE in the trial layer.<a name='1195'></font>
+<font color=#447700>! --- Need the first layer where PE&gt;EK - as soon as <a name='1196'></font>
+<font color=#447700>! --- IDXZB is not 0 we have a hit and Zb is found.<a name='1197'></font>
+<font color=#447700>!<a name='1198'></font>
+        DO I = 1, npt<a name='1199'>
+          J = ipt(i)<a name='1200'>
+<a name='1201'>
+<font color=#447700>!dbg<a name='1202'></font>
+<font color=#447700>!dbg if (lprnt) print *,'k   phiang    u1(j,k)     v1(j,k)     theta(j)'   &amp;<a name='1203'></font>
+<font color=#447700>!dbg ,'     ang(i,k)     uds(i,k)      pe(i)     up(i)     ek(i)'<a name='1204'></font>
+<a name='1205'>
+          DO K = iwklm(I), 1, -1<a name='1206'>
+            PHIANG   =  RAD_TO_DEG*atan2(V1(J,K),U1(J,K))<a name='1207'>
+            ANG(I,K) = ( THETA(J) - PHIANG )<a name='1208'>
+            if ( ANG(I,K) .gt.  90. ) ANG(I,K) = ANG(I,K) - 180.<a name='1209'>
+            if ( ANG(I,K) .lt. -90. ) ANG(I,K) = ANG(I,K) + 180.<a name='1210'>
+<font color=#447700>!<a name='1211'></font>
+<font color=#447700>!dbg            UDS(I,K) =                                                  &amp;<a name='1212'></font>
+            UDS(I,K) = rcs*                                             &amp;<a name='1213'>
+      &amp;          MAX(SQRT(U1(J,K)*U1(J,K) + V1(J,K)*V1(J,K)), minwnd)<a name='1214'>
+<font color=#447700>! --- Test to see if we found Zb previously<a name='1215'></font>
+            IF (IDXZB(I) .eq. 0 ) then<a name='1216'>
+              PE(I) = PE(I) + BNV2lm(I,K) *                             &amp;<a name='1217'>
+     &amp;           ( G * ELEVMX(J) - phil(J,K) ) *                        &amp;<a name='1218'>
+     &amp;           ( PHII(J,K+1) - PHII(J,K) ) * ROG2<a name='1219'>
+<a name='1220'>
+<font color=#447700>!dbg<a name='1221'></font>
+<font color=#447700>!dbg     &amp;           ( PHII(J,K+1) - PHII(J,K) ) / (G*G)<a name='1222'></font>
+<font color=#447700>!dbg if (lprnt) print *,   &amp;<a name='1223'></font>
+<font color=#447700>!dbg 'k=',k,'  pe(i)=',pe(i),'  bnv2lm(i,k)=',bnv2lm(i,k)  &amp;<a name='1224'></font>
+<font color=#447700>!dbg ,'  g=',g,'  elevmx(j)=',elevmx(j)  &amp;<a name='1225'></font>
+<font color=#447700>!dbg ,'  g*elevmx(j)-phil(j,k)=',g*elevmx(j)-phil(j,k)  &amp;<a name='1226'></font>
+<font color=#447700>!dbg ,'  (phii(j,k+1)-phi(j,k))/(g*g)=',(PHII(J,K+1)-PHII(J,K) )*ROG2<a name='1227'></font>
+<a name='1228'>
+<font color=#447700>! --- KE<a name='1229'></font>
+<font color=#447700>! --- Wind projected on the line perpendicular to mtn range, U(Zb(K)).<a name='1230'></font>
+<font color=#447700>! --- kinetic energy is at the layer Zb<a name='1231'></font>
+<font color=#447700>! --- THETA ranges from -+90deg |_ to the mtn "largest topo variations"<a name='1232'></font>
+              UP(I)  =  UDS(I,K) * cos(DEG_TO_RAD*ANG(I,K))<a name='1233'>
+              EK(I)  = 0.5 *  UP(I) * UP(I) <a name='1234'>
+<a name='1235'>
+<font color=#447700>! --- Dividing Stream lime  is found when PE =exceeds EK.<a name='1236'></font>
+              IF ( PE(I) .ge.  EK(I) ) IDXZB(I) = K<a name='1237'>
+<font color=#447700>! --- Then mtn blocked flow is between Zb=k(IDXZB(I)) and surface<a name='1238'></font>
+<font color=#447700>!<a name='1239'></font>
+            ENDIF     <font color=#447700>!-- IF (IDXZB(I) .eq. 0 ) then<a name='1240'></font>
+<a name='1241'>
+<font color=#447700>!dbg<a name='1242'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(i2,9e12.4)")   &amp;<a name='1243'></font>
+<font color=#447700>!dbg k,phiang,u1(j,k),v1(j,k),theta(j),ang(i,k),uds(i,k),pe(i),up(i),ek(i)<a name='1244'></font>
+<a name='1245'>
+          ENDDO       <font color=#447700>!-- DO K = iwklm(I), 1, -1<a name='1246'></font>
+        ENDDO         <font color=#447700>!-- DO I = 1, npt<a name='1247'></font>
+<font color=#447700>!<a name='1248'></font>
+        DO I = 1, npt<a name='1249'>
+          J    = ipt(i)<a name='1250'>
+<font color=#447700>! --- Calc if N constant in layers (Zb guess) - a diagnostic only.<a name='1251'></font>
+          ZBK(I) =  ELEVMX(J) - SQRT(UBAR(I)**2 + VBAR(I)**2)/BNV2bar(I)<a name='1252'>
+        ENDDO<a name='1253'>
+<font color=#447700>!<a name='1254'></font>
+<a name='1255'>
+<font color=#447700>!dbg<a name='1256'></font>
+<font color=#447700>!dbg if (lprnt) print *,'iwklm=',iwklm(npt),'  ZBK=',ZBK(npt)<a name='1257'></font>
+<a name='1258'>
+<font color=#447700>!<a name='1259'></font>
+<font color=#447700>! --- The drag for mtn blocked flow<a name='1260'></font>
+<font color=#447700>! <a name='1261'></font>
+<a name='1262'>
+<font color=#447700>!dbg<a name='1263'></font>
+<font color=#447700>!dbg if (lprnt) print *,'k   phil(j,k)  g*hprime(j)   '   &amp;<a name='1264'></font>
+<font color=#447700>!dbg ,'phil(j,idxzb(i))-phil(j,k)    zlen   r    dbtmp    db(i,k)'<a name='1265'></font>
+<a name='1266'>
+<font color=#447700>!<a name='1267'></font>
+        DO I = 1, npt<a name='1268'>
+          J = ipt(i)<a name='1269'>
+          ZLEN = 0.<a name='1270'>
+          IF ( IDXZB(I) .gt. 0 ) then <a name='1271'>
+            DO K = IDXZB(I), 1, -1<a name='1272'>
+              IF (PHIL(J,IDXZB(I)) &gt; PHIL(J,K)) THEN<a name='1273'>
+                ZLEN = SQRT( ( PHIL(J,IDXZB(I))-PHIL(J,K) ) /           &amp;<a name='1274'>
+     &amp;                       ( PHIL(J,K ) + G * hprime(J) ) )<a name='1275'>
+<font color=#447700>! --- lm eq 14:<a name='1276'></font>
+                R = (cos(DEG_TO_RAD*ANG(I,K))**2 + GAMMA(J) * sin(DEG_TO_RAD*ANG(I,K))**2) / &amp;<a name='1277'>
+     &amp;              (gamma(J) * cos(DEG_TO_RAD*ANG(I,K))**2 + sin(DEG_TO_RAD*ANG(I,K))**2)<a name='1278'>
+<font color=#447700>! --- (negative of DB -- see sign at tendency)<a name='1279'></font>
+                DBTMP = 0.25 *  CDmb *                                  &amp;<a name='1280'>
+     &amp;                  MAX( 2. - 1. / R, HZERO ) * sigma(J) *          &amp;<a name='1281'>
+     &amp;                  MAX(cos(DEG_TO_RAD*ANG(I,K)), gamma(J)*sin(DEG_TO_RAD*ANG(I,K))) *  &amp;<a name='1282'>
+     &amp;                  ZLEN / hprime(J) <a name='1283'>
+                DB(I,K) =  DBTMP * UDS(I,K)    <a name='1284'>
+<font color=#447700>!<a name='1285'></font>
+<a name='1286'>
+<font color=#447700>!dbg<a name='1287'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(i3,7e12.4)")  &amp;<a name='1288'></font>
+<font color=#447700>!dbg k,phil(j,k),g*hprime(j),phil(j,idxzb(i))-phil(j,k),zlen,r,dbtmp,db(i,k)<a name='1289'></font>
+<a name='1290'>
+<font color=#447700>!<a name='1291'></font>
+              ENDIF        <font color=#447700>!-- IF (PHIL(J,IDXZB(I)) &gt; PHIL(J,K) .AND. DEN &gt; 0.) THEN<a name='1292'></font>
+            ENDDO          <font color=#447700>!-- DO K = IDXZB(I), 1, -1<a name='1293'></font>
+          endif<a name='1294'>
+        ENDDO              <font color=#447700>!-- DO I = 1, npt<a name='1295'></font>
+<font color=#447700>!<a name='1296'></font>
+<font color=#447700>!.............................<a name='1297'></font>
+<font color=#447700>!.............................<a name='1298'></font>
+<font color=#447700>! end  mtn blocking section<a name='1299'></font>
+<font color=#447700>!<a name='1300'></font>
+      ENDIF      <font color=#447700>!-- IF ( NMTVR .eq. 14) then <a name='1301'></font>
+<font color=#447700>!<a name='1302'></font>
+<font color=#447700>!.............................<a name='1303'></font>
+<font color=#447700>!.............................<a name='1304'></font>
+<font color=#447700>!<a name='1305'></font>
+      KMPBL  = km / 2 <font color=#447700>! maximum pbl height : # of vertical levels / 2<a name='1306'></font>
+<font color=#447700>!<a name='1307'></font>
+<font color=#447700>!  Scale cleff between IM=384*2 and 192*2 for T126/T170 and T62<a name='1308'></font>
+<font color=#447700>!<a name='1309'></font>
+      if (imx .gt. 0) then<a name='1310'>
+<font color=#447700>!       cleff = 1.0E-5 * SQRT(FLOAT(IMX)/384.0) !  this is inverse of CLEFF!<a name='1311'></font>
+<font color=#447700>!       cleff = 1.0E-5 * SQRT(FLOAT(IMX)/192.0) !  this is inverse of CLEFF!<a name='1312'></font>
+        cleff = 0.5E-5 * SQRT(FLOAT(IMX)/192.0) <font color=#447700>!  this is inverse of CLEFF!<a name='1313'></font>
+<font color=#447700>!       cleff = 2.0E-5 * SQRT(FLOAT(IMX)/192.0) !  this is inverse of CLEFF!<a name='1314'></font>
+<font color=#447700>!       cleff = 2.5E-5 * SQRT(FLOAT(IMX)/192.0) !  this is inverse of CLEFF!<a name='1315'></font>
+      endif<a name='1316'>
+<a name='1317'>
+<font color=#447700>!dbg<a name='1318'></font>
+<font color=#447700>!dbg if (lprnt) print *,'imx, cleff, rcl, rcs=',imx,cleff,rcl,rcs<a name='1319'></font>
+<font color=#447700>!dbg if (lprnt) print *,' k    vtj       vtk       ro'<a name='1320'></font>
+<a name='1321'>
+      DO K = 1,KM<a name='1322'>
+        DO I =1,npt<a name='1323'>
+          J         = ipt(i)<a name='1324'>
+          VTJ(I,K)  = T1(J,K)  * (1.+FV*Q1(J,K))<a name='1325'>
+          VTK(I,K)  = VTJ(I,K) / PRSLK(J,K)<a name='1326'>
+          RO(I,K)   = RDI * PRSL(J,K) / VTJ(I,K)  <font color=#447700>! DENSITY <a name='1327'></font>
+          TAUP(I,K) = 0.0<a name='1328'>
+<a name='1329'>
+<font color=#447700>!dbg<a name='1330'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(i2,3e12.4)")  k,vtj(i,k),vtk(i,k),ro(i,k)   !dbg<a name='1331'></font>
+<a name='1332'>
+        ENDDO<a name='1333'>
+      ENDDO<a name='1334'>
+<a name='1335'>
+<font color=#447700>!dbg<a name='1336'></font>
+<font color=#447700>!dbg if (lprnt) print *,' k     ti          tem         rdz         tem1'  &amp;<a name='1337'></font>
+<font color=#447700>!dbg ,'        tem2        dw2         shr2        bvf2     ri_n(i,k)   bnv2(i,k)'<a name='1338'></font>
+<a name='1339'>
+      DO K = 1,KMM1<a name='1340'>
+        DO I =1,npt<a name='1341'>
+          J         = ipt(i)<a name='1342'>
+          TI        = 2.0 / (T1(J,K)+T1(J,K+1))<a name='1343'>
+          TEM       = TI  / (PRSL(J,K)-PRSL(J,K+1))<a name='1344'>
+<font color=#447700>!         RDZ       = GOR * PRSI(J,K+1) * TEM<a name='1345'></font>
+          RDZ       = g   / (phil(j,k+1) - phil(j,k))<a name='1346'>
+          TEM1      = U1(J,K) - U1(J,K+1)<a name='1347'>
+          TEM2      = V1(J,K) - V1(J,K+1)<a name='1348'>
+<a name='1349'>
+<font color=#447700>!dbg<a name='1350'></font>
+<font color=#447700>!          DW2       = TEM1*TEM1 + TEM2*TEM2<a name='1351'></font>
+          DW2       = rcl*(TEM1*TEM1 + TEM2*TEM2)<a name='1352'>
+<a name='1353'>
+          SHR2      = MAX(DW2,DW2MIN) * RDZ * RDZ<a name='1354'>
+          BVF2      = G*(GOCP+RDZ*(VTJ(I,K+1)-VTJ(I,K))) * TI<a name='1355'>
+          ri_n(I,K) = MAX(BVF2/SHR2,RIMIN)   <font color=#447700>! Richardson number<a name='1356'></font>
+<font color=#447700>!                                              Brunt-Vaisala Frequency<a name='1357'></font>
+<font color=#447700>!         TEM       = GR2 * (PRSL(J,K)+PRSL(J,K+1)) * TEM<a name='1358'></font>
+<font color=#447700>!         BNV2(I,K) = TEM * (VTK(I,K+1)-VTK(I,K))/(VTK(I,K+1)+VTK(I,K))<a name='1359'></font>
+          BNV2(I,K) = (G+G) * RDZ * (VTK(I,K+1)-VTK(I,K))               &amp;<a name='1360'>
+     &amp;                            / (VTK(I,K+1)+VTK(I,K))<a name='1361'>
+          bnv2(i,k) = max( bnv2(i,k), bnv2min )<a name='1362'>
+<a name='1363'>
+<font color=#447700>!dbg<a name='1364'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(i2,10e12.4)")  &amp;<a name='1365'></font>
+<font color=#447700>!dbg k,ti,tem,rdz,tem1,tem2,dw2,shr2,bvf2,ri_n(i,k),bnv2(i,k)<a name='1366'></font>
+<a name='1367'>
+<font color=#447700>!<a name='1368'></font>
+        ENDDO     <font color=#447700>!-- DO K = 1,KMM1<a name='1369'></font>
+      ENDDO       <font color=#447700>!-- DO I =1,npt<a name='1370'></font>
+<font color=#447700>!<a name='1371'></font>
+<a name='1372'>
+<font color=#447700>!dbg<a name='1373'></font>
+<font color=#447700>!dbg if (lprnt) print *,'kmm1,bnv2=',kmm1,bnv2(npt,kmm1)<a name='1374'></font>
+<a name='1375'>
+<font color=#447700>!<a name='1376'></font>
+<font color=#447700>!     Apply 3 point smoothing on BNV2<a name='1377'></font>
+<font color=#447700>!<a name='1378'></font>
+<font color=#447700>!     do k=1,km<a name='1379'></font>
+<font color=#447700>!       do i=1,im<a name='1380'></font>
+<font color=#447700>!         vtk(i,k) = bnv2(i,k)<a name='1381'></font>
+<font color=#447700>!       enddo<a name='1382'></font>
+<font color=#447700>!     enddo<a name='1383'></font>
+<font color=#447700>!     do k=2,kmm1<a name='1384'></font>
+<font color=#447700>!       do i=1,im<a name='1385'></font>
+<font color=#447700>!         bnv2(i,k) = 0.25*(vtk(i,k-1)+vtk(i,k+1)) + 0.5*vtk(i,k)<a name='1386'></font>
+<font color=#447700>!       enddo<a name='1387'></font>
+<font color=#447700>!     enddo<a name='1388'></font>
+<font color=#447700>!<a name='1389'></font>
+<font color=#447700>!     Finding the first interface index above 50 hPa level<a name='1390'></font>
+<font color=#447700>!<a name='1391'></font>
+      do i=1,npt<a name='1392'>
+        iwk(i) = 2<a name='1393'>
+      enddo<a name='1394'>
+<a name='1395'>
+<font color=#447700>!dbg if (lprnt) print *,'kmpbl=',kmpbl    !dbg<a name='1396'></font>
+<a name='1397'>
+      DO K=3,KMPBL<a name='1398'>
+        DO I=1,npt<a name='1399'>
+          j   = ipt(i)<a name='1400'>
+          tem = (prsi(j,1) - prsi(j,k))<a name='1401'>
+          if (tem .lt. dpmin) iwk(i) = k<a name='1402'>
+        enddo<a name='1403'>
+      enddo<a name='1404'>
+<font color=#447700>!<a name='1405'></font>
+      KBPS = 1<a name='1406'>
+      KMPS = KM<a name='1407'>
+      DO I=1,npt<a name='1408'>
+        J         = ipt(i)<a name='1409'>
+        kref(I)   = MAX(IWK(I), KPBL(J)+1 ) <font color=#447700>! reference level <a name='1410'></font>
+        DELKS(I)  = 1.0 / (PRSI(J,1) - PRSI(J,kref(I)))<a name='1411'>
+        DELKS1(I) = 1.0 / (PRSL(J,1) - PRSL(J,kref(I)))<a name='1412'>
+        UBAR (I)  = 0.0<a name='1413'>
+        VBAR (I)  = 0.0<a name='1414'>
+        ROLL (I)  = 0.0<a name='1415'>
+        KBPS      = MAX(KBPS,  kref(I))<a name='1416'>
+        KMPS      = MIN(KMPS,  kref(I))<a name='1417'>
+<font color=#447700>!<a name='1418'></font>
+        BNV2bar(I) = (PRSL(J,1)-PRSL(J,2)) * DELKS1(I) * BNV2(I,1)<a name='1419'>
+      ENDDO<a name='1420'>
+<font color=#447700>!<a name='1421'></font>
+<font color=#447700>!<a name='1422'></font>
+      KBPSP1 = KBPS + 1<a name='1423'>
+      KBPSM1 = KBPS - 1<a name='1424'>
+      DO K = 1,KBPS<a name='1425'>
+        DO I = 1,npt<a name='1426'>
+          IF (K .LT. kref(I)) THEN<a name='1427'>
+            J          = ipt(i)<a name='1428'>
+            RDELKS     = DEL(J,K) * DELKS(I)<a name='1429'>
+<a name='1430'>
+<font color=#447700>!dbg<a name='1431'></font>
+<font color=#447700>!            UBAR(I)    = UBAR(I)  + RDELKS * U1(J,K)   ! Mean U below kref<a name='1432'></font>
+<font color=#447700>!            VBAR(I)    = VBAR(I)  + RDELKS * V1(J,K)   ! Mean V below kref<a name='1433'></font>
+            RCSKS      = RCS      * RDELKS<a name='1434'>
+            UBAR(I)    = UBAR(I)  + RCSKS  * U1(J,K)   <font color=#447700>! Mean U below kref<a name='1435'></font>
+            VBAR(I)    = VBAR(I)  + RCSKS  * V1(J,K)   <font color=#447700>! Mean V below kref<a name='1436'></font>
+<a name='1437'>
+<font color=#447700>!<a name='1438'></font>
+            ROLL(I)    = ROLL(I)  + RDELKS * RO(I,K)   <font color=#447700>! Mean RO below kref<a name='1439'></font>
+            RDELKS     = (PRSL(J,K)-PRSL(J,K+1)) * DELKS1(I)<a name='1440'>
+            BNV2bar(I) = BNV2bar(I) + BNV2(I,K) * RDELKS<a name='1441'>
+          ENDIF<a name='1442'>
+        ENDDO<a name='1443'>
+      ENDDO<a name='1444'>
+<font color=#447700>!<a name='1445'></font>
+<a name='1446'>
+<font color=#447700>!dbg<a name='1447'></font>
+<font color=#447700>!dbg if(lprnt) print *,'ubar(npt)=',ubar(npt)  &amp;<a name='1448'></font>
+<font color=#447700>!dbg ,'  vbar(npt)=',vbar(npt),'  roll(npt)=',roll(npt)  &amp;<a name='1449'></font>
+<font color=#447700>!dbg ,'  bnv2bar(npt)=',bnv2bar(npt)<a name='1450'></font>
+<a name='1451'>
+<font color=#447700>!<a name='1452'></font>
+<font color=#447700>!     FIGURE OUT LOW-LEVEL HORIZONTAL WIND DIRECTION AND FIND 'OA'<a name='1453'></font>
+<font color=#447700>!<a name='1454'></font>
+<font color=#447700>!             NWD  1   2   3   4   5   6   7   8<a name='1455'></font>
+<font color=#447700>!              WD  W   S  SW  NW   E   N  NE  SE<a name='1456'></font>
+<font color=#447700>!<a name='1457'></font>
+      DO I = 1,npt<a name='1458'>
+        J      = ipt(i)<a name='1459'>
+        wdir   = atan2(UBAR(I),VBAR(I)) + pi<a name='1460'>
+        idir   = mod(nint(fdir*wdir),mdir) + 1<a name='1461'>
+        nwd    = nwdir(idir)<a name='1462'>
+        OA(I)  = (1-2*INT( (NWD-1)/4 )) * OA4(J,MOD(NWD-1,4)+1)<a name='1463'>
+        CLX(I) = CLX4(J,MOD(NWD-1,4)+1)<a name='1464'>
+      ENDDO<a name='1465'>
+<font color=#447700>!<a name='1466'></font>
+<font color=#447700>!-----XN,YN            "LOW-LEVEL" WIND PROJECTIONS IN ZONAL<a name='1467'></font>
+<font color=#447700>!                                    &amp; MERIDIONAL DIRECTIONS<a name='1468'></font>
+<font color=#447700>!-----ULOW             "LOW-LEVEL" WIND MAGNITUDE -        (= U)<a name='1469'></font>
+<font color=#447700>!-----BNV2             BNV2 = N**2<a name='1470'></font>
+<font color=#447700>!-----TAUB             BASE MOMENTUM FLUX<a name='1471'></font>
+<font color=#447700>!-----= -(RO * U**3/(N*XL)*GF(FR) FOR N**2 &gt; 0<a name='1472'></font>
+<font color=#447700>!-----= 0.                        FOR N**2 &lt; 0<a name='1473'></font>
+<font color=#447700>!-----FR               FROUDE    =   N*HPRIME / U<a name='1474'></font>
+<font color=#447700>!-----G                GMAX*FR**2/(FR**2+CG/OC)<a name='1475'></font>
+<font color=#447700>!<a name='1476'></font>
+<font color=#447700>!-----INITIALIZE SOME ARRAYS<a name='1477'></font>
+<font color=#447700>!<a name='1478'></font>
+      DO I = 1,npt<a name='1479'>
+        XN(I)     = 0.0<a name='1480'>
+        YN(I)     = 0.0<a name='1481'>
+        TAUB (I)  = 0.0<a name='1482'>
+        ULOW (I)  = 0.0<a name='1483'>
+        DTFAC(I)  = 1.0<a name='1484'>
+        ICRILV(I) = .FALSE. <font color=#447700>! INITIALIZE CRITICAL LEVEL CONTROL VECTOR<a name='1485'></font>
+<font color=#447700>!<a name='1486'></font>
+<font color=#447700>!----COMPUTE THE "LOW LEVEL" WIND MAGNITUDE (M/S)<a name='1487'></font>
+<font color=#447700>!<a name='1488'></font>
+        ULOW(I) = MAX(SQRT(UBAR(I)*UBAR(I) + VBAR(I)*VBAR(I)), HONE)<a name='1489'>
+        ULOI(I) = 1.0 / ULOW(I)<a name='1490'>
+      ENDDO<a name='1491'>
+<a name='1492'>
+<font color=#447700>!dbg<a name='1493'></font>
+<font color=#447700>!dbg if (lprnt) print *,'idir,nwd,wdir,oa,clx,ulow,uloi='   &amp;<a name='1494'></font>
+<font color=#447700>!dbg ,idir,nwd,wdir,oa(npt),clx(npt),ulow(npt),uloi(npt)<a name='1495'></font>
+<a name='1496'>
+<font color=#447700>!<a name='1497'></font>
+      DO  K = 1,KMM1<a name='1498'>
+        DO  I = 1,npt<a name='1499'>
+          J            = ipt(i)<a name='1500'>
+<a name='1501'>
+<font color=#447700>!dbg<a name='1502'></font>
+<font color=#447700>!          VELCO(I,K)   = 0.5*  ((U1(J,K)+U1(J,K+1))*UBAR(I)             &amp;<a name='1503'></font>
+          VELCO(I,K)   = 0.5*rcs*((U1(J,K)+U1(J,K+1))*UBAR(I)            &amp;<a name='1504'>
+     &amp;                       +  (V1(J,K)+V1(J,K+1))*VBAR(I))<a name='1505'>
+<a name='1506'>
+          VELCO(I,K)   = VELCO(I,K) * ULOI(I)<a name='1507'>
+<a name='1508'>
+<font color=#447700>!dbg if (lprnt) write(6,"(a,i2,a,e12.4)") 'k=',k,' velco(i,k)=',velco(i,k)  !dbg<a name='1509'></font>
+<a name='1510'>
+<font color=#447700>!         IF ((VELCO(I,K).LT.VELEPS) .AND. (VELCO(I,K).GT.0.)) THEN<a name='1511'></font>
+<font color=#447700>!           VELCO(I,K) = VELEPS<a name='1512'></font>
+<font color=#447700>!         ENDIF<a name='1513'></font>
+        ENDDO<a name='1514'>
+      ENDDO<a name='1515'>
+<font color=#447700>!<a name='1516'></font>
+<font color=#447700>!   find the interface level of the projected wind where<a name='1517'></font>
+<font color=#447700>!   low levels &amp; upper levels meet above pbl<a name='1518'></font>
+<font color=#447700>!<a name='1519'></font>
+      do i=1,npt<a name='1520'>
+        kint(i) = km<a name='1521'>
+      enddo<a name='1522'>
+      do k = 1,kmm1<a name='1523'>
+        do i = 1,npt<a name='1524'>
+          IF (K .GT. kref(I)) THEN<a name='1525'>
+            if(velco(i,k) .lt. veleps .and. kint(i) .eq. km) then<a name='1526'>
+              kint(i) = k+1<a name='1527'>
+            endif<a name='1528'>
+          endif<a name='1529'>
+        enddo<a name='1530'>
+      enddo<a name='1531'>
+<font color=#447700>!  WARNING  KINT = KREF !!!!!!!!!<a name='1532'></font>
+      do i=1,npt<a name='1533'>
+        kint(i) = kref(i)<a name='1534'>
+      enddo<a name='1535'>
+<font color=#447700>!<a name='1536'></font>
+<font color=#447700>!<a name='1537'></font>
+      DO I = 1,npt<a name='1538'>
+        J      = ipt(i)<a name='1539'>
+        BNV    = SQRT( BNV2bar(I) )<a name='1540'>
+        FR     = BNV     * ULOI(I) * min(HPRIME(J),hpmax)<a name='1541'>
+        FR     = MIN(FR, FRMAX)<a name='1542'>
+        XN(I)  = UBAR(I) * ULOI(I)<a name='1543'>
+        YN(I)  = VBAR(I) * ULOI(I)<a name='1544'>
+<font color=#447700>!<a name='1545'></font>
+<font color=#447700>!     Compute the base level stress and store it in TAUB<a name='1546'></font>
+<font color=#447700>!     CALCULATE ENHANCEMENT FACTOR, NUMBER OF MOUNTAINS &amp; ASPECT<a name='1547'></font>
+<font color=#447700>!     RATIO CONST. USE SIMPLIFIED RELATIONSHIP BETWEEN STANDARD<a name='1548'></font>
+<font color=#447700>!     DEVIATION &amp; CRITICAL HGT<a name='1549'></font>
+<font color=#447700>!<a name='1550'></font>
+        EFACT    = (OA(I) + 2.) ** (CEOFRC*FR)<a name='1551'>
+        EFACT    = MIN( MAX(EFACT,EFMIN), EFMAX )<a name='1552'>
+<font color=#447700>!<a name='1553'></font>
+        COEFM    = (1. + CLX(I)) ** (OA(I)+1.)<a name='1554'>
+<font color=#447700>!<a name='1555'></font>
+        XLINV(I) = COEFM * CLEFF<a name='1556'>
+<font color=#447700>!<a name='1557'></font>
+        TEM      = FR    * FR * OC(J)<a name='1558'>
+        GFOBNV   = GMAX  * TEM / ((TEM + CG)*BNV)  <font color=#447700>! G/N0<a name='1559'></font>
+<font color=#447700>!<a name='1560'></font>
+        TAUB(I)  = XLINV(I) * ROLL(I) * ULOW(I) * ULOW(I)               &amp;<a name='1561'>
+     &amp;           * ULOW(I)  * GFOBNV  * EFACT         <font color=#447700>! BASE FLUX Tau0<a name='1562'></font>
+<font color=#447700>!<a name='1563'></font>
+<font color=#447700>!         tem      = min(HPRIME(I),hpmax)<a name='1564'></font>
+<font color=#447700>!         TAUB(I)  = XLINV(I) * ROLL(I) * ULOW(I) * BNV * tem * tem<a name='1565'></font>
+<font color=#447700>!<a name='1566'></font>
+        K        = MAX(1, kref(I)-1)<a name='1567'>
+        TEM      = MAX(VELCO(I,K)*VELCO(I,K), HE_4)<a name='1568'>
+        SCOR(I)  = BNV2(I,K) / TEM  <font color=#447700>! Scorer parameter below ref level<a name='1569'></font>
+      ENDDO    <font color=#447700>!-- DO I = 1,npt<a name='1570'></font>
+<font color=#447700>!<a name='1571'></font>
+<a name='1572'>
+<font color=#447700>!dbg<a name='1573'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(a,i2,10(a,e12.4))")  &amp;<a name='1574'></font>
+<font color=#447700>!dbg  'kint=',kint(npt),' bnv=',bnv,'  fr=',fr,'  xn=',xn(npt)  &amp;<a name='1575'></font>
+<font color=#447700>!dbg ,'  yn=',yn(npt),'  efact=',efact,'  coefm=',coefm,'  xlinv(npt)=',xlinv(npt)   &amp;<a name='1576'></font>
+<font color=#447700>!dbg ,'  gfobnv=',gfobnv,'  taub(npt)=',taub(npt),'  scor(npt)=',scor(npt)<a name='1577'></font>
+<a name='1578'>
+<font color=#447700>!                                                                       <a name='1579'></font>
+<font color=#447700>!----SET UP BOTTOM VALUES OF STRESS<a name='1580'></font>
+<font color=#447700>!<a name='1581'></font>
+      DO K = 1, KBPS<a name='1582'>
+        DO I = 1,npt<a name='1583'>
+          IF (K .LE. kref(I)) TAUP(I,K) = TAUB(I)<a name='1584'>
+        ENDDO<a name='1585'>
+      ENDDO<a name='1586'>
+<a name='1587'>
+<font color=#447700>!<a name='1588'></font>
+<font color=#447700>!   Now compute vertical structure of the stress.<a name='1589'></font>
+<font color=#447700>!<a name='1590'></font>
+      DO K = KMPS, KMM1                   <font color=#447700>! Vertical Level K Loop!<a name='1591'></font>
+        KP1 = K + 1<a name='1592'>
+        DO I = 1, npt<a name='1593'>
+<font color=#447700>!<a name='1594'></font>
+<font color=#447700>!-----UNSTABLE LAYER IF RI &lt; RIC<a name='1595'></font>
+<font color=#447700>!-----UNSTABLE LAYER IF UPPER AIR VEL COMP ALONG SURF VEL &lt;=0 (CRIT LAY)<a name='1596'></font>
+<font color=#447700>!---- AT (U-C)=0. CRIT LAYER EXISTS AND BIT VECTOR SHOULD BE SET (.LE.)<a name='1597'></font>
+<font color=#447700>!<a name='1598'></font>
+          IF (K .GE. kref(I)) THEN<a name='1599'>
+            ICRILV(I) = ICRILV(I) .OR. ( ri_n(I,K) .LT. RIC)            &amp;<a name='1600'>
+     &amp;                            .OR. (VELCO(I,K) .LE. 0.0)<a name='1601'>
+          ENDIF<a name='1602'>
+        ENDDO<a name='1603'>
+<font color=#447700>!<a name='1604'></font>
+        DO I = 1,npt<a name='1605'>
+          IF (K .GE. kref(I))   THEN<a name='1606'>
+<a name='1607'>
+<font color=#447700>!dbg<a name='1608'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(2(a,i2),a,L1,3(a,e12.4))") 'k=',k,'  kref(i)=',kref(i)  &amp;<a name='1609'></font>
+<font color=#447700>!dbg ,'  icrilv(i)=',icrilv(i),'  taup(i,k)=',taup(i,k)  &amp;<a name='1610'></font>
+<font color=#447700>!dbg ,'  ri_n(i,k)=',ri_n(i,k),'  velco(i,k)=',velco(i,k)<a name='1611'></font>
+<a name='1612'>
+<font color=#447700>!<a name='1613'></font>
+            IF (.NOT.ICRILV(I) .AND. TAUP(I,K) .GT. 0.0 ) THEN<a name='1614'>
+              TEMV = 1.0 / max(VELCO(I,K), HE_2)<a name='1615'>
+<font color=#447700>!             IF (OA(I) .GT. 0. .AND.  PRSI(ipt(i),KP1).GT.RLOLEV) THEN<a name='1616'></font>
+              IF (OA(I).GT.0. .AND. kp1 .lt. kint(i)) THEN<a name='1617'>
+                SCORK   = BNV2(I,K) * TEMV * TEMV<a name='1618'>
+                RSCOR   = MIN(HONE, SCORK / SCOR(I))<a name='1619'>
+                SCOR(I) = SCORK<a name='1620'>
+              ELSE <a name='1621'>
+                RSCOR   = 1.<a name='1622'>
+              ENDIF<a name='1623'>
+<font color=#447700>!<a name='1624'></font>
+              BRVF = SQRT(BNV2(I,K))        <font color=#447700>! Brunt-Vaisala Frequency<a name='1625'></font>
+<font color=#447700>!             TEM1 = XLINV(I)*(RO(I,KP1)+RO(I,K))*BRVF*VELCO(I,K)*0.5<a name='1626'></font>
+              TEM1 = XLINV(I)*(RO(I,KP1)+RO(I,K))*BRVF*0.5              &amp;<a name='1627'>
+     &amp;                       * max(VELCO(I,K),HE_2)<a name='1628'>
+              HD   = SQRT(TAUP(I,K) / TEM1)<a name='1629'>
+              FRO  = BRVF * HD * TEMV<a name='1630'>
+<font color=#447700>!<a name='1631'></font>
+<font color=#447700>!    RIM is the  MINIMUM-RICHARDSON NUMBER BY SHUTTS (1985)<a name='1632'></font>
+<font color=#447700>!<a name='1633'></font>
+              TEM2   = SQRT(ri_n(I,K))<a name='1634'>
+              TEM    = 1. + TEM2 * FRO<a name='1635'>
+              RIM    = ri_n(I,K) * (1.-FRO) / (TEM * TEM)<a name='1636'>
+<font color=#447700>!<a name='1637'></font>
+<font color=#447700>!    CHECK STABILITY TO EMPLOY THE SATURATION HYPOTHESIS<a name='1638'></font>
+<font color=#447700>!    OF LINDZEN (1981) EXCEPT AT TROPOSPHERIC DOWNSTREAM REGIONS<a name='1639'></font>
+<font color=#447700>!<a name='1640'></font>
+<font color=#447700>!                                       ----------------------<a name='1641'></font>
+<a name='1642'>
+<font color=#447700>!dbg<a name='1643'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(a,i2,10(a,e12.4))")  &amp;<a name='1644'></font>
+<font color=#447700>!dbg  'k=',k,'  brvf=',brvf,'  tem1=',tem1,'  xlinv(i)=',xlinv(i)   &amp;<a name='1645'></font>
+<font color=#447700>!dbg ,'ROavg=',.5*(RO(I,KP1)+RO(I,K)),'  hd=',hd,'  temv=',temv,'  fro=',fro  &amp;<a name='1646'></font>
+<font color=#447700>!dbg ,'  tem2=',tem2,'  tem=',tem,'  rim=',rim<a name='1647'></font>
+<a name='1648'>
+<font color=#447700>!<a name='1649'></font>
+              IF (RIM .LE. RIC .AND.                                    &amp;<a name='1650'>
+<font color=#447700>!    &amp;           (OA(I) .LE. 0. .OR.  PRSI(ipt(I),KP1).LE.RLOLEV )) THEN<a name='1651'></font>
+     &amp;           (OA(I) .LE. 0. .OR.  kp1 .ge. kint(i) )) THEN<a name='1652'>
+                 TEMC = 2.0 + 1.0 / TEM2<a name='1653'>
+                 HD   = VELCO(I,K) * (2.*SQRT(TEMC)-TEMC) / BRVF<a name='1654'>
+                 TAUP(I,KP1) = TEM1 * HD * HD<a name='1655'>
+              ELSE <a name='1656'>
+                 TAUP(I,KP1) = TAUP(I,K) * RSCOR<a name='1657'>
+              ENDIF<a name='1658'>
+              taup(i,kp1) = min(taup(i,kp1), taup(i,k))<a name='1659'>
+<a name='1660'>
+<font color=#447700>!dbg<a name='1661'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(a,i2,2(a,e12.4))") 'kp1=',kp1  &amp;<a name='1662'></font>
+<font color=#447700>!dbg ,'  taup(i,kp1)=',taup(i,kp1),'  taup(i,k)=',taup(i,k)<a name='1663'></font>
+<a name='1664'>
+            ENDIF    <font color=#447700>!-- IF (.NOT.ICRILV(I) .AND. TAUP(I,K) .GT. 0.0 ) THEN<a name='1665'></font>
+          ENDIF      <font color=#447700>!-- IF (K .GE. kref(I))   THEN<a name='1666'></font>
+        ENDDO        <font color=#447700>!-- DO I = 1,npt<a name='1667'></font>
+      ENDDO          <font color=#447700>!-- DO K = KMPS, KMM1<a name='1668'></font>
+<font color=#447700>!<a name='1669'></font>
+<font color=#447700>!     DO I=1,IM<a name='1670'></font>
+<font color=#447700>!       taup(i,km+1) = taup(i,km)<a name='1671'></font>
+<font color=#447700>!     ENDDO<a name='1672'></font>
+<font color=#447700>!<a name='1673'></font>
+      IF(LCAP .LE. KM) THEN<a name='1674'>
+<a name='1675'>
+<font color=#447700>!dbg if (lprnt) print *,'lcap,lcapp1,km=',lcap,lcapp1,km   !dbg<a name='1676'></font>
+<a name='1677'>
+         DO KLCAP = LCAPP1, KM+1<a name='1678'>
+            DO I = 1,npt<a name='1679'>
+              SIRA          = PRSI(ipt(I),KLCAP) / PRSI(ipt(I),LCAP)<a name='1680'>
+              TAUP(I,KLCAP) = SIRA * TAUP(I,LCAP)<a name='1681'>
+<a name='1682'>
+<font color=#447700>!dbg<a name='1683'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(a,i2,5(a,e12.4))")  &amp;<a name='1684'></font>
+<font color=#447700>!dbg  'klcap=',klcap,'  sira=',sira,'  prsi(ipt(i),klcap)=', prsi(ipt(i),klcap)   &amp;<a name='1685'></font>
+<font color=#447700>!dbg ,'  prsi(ipt(i),lcap)=',prsi(ipt(i),lcap),'  taup(i,lcap)=',taup(i,lcap)  &amp;<a name='1686'></font>
+<font color=#447700>!dbg ,'  taup(i,klcap)=',taup(i,klcap)<a name='1687'></font>
+<a name='1688'>
+<font color=#447700>!<a name='1689'></font>
+            ENDDO<a name='1690'>
+         ENDDO<a name='1691'>
+      ENDIF<a name='1692'>
+<font color=#447700>!<a name='1693'></font>
+<font color=#447700>!     Calculate - (g/p*)*d(tau)/d(sigma) and Decel terms DTAUX, DTAUY<a name='1694'></font>
+<font color=#447700>!<a name='1695'></font>
+      DO I=1,npt<a name='1696'>
+<font color=#447700>!       SCOR(I) = 1.0 / PSTAR(I)<a name='1697'></font>
+<a name='1698'>
+<font color=#447700>!dbg<a name='1699'></font>
+<font color=#447700>!        SCOR(I) = 1.0<a name='1700'></font>
+        SCOR(I) = 1.0/RCS<a name='1701'>
+<a name='1702'>
+      ENDDO<a name='1703'>
+      DO K = 1,KM<a name='1704'>
+        DO I = 1,npt<a name='1705'>
+          TAUD(I,K) = G * (TAUP(I,K+1) - TAUP(I,K)) * SCOR(I)           &amp;<a name='1706'>
+     &amp;                                              / DEL(ipt(I),K)<a name='1707'>
+<a name='1708'>
+<font color=#447700>!dbg<a name='1709'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(a,i2,4(a,e12.4))") 'k=',k,'  taud(i,k)=',taud(i,k)  &amp;<a name='1710'></font>
+<font color=#447700>!dbg ,'  D(taup)=',TAUP(I,K+1)-TAUP(I,K),'  del(ipt(i),k)=',del(ipt(i),k)  &amp;<a name='1711'></font>
+<font color=#447700>!dbg ,'  scor(i)=',scor(i)<a name='1712'></font>
+<a name='1713'>
+        ENDDO<a name='1714'>
+      ENDDO<a name='1715'>
+<a name='1716'>
+<font color=#447700>!<a name='1717'></font>
+<font color=#447700>!------LIMIT DE-ACCELERATION (MOMENTUM DEPOSITION ) AT TOP TO 1/2 VALUE<a name='1718'></font>
+<font color=#447700>!------THE IDEA IS SOME STUFF MUST GO OUT THE TOP<a name='1719'></font>
+<font color=#447700>!<a name='1720'></font>
+      DO KLCAP = LCAP, KM<a name='1721'>
+         DO I = 1,npt<a name='1722'>
+            TAUD(I,KLCAP) = TAUD(I,KLCAP) * FACTOP<a name='1723'>
+<a name='1724'>
+<font color=#447700>!dbg<a name='1725'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(a,i2,a,e12.4)") 'klcap=',klcap,'  taud(i,klcap)=',taud(i,klcap)<a name='1726'></font>
+<a name='1727'>
+         ENDDO<a name='1728'>
+      ENDDO<a name='1729'>
+<font color=#447700>!<a name='1730'></font>
+<font color=#447700>!------IF THE GRAVITY WAVE DRAG WOULD FORCE A CRITICAL LINE IN THE<a name='1731'></font>
+<font color=#447700>!------LAYERS BELOW SIGMA=RLOLEV DURING THE NEXT DELTIM TIMESTEP,<a name='1732'></font>
+<font color=#447700>!------THEN ONLY APPLY DRAG UNTIL THAT CRITICAL LINE IS REACHED.<a name='1733'></font>
+<font color=#447700>!<a name='1734'></font>
+      DO K = 1,KMM1<a name='1735'>
+        DO I = 1,npt<a name='1736'>
+           IF (K .GT. kref(I) .and. PRSI(ipt(i),K) .GE. RLOLEV) THEN<a name='1737'>
+             IF(TAUD(I,K).NE.0.) THEN<a name='1738'>
+<a name='1739'>
+<font color=#447700>!dbg<a name='1740'></font>
+<font color=#447700>!               TEM = DELTIM * TAUD(I,K)<a name='1741'></font>
+               TEM = rcs*DELTIM * TAUD(I,K)<a name='1742'>
+<a name='1743'>
+               DTFAC(I) = MIN(DTFAC(I),ABS(VELCO(I,K)/TEM))<a name='1744'>
+<a name='1745'>
+<font color=#447700>!dbg<a name='1746'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(a,i2,2(a,e12.4))") 'k=',k  &amp;<a name='1747'></font>
+<font color=#447700>!dbg ,'  tem=',tem,'  dtfac(i)=',dtfac(i)<a name='1748'></font>
+<a name='1749'>
+             ENDIF<a name='1750'>
+           ENDIF<a name='1751'>
+        ENDDO<a name='1752'>
+      ENDDO<a name='1753'>
+<font color=#447700>!     if(lprnt .and. npr .gt. 0) then<a name='1754'></font>
+<font color=#447700>!       print *, before  A=,A(npr,:)<a name='1755'></font>
+<font color=#447700>!       print *, before  B=,B(npr,:)<a name='1756'></font>
+<font color=#447700>!     endif<a name='1757'></font>
+<font color=#447700>!<a name='1758'></font>
+<a name='1759'>
+<font color=#447700>!dbg<a name='1760'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(a,i2,3(a,e12.4))") 'idxzb(npt)=',idxzb(npt)  &amp;<a name='1761'></font>
+<font color=#447700>!dbg ,'  dtfac=',dtfac(npt),'  xn=',xn(npt),'  yn=',yn(npt)<a name='1762'></font>
+<a name='1763'>
+<font color=#447700>!<a name='1764'></font>
+      DO K = 1,KM<a name='1765'>
+        DO I = 1,npt<a name='1766'>
+          J          = ipt(i)<a name='1767'>
+          TAUD(I,K)  = TAUD(I,K) * DTFAC(I)<a name='1768'>
+          DTAUX      = TAUD(I,K) * XN(I)<a name='1769'>
+          DTAUY      = TAUD(I,K) * YN(I)<a name='1770'>
+<font color=#447700>! ---  lm mb (*j*)  changes overwrite GWD<a name='1771'></font>
+          if ( K .lt. IDXZB(I) .AND. IDXZB(I) .ne. 0 ) then<a name='1772'>
+            DBIM = DB(I,K) / (1.+ abs(DB(I,K))*DELTIM)<a name='1773'>
+            A(J,K)  = - DBIM * V1(J,K) + A(J,K)<a name='1774'>
+            B(J,K)  = - DBIM * U1(J,K) + B(J,K)<a name='1775'>
+            DUsfc(J)   = DUsfc(J) - DBIM * V1(J,K) * DEL(J,K)<a name='1776'>
+            DVsfc(J)   = DVsfc(J) - DBIM * U1(J,K) * DEL(J,K)<a name='1777'>
+<a name='1778'>
+<font color=#447700>!dbg<a name='1779'></font>
+<font color=#447700>!dbg if (lprnt .and. dbim &gt; 0.) write(6,"(a,i2,4(a,e12.4))")  &amp;<a name='1780'></font>
+<font color=#447700>!dbg  'k=',k,'  db(i,k)=',db(i,k),'  dbim=',dbim  &amp;<a name='1781'></font>
+<font color=#447700>!dbg ,'  dudt=',-dbim*u1(j,k),'  dvdt=',-dbim*v1(j,k)<a name='1782'></font>
+<a name='1783'>
+<font color=#447700>!<a name='1784'></font>
+          else<a name='1785'>
+<font color=#447700>!<a name='1786'></font>
+            A(J,K)     = DTAUY     + A(J,K)<a name='1787'>
+            B(J,K)     = DTAUX     + B(J,K)<a name='1788'>
+            DUsfc(J)   = DUsfc(J)  + DTAUX * DEL(J,K)<a name='1789'>
+            DVsfc(J)   = DVsfc(J)  + DTAUY * DEL(J,K)<a name='1790'>
+<a name='1791'>
+<font color=#447700>!dbg<a name='1792'></font>
+<font color=#447700>!dbg if (lprnt .and. dtaux+dtauy/=0.) write(6,"(a,i2,2(a,e12.4))")  &amp;<a name='1793'></font>
+<font color=#447700>!dbg ',k=',k,'  dudt=dtaux=',dtaux,'  dvdt=dtauy=',dtauy<a name='1794'></font>
+<a name='1795'>
+          endif<a name='1796'>
+<a name='1797'>
+<font color=#447700>!dbg<a name='1798'></font>
+<font color=#447700>!dbg if (lprnt) write(6,"(a,i2,2(a,e12.4))") 'k=',k  &amp;<a name='1799'></font>
+<font color=#447700>!dbg ,'  dusfc(j)=',dusfc(j),'  dvsfc(j)=',dvsfc(j)<a name='1800'></font>
+<a name='1801'>
+        ENDDO      <font color=#447700>!-- DO I = 1,npt<a name='1802'></font>
+      ENDDO        <font color=#447700>!-- DO K = 1,KM<a name='1803'></font>
+<font color=#447700>!     if (lprnt) then<a name='1804'></font>
+<font color=#447700>!       print *, in gwdps_lm.f after  A=,A(ipr,:)<a name='1805'></font>
+<font color=#447700>!       print *, in gwdps_lm.f after  B=,B(ipr,:)<a name='1806'></font>
+<font color=#447700>!       print *, DB=,DB(ipr,:)<a name='1807'></font>
+<font color=#447700>!     endif<a name='1808'></font>
+      DO I = 1,npt<a name='1809'>
+        J          = ipt(i)<a name='1810'>
+<font color=#447700>!       TEM    = (-1.E3/G) * PSTAR(I)<a name='1811'></font>
+<a name='1812'>
+<font color=#447700>!dbg<a name='1813'></font>
+<font color=#447700>!        TEM    =  -1.E3/G<a name='1814'></font>
+        TEM    =  -1.E3*ROG*rcs<a name='1815'>
+        DUsfc(J) = TEM * DUsfc(J)<a name='1816'>
+        DVsfc(J) = TEM * DVsfc(J)<a name='1817'>
+<a name='1818'>
+<font color=#447700>!dbg<a name='1819'></font>
+<font color=#447700>!dbg if (lprnt .and. i.eq.npr) write(6,"(3(a,e12.4))") 'tem=',tem  &amp;<a name='1820'></font>
+<font color=#447700>!dbg ,'  dusfc(j)=',dusfc(j),'  dvsfc(j)=',dvsfc(j)<a name='1821'></font>
+<a name='1822'>
+      ENDDO<a name='1823'>
+<font color=#447700>!<a name='1824'></font>
+      END SUBROUTINE GWD_col<a name='1825'>
+<font color=#447700>!<a name='1826'></font>
+<font color=#447700>!#######################################################################<a name='1827'></font>
+<font color=#447700>!<a name='1828'></font>
+      END MODULE module_gwd<a name='1829'>
+</pre></body></html>

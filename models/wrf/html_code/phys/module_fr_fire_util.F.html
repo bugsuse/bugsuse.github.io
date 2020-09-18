@@ -1,0 +1,1553 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!<a name='2'></font>
+<font color=#447700>! This module contains general purpose utilities and WRF wrappers because some<a name='3'></font>
+<font color=#447700>! applications require this module to run standalone. No physics here.<a name='4'></font>
+<font color=#447700>! Some are dependent on WRF indexing scheme. Some violate WRF conventions but these<a name='5'></font>
+<font color=#447700>! are not called from the WRF dependent code. Some are not called at all.<a name='6'></font>
+<font color=#447700>! <a name='7'></font>
+<a name='8'>
+<A NAME='MODULE_FR_FIRE_UTIL'><A href='../../html_code/phys/module_fr_fire_util.F.html#MODULE_FR_FIRE_UTIL' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='9'>
+<font color=#993300>module </font><font color=#cc0000>module_fr_fire_util</font> <A href='../../call_to/MODULE_FR_FIRE_UTIL.html' TARGET='index'>6</A><a name='10'>
+<a name='11'>
+<font color=#447700>! various method selection parameters<a name='12'></font>
+<font color=#447700>! 1. add the parameter and its static default here<a name='13'></font>
+<font color=#447700>! optional:<a name='14'></font>
+<font color=#447700>! 2. add copy from config_flags in module_fr_fire_driver%%set_flags<a name='15'></font>
+<font color=#447700>! 3. add a line in Registry.EM to define the variable and set default value<a name='16'></font>
+<font color=#447700>! 4. add the variable and value in namelist.input<a name='17'></font>
+<a name='18'>
+<a name='19'>
+integer,save::          &amp;<a name='20'>
+ fire_print_msg=1,      &amp;  <font color=#447700>! print FIRE progress <a name='21'></font>
+ fire_print_file=1,     &amp;  <font color=#447700>! write many files by write_array_m; compile with DEBUG_OUT, do not run in parallel<a name='22'></font>
+ fuel_left_method=1,    &amp;  <font color=#447700>! 1=simple, 2=exact in linear case<a name='23'></font>
+ fuel_left_irl=2,       &amp;  <font color=#447700>! refinement for fuel calculation, must be even<a name='24'></font>
+ fuel_left_jrl=2,       &amp;<a name='25'>
+ boundary_guard=-1,     &amp;  <font color=#447700>! crash if fire gets this many cells to domain boundary, -1=off<a name='26'></font>
+ fire_grows_only=1,     &amp;  <font color=#447700>! fire can spread out only (level set functions may not increase)<a name='27'></font>
+ fire_upwinding=3,      &amp;  <font color=#447700>! upwind normal spread: 1=standard, 2=godunov, 3=eno, 4=sethian <a name='28'></font>
+ fire_upwind_split=0,   &amp;  <font color=#447700>! 1=upwind advection separately from normal direction spread<a name='29'></font>
+ fire_test_steps=0,     &amp;  <font color=#447700>! 0=no fire, 1=normal, &gt;1 = do specified number of steps and terminate (testing only)<a name='30'></font>
+ fire_topo_from_atm=1,  &amp;  <font color=#447700>! 0 = expect ZSF set correctly on entry, 1 = populate by interploating from atmosphere<a name='31'></font>
+ fire_advection=0          <font color=#447700>! 0 = fire spread from normal wind/slope (CAWFE), 1 = full speed projected<a name='32'></font>
+ <a name='33'>
+<a name='34'>
+real, save::            &amp;<a name='35'>
+ fire_const_time=-1,    &amp;  <font color=#447700>! time from ignition to start constant heat output  &lt;0=never<a name='36'></font>
+ fire_const_grnhfx=-1., &amp;  <font color=#447700>! if both &gt;=0, the constant heat flux to output then<a name='37'></font>
+ fire_const_grnqfx=-1., &amp;  <font color=#447700>! if both &gt;=0, the constant heat flux to output then<a name='38'></font>
+ fire_atm_feedback=1. , &amp;  <font color=#447700>! 1 = normal, 0. = one way coupling atmosphere -&gt; fire only<a name='39'></font>
+ fire_back_weight=0.5,  &amp;  <font color=#447700>! RK parameter, 0 = Euler method, 0.5 = Heun, 1 = fake backward Euler<a name='40'></font>
+ fire_viscosity=0.4,    &amp;  <font color=#447700>! artificial viscosity<a name='41'></font>
+ fire_lfn_ext_up=1.        <font color=#447700>! 0.=extend level set function at boundary by reflection, 1.=always up<a name='42'></font>
+<a name='43'>
+integer, parameter:: REAL_SUM=10, REAL_MAX=20, RNRM_SUM=30, RNRM_MAX=40<a name='44'>
+<a name='45'>
+contains<a name='46'>
+<a name='47'>
+<font color=#447700>!<a name='48'></font>
+<font color=#447700>!****************<a name='49'></font>
+<font color=#447700>!<a name='50'></font>
+<A NAME='CRASH'><A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='51'>
+<font color=#993300>subroutine </font><font color=#cc0000>crash</font>(s) <A href='../../call_to/CRASH.html' TARGET='index'>41</A>,<A href='../../call_from/CRASH.html' TARGET='index'>3</A><a name='52'>
+use <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_50"><a name='53'>
+implicit none<a name='54'>
+character(len=*), intent(in)::s<a name='55'>
+character(len=128)msg<a name='56'>
+msg='crash: '//s<a name='57'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_102">(msg,level=0)<a name='58'>
+<font color=#447700>!$OMP CRITICAL(FIRE_MESSAGE_CRIT)<a name='59'></font>
+call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_694">(msg)<a name='60'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_MESSAGE_CRIT)<a name='61'></font>
+end subroutine crash<a name='62'>
+<a name='63'>
+<font color=#447700>!<a name='64'></font>
+<font color=#447700>!****************<a name='65'></font>
+<font color=#447700>!<a name='66'></font>
+<a name='67'>
+<A NAME='MESSAGE'><A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='68'>
+<font color=#993300>subroutine </font><font color=#cc0000>message</font>(s,level) <A href='../../call_to/MESSAGE.html' TARGET='index'>130</A>,<A href='../../call_from/MESSAGE.html' TARGET='index'>2</A><a name='69'>
+use <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_51"><a name='70'>
+#ifdef _OPENMP<a name='71'>
+use OMP_LIB <a name='72'>
+#endif<a name='73'>
+implicit none<a name='74'>
+<font color=#447700>!*** arguments<a name='75'></font>
+character(len=*), intent(in)::s<a name='76'>
+integer,intent(in),optional::level<a name='77'>
+<font color=#447700>!*** local<a name='78'></font>
+character(len=128)::msg<a name='79'>
+character(len=118)::t<a name='80'>
+integer m,mlevel<a name='81'>
+logical op<a name='82'>
+<font color=#447700>!*** executable<a name='83'></font>
+if(present(level))then<a name='84'>
+    mlevel=level<a name='85'>
+else<a name='86'>
+    mlevel=2  <font color=#447700>! default message level<a name='87'></font>
+endif<a name='88'>
+if(fire_print_msg.ge.mlevel)then<a name='89'>
+      m=0<a name='90'>
+<font color=#447700>!$OMP CRITICAL(FIRE_MESSAGE_CRIT)<a name='91'></font>
+#ifdef _OPENMP<a name='92'>
+      m=omp_get_thread_num()<a name='93'>
+      t=s<a name='94'>
+      write(msg,'(a6,i3,a1,a118)')'FIRE:',m,':',t<a name='95'>
+#else<a name='96'>
+      msg='FIRE:'//s<a name='97'>
+#endif<a name='98'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_799">(msg)<a name='99'>
+<font color=#447700>!      flush(6)<a name='100'></font>
+<font color=#447700>!      flush(0)<a name='101'></font>
+<font color=#447700>!$OMP END CRITICAL(FIRE_MESSAGE_CRIT)<a name='102'></font>
+endif<a name='103'>
+end subroutine message<a name='104'>
+<a name='105'>
+<font color=#447700>!<a name='106'></font>
+<font color=#447700>!****************<a name='107'></font>
+<font color=#447700>!<a name='108'></font>
+<a name='109'>
+<a name='110'>
+<A NAME='OPEN_TEXT_FILE'><A href='../../html_code/phys/module_fr_fire_util.F.html#OPEN_TEXT_FILE' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='111'>
+integer <font color=#993300>function </font><font color=#cc0000>open_text_file</font>(filename,rw) <A href='../../call_to/OPEN_TEXT_FILE.html' TARGET='index'>2</A>,<A href='../../call_from/OPEN_TEXT_FILE.html' TARGET='index'>2</A><a name='112'>
+implicit none<a name='113'>
+character(len=*),intent(in):: filename,rw<a name='114'>
+#ifdef _OPENMP<a name='115'>
+<font color=#447700>!integer, external:: OMP_GET_THREAD_NUM<a name='116'></font>
+#endif<a name='117'>
+character(len=128):: msg<a name='118'>
+character(len=1)::act<a name='119'>
+integer::iounit,ierr<a name='120'>
+logical::op<a name='121'>
+<a name='122'>
+#ifdef _OPENMP<a name='123'>
+<font color=#447700>!   if (OMP_GET_THREAD_NUM() .ne. 0)then<a name='124'></font>
+<font color=#447700>!      call crash('open_input_text_file: called from parallel loop')<a name='125'></font>
+<font color=#447700>!   endif<a name='126'></font>
+#endif<a name='127'>
+<a name='128'>
+    do iounit=19,99<a name='129'>
+       inquire(iounit,opened=op)<a name='130'>
+       if(.not.op)goto 1<a name='131'>
+    enddo<a name='132'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#OPEN_TEXT_FILE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_22">('open_text_file: Cannot find any available I/O unit')<a name='133'>
+1   continue<a name='134'>
+    act=rw(1:1)<a name='135'>
+    select case (act)<a name='136'>
+        case ('r','R')<a name='137'>
+            OPEN(iounit, FILE=filename,FORM='FORMATTED',STATUS='OLD',ACTION='READ',IOSTAT=ierr)<a name='138'>
+        case ('w','W')<a name='139'>
+            OPEN(iounit, FILE=filename,FORM='FORMATTED',STATUS='UNKNOWN',ACTION='WRITE',IOSTAT=ierr)<a name='140'>
+        case default<a name='141'>
+            write(msg,*)'open_text_file: bad mode ',trim(rw),' for file ',trim(filename)<a name='142'>
+    end select<a name='143'>
+    <a name='144'>
+    if(ierr.ne.0)then <a name='145'>
+	write(msg,*)'open_text_file: Cannot open file ',filename<a name='146'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#OPEN_TEXT_FILE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_23">(msg)<a name='147'>
+    endif<a name='148'>
+    open_text_file=iounit<a name='149'>
+<a name='150'>
+end function open_text_file<a name='151'>
+<a name='152'>
+<font color=#447700>!<a name='153'></font>
+<font color=#447700>!****************<a name='154'></font>
+<font color=#447700>!<a name='155'></font>
+<a name='156'>
+<a name='157'>
+<A NAME='SET_IDEAL_COORD'><A href='../../html_code/phys/module_fr_fire_util.F.html#SET_IDEAL_COORD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='158'>
+<font color=#993300>subroutine </font><font color=#cc0000>set_ideal_coord</font>( dxf,dyf, &amp;<a name='159'>
+                ifds,ifde,jfds,jfde,  &amp;<a name='160'>
+                ifms,ifme,jfms,jfme,  &amp;<a name='161'>
+                ifts,ifte,jfts,jfte,  &amp;<a name='162'>
+                fxlong,fxlat          &amp;<a name='163'>
+            )<a name='164'>
+implicit none<a name='165'>
+<font color=#447700>! arguments<a name='166'></font>
+real, intent(in)::dxf,dyf<a name='167'>
+integer, intent(in):: &amp;<a name='168'>
+                ifds,ifde,jfds,jfde,  &amp;<a name='169'>
+                ifms,ifme,jfms,jfme,  &amp;<a name='170'>
+                ifts,ifte,jfts,jfte<a name='171'>
+real, intent(out),dimension(ifms:ifme,jfms:jfme)::fxlong,fxlat<a name='172'>
+<font color=#447700>! local<a name='173'></font>
+integer::i,j<a name='174'>
+                <font color=#447700>! set fake  coordinates, in m <a name='175'></font>
+                do j=jfts,jfte<a name='176'>
+                    do i=ifts,ifte<a name='177'>
+                        <font color=#447700>! uniform mesh, lower left domain corner is (0,0)<a name='178'></font>
+                        fxlong(i,j)=(i-ifds+0.5)*dxf<a name='179'>
+                        fxlat (i,j)=(j-jfds+0.5)*dyf<a name='180'>
+                    enddo<a name='181'>
+                enddo<a name='182'>
+end subroutine set_ideal_coord<a name='183'>
+<a name='184'>
+<font color=#447700>!<a name='185'></font>
+<font color=#447700>!****************<a name='186'></font>
+<font color=#447700>!<a name='187'></font>
+<a name='188'>
+<a name='189'>
+<A NAME='CONTINUE_AT_BOUNDARY'><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='190'>
+<font color=#993300>subroutine </font><font color=#cc0000>continue_at_boundary</font>(ix,iy,bias, &amp; <font color=#447700>! do x direction or y direction <A href='../../call_to/CONTINUE_AT_BOUNDARY.html' TARGET='index'>5</A>,<A href='../../call_from/CONTINUE_AT_BOUNDARY.html' TARGET='index'>12</A><a name='191'></font>
+    ims,ime,jms,jme, &amp;                <font color=#447700>! memory dims<a name='192'></font>
+    ids,ide,jds,jde, &amp;                <font color=#447700>! domain dims<a name='193'></font>
+    ips,ipe,jps,jpe, &amp;                <font color=#447700>! patch dims<a name='194'></font>
+    its,ite,jts,jte, &amp;                <font color=#447700>! tile dims<a name='195'></font>
+    itso,iteo,jtso,jteo, &amp;            <font color=#447700>! tile dims where set<a name='196'></font>
+    lfn)                              <font color=#447700>! array<a name='197'></font>
+implicit none<a name='198'>
+<font color=#447700>!*** description<a name='199'></font>
+<font color=#447700>! extend array by one beyond the domain by linear continuation<a name='200'></font>
+<font color=#447700>!*** arguments<a name='201'></font>
+integer, intent(in)::ix,iy              <font color=#447700>! not 0 = do x or y (1 or 2) direction<a name='202'></font>
+real,intent(in)::bias                   <font color=#447700>! 0=none, 1.=max<a name='203'></font>
+integer, intent(in)::ims,ime,jms,jme, &amp;                <font color=#447700>! memory dims<a name='204'></font>
+    ids,ide,jds,jde, &amp;                <font color=#447700>! domain dims<a name='205'></font>
+    ips,ipe,jps,jpe, &amp;                <font color=#447700>! patch dims<a name='206'></font>
+    its,ite,jts,jte                   <font color=#447700>! tile dims<a name='207'></font>
+integer, intent(out)::itso,jtso,iteo,jteo <font color=#447700>! where set<a name='208'></font>
+real,intent(inout),dimension(ims:ime,jms:jme)::lfn<a name='209'>
+<font color=#447700>!*** local<a name='210'></font>
+integer i,j<a name='211'>
+character(len=128)::msg<a name='212'>
+integer::its1,ite1,jts1,jte1<a name='213'>
+integer,parameter::halo=1           <font color=#447700>! width of halo region to update <a name='214'></font>
+<font color=#447700>!*** executable<a name='215'></font>
+<font color=#447700>! check if there is space for the extension<a name='216'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_14">(its-1,ite+1,jts-1,jte+1,ims,ime,jms,jme)<a name='217'>
+<font color=#447700>! for dislay only<a name='218'></font>
+itso=its<a name='219'>
+jtso=jts<a name='220'>
+iteo=ite<a name='221'>
+jteo=jte<a name='222'>
+<font color=#447700>! go halo width beyond if at patch boundary but not at domain boudnary <a name='223'></font>
+<font color=#447700>! assume we have halo need to compute the value we do not have <a name='224'></font>
+<font color=#447700>! the next thread that would conveniently computer the extended values at patch corners<a name='225'></font>
+<font color=#447700>! besides halo may not transfer values outside of the domain<a name='226'></font>
+<font color=#447700>! <a name='227'></font>
+its1=its<a name='228'>
+jts1=jts<a name='229'>
+ite1=ite<a name='230'>
+jte1=jte<a name='231'>
+if(its.eq.ips.and..not.its.eq.ids)its1=its-halo<a name='232'>
+if(jts.eq.jps.and..not.jts.eq.jds)jts1=jts-halo<a name='233'>
+if(ite.eq.ipe.and..not.ite.eq.ide)ite1=ite+halo<a name='234'>
+if(jte.eq.jpe.and..not.jte.eq.jde)jte1=jte+halo<a name='235'>
+<font color=#447700>!$OMP CRITICAL(FIRE_UTIL_CRIT)<a name='236'></font>
+write(msg,'(a,2i5,a,f5.2)')'continue_at_boundary: directions',ix,iy,' bias ',bias <a name='237'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_103">(msg)<a name='238'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_UTIL_CRIT)<a name='239'></font>
+if(ix.ne.0)then<a name='240'>
+    if(its.eq.ids)then<a name='241'>
+        do j=jts1,jte1<a name='242'>
+            lfn(ids-1,j)=<A href='../../html_code/phys/module_fr_fire_util.F.html#EX'>EX</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EX_1">(lfn(ids,j),lfn(ids+1,j))<a name='243'>
+        enddo<a name='244'>
+        itso=ids-1<a name='245'>
+    endif<a name='246'>
+    if(ite.eq.ide)then<a name='247'>
+        do j=jts1,jte1<a name='248'>
+            lfn(ide+1,j)=<A href='../../html_code/phys/module_fr_fire_util.F.html#EX'>EX</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EX_2">(lfn(ide,j),lfn(ide-1,j))<a name='249'>
+        enddo<a name='250'>
+        iteo=ide+1<a name='251'>
+    endif<a name='252'>
+<font color=#447700>!$OMP CRITICAL(FIRE_UTIL_CRIT)<a name='253'></font>
+    write(msg,'(8(a,i5))')'continue_at_boundary: x:',its,':',ite,',',jts,':',jte,' -&gt;',itso,':',iteo,',',jts1,':',jte1<a name='254'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_104">(msg)<a name='255'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_UTIL_CRIT)<a name='256'></font>
+endif<a name='257'>
+if(iy.ne.0)then<a name='258'>
+    if(jts.eq.jds)then<a name='259'>
+        do i=its1,ite1<a name='260'>
+            lfn(i,jds-1)=<A href='../../html_code/phys/module_fr_fire_util.F.html#EX'>EX</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EX_3">(lfn(i,jds),lfn(i,jds+1))<a name='261'>
+        enddo<a name='262'>
+        jtso=jds-1<a name='263'>
+    endif<a name='264'>
+    if(jte.eq.jde)then<a name='265'>
+        do i=its1,ite1<a name='266'>
+            lfn(i,jde+1)=<A href='../../html_code/phys/module_fr_fire_util.F.html#EX'>EX</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EX_4">(lfn(i,jde),lfn(i,jde-1))<a name='267'>
+        enddo<a name='268'>
+        jteo=jde+1<a name='269'>
+    endif<a name='270'>
+<font color=#447700>!$OMP CRITICAL(FIRE_UTIL_CRIT)<a name='271'></font>
+    write(msg,'(8(a,i5))')'continue_at_boundary: y:',its,':',ite,',',jts,':',jte,' -&gt;',its1,':',ite1,',',jtso,':',jteo<a name='272'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_UTIL_CRIT)<a name='273'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_105">(msg)<a name='274'>
+endif<a name='275'>
+<font color=#447700>! corners of the domain<a name='276'></font>
+if(ix.ne.0.and.iy.ne.0)then<a name='277'>
+    if(its.eq.ids.and.jts.eq.jds)lfn(ids-1,jds-1)=<A href='../../html_code/phys/module_fr_fire_util.F.html#EX'>EX</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EX_5">(lfn(ids,jds),lfn(ids+1,jds+1))<a name='278'>
+    if(its.eq.ids.and.jte.eq.jde)lfn(ids-1,jde+1)=<A href='../../html_code/phys/module_fr_fire_util.F.html#EX'>EX</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EX_6">(lfn(ids,jde),lfn(ids+1,jde-1))<a name='279'>
+    if(ite.eq.ide.and.jts.eq.jds)lfn(ide+1,jds-1)=<A href='../../html_code/phys/module_fr_fire_util.F.html#EX'>EX</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EX_7">(lfn(ide,jds),lfn(ide-1,jds+1))<a name='280'>
+    if(ite.eq.ide.and.jte.eq.jde)lfn(ide+1,jde+1)=<A href='../../html_code/phys/module_fr_fire_util.F.html#EX'>EX</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EX_8">(lfn(ide,jde),lfn(ide-1,jde-1))<a name='281'>
+endif<a name='282'>
+return<a name='283'>
+contains<a name='284'>
+<A NAME='EX'><A href='../../html_code/phys/module_fr_fire_util.F.html#EX' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='285'>
+real <font color=#993300>function </font><font color=#cc0000>EX</font>(a,b) <A href='../../call_to/EX.html' TARGET='index'>8</A><a name='286'>
+<font color=#447700>!*** statement function<a name='287'></font>
+real a,b<a name='288'>
+EX=(1.-bias)*(2.*a-b)+bias*max(2.*a-b,a,b)   <font color=#447700>! extrapolation, max quarded<a name='289'></font>
+end function EX<a name='290'>
+end subroutine continue_at_boundary<a name='291'>
+<a name='292'>
+<font color=#447700>!<a name='293'></font>
+<font color=#447700>!*****************************<a name='294'></font>
+<font color=#447700>!<a name='295'></font>
+<a name='296'>
+<A NAME='CHECK_MESH_2DIM'><A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='297'>
+<font color=#993300>subroutine </font><font color=#cc0000>check_mesh_2dim</font>(ids,ide,jds,jde,ims,ime,jms,jme) <A href='../../call_to/CHECK_MESH_2DIM.html' TARGET='index'>25</A>,<A href='../../call_from/CHECK_MESH_2DIM.html' TARGET='index'>3</A><a name='298'>
+implicit none<a name='299'>
+integer, intent(in)::ids,ide,jds,jde,ims,ime,jms,jme<a name='300'>
+character(len=128)msg<a name='301'>
+if(ids&lt;ims.or.ide&gt;ime.or.jds&lt;jms.or.jde&gt;jme)then<a name='302'>
+<font color=#447700>!$OMP CRITICAL(FIRE_UTIL_CRIT)<a name='303'></font>
+    write(msg,*)'mesh dimensions:  ',ids,ide,jds,jde<a name='304'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_106">(msg)<a name='305'>
+    write(msg,*)'memory dimensions:',ims,ime,jms,jme<a name='306'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_UTIL_CRIT)<a name='307'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_107">(msg)<a name='308'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_24">('check_mesh_2dim: memory dimensions too small')<a name='309'>
+endif<a name='310'>
+end subroutine check_mesh_2dim<a name='311'>
+<a name='312'>
+<font color=#447700>!<a name='313'></font>
+<font color=#447700>!****************<a name='314'></font>
+<font color=#447700>!<a name='315'></font>
+<a name='316'>
+<A NAME='CHECK_MESH_3DIM'><A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_3DIM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='317'>
+<font color=#993300>subroutine </font><font color=#cc0000>check_mesh_3dim</font>(ids,ide,kds,kde,jds,jde,ims,ime,kms,kme,jms,jme),<A href='../../call_from/CHECK_MESH_3DIM.html' TARGET='index'>1</A><a name='318'>
+integer, intent(in)::ids,ide,jds,jde,ims,ime,jms,jme,kds,kde,kms,kme<a name='319'>
+if(ids&lt;ims.or.ide&gt;ime.or.jds&lt;jms.or.jde&gt;jme.or.kds&lt;kms.or.kde&gt;kme) then<a name='320'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_3DIM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_25">('memory dimensions too small')<a name='321'>
+endif<a name='322'>
+end subroutine check_mesh_3dim<a name='323'>
+<a name='324'>
+<font color=#447700>!<a name='325'></font>
+<font color=#447700>!****************<a name='326'></font>
+<font color=#447700>!<a name='327'></font>
+<a name='328'>
+<A NAME='SUM_2D_CELLS'><A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='329'>
+<font color=#993300>subroutine </font><font color=#cc0000>sum_2d_cells</font>(       &amp; <A href='../../call_to/SUM_2D_CELLS.html' TARGET='index'>3</A>,<A href='../../call_from/SUM_2D_CELLS.html' TARGET='index'>9</A><a name='330'>
+       ims2,ime2,jms2,jme2,    &amp;<a name='331'>
+       its2,ite2,jts2,jte2,    &amp;<a name='332'>
+       v2,                     &amp;  <font color=#447700>! input       <a name='333'></font>
+       ims1,ime1,jms1,jme1,    &amp;<a name='334'>
+       its1,ite1,jts1,jte1,    &amp;<a name='335'>
+       v1)                        <font color=#447700>! output<a name='336'></font>
+implicit none<a name='337'>
+<a name='338'>
+<font color=#447700>!*** purpose<a name='339'></font>
+<font color=#447700>! sum cell values in mesh2 to cell values of coarser mesh1<a name='340'></font>
+<a name='341'>
+<font color=#447700>!*** arguments<a name='342'></font>
+<font color=#447700>! the dimensions are in cells, not nodes!<a name='343'></font>
+<a name='344'>
+integer, intent(in)::its1,ite1,jts1,jte1,ims1,ime1,jms1,jme1<a name='345'>
+real, intent(out)::v1(ims1:ime1,jms1:jme1)<a name='346'>
+integer, intent(in)::its2,ite2,jts2,jte2,ims2,ime2,jms2,jme2<a name='347'>
+real, intent(in)::v2(ims2:ime2,jms2:jme2)<a name='348'>
+<a name='349'>
+<font color=#447700>!*** local<a name='350'></font>
+integer:: i1,i2,j1,j2,ir,jr,isz1,isz2,jsz1,jsz2,ioff,joff,ibase,jbase<a name='351'>
+real t<a name='352'>
+character(len=128)msg<a name='353'>
+<a name='354'>
+<font color=#447700>!*** executable<a name='355'></font>
+<a name='356'>
+<font color=#447700>!check mesh dimensions and domain dimensions<a name='357'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_15">(its1,ite1,jts1,jte1,ims1,ime1,jms1,jme1)<a name='358'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_16">(its2,ite2,jts2,jte2,ims2,ime2,jms2,jme2)<a name='359'>
+<a name='360'>
+<font color=#447700>! compute mesh sizes<a name='361'></font>
+isz1 = ite1-its1+1<a name='362'>
+jsz1 = jte1-jts1+1<a name='363'>
+isz2 = ite2-its2+1<a name='364'>
+jsz2 = jte2-jts2+1<a name='365'>
+<a name='366'>
+<font color=#447700>! check mesh sizes<a name='367'></font>
+if(isz1.le.0.or.jsz1.le.0.or.isz2.le.0.or.jsz2.le.0)then<a name='368'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_108">('all mesh sizes must be positive')<a name='369'>
+    goto 9<a name='370'>
+endif<a name='371'>
+<a name='372'>
+<font color=#447700>! compute mesh ratios<a name='373'></font>
+ir=isz2/isz1<a name='374'>
+jr=jsz2/jsz1<a name='375'>
+<a name='376'>
+if(isz2.ne.isz1*ir .or. jsz2.ne.jsz1*jr)then<a name='377'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_109">('input mesh size must be multiple of output mesh size')<a name='378'>
+    goto 9<a name='379'>
+endif<a name='380'>
+<a name='381'>
+<a name='382'>
+<font color=#447700>! v1 = sum(v2)<a name='383'></font>
+do j1=jts1,jte1<a name='384'>
+    jbase=jts2+jr*(j1-jts1)<a name='385'>
+    do i1=its1,ite1<a name='386'>
+       ibase=its2+ir*(i1-its1)<a name='387'>
+       t=0.<a name='388'>
+       do joff=0,jr-1<a name='389'>
+           j2=joff+jbase<a name='390'>
+           do ioff=0,ir-1<a name='391'>
+               i2=ioff+ibase<a name='392'>
+               t=t+v2(i2,j2)<a name='393'>
+           enddo<a name='394'>
+       enddo<a name='395'>
+       v1(i1,j1)=t<a name='396'>
+    enddo<a name='397'>
+enddo<a name='398'>
+<a name='399'>
+return<a name='400'>
+<a name='401'>
+9 continue<a name='402'>
+<font color=#447700>!$OMP CRITICAL(FIRE_UTIL_CRIT)<a name='403'></font>
+write(msg,91)its2,ite2,jts2,jte2,ims2,ime2,jms2,jme2<a name='404'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_110">(msg)<a name='405'>
+write(msg,91)its1,ite1,jts1,jte1,ims1,ime1,jms1,jme1<a name='406'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_111">(msg)<a name='407'>
+write(msg,92)'input  mesh size:',isz2,jsz2<a name='408'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_112">(msg)<a name='409'>
+91 format('dimensions: ',8i8)<a name='410'>
+write(msg,92)'output mesh size:',isz1,jsz1<a name='411'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_113">(msg)<a name='412'>
+92 format(a,2i8)<a name='413'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_UTIL_CRIT)<a name='414'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2D_CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_26">('module_fr_spread_util:sum_mesh_cells: bad mesh sizes')<a name='415'>
+<a name='416'>
+end subroutine sum_2d_cells<a name='417'>
+<a name='418'>
+<a name='419'>
+<a name='420'>
+<font color=#447700>! module_fr_fire_util%%interpolate_2d<a name='421'></font>
+<A NAME='INTERPOLATE_2D'><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='422'>
+<font color=#993300>subroutine </font><font color=#cc0000>interpolate_2d</font>(  &amp; <A href='../../call_to/INTERPOLATE_2D.html' TARGET='index'>3</A>,<A href='../../call_from/INTERPOLATE_2D.html' TARGET='index'>2</A><a name='423'>
+    ims2,ime2,jms2,jme2, &amp; <font color=#447700>! array coarse grid<a name='424'></font>
+    its2,ite2,jts2,jte2, &amp; <font color=#447700>! dimensions coarse grid<a name='425'></font>
+    ims1,ime1,jms1,jme1, &amp; <font color=#447700>! array coarse grid<a name='426'></font>
+    its1,ite1,jts1,jte1, &amp; <font color=#447700>! dimensions fine grid<a name='427'></font>
+    ir,jr,               &amp; <font color=#447700>! refinement ratio<a name='428'></font>
+    rip2,rjp2,rip1,rjp1, &amp; <font color=#447700>! (rip2,rjp2) on grid 2 lines up with (rip1,rjp1) on grid 1 <a name='429'></font>
+    v2, &amp;                  <font color=#447700>! in coarse grid  <a name='430'></font>
+    v1  )                  <font color=#447700>! out fine grid<a name='431'></font>
+implicit none<a name='432'>
+<a name='433'>
+<font color=#447700>!*** purpose<a name='434'></font>
+<font color=#447700>! interpolate nodal values in mesh2 to nodal values in mesh1<a name='435'></font>
+<font color=#447700>! interpolation runs over the mesh2 region its2:ite2,jts2:jte2 <a name='436'></font>
+<font color=#447700>! only the part of mesh 1 in the region its1:ite1,jts1:jte1 is modified<a name='437'></font>
+<a name='438'>
+<font color=#447700>!*** arguments<a name='439'></font>
+<a name='440'>
+integer, intent(in)::its1,ite1,jts1,jte1,ims1,ime1,jms1,jme1<a name='441'>
+integer, intent(in)::its2,ite2,jts2,jte2,ims2,ime2,jms2,jme2<a name='442'>
+integer, intent(in)::ir,jr<a name='443'>
+real,intent(in):: rjp1,rip1,rjp2,rip2<a name='444'>
+real, intent(out)::v1(ims1:ime1,jms1:jme1)<a name='445'>
+real, intent(in)::v2(ims2:ime2,jms2:jme2)<a name='446'>
+<a name='447'>
+<font color=#447700>!*** local<a name='448'></font>
+integer:: i1,i2,j1,j2,is,ie,js,je<a name='449'>
+real:: tx,ty,rx,ry<a name='450'>
+real:: rio,rjo<a name='451'>
+intrinsic::ceiling,floor<a name='452'>
+<a name='453'>
+<font color=#447700>!*** executable<a name='454'></font>
+<a name='455'>
+<font color=#447700>!check mesh dimensions and domain dimensions<a name='456'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_17">(its1,ite1,jts1,jte1,ims1,ime1,jms1,jme1)<a name='457'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_18">(its2,ite2,jts2,jte2,ims2,ime2,jms2,jme2)<a name='458'>
+<a name='459'>
+<font color=#447700>! compute mesh ratios<a name='460'></font>
+rx=1./ir<a name='461'>
+ry=1./jr<a name='462'>
+<a name='463'>
+do j2=jts2,jte2-1               <font color=#447700>! loop over mesh 2 cells<a name='464'></font>
+    rjo=rjp1+jr*(j2-rjp2)       <font color=#447700>! mesh 1 coordinate of the mesh 2 patch start<a name='465'></font>
+    js=max(jts1,ceiling(rjo))   <font color=#447700>! lower bound of mesh 1 patch for this mesh 2 cell<a name='466'></font>
+    je=min(jte1,floor(rjo)+jr)  <font color=#447700>! upper bound of mesh 1 patch for this mesh 2 cell <a name='467'></font>
+    do i2=its2,ite2-1<a name='468'>
+        rio=rip1+ir*(i2-rip2)<a name='469'>
+        is=max(its1,ceiling(rio))<a name='470'>
+        ie=min(ite1,floor(rio)+ir)<a name='471'>
+        do j1=js,je<a name='472'>
+            ty = (j1-rjo)*ry<a name='473'>
+            do i1=is,ie<a name='474'>
+                <font color=#447700>! in case mesh 1 node lies on the boundary of several mesh 2 cells<a name='475'></font>
+                <font color=#447700>! the result will be written multiple times with the same value<a name='476'></font>
+                <font color=#447700>! up to a rounding error<a name='477'></font>
+                tx = (i1-rio)*rx<a name='478'>
+                <font color=#447700>!print *,'coarse ',i2,j2,'to',i2+1,j2+1,' fine ',is,js,' to ',ie,je<a name='479'></font>
+                v1(i1,j1)=                     &amp;<a name='480'>
+                      (1-tx)*(1-ty)*v2(i2,j2)  &amp;<a name='481'>
+                 +    (1-tx)*ty  *v2(i2,j2+1)  &amp;<a name='482'>
+                 +      tx*(1-ty)*v2(i2+1,j2)  &amp;<a name='483'>
+                 +        tx*ty  *v2(i2+1,j2+1)  <a name='484'>
+                <font color=#447700>!print *,'coarse ',i2,j2,' fine ',i1,j1, ' offset ',io,jo,' weights ',tx,ty, &amp;<a name='485'></font>
+                <font color=#447700>! 'in ',v2(i2,j2),v2(i2,j2+1),v2(i2+1,j2),v2(i2+1,j2+1),' out ',v1(i1,j1)<a name='486'></font>
+                <font color=#447700>!write(*,'(a,2i5,a,2f8.2,a,4f8.2,a,2i5,a,f8.2)') &amp;<a name='487'></font>
+                <font color=#447700>!'coarse ',i2,j2,' coord',rio,rjo,' val',v2(i2,j2),v2(i2,j2+1),v2(i2+1,j2),v2(i2+1,j2+1),&amp;<a name='488'></font>
+                <font color=#447700>!' fine ',i1,j1,' out ',v1(i1,j1)<a name='489'></font>
+           enddo<a name='490'>
+       enddo<a name='491'>
+    enddo<a name='492'>
+enddo<a name='493'>
+<a name='494'>
+end subroutine interpolate_2d<a name='495'>
+<a name='496'>
+<font color=#447700>!<a name='497'></font>
+<font color=#447700>!****************<a name='498'></font>
+<font color=#447700>!<a name='499'></font>
+<a name='500'>
+<A NAME='INTERPOLATE_2D_CELLS2CELLS'><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2CELLS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='501'>
+<font color=#993300>subroutine </font><font color=#cc0000>interpolate_2d_cells2cells</font>(              &amp;,<A href='../../call_from/INTERPOLATE_2D_CELLS2CELLS.html' TARGET='index'>8</A><a name='502'>
+      ids2,ide2,jds2,jde2,ims2,ime2,jms2,jme2,v2, &amp;  <font color=#447700>! in  <a name='503'></font>
+      ids1,ide1,jds1,jde1,ims1,ime1,jms1,jme1,v1  )  <font color=#447700>! out<a name='504'></font>
+implicit none<a name='505'>
+<a name='506'>
+<font color=#447700>!*** purpose<a name='507'></font>
+<font color=#447700>! interpolate nodal values in mesh2 to nodal values in mesh1<a name='508'></font>
+<font color=#447700>! input mesh 2 is coarse output mesh 1 is fine<a name='509'></font>
+<a name='510'>
+<font color=#447700>!*** arguments<a name='511'></font>
+<a name='512'>
+integer, intent(in)::ids1,ide1,jds1,jde1,ims1,ime1,jms1,jme1<a name='513'>
+real, intent(out)::v1(ims1:ime1,jms1:jme1)<a name='514'>
+integer, intent(in)::ids2,ide2,jds2,jde2,ims2,ime2,jms2,jme2<a name='515'>
+real, intent(in)::v2(ims2:ime2,jms2:jme2)<a name='516'>
+<a name='517'>
+<font color=#447700>! Example with mesh ratio=4. | = cell boundary,  x = cell center<a name='518'></font>
+<font color=#447700>!<a name='519'></font>
+<font color=#447700>!  mesh2   |-------x-------|-------x-------|<a name='520'></font>
+<font color=#447700>!  mesh1   |-x-|-x-|-x-|-x-|-x-|-x-|-x-|-x-| <a name='521'></font>
+<font color=#447700>!<a name='522'></font>
+<a name='523'>
+<font color=#447700>!*** local<a name='524'></font>
+integer:: ir,jr,isz1,isz2,jsz1,jsz2,ip,jp,ih,jh<a name='525'>
+character(len=128)msg<a name='526'>
+<a name='527'>
+<font color=#447700>!*** executable<a name='528'></font>
+<a name='529'>
+<font color=#447700>!check mesh dimensions and domain dimensions<a name='530'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_19">(ids1,ide1,jds1,jde1,ims1,ime1,jms1,jme1)<a name='531'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_20">(ids2,ide2,jds2,jde2,ims2,ime2,jms2,jme2)<a name='532'>
+<a name='533'>
+<font color=#447700>! compute mesh sizes<a name='534'></font>
+isz1 = ide1-ids1+1<a name='535'>
+jsz1 = jde1-jds1+1<a name='536'>
+isz2 = ide2-ids2+1<a name='537'>
+jsz2 = jde2-jds2+1<a name='538'>
+<a name='539'>
+<font color=#447700>! check mesh sizes<a name='540'></font>
+if(isz1.le.0.or.jsz1.le.0.or.isz2.le.0.or.jsz2.le.0)goto 9<a name='541'>
+if(mod(isz1,isz2).ne.0.or.mod(jsz1,jsz2).ne.0)goto 9<a name='542'>
+<a name='543'>
+<font color=#447700>! compute mesh ratios<a name='544'></font>
+ir=isz1/isz2<a name='545'>
+jr=jsz1/jsz2<a name='546'>
+<font color=#447700>!<a name='547'></font>
+<font color=#447700>!  mesh2   |-------x-------|-------x-------|<a name='548'></font>
+<font color=#447700>!  mesh1   |-x-|-x-|-x-|-x-|-x-|-x-|-x-|-x-| <a name='549'></font>
+<a name='550'>
+<font color=#447700>!  mesh2   |-----x-----|-----x-----|  rx=3<a name='551'></font>
+<font color=#447700>!  mesh1   |-x-|-x-|-x-|-x-|-x-|-x-| <a name='552'></font>
+<font color=#447700>!  i2            1   1   1   2<a name='553'></font>
+<font color=#447700>!  i1        1   2   3   4   5<a name='554'></font>
+<font color=#447700>!  ioff          0   1   2   0<a name='555'></font>
+<font color=#447700>!  tx            0  1/3 2/3<a name='556'></font>
+<a name='557'>
+<font color=#447700>!  mesh2   |---x---|---x---| rx=2<a name='558'></font>
+<font color=#447700>!  mesh1   |-x-|-x-|-x-|-x-| <a name='559'></font>
+<font color=#447700>!  i2            1   1   2  <a name='560'></font>
+<font color=#447700>!  i1            2   3   4<a name='561'></font>
+<font color=#447700>!  ioff          0   1   2   <a name='562'></font>
+<font color=#447700>!  tx           1/4 3/4<a name='563'></font>
+<a name='564'>
+<a name='565'>
+<font color=#447700>! offset of the last node in the 1st half of the cell<a name='566'></font>
+ih=ir/2<a name='567'>
+jh=jr/2<a name='568'>
+<font color=#447700>! 0 if coarse cell center coincides with fine, 1 if not<a name='569'></font>
+ip=mod(ir+1,2)<a name='570'>
+jp=mod(jr+1,2)<a name='571'>
+<a name='572'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_W'>interpolate_2d_w</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERPOLATE_2D_W_1">(ip,jp,ih,jh,ir,jr,              &amp;<a name='573'>
+      ids2,ide2,jds2,jde2,ims2,ime2,jms2,jme2,v2, &amp;  <font color=#447700>! in  <a name='574'></font>
+      ids1,ide1,jds1,jde1,ims1,ime1,jms1,jme1,v1  )  <font color=#447700>! out<a name='575'></font>
+<a name='576'>
+return<a name='577'>
+<a name='578'>
+9 continue<a name='579'>
+<font color=#447700>!$OMP CRITICAL(FIRE_UTIL_CRIT)<a name='580'></font>
+write(msg,91)ids2,ide2,jds2,jde2,ims2,ime2,jms2,jme2<a name='581'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_114">(msg)<a name='582'>
+write(msg,91)ids1,ide1,jds1,jde1,ims1,ime1,jms1,jme1<a name='583'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_115">(msg)<a name='584'>
+write(msg,92)'input  mesh size:',isz2,jsz2<a name='585'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_116">(msg)<a name='586'>
+91 format('dimensions: ',8i8)<a name='587'>
+write(msg,92)'output mesh size:',isz1,jsz1<a name='588'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_117">(msg)<a name='589'>
+92 format(a,2i8)<a name='590'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2CELLS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_27">("module_fr_fire_util:interpolate_2dmesh_cells: bad mesh sizes")<a name='591'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_UTIL_CRIT)<a name='592'></font>
+end subroutine interpolate_2d_cells2cells<a name='593'>
+<a name='594'>
+<font color=#447700>!<a name='595'></font>
+<font color=#447700>!****************<a name='596'></font>
+<font color=#447700>!<a name='597'></font>
+<a name='598'>
+<A NAME='INTERPOLATE_2D_CELLS2NODES'><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2NODES' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='599'>
+<font color=#993300>subroutine </font><font color=#cc0000>interpolate_2d_cells2nodes</font>(              &amp;,<A href='../../call_from/INTERPOLATE_2D_CELLS2NODES.html' TARGET='index'>8</A><a name='600'>
+      ids2,ide2,jds2,jde2,ims2,ime2,jms2,jme2,v2, &amp;  <font color=#447700>! in  <a name='601'></font>
+      ids1,ide1,jds1,jde1,ims1,ime1,jms1,jme1,v1  )  <font color=#447700>! out<a name='602'></font>
+implicit none<a name='603'>
+<a name='604'>
+<font color=#447700>!*** purpose<a name='605'></font>
+<font color=#447700>! interpolate nodal values in mesh2 to nodal values in mesh1<a name='606'></font>
+<font color=#447700>! input mesh 2 is coarse output mesh 1 is fine<a name='607'></font>
+<a name='608'>
+<font color=#447700>!*** arguments<a name='609'></font>
+<a name='610'>
+integer, intent(in)::ids1,ide1,jds1,jde1,ims1,ime1,jms1,jme1<a name='611'>
+real, intent(out)::v1(ims1:ime1,jms1:jme1)<a name='612'>
+integer, intent(in)::ids2,ide2,jds2,jde2,ims2,ime2,jms2,jme2<a name='613'>
+real, intent(in)::v2(ims2:ime2,jms2:jme2)<a name='614'>
+<a name='615'>
+<font color=#447700>! Example with mesh ratio=4. | = cell boundary,  x = cell center<a name='616'></font>
+<font color=#447700>!<a name='617'></font>
+<font color=#447700>!  mesh2   |-------x-------|-------x-------|<a name='618'></font>
+<font color=#447700>!  mesh1   x-|-x-|-x-|-x-|-x-|-x-|-x-|-x-|-x <a name='619'></font>
+<font color=#447700>!<a name='620'></font>
+<a name='621'>
+<font color=#447700>!*** local<a name='622'></font>
+integer:: ir,jr,isz1,isz2,jsz1,jsz2,ip,jp,ih,jh<a name='623'>
+character(len=128)msg<a name='624'>
+<a name='625'>
+<font color=#447700>!*** executable<a name='626'></font>
+<a name='627'>
+<font color=#447700>!check mesh dimensions and domain dimensions<a name='628'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2NODES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_21">(ids1,ide1+1,jds1,jde1+1,ims1,ime1,jms1,jme1)<a name='629'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2NODES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_22">(ids2,ide2,jds2,jde2,ims2,ime2,jms2,jme2)<a name='630'>
+<a name='631'>
+<font color=#447700>! compute mesh sizes<a name='632'></font>
+isz1 = ide1-ids1+1<a name='633'>
+jsz1 = jde1-jds1+1<a name='634'>
+isz2 = ide2-ids2+1<a name='635'>
+jsz2 = jde2-jds2+1<a name='636'>
+<a name='637'>
+<font color=#447700>! check mesh sizes<a name='638'></font>
+if(isz1.le.0.or.jsz1.le.0.or.isz2.le.0.or.jsz2.le.0)goto 9<a name='639'>
+if(mod(isz1,isz2).ne.0.or.mod(jsz1,jsz2).ne.0)goto 9<a name='640'>
+<a name='641'>
+<font color=#447700>! compute mesh ratios<a name='642'></font>
+ir=isz1/isz2<a name='643'>
+jr=jsz1/jsz2<a name='644'>
+<font color=#447700>!<a name='645'></font>
+<font color=#447700>!  mesh2   |-------x-------|-------x-------|<a name='646'></font>
+<font color=#447700>!  mesh1   x-|-x-|-x-|-x-|-x-|-x-|-x-|-x-|-x <a name='647'></font>
+<a name='648'>
+<font color=#447700>!  mesh2   |-----x-----|-----x-----|  rx=3<a name='649'></font>
+<font color=#447700>!  mesh1   x-|-x-|-x-|-x-|-x-|-x-|-x <a name='650'></font>
+<a name='651'>
+<font color=#447700>!  mesh2   |---x---|---x---| rx=2<a name='652'></font>
+<font color=#447700>!  mesh1   x-|-x-|-x-|-x-|-x <a name='653'></font>
+<a name='654'>
+<font color=#447700>! offset of the last node in the 1st half of the cell<a name='655'></font>
+ih=(ir+1)/2<a name='656'>
+jh=(jr+1)/2<a name='657'>
+<font color=#447700>! 0 if coarse cell center coincides with fine, 1 if not<a name='658'></font>
+ip=mod(ir,2)<a name='659'>
+jp=mod(jr,2)<a name='660'>
+<a name='661'>
+<a name='662'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_W'>interpolate_2d_w</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2NODES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INTERPOLATE_2D_W_2">(ip,jp,ih,jh,ir,jr,              &amp;<a name='663'>
+      ids2,ide2,jds2,jde2,ims2,ime2,jms2,jme2,v2, &amp;  <font color=#447700>! in  <a name='664'></font>
+      ids1,ide1+1,jds1,jde1+1,ims1,ime1,jms1,jme1,v1  )  <font color=#447700>! out<a name='665'></font>
+<a name='666'>
+<a name='667'>
+return<a name='668'>
+9 continue<a name='669'>
+<font color=#447700>!$OMP CRITICAL(FIRE_UTIL_CRIT)<a name='670'></font>
+write(msg,91)ids2,ide2,jds2,jde2,ims2,ime2,jms2,jme2<a name='671'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2NODES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_118">(msg)<a name='672'>
+write(msg,91)ids1,ide1,jds1,jde1,ims1,ime1,jms1,jme1<a name='673'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2NODES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_119">(msg)<a name='674'>
+write(msg,92)'input  mesh size:',isz2,jsz2<a name='675'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2NODES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_120">(msg)<a name='676'>
+91 format('dimensions: ',8i8)<a name='677'>
+write(msg,92)'output mesh size:',isz1,jsz1<a name='678'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2NODES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_121">(msg)<a name='679'>
+92 format(a,2i8)<a name='680'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_CELLS2NODES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_28">("module_fr_fire_util:interpolate_2d_cells2nodes: bad mesh sizes")<a name='681'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_UTIL_CRIT)<a name='682'></font>
+end subroutine interpolate_2d_cells2nodes<a name='683'>
+<font color=#447700>!<a name='684'></font>
+<font color=#447700>!****************<a name='685'></font>
+<font color=#447700>!<a name='686'></font>
+<a name='687'>
+<A NAME='INTERPOLATE_2D_W'><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERPOLATE_2D_W' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='688'>
+<font color=#993300>subroutine </font><font color=#cc0000>interpolate_2d_w</font>(ip,jp,ih,jh,ir,jr,             &amp; <A href='../../call_to/INTERPOLATE_2D_W.html' TARGET='index'>2</A><a name='689'>
+      ids2,ide2,jds2,jde2,ims2,ime2,jms2,jme2,v2, &amp;  <font color=#447700>! in  <a name='690'></font>
+      ids1,ide1,jds1,jde1,ims1,ime1,jms1,jme1,v1  )  <font color=#447700>! out<a name='691'></font>
+implicit none<a name='692'>
+<font color=#447700>!*** EXCEPTION: THIS SUBROUTINE IS NEITHER CELL NOR NODE BASED.<a name='693'></font>
+<a name='694'>
+integer, intent(in)::ip,jp,ih,jh,ir,jr<a name='695'>
+integer, intent(in)::ids1,ide1,jds1,jde1,ims1,ime1,jms1,jme1<a name='696'>
+real, intent(out)::v1(ims1:ime1,jms1:jme1)<a name='697'>
+integer, intent(in)::ids2,ide2,jds2,jde2,ims2,ime2,jms2,jme2<a name='698'>
+real, intent(in)::v2(ims2:ime2,jms2:jme2)<a name='699'>
+<a name='700'>
+real:: tx,ty,rx,ry,half,xoff,yoff<a name='701'>
+integer:: i1,i2,j1,j2,ioff,joff<a name='702'>
+parameter(half=0.5)<a name='703'>
+<a name='704'>
+rx=ir<a name='705'>
+ry=jr<a name='706'>
+<a name='707'>
+xoff = ip*half<a name='708'>
+yoff = jp*half<a name='709'>
+<a name='710'>
+<font color=#447700>! the inside, ids1+ih:ide1-ih,jds1+jh:jde1-jh <a name='711'></font>
+do j2=jds2,jde2-1     <font color=#447700>! interpolate from nodes j2 and j2+1<a name='712'></font>
+    do i2=ids2,ide2-1<a name='713'>
+        do ioff=0,ir-ip<a name='714'>
+            do joff=0,jr-jp<a name='715'>
+                <font color=#447700>! compute fine mesh index<a name='716'></font>
+                i1=ioff+(ih+ids1)+ir*(i2-ids2)<a name='717'>
+                j1=joff+(jh+jds1)+jr*(j2-jds2)<a name='718'>
+                <font color=#447700>! weights<a name='719'></font>
+                tx = (ioff+xoff)/rx<a name='720'>
+                ty = (joff+yoff)/ry<a name='721'>
+                <font color=#447700>! interpolation<a name='722'></font>
+                v1(i1,j1)=                     &amp;<a name='723'>
+                      (1-tx)*(1-ty)*v2(i2,j2)  &amp;<a name='724'>
+                 +    (1-tx)*ty  *v2(i2,j2+1)  &amp;<a name='725'>
+                 +      tx*(1-ty)*v2(i2+1,j2)  &amp;<a name='726'>
+                 +        tx*ty  *v2(i2+1,j2+1)  <a name='727'>
+                <font color=#447700>!write(*,'(3(a,2i5),a,2f7.4)')'coarse ',i2,j2,' fine ',i1,j1, &amp;<a name='728'></font>
+                <font color=#447700>! ' offset ',ioff,joff,' weights ',tx,ty<a name='729'></font>
+                <font color=#447700>!write(*,'(a,4f7.4,a,f7.4)')'in ',v2(i2,j2),v2(i2,j2+1),v2(i2+1,j2), &amp;<a name='730'></font>
+                <font color=#447700>!  v2(i2+1,j2+1),' out ',v1(i1,j1)<a name='731'></font>
+           enddo<a name='732'>
+       enddo<a name='733'>
+    enddo<a name='734'>
+enddo<a name='735'>
+<a name='736'>
+<font color=#447700>! extend to the boundary strips from the nearest known<a name='737'></font>
+do ioff=0,ih-1  <font color=#447700>! top and bottom strips<a name='738'></font>
+    do j2=jds2,jde2-1<a name='739'>
+        do joff=0,jr-jp<a name='740'>
+           j1=joff+(jh+jds1)+jr*(j2-jds2)<a name='741'>
+           <font color=#447700>! weights<a name='742'></font>
+           ty = (joff+yoff)/ry<a name='743'>
+           <font color=#447700>! interpolation<a name='744'></font>
+           v1(ids1+ioff,j1)=(1-ty)*v2(ids2,j2)+ty*v2(ids2,j2+1)<a name='745'>
+           v1(ide1-ioff,j1)=(1-ty)*v2(ide2,j2)+ty*v2(ide2,j2+1)<a name='746'>
+       enddo<a name='747'>
+    enddo<a name='748'>
+enddo<a name='749'>
+do joff=0,jh-1  <font color=#447700>! left and right strips<a name='750'></font>
+    do i2=ids2,ide2-1<a name='751'>
+        do ioff=0,ir-ip<a name='752'>
+           i1=ioff+(ih+ids1)+ir*(i2-ids2)<a name='753'>
+           <font color=#447700>! weights<a name='754'></font>
+           tx = (ioff+xoff)/rx<a name='755'>
+           <font color=#447700>! interpolation<a name='756'></font>
+           v1(i1,jds1+joff)=(1-tx)*v2(i2,jds2)+tx*v2(i2+1,jds2)<a name='757'>
+           v1(i1,jde1-joff)=(1-tx)*v2(i2,jde2)+tx*v2(i2+1,jde2)<a name='758'>
+       enddo<a name='759'>
+    enddo<a name='760'>
+enddo<a name='761'>
+<font color=#447700>! extend to the 4 corner squares from the nearest known<a name='762'></font>
+do ioff=0,ih-1  <a name='763'>
+    do joff=0,jh-1<a name='764'>
+        v1(ids1+ioff,jds1+joff)=v2(ids2,jds2)<a name='765'>
+        v1(ide1-ioff,jds1+joff)=v2(ide2,jds2)<a name='766'>
+        v1(ids1+ioff,jde1-joff)=v2(ids2,jde2)<a name='767'>
+        v1(ide1-ioff,jde1-joff)=v2(ide2,jde2)<a name='768'>
+    enddo<a name='769'>
+enddo         <a name='770'>
+end subroutine interpolate_2d_w  <a name='771'>
+<a name='772'>
+<font color=#447700>!<a name='773'></font>
+<font color=#447700>!****************<a name='774'></font>
+<font color=#447700>!<a name='775'></font>
+                <a name='776'>
+<A NAME='INTERP'><A href='../../html_code/phys/module_fr_fire_util.F.html#INTERP' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='777'>
+real <font color=#993300>function </font><font color=#cc0000>interp</font>(ids,ide,jds,jde,ims,ime,jms,jme,x,y,v) <A href='../../call_to/INTERP.html' TARGET='index'>9</A><a name='778'>
+implicit none<a name='779'>
+<font color=#447700>!*** purpose<a name='780'></font>
+<font color=#447700>! general interpolation in a rectangular<a name='781'></font>
+<a name='782'>
+<font color=#447700>!*** arguments<a name='783'></font>
+<a name='784'>
+integer, intent(in)::ids,ide,jds,jde,ims,ime,jms,jme<a name='785'>
+real, intent(in)::x,y,v(ims:ime,jms:jme)<a name='786'>
+<font color=#447700>! the mesh is cell based so the used dimension of v is ids:ide+1,jds:jde+1<a name='787'></font>
+<a name='788'>
+<font color=#447700>!*** calls<a name='789'></font>
+intrinsic floor,min,max<a name='790'>
+<a name='791'>
+<font color=#447700>!*** local<a name='792'></font>
+integer i,j<a name='793'>
+real tx,ty<a name='794'>
+<a name='795'>
+<font color=#447700>! executable<a name='796'></font>
+<a name='797'>
+<font color=#447700>! indices of the lower left corner of the cell in the mesh that contains (x,y)<a name='798'></font>
+i = floor(x)<a name='799'>
+i=max(min(i,ide),ids)<a name='800'>
+j = floor(y)<a name='801'>
+j=max(min(j,jde),jds)<a name='802'>
+<a name='803'>
+<font color=#447700>! the leftover<a name='804'></font>
+tx = x - real(i)<a name='805'>
+ty = y - real(j)<a name='806'>
+<a name='807'>
+<font color=#447700>! interpolate the values<a name='808'></font>
+interp = &amp;<a name='809'>
+                    (1-tx)*(1-ty)*v(i,j)    &amp;<a name='810'>
+                 +    tx*(1-ty)  *v(i+1,j)  &amp;<a name='811'>
+                 +    (1-tx)*ty  *v(i,j+1)  &amp;<a name='812'>
+                 +        tx*ty  *v(i+1,j+1)  <a name='813'>
+<a name='814'>
+<font color=#447700>!print *,'x,y=',x,y,'i1,i2=',i1,j1,'tx,ty=',tx,ty,' interp=',interp<a name='815'></font>
+end function interp<a name='816'>
+<a name='817'>
+<A NAME='MESHDIFFC_2D'><A href='../../html_code/phys/module_fr_fire_util.F.html#MESHDIFFC_2D' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='818'>
+<font color=#993300>subroutine </font><font color=#cc0000>meshdiffc_2d</font>(ids, ide, jds,jde , &amp;    <font color=#447700>! mesh area used (in cells, end +1),<A href='../../call_from/MESHDIFFC_2D.html' TARGET='index'>1</A><a name='819'></font>
+                   ims1,ime1,jms1,jme1, &amp;       <font color=#447700>! memory dimensiuons <a name='820'></font>
+                   dx,dy,               &amp;       <font color=#447700>! mesh spacing<a name='821'></font>
+                   lfn,                 &amp;       <font color=#447700>! input<a name='822'></font>
+                   diffCx,diffCy) <font color=#447700>! output<a name='823'></font>
+implicit none<a name='824'>
+<a name='825'>
+<font color=#447700>!*** purpose<a name='826'></font>
+<font color=#447700>! central differences on a 2d mesh<a name='827'></font>
+<a name='828'>
+<font color=#447700>!*** arguments<a name='829'></font>
+<a name='830'>
+integer, intent(in)::ids,ide,jds,jde,ims1,ime1,jms1,jme1<a name='831'>
+real, intent(in):: dx,dy<a name='832'>
+real, intent(in), dimension(ims1:ime1,jms1:jme1):: lfn<a name='833'>
+real, intent(out), dimension(ims1:ime1,jms1:jme1):: diffCx,diffCy<a name='834'>
+<a name='835'>
+<font color=#447700>!*** local<a name='836'></font>
+integer:: i,j<a name='837'>
+real, dimension(ims1:ime1,jms1:jme1):: diffLx,diffRx,diffLy,diffRy<a name='838'>
+<a name='839'>
+<font color=#447700>! get one-sided differences; dumb but had that already...<a name='840'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESHDIFF_2D'>meshdiff_2d</A><A href='../../html_code/phys/module_fr_fire_util.F.html#MESHDIFFC_2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESHDIFF_2D_1">(ids, ide, jds,jde , &amp;    <font color=#447700>! mesh area used (in cells, end +1)<a name='841'></font>
+                   ims1,ime1,jms1,jme1, &amp;       <font color=#447700>! dimensions of lfn <a name='842'></font>
+                   dx,dy,               &amp;       <font color=#447700>! mesh spacing<a name='843'></font>
+                   lfn,                 &amp;       <font color=#447700>! input<a name='844'></font>
+                   diffLx,diffRx,diffLy,diffRy) <font color=#447700>! output<a name='845'></font>
+<a name='846'>
+<font color=#447700>! make into central<a name='847'></font>
+do j=jds,jde+1<a name='848'>
+    do i=ids,ide+1<a name='849'>
+        diffCx(i,j)=0.5*(diffLx(i,j) + diffRx(i,j))<a name='850'>
+        diffCy(i,j)=0.5*(diffLy(i,j) + diffRy(i,j))<a name='851'>
+    enddo<a name='852'>
+enddo<a name='853'>
+end subroutine meshdiffc_2d <a name='854'>
+<a name='855'>
+<A NAME='MESHDIFF_2D'><A href='../../html_code/phys/module_fr_fire_util.F.html#MESHDIFF_2D' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='856'>
+<font color=#993300>subroutine </font><font color=#cc0000>meshdiff_2d</font>(ids, ide, jds,jde , &amp;    <font color=#447700>! mesh area used (in cells, end +1) <A href='../../call_to/MESHDIFF_2D.html' TARGET='index'>1</A>,<A href='../../call_from/MESHDIFF_2D.html' TARGET='index'>1</A><a name='857'></font>
+                   ims1,ime1,jms1,jme1, &amp;       <font color=#447700>! dimensions of lfn <a name='858'></font>
+                   dx,dy,               &amp;       <font color=#447700>! mesh spacing<a name='859'></font>
+                   lfn,                 &amp;       <font color=#447700>! input<a name='860'></font>
+                   diffLx,diffRx,diffLy,diffRy) <font color=#447700>! output<a name='861'></font>
+implicit none<a name='862'>
+<a name='863'>
+<font color=#447700>!*** purpose<a name='864'></font>
+<font color=#447700>! one-sided differences on a 2d mesh<a name='865'></font>
+<a name='866'>
+<font color=#447700>!*** arguments<a name='867'></font>
+<a name='868'>
+integer, intent(in)::ids,ide,jds,jde,ims1,ime1,jms1,jme1<a name='869'>
+real, intent(in):: dx,dy<a name='870'>
+real, intent(in), dimension(ims1:ime1,jms1:jme1):: lfn<a name='871'>
+real, intent(out), dimension(ims1:ime1,jms1:jme1):: diffLx,diffRx,diffLy,diffRy<a name='872'>
+<a name='873'>
+<font color=#447700>!*** local<a name='874'></font>
+integer:: i,j<a name='875'>
+real:: tmpx,tmpy<a name='876'>
+<a name='877'>
+<font color=#447700>!*** executable<a name='878'></font>
+<a name='879'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_util.F.html#MESHDIFF_2D' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_23">(ids,ide+1,jds,jde+1,ims1,ime1,jms1,jme1)<a name='880'>
+  <a name='881'>
+    <font color=#447700>! the bulk of the work<a name='882'></font>
+    do j=jds,jde<a name='883'>
+        do i=ids,ide<a name='884'>
+            tmpx = (lfn(i+1,j)-lfn(i,j))/dx<a name='885'>
+            diffLx(i+1,j) = tmpx<a name='886'>
+            diffRx(i,j)   = tmpx<a name='887'>
+            tmpy = (lfn(i,j+1)-lfn(i,j))/dy<a name='888'>
+            diffLy(i,j+1) = tmpy<a name='889'>
+            diffRy(i,j)   = tmpy<a name='890'>
+        enddo<a name='891'>
+        <font color=#447700>! missing values - put there the other one<a name='892'></font>
+        diffLx(ids,j)  = diffLx(ids+1,j)<a name='893'>
+        diffRx(ide+1,j)= diffRx(ide,j)<a name='894'>
+    enddo<a name='895'>
+    <font color=#447700>! cleanup<a name='896'></font>
+    <font color=#447700>! j=jde+1 from above loop<a name='897'></font>
+    do i=ids,ide<a name='898'>
+        tmpx = (lfn(i+1,j)-lfn(i,j))/dx<a name='899'>
+        diffLx(i+1,j) = tmpx<a name='900'>
+        diffRx(i,j)   = tmpx<a name='901'>
+    enddo<a name='902'>
+    <font color=#447700>! i=ide+1 from above loop<a name='903'></font>
+    do j=jds,jde<a name='904'>
+        tmpy = (lfn(i,j+1)-lfn(i,j))/dy<a name='905'>
+        diffLy(i,j+1) = tmpy<a name='906'>
+        diffRy(i,j)   = tmpy<a name='907'>
+    enddo<a name='908'>
+    <font color=#447700>! missing values - put there the other one<a name='909'></font>
+    <font color=#447700>! j=jde+1 from above loop, j=jds:jde done before in main bulk loop<a name='910'></font>
+    diffLx(ids,j)   = diffLx(ids+1,j)<a name='911'>
+    diffRx(ide+1,j) = diffRx(ide,j)<a name='912'>
+    do i=ids,ide+1<a name='913'>
+        diffLy(i,jds)   = diffLy(i,jds+1)<a name='914'>
+        diffRy(i,jde+1) = diffRy(i,jde)<a name='915'>
+    enddo    <a name='916'>
+<a name='917'>
+end subroutine meshdiff_2d<a name='918'>
+<a name='919'>
+<a name='920'>
+<a name='921'>
+<a name='922'>
+<A NAME='SUM_2DARRAY'><A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2DARRAY' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='923'>
+real pure <font color=#993300>function </font><font color=#cc0000>sum_2darray</font>( its,ite,jts,jte,               &amp; <A href='../../call_to/SUM_2DARRAY.html' TARGET='index'>1</A><a name='924'>
+                                ims,ime,jms,jme,               &amp;<a name='925'>
+                                a)<a name='926'>
+integer, intent(in)::its,ite,jts,jte,ims,ime,jms,jme<a name='927'>
+real, intent(in)::a(ims:ime,jms:jme)<a name='928'>
+<font color=#447700>!*** local<a name='929'></font>
+integer:: i,j<a name='930'>
+real:: t<a name='931'>
+t=0.<a name='932'>
+do j=jts,jte<a name='933'>
+    do i=its,ite<a name='934'>
+        t=t+a(i,j)<a name='935'>
+    enddo<a name='936'>
+enddo<a name='937'>
+sum_2darray = t<a name='938'>
+end function sum_2darray<a name='939'>
+<a name='940'>
+<A NAME='MAX_2DARRAY'><A href='../../html_code/phys/module_fr_fire_util.F.html#MAX_2DARRAY' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='941'>
+real pure <font color=#993300>function </font><font color=#cc0000>max_2darray</font>( its,ite,jts,jte,               &amp;<a name='942'>
+                                ims,ime,jms,jme,               &amp;<a name='943'>
+                                a)<a name='944'>
+integer, intent(in)::its,ite,jts,jte,ims,ime,jms,jme<a name='945'>
+real, intent(in)::a(ims:ime,jms:jme)<a name='946'>
+<font color=#447700>!*** local<a name='947'></font>
+integer:: i,j<a name='948'>
+real:: t<a name='949'>
+t=0.<a name='950'>
+do j=jts,jte<a name='951'>
+    do i=its,ite<a name='952'>
+        t=max(t,a(i,j))<a name='953'>
+    enddo<a name='954'>
+enddo<a name='955'>
+max_2darray = t<a name='956'>
+end function max_2darray<a name='957'>
+<a name='958'>
+<A NAME='PRINT_2D_STATS_VEC'><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS_VEC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='959'>
+<font color=#993300>subroutine </font><font color=#cc0000>print_2d_stats_vec</font>(ips,ipe,jps,jpe, &amp; <A href='../../call_to/PRINT_2D_STATS_VEC.html' TARGET='index'>1</A>,<A href='../../call_from/PRINT_2D_STATS_VEC.html' TARGET='index'>3</A><a name='960'>
+                         ims,ime,jms,jme, &amp;<a name='961'>
+                         ax,ay,name)<a name='962'>
+implicit none<a name='963'>
+integer, intent(in)::ips,ipe,jps,jpe,ims,ime,jms,jme<a name='964'>
+real, intent(in), dimension(ims:ime,jms:jme)::ax,ay<a name='965'>
+character(len=*),intent(in)::name<a name='966'>
+integer:: i,j<a name='967'>
+real:: t <a name='968'>
+real:: avg_a,max_a,min_a <a name='969'>
+character(len=25)::id<a name='970'>
+id=name<a name='971'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS_VEC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_23">(ips,ipe,jps,jpe, &amp;<a name='972'>
+                         ims,ime,jms,jme, &amp;<a name='973'>
+                         ax,id//'/x ')<a name='974'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS_VEC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_24">(ips,ipe,jps,jpe, &amp;<a name='975'>
+                         ims,ime,jms,jme, &amp;<a name='976'>
+                         ay,id//'/y ')<a name='977'>
+avg_a=0<a name='978'>
+max_a=-huge(max_a)<a name='979'>
+min_a= huge(min_a)<a name='980'>
+do j=jps,jpe<a name='981'>
+    do i=ips,ipe<a name='982'>
+        t=sqrt(ax(i,j)**2+ay(i,j)**2)<a name='983'>
+        max_a=max(max_a,t)<a name='984'>
+        min_a=min(min_a,t)<a name='985'>
+        avg_a=avg_a+t<a name='986'>
+    enddo<a name='987'>
+enddo<a name='988'>
+avg_a = avg_a/((ipe-ips+1)*(jpe-jps+1))<a name='989'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_STAT_LINE'>print_stat_line</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS_VEC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_STAT_LINE_3">(id//'/sz',ips,ipe,jps,jpe,min_a,max_a,avg_a)<a name='990'>
+end subroutine print_2d_stats_vec<a name='991'>
+<a name='992'>
+<a name='993'>
+<A NAME='PRINT_STAT_LINE'><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_STAT_LINE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='994'>
+<font color=#993300>subroutine </font><font color=#cc0000>print_stat_line</font>(name,ips,ipe,jps,jpe,min_a,max_a,avg_a) <A href='../../call_to/PRINT_STAT_LINE.html' TARGET='index'>5</A>,<A href='../../call_from/PRINT_STAT_LINE.html' TARGET='index'>2</A><a name='995'>
+<font color=#447700>!*** encapsulate line with statistics<a name='996'></font>
+implicit none<a name='997'>
+<font color=#447700>!*** arguments<a name='998'></font>
+integer, intent(in)::ips,ipe,jps,jpe<a name='999'>
+character(len=*),intent(in)::name<a name='1000'>
+real,intent(in)::min_a,max_a,avg_a<a name='1001'>
+<font color=#447700>!*** local<a name='1002'></font>
+character(len=128)::msg<a name='1003'>
+character(len=24)::id<a name='1004'>
+if(fire_print_msg.eq.0)return<a name='1005'>
+id=name<a name='1006'>
+<font color=#447700>!$OMP CRITICAL(FIRE_UTIL_CRIT)<a name='1007'></font>
+write(msg,'(a,4i4,3g11.3)')id,ips,ipe,jps,jpe,min_a,max_a,avg_a<a name='1008'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_UTIL_CRIT)<a name='1009'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_STAT_LINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_122">(msg)<a name='1010'>
+if(.not.avg_a.eq.avg_a)call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_STAT_LINE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_29">('NaN detected')<a name='1011'>
+end subroutine print_stat_line<a name='1012'>
+<a name='1013'>
+<a name='1014'>
+<A NAME='PRINT_3D_STATS'><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_3D_STATS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1015'>
+<font color=#993300>subroutine </font><font color=#cc0000>print_3d_stats</font>(ips,ipe,kps,kpe,jps,jpe, &amp; <A href='../../call_to/PRINT_3D_STATS.html' TARGET='index'>7</A>,<A href='../../call_from/PRINT_3D_STATS.html' TARGET='index'>5</A><a name='1016'>
+                         ims,ime,kms,kme,jms,jme, &amp;<a name='1017'>
+                         a,name)<a name='1018'>
+implicit none<a name='1019'>
+integer, intent(in)::ips,ipe,jps,jpe,ims,ime,jms,jme,kms,kme,kps,kpe<a name='1020'>
+real, intent(in)::a(ims:ime,kms:kme,jms:jme)<a name='1021'>
+character(len=*),intent(in)::name<a name='1022'>
+integer:: i,j,k<a name='1023'>
+real:: avg_a,max_a,min_a,t,aa,bb<a name='1024'>
+character(len=128)::msg<a name='1025'>
+<font color=#447700>! if(fire_print_msg.eq.0)return<a name='1026'></font>
+<font color=#447700>! check for nans in any case<a name='1027'></font>
+bb=0.<a name='1028'>
+do j=jps,jpe<a name='1029'>
+  do k=kps,kpe<a name='1030'>
+    do i=ips,ipe<a name='1031'>
+       bb=bb+a(i,k,j)<a name='1032'>
+    enddo<a name='1033'>
+  enddo<a name='1034'>
+enddo<a name='1035'>
+if(bb.eq.bb.and.fire_print_msg.eq.0)return<a name='1036'>
+avg_a=0<a name='1037'>
+max_a=-huge(max_a)<a name='1038'>
+min_a= huge(min_a)<a name='1039'>
+t=huge(t)<a name='1040'>
+do j=jps,jpe<a name='1041'>
+  do k=kps,kpe<a name='1042'>
+    do i=ips,ipe<a name='1043'>
+        aa=a(i,k,j)<a name='1044'>
+        if(aa.ne.aa.or..not.aa.le.t.or..not.aa.ge.-t)goto 9<a name='1045'>
+        max_a=max(max_a,aa)<a name='1046'>
+        min_a=min(min_a,aa)<a name='1047'>
+        avg_a=avg_a+aa<a name='1048'>
+    enddo<a name='1049'>
+  enddo<a name='1050'>
+enddo<a name='1051'>
+if(bb.ne.bb)goto 10 <font color=#447700>! should never happen <a name='1052'></font>
+if(fire_print_msg.eq.0)return<a name='1053'>
+avg_a = avg_a/((ipe-ips+1)*(jpe-jps+1)*(kpe-kps+1))<a name='1054'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_STAT_LINE'>print_stat_line</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_3D_STATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_STAT_LINE_4">(name,ips,ipe,jps,jpe,min_a,max_a,avg_a)<a name='1055'>
+return<a name='1056'>
+9 continue<a name='1057'>
+<font color=#447700>!$OMP CRITICAL(FIRE_UTIL_CRIT)<a name='1058'></font>
+write(msg,1)name,i,k,j,aa<a name='1059'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_3D_STATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_123">(msg)<a name='1060'>
+1 format(a30,'(',i6,',',i6,',',i6,') = ',g13.5)<a name='1061'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_UTIL_CRIT)<a name='1062'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_STAT_LINE'>print_stat_line</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_3D_STATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_STAT_LINE_5">(name,ips,ipe,jps,jpe,aa,aa,aa)<a name='1063'>
+if(aa.ne.aa)goto 10<a name='1064'>
+msg='Invalid floating point number detected in '//name<a name='1065'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_3D_STATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_30">(msg)<a name='1066'>
+10 msg='NaN detected in '//name<a name='1067'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_3D_STATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_31">(msg)<a name='1068'>
+end subroutine print_3d_stats<a name='1069'>
+<a name='1070'>
+<A NAME='PRINT_2D_STATS'><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1071'>
+<font color=#993300>subroutine </font><font color=#cc0000>print_2d_stats</font>(ips,ipe,jps,jpe, &amp; <A href='../../call_to/PRINT_2D_STATS.html' TARGET='index'>24</A>,<A href='../../call_from/PRINT_2D_STATS.html' TARGET='index'>1</A><a name='1072'>
+                         ims,ime,jms,jme, &amp;<a name='1073'>
+                         a,name)<a name='1074'>
+implicit none<a name='1075'>
+integer, intent(in)::ips,ipe,jps,jpe,ims,ime,jms,jme<a name='1076'>
+real, intent(in)::a(ims:ime,jms:jme)<a name='1077'>
+character(len=*),intent(in)::name<a name='1078'>
+<font color=#447700>!!character(len=128)::msg<a name='1079'></font>
+<font color=#447700>!if(fire_print_msg.eq.0)return<a name='1080'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_3D_STATS'>print_3d_stats</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_3D_STATS_7">(ips,ipe,1,1,jps,jpe, &amp;<a name='1081'>
+                         ims,ime,1,1,jms,jme, &amp;<a name='1082'>
+                         a,name)<a name='1083'>
+<font color=#447700>!!write(msg,'(2a,z16)')name,' address =',loc(a)<a name='1084'></font>
+<font color=#447700>!!call message(msg)<a name='1085'></font>
+end subroutine print_2d_stats<a name='1086'>
+<a name='1087'>
+<A NAME='AVG_2DARRAY'><A href='../../html_code/phys/module_fr_fire_util.F.html#AVG_2DARRAY' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1088'>
+real pure <font color=#993300>function </font><font color=#cc0000>avg_2darray</font>( its,ite,jts,jte,               &amp;,<A href='../../call_from/AVG_2DARRAY.html' TARGET='index'>1</A><a name='1089'>
+                                ims,ime,jms,jme,               &amp;<a name='1090'>
+                                a)<a name='1091'>
+integer, intent(in)::its,ite,jts,jte,ims,ime,jms,jme<a name='1092'>
+real, intent(in)::a(ims:ime,jms:jme)<a name='1093'>
+<font color=#447700>!*** local<a name='1094'></font>
+<font color=#447700>!*** executable<a name='1095'></font>
+avg_2darray = <A href='../../html_code/phys/module_fr_fire_util.F.html#SUM_2DARRAY'>sum_2darray</A><A href='../../html_code/phys/module_fr_fire_util.F.html#AVG_2DARRAY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SUM_2DARRAY_1">( its,ite,jts,jte,               &amp;<a name='1096'>
+                           ims,ime,jms,jme,               &amp;<a name='1097'>
+                           a)/((ite-its+1)*(jte-jts+1))<a name='1098'>
+end function avg_2darray<a name='1099'>
+<a name='1100'>
+<A NAME='AVG_2DARRAY_VEC'><A href='../../html_code/phys/module_fr_fire_util.F.html#AVG_2DARRAY_VEC' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1101'>
+real pure <font color=#993300>function </font><font color=#cc0000>avg_2darray_vec</font>( its,ite,jts,jte,           &amp;<a name='1102'>
+                                ims,ime,jms,jme,               &amp;<a name='1103'>
+                                ax,ay)<a name='1104'>
+integer, intent(in)::its,ite,jts,jte,ims,ime,jms,jme<a name='1105'>
+real, intent(in), dimension(ims:ime,jms:jme):: ax,ay<a name='1106'>
+<font color=#447700>!*** local<a name='1107'></font>
+integer:: i,j<a name='1108'>
+real:: t<a name='1109'>
+t=0.<a name='1110'>
+do j=jts,jte<a name='1111'>
+    do i=its,ite<a name='1112'>
+        t=t+sqrt(ax(i,j)**2+ay(i,j)**2)<a name='1113'>
+    enddo<a name='1114'>
+enddo<a name='1115'>
+t = t/((ite-its+1)*(jte-jts+1))<a name='1116'>
+avg_2darray_vec = t<a name='1117'>
+end function avg_2darray_vec<a name='1118'>
+<a name='1119'>
+<a name='1120'>
+<A NAME='PRINT_ARRAY'><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_ARRAY' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1121'>
+<font color=#993300>subroutine </font><font color=#cc0000>print_array</font>(its,ite,jts,jte,           &amp;,<A href='../../call_from/PRINT_ARRAY.html' TARGET='index'>3</A><a name='1122'>
+                         ims,ime,jms,jme,               &amp;<a name='1123'>
+                         a,name,id)<a name='1124'>
+<font color=#447700>! debug<a name='1125'></font>
+<font color=#447700>!*** arguments<a name='1126'></font>
+integer, intent(in)::its,ite,jts,jte,ims,ime,jms,jme,id<a name='1127'>
+real, intent(in), dimension(ims:ime,jms:jme):: a<a name='1128'>
+character(len=*),intent(in)::name<a name='1129'>
+<font color=#447700>!****<a name='1130'></font>
+integer i,j<a name='1131'>
+character(len=128)::msg<a name='1132'>
+<font color=#447700>!****<a name='1133'></font>
+<font color=#447700>!$OMP CRITICAL(FIRE_UTIL_CRIT)<a name='1134'></font>
+write(msg,*)name,' start ',id,' dim ',its,ite,jts,jte<a name='1135'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_ARRAY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_124">(msg)<a name='1136'>
+do j=jts,jte<a name='1137'>
+    do i=its,ite<a name='1138'>
+         write(msg,*)i,j,a(i,j)<a name='1139'>
+         call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_ARRAY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_125">(msg)<a name='1140'>
+    enddo<a name='1141'>
+enddo<a name='1142'>
+write(msg,*)name,' end ',id<a name='1143'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_ARRAY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_126">(msg)<a name='1144'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_UTIL_CRIT)<a name='1145'></font>
+end subroutine print_array<a name='1146'>
+<a name='1147'>
+<A NAME='WRITE_ARRAY_M'><A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1148'>
+<font color=#993300>subroutine </font><font color=#cc0000>write_array_m</font>(its,ite,jts,jte,           &amp; <A href='../../call_to/WRITE_ARRAY_M.html' TARGET='index'>42</A>,<A href='../../call_from/WRITE_ARRAY_M.html' TARGET='index'>1</A><a name='1149'>
+                         ims,ime,jms,jme,               &amp;<a name='1150'>
+                         a,name,id)<a name='1151'>
+<font color=#447700>! debug<a name='1152'></font>
+<font color=#447700>!*** arguments<a name='1153'></font>
+integer, intent(in)::its,ite,jts,jte,ims,ime,jms,jme,id<a name='1154'>
+real, intent(in), dimension(ims:ime,jms:jme):: a<a name='1155'>
+character(len=*),intent(in)::name<a name='1156'>
+<font color=#447700>!****<a name='1157'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3'>write_array_m3</A><A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M3_11">(its,ite,1,1,jts,jte,           &amp;<a name='1158'>
+                         ims,ime,1,1,jms,jme,               &amp;<a name='1159'>
+                         a,name,id)<a name='1160'>
+end subroutine write_array_m<a name='1161'>
+<a name='1162'>
+<a name='1163'>
+<A NAME='WRITE_ARRAY_M3'><A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1164'>
+<font color=#993300>subroutine </font><font color=#cc0000>write_array_m3</font>(its,ite,kts,kte,jts,jte,           &amp; <A href='../../call_to/WRITE_ARRAY_M3.html' TARGET='index'>11</A>,<A href='../../call_from/WRITE_ARRAY_M3.html' TARGET='index'>5</A><a name='1165'>
+                         ims,ime,kms,kme,jms,jme,               &amp;<a name='1166'>
+                         a,name,id)<a name='1167'>
+<a name='1168'>
+implicit none<a name='1169'>
+<font color=#447700>! debug<a name='1170'></font>
+<font color=#447700>!*** arguments<a name='1171'></font>
+integer, intent(in)::its,ite,jts,jte,ims,ime,jms,jme,kts,kte,kms,kme,id<a name='1172'>
+real, intent(in), dimension(ims:ime,kms:kme,jms:jme):: a<a name='1173'>
+character(len=*),intent(in)::name<a name='1174'>
+<font color=#447700>!****<a name='1175'></font>
+integer i,j,k,iu,ilen,myproc,nprocs<a name='1176'>
+logical op<a name='1177'>
+character(len=128)::fname,msg<a name='1178'>
+<font color=#447700>!****<a name='1179'></font>
+if(fire_print_file.eq.0.or.id.le.0)return<a name='1180'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_24">(its,ite,jts,jte,ims,ime,jms,jme)<a name='1181'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_GET_NPROC'>wrf_get_nproc</A><A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_GET_NPROC_20"> (nprocs)<a name='1182'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_GET_MYPROC'>wrf_get_myproc</A><A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_GET_MYPROC_36">(myproc)<a name='1183'>
+<a name='1184'>
+<font color=#447700>!$OMP CRITICAL(FIRE_UTIL_CRIT)<a name='1185'></font>
+if(nprocs.eq.1)then<a name='1186'>
+    write(fname,3)name,'_',id,'.txt'<a name='1187'>
+else<a name='1188'>
+    write(fname,4)name,'_',id,'.',myproc,'.txt'<a name='1189'>
+endif<a name='1190'>
+<a name='1191'>
+iu=0<a name='1192'>
+do i=6,99<a name='1193'>
+    inquire(unit=i,opened=op)<a name='1194'>
+    if(.not.op.and.iu.le.0)iu=i<a name='1195'>
+enddo<a name='1196'>
+if(iu.gt.0)open(iu,file=trim(fname),form='formatted',status='unknown')<a name='1197'>
+<a name='1198'>
+if(iu.le.0)call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_32">('write_array_m: cannot find available fortran unit')<a name='1199'>
+<a name='1200'>
+write(iu,1)real(its)<a name='1201'>
+write(iu,1)real(ite)<a name='1202'>
+write(iu,1)real(jts)<a name='1203'>
+write(iu,1)real(jte)<a name='1204'>
+write(iu,1)real(kts)<a name='1205'>
+write(iu,1)real(kte)<a name='1206'>
+write(iu,1)(((a(i,k,j),i=its,ite),j=jts,jte),k=kts,kte)<a name='1207'>
+close(iu)<a name='1208'>
+write(msg,2)name,'(',its,':',ite,',',jts,':',jte,',', &amp;<a name='1209'>
+kts,':',kte,') -&gt; ',trim(fname) <a name='1210'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_UTIL_CRIT)<a name='1211'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_127">(msg)<a name='1212'>
+return<a name='1213'>
+<a name='1214'>
+1 format(e20.12)<a name='1215'>
+2 format(2a,3(i5,a,i5,a),2a)<a name='1216'>
+3 format(a,a,i8.8,a)<a name='1217'>
+4 format(a,a,i8.8,a,i4.4,a)<a name='1218'>
+<a name='1219'>
+<a name='1220'>
+end subroutine write_array_m3<a name='1221'>
+<font color=#447700>!<a name='1222'></font>
+<font color=#447700>!***<a name='1223'></font>
+<font color=#447700>!<a name='1224'></font>
+<A NAME='READ_ARRAY_2D_INTEGER'><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_INTEGER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1225'>
+<font color=#993300>subroutine </font><font color=#cc0000>read_array_2d_integer</font>(filename,ia,its,ite,jts,jte,ims,ime,jms,jme),<A href='../../call_from/READ_ARRAY_2D_INTEGER.html' TARGET='index'>2</A><a name='1226'>
+<font color=#447700>!*** arguments<a name='1227'></font>
+integer, intent(in)::its,ite,jts,jte,ims,ime,jms,jme<a name='1228'>
+integer, intent(out), dimension(ims:ime,jms:jme):: ia<a name='1229'>
+character(len=*),intent(in)::filename<a name='1230'>
+<font color=#447700>!*** local<a name='1231'></font>
+real, allocatable, dimension(:,:)::a<a name='1232'>
+integer::i,j<a name='1233'>
+real::r<a name='1234'>
+character(len=256)msg<a name='1235'>
+<font color=#447700>!*** executable<a name='1236'></font>
+allocate(a(ims:ime,jms:jme))<a name='1237'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_REAL'>read_array_2d_real</A><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_INTEGER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="READ_ARRAY_2D_REAL_1">(filename,a,its,ite,jts,jte,ims,ime,jms,jme)<a name='1238'>
+do j=jts,jte<a name='1239'>
+    do i=its,ite<a name='1240'>
+        ia(i,j)=a(i,j)<a name='1241'>
+	r=ia(i,j)<a name='1242'>
+	if(r.ne.a(i,j))then<a name='1243'>
+           write(6,*)'Reading file ',trim(filename)<a name='1244'>
+           write(6,*)'value at position ',i,j,' cannot be converted to integer'<a name='1245'>
+           write(6,*)'read ',a(i,j),' converted as',ia(i,j),' converted as ',r<a name='1246'>
+	   msg=trim(filename)//' is not integer file'<a name='1247'>
+	   call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_INTEGER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_33">(msg)<a name='1248'>
+        endif<a name='1249'>
+    enddo<a name='1250'>
+enddo<a name='1251'>
+end subroutine read_array_2d_integer<a name='1252'>
+<a name='1253'>
+        <a name='1254'>
+<a name='1255'>
+<A NAME='READ_ARRAY_2D_REAL'><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_REAL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1256'>
+<font color=#993300>subroutine </font><font color=#cc0000>read_array_2d_real</font>(filename,a,its,ite,jts,jte,ims,ime,jms,jme) <A href='../../call_to/READ_ARRAY_2D_REAL.html' TARGET='index'>1</A>,<A href='../../call_from/READ_ARRAY_2D_REAL.html' TARGET='index'>10</A><a name='1257'>
+#ifdef _OPENMP<a name='1258'>
+use OMP_LIB <a name='1259'>
+#endif<a name='1260'>
+implicit none<a name='1261'>
+<font color=#447700>!*** purpose: read a 2D array from a text file<a name='1262'></font>
+<font color=#447700>! file format: line 1: array dimensions ni,nj<a name='1263'></font>
+<font color=#447700>!              following lines: one row of a at a time<a name='1264'></font>
+<font color=#447700>!              each row may be split between several lines<a name='1265'></font>
+<font color=#447700>!*** arguments<a name='1266'></font>
+integer, intent(in)::its,ite,jts,jte,ims,ime,jms,jme<a name='1267'>
+real, intent(out), dimension(ims:ime,jms:jme):: a<a name='1268'>
+character(len=*),intent(in)::filename<a name='1269'>
+<font color=#447700>!*** local<a name='1270'></font>
+integer i,j,ni,nj,mi,mj,nprocs,myproc,mythread,iu<a name='1271'>
+logical op<a name='1272'>
+character(len=128)::fname,msg<a name='1273'>
+<font color=#447700>!*** executable<a name='1274'></font>
+<a name='1275'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_GET_NPROC'>wrf_get_nproc</A><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_GET_NPROC_21"> (nprocs)<a name='1276'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_GET_MYPROC'>wrf_get_myproc</A><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_GET_MYPROC_37">( myproc )<a name='1277'>
+mythread=0<a name='1278'>
+#ifdef _OPENMP<a name='1279'>
+    mythread=omp_get_thread_num()<a name='1280'>
+#endif<a name='1281'>
+if(nprocs.ne.1.or.myproc.ne.0.or.mythread.ne.0) &amp;<a name='1282'>
+   call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_34">('read_array_2d: parallel execution not supported')<a name='1283'>
+<a name='1284'>
+<font color=#447700>! print line<a name='1285'></font>
+mi=ite-its+1<a name='1286'>
+mj=jte-jts+1<a name='1287'>
+write(msg,2)'reading array size ',mi,mj,' from file ',trim(filename)<a name='1288'>
+2 format(a,2i6,2a)<a name='1289'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_128">(msg)<a name='1290'>
+<a name='1291'>
+<font color=#447700>! check array index overflow<a name='1292'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_25">(its,ite,jts,jte,ims,ime,jms,jme)<a name='1293'>
+<a name='1294'>
+<font color=#447700>! find available unit<a name='1295'></font>
+iu=0<a name='1296'>
+do i=11,99<a name='1297'>
+    inquire(unit=i,opened=op)<a name='1298'>
+    if(.not.op.and.iu.le.0)iu=i<a name='1299'>
+enddo<a name='1300'>
+if(iu.le.0)call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_35">('read_array_2d: cannot find available fortran unit')<a name='1301'>
+<a name='1302'>
+if(iu.gt.0)open(iu,file=filename,form='formatted',status='old',err=9)<a name='1303'>
+rewind(iu,err=9)<a name='1304'>
+<a name='1305'>
+read(iu,*,err=10)ni,nj<a name='1306'>
+if(ni.ne.mi.or.nj.ne.mj)then<a name='1307'>
+    write(msg,'(a,2i6,a,2i6)')'Array dimensions',ni,nj,' in the input file should be ',mi,mj<a name='1308'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_129">(msg)<a name='1309'>
+    goto 10<a name='1310'>
+endif<a name='1311'>
+do i=its,ite<a name='1312'>
+   read(iu,*,err=10)(a(i,j),j=jts,jte)<a name='1313'>
+enddo<a name='1314'>
+close(iu,err=11)<a name='1315'>
+return<a name='1316'>
+<a name='1317'>
+9  msg='Error opening file '//trim(filename)<a name='1318'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_36">(msg)<a name='1319'>
+10 msg='Error reading file '//trim(filename)<a name='1320'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_37">(msg)<a name='1321'>
+11 msg='Error closing file '//trim(filename)<a name='1322'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#READ_ARRAY_2D_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_38">(msg)<a name='1323'>
+end subroutine read_array_2d_real<a name='1324'>
+<font color=#447700>!<a name='1325'></font>
+<font color=#447700>!***<a name='1326'></font>
+<font color=#447700>!<a name='1327'></font>
+<a name='1328'>
+<font color=#447700>! general conditional expression<a name='1329'></font>
+<A NAME='IFVAL'><A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1330'>
+pure integer <font color=#993300>function </font><font color=#cc0000>ifval</font>(l,i,j) <A href='../../call_to/IFVAL.html' TARGET='index'>31</A><a name='1331'>
+implicit none<a name='1332'>
+logical, intent(in)::l<a name='1333'>
+integer, intent(in)::i,j<a name='1334'>
+if(l)then<a name='1335'>
+	ifval=i<a name='1336'>
+else<a name='1337'>
+	ifval=j<a name='1338'>
+endif<a name='1339'>
+end function ifval<a name='1340'>
+<a name='1341'>
+<font color=#447700>! function to go beyond domain boundary if tile is next to it<a name='1342'></font>
+<A NAME='SNODE'><A href='../../html_code/phys/module_fr_fire_util.F.html#SNODE' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1343'>
+pure integer <font color=#993300>function </font><font color=#cc0000>snode</font>(t,d,i) <A href='../../call_to/SNODE.html' TARGET='index'>6</A><a name='1344'>
+implicit none<a name='1345'>
+integer, intent(in)::t,d,i<a name='1346'>
+if(t.ne.d)then<a name='1347'>
+    snode=t<a name='1348'>
+else<a name='1349'>
+    snode=t+i<a name='1350'>
+endif<a name='1351'>
+end function snode<a name='1352'>
+<a name='1353'>
+<A NAME='PRINT_CHSUM'><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1354'>
+<font color=#993300>subroutine </font><font color=#cc0000>print_chsum</font>( id, &amp;  <A href='../../call_to/PRINT_CHSUM.html' TARGET='index'>11</A>,<A href='../../call_from/PRINT_CHSUM.html' TARGET='index'>8</A><a name='1355'>
+    ims,ime,kms,kme,jms,jme, &amp;                <font color=#447700>! memory dims<a name='1356'></font>
+    ids,ide,kds,kde,jds,jde, &amp;                <font color=#447700>! domain dims<a name='1357'></font>
+    ips,ipe,kps,kpe,jps,jpe, &amp;                <font color=#447700>! patch or tile dims<a name='1358'></font>
+    istag,kstag,jstag,       &amp;<a name='1359'>
+    a,name)                      <a name='1360'>
+<a name='1361'>
+#ifdef DM_PARALLEL<a name='1362'>
+    USE <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>module_dm</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_153"> , only : wrf_dm_bxor_integer<a name='1363'>
+#endif<a name='1364'>
+<a name='1365'>
+integer, intent(in):: id, &amp;<a name='1366'>
+    ims,ime,kms,kme,jms,jme, &amp;                <font color=#447700>! memory dims<a name='1367'></font>
+    ids,ide,kds,kde,jds,jde, &amp;                <font color=#447700>! domain dims<a name='1368'></font>
+    ips,ipe,kps,kpe,jps,jpe, &amp;                <font color=#447700>! patch dims<a name='1369'></font>
+    istag,kstag,jstag<a name='1370'>
+real, intent(in),dimension(ims:ime,kms:kme,jms:jme)::a<a name='1371'>
+character(len=*)::name<a name='1372'>
+<a name='1373'>
+#ifdef _OPENMP<a name='1374'>
+<font color=#447700>!external, logical:: omp_in_parallel<a name='1375'></font>
+<font color=#447700>!external, integer:: omp_get_thread_num<a name='1376'></font>
+#endif<a name='1377'>
+<a name='1378'>
+<font color=#447700>!*** local<a name='1379'></font>
+integer::lsum<a name='1380'>
+integer::i,j,k,n,ipe1,jpe1,kpe1,iel,thread,is,js,ks<a name='1381'>
+integer, save::psum,gsum<a name='1382'>
+real::rel<a name='1383'>
+equivalence(rel,iel)<a name='1384'>
+character(len=256)msg<a name='1385'>
+<a name='1386'>
+if(fire_print_msg.le.0)return<a name='1387'>
+<a name='1388'>
+ipe1=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_20">(ipe.eq.ide.and.istag.ne.0,ipe+1,ipe)<a name='1389'>
+kpe1=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_21">(kpe.eq.kde.and.kstag.ne.0,kpe+1,kpe)<a name='1390'>
+jpe1=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_22">(jpe.eq.jde.and.jstag.ne.0,jpe+1,jpe)<a name='1391'>
+is=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_23">(istag.ne.0,1,0)<a name='1392'>
+ks=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_24">(kstag.ne.0,1,0)<a name='1393'>
+js=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_25">(jstag.ne.0,1,0)<a name='1394'>
+<a name='1395'>
+lsum=0<a name='1396'>
+do j=jps,jpe1<a name='1397'>
+  do k=kps,kpe1<a name='1398'>
+    do i=ips,ipe1<a name='1399'>
+      rel=a(i,k,j)<a name='1400'>
+      lsum=ieor(lsum,iel)<a name='1401'>
+    enddo<a name='1402'>
+  enddo<a name='1403'>
+enddo<a name='1404'>
+<a name='1405'>
+<font color=#447700>! get process sum over all threads<a name='1406'></font>
+thread=0<a name='1407'>
+#ifdef _OPENMP<a name='1408'>
+<font color=#447700>!thread=omp_get_thread_num()<a name='1409'></font>
+#endif<a name='1410'>
+if(thread.eq.0)psum=0<a name='1411'>
+<font color=#447700>!$OMP BARRIER<a name='1412'></font>
+<font color=#447700>!$OMP CRITICAL(CHSUM)<a name='1413'></font>
+psum=ieor(psum,lsum)<a name='1414'>
+<font color=#447700>!$OMP END CRITICAL(CHSUM)<a name='1415'></font>
+<font color=#447700>!$OMP BARRIER<a name='1416'></font>
+<a name='1417'>
+<font color=#447700>! get global sum over all processes<a name='1418'></font>
+if(thread.eq.0)then<a name='1419'>
+#ifdef DM_PARALLEL<a name='1420'>
+    gsum = wrf_dm_bxor_integer ( psum )<a name='1421'>
+#else<a name='1422'>
+    gsum = psum<a name='1423'>
+#endif<a name='1424'>
+    write(msg,1)id,name,ids,ide+is,kds,kde+ks,jds,jde+js,gsum<a name='1425'>
+1   format(i6,1x,a10,' dims',6i5,' chsum ',z8.8)<a name='1426'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_CHSUM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_130">(msg)<a name='1427'>
+endif<a name='1428'>
+<a name='1429'>
+end subroutine print_chsum <a name='1430'>
+<a name='1431'>
+<a name='1432'>
+<A NAME='FUN_REAL'><A href='../../html_code/phys/module_fr_fire_util.F.html#FUN_REAL' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1433'>
+real <font color=#993300>function </font><font color=#cc0000>fun_real</font>(fun,  &amp;  <A href='../../call_to/FUN_REAL.html' TARGET='index'>7</A>,<A href='../../call_from/FUN_REAL.html' TARGET='index'>10</A><a name='1434'>
+    ims,ime,kms,kme,jms,jme, &amp;                <font color=#447700>! memory dims<a name='1435'></font>
+    ids,ide,kds,kde,jds,jde, &amp;                <font color=#447700>! domain dims<a name='1436'></font>
+    ips,ipe,kps,kpe,jps,jpe, &amp;                <font color=#447700>! patch or tile dims<a name='1437'></font>
+    istag,kstag,jstag,       &amp;                <font color=#447700>! staggering<a name='1438'></font>
+    a,b)                      <a name='1439'>
+<a name='1440'>
+#ifdef DM_PARALLEL<a name='1441'>
+    USE <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>module_dm</A><A href='../../html_code/phys/module_fr_fire_util.F.html#FUN_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_154"> , only : wrf_dm_sum_real , wrf_dm_max_real<a name='1442'>
+#endif<a name='1443'>
+<a name='1444'>
+integer, intent(in)::  fun, &amp;<a name='1445'>
+    ims,ime,kms,kme,jms,jme, &amp;                <font color=#447700>! memory dims<a name='1446'></font>
+    ids,ide,kds,kde,jds,jde, &amp;                <font color=#447700>! domain dims<a name='1447'></font>
+    ips,ipe,kps,kpe,jps,jpe, &amp;                <font color=#447700>! patch dims<a name='1448'></font>
+    istag,kstag,jstag                         <font color=#447700>! staggering<a name='1449'></font>
+real, intent(in),dimension(ims:ime,kms:kme,jms:jme)::a,b<a name='1450'>
+<a name='1451'>
+<font color=#447700>!*** local<a name='1452'></font>
+real::lsum,void<a name='1453'>
+integer::i,j,k,n,ipe1,jpe1,kpe1,iel,thread,is,js,ks<a name='1454'>
+real, save::psum,gsum<a name='1455'>
+real::rel<a name='1456'>
+logical:: dosum,domax<a name='1457'>
+character(len=256)msg<a name='1458'>
+<a name='1459'>
+ipe1=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_util.F.html#FUN_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_26">(ipe.eq.ide.and.istag.ne.0,ipe+1,ipe)<a name='1460'>
+kpe1=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_util.F.html#FUN_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_27">(kpe.eq.kde.and.kstag.ne.0,kpe+1,kpe)<a name='1461'>
+jpe1=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_util.F.html#FUN_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_28">(jpe.eq.jde.and.jstag.ne.0,jpe+1,jpe)<a name='1462'>
+is=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_util.F.html#FUN_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_29">(istag.ne.0,1,0)<a name='1463'>
+ks=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_util.F.html#FUN_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_30">(kstag.ne.0,1,0)<a name='1464'>
+js=<A href='../../html_code/phys/module_fr_fire_util.F.html#IFVAL'>ifval</A><A href='../../html_code/phys/module_fr_fire_util.F.html#FUN_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IFVAL_31">(jstag.ne.0,1,0)<a name='1465'>
+<a name='1466'>
+if(fun.eq.REAL_SUM)then<a name='1467'>
+  void=0.<a name='1468'>
+  lsum=void<a name='1469'>
+  do j=jps,jpe1<a name='1470'>
+    do k=kps,kpe1<a name='1471'>
+      do i=ips,ipe1<a name='1472'>
+        lsum=lsum+a(i,k,j)<a name='1473'>
+      enddo<a name='1474'>
+    enddo<a name='1475'>
+  enddo<a name='1476'>
+elseif(fun.eq.RNRM_SUM)then<a name='1477'>
+  void=0.<a name='1478'>
+  lsum=void<a name='1479'>
+  do j=jps,jpe1<a name='1480'>
+    do k=kps,kpe1<a name='1481'>
+      do i=ips,ipe1<a name='1482'>
+        lsum=lsum+sqrt(a(i,k,j)*a(i,k,j)+b(i,k,j)*b(i,k,j))<a name='1483'>
+      enddo<a name='1484'>
+    enddo<a name='1485'>
+  enddo<a name='1486'>
+elseif(fun.eq.REAL_MAX)then<a name='1487'>
+  void=-huge(lsum)<a name='1488'>
+  lsum=void<a name='1489'>
+  do j=jps,jpe1<a name='1490'>
+    do k=kps,kpe1<a name='1491'>
+      do i=ips,ipe1<a name='1492'>
+        lsum=max(lsum,a(i,k,j))<a name='1493'>
+      enddo<a name='1494'>
+    enddo<a name='1495'>
+  enddo<a name='1496'>
+elseif(fun.eq.RNRM_MAX)then<a name='1497'>
+  void=0.<a name='1498'>
+  lsum=void<a name='1499'>
+  do j=jps,jpe1<a name='1500'>
+    do k=kps,kpe1<a name='1501'>
+      do i=ips,ipe1<a name='1502'>
+        lsum=max(lsum,sqrt(a(i,k,j)*a(i,k,j)+b(i,k,j)*b(i,k,j)))<a name='1503'>
+      enddo<a name='1504'>
+    enddo<a name='1505'>
+  enddo<a name='1506'>
+else<a name='1507'>
+  call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#FUN_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_39">('fun_real: bad fun')<a name='1508'>
+endif<a name='1509'>
+<a name='1510'>
+if(lsum.ne.lsum)call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#FUN_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_40">('fun_real: NaN detected')<a name='1511'>
+<a name='1512'>
+dosum=fun.eq.REAL_SUM.or.fun.eq.RNRM_SUM<a name='1513'>
+domax=fun.eq.REAL_MAX.or.fun.eq.RNRM_MAX<a name='1514'>
+<a name='1515'>
+<font color=#447700>! get process sum over all threads<a name='1516'></font>
+<font color=#447700>!$OMP SINGLE<a name='1517'></font>
+<font color=#447700>! only one thread should write to shared variable<a name='1518'></font>
+psum=void<a name='1519'>
+<font color=#447700>!$OMP END SINGLE<a name='1520'></font>
+<font color=#447700>!$OMP BARRIER<a name='1521'></font>
+<font color=#447700>! now all threads know psum<a name='1522'></font>
+<a name='1523'>
+<font color=#447700>!$OMP CRITICAL(RDSUM)<a name='1524'></font>
+<font color=#447700>! each thread adds its own lsum<a name='1525'></font>
+if(dosum)psum=psum+lsum<a name='1526'>
+if(domax)psum=max(psum,lsum)<a name='1527'>
+<font color=#447700>!$OMP END CRITICAL(RDSUM)<a name='1528'></font>
+<a name='1529'>
+<font color=#447700>! wait till all theads are done<a name='1530'></font>
+<font color=#447700>!$OMP BARRIER<a name='1531'></font>
+<a name='1532'>
+<font color=#447700>! get global sum over all processes<a name='1533'></font>
+<font color=#447700>!$OMP SINGLE<a name='1534'></font>
+<font color=#447700>! only one threads will do the mpi communication<a name='1535'></font>
+#ifdef DM_PARALLEL<a name='1536'>
+    if(dosum) gsum = wrf_dm_sum_real ( psum )<a name='1537'>
+    if(domax) gsum = wrf_dm_max_real ( psum )<a name='1538'>
+#else<a name='1539'>
+    gsum = psum<a name='1540'>
+#endif<a name='1541'>
+if(gsum.ne.gsum)call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_util.F.html#FUN_REAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_41">('fun_real: NaN detected')<a name='1542'>
+<font color=#447700>!$OMP END SINGLE<a name='1543'></font>
+<a name='1544'>
+<font color=#447700>!$OMP BARRIER<a name='1545'></font>
+<font color=#447700>! now gsum is known to all threads<a name='1546'></font>
+<a name='1547'>
+fun_real=gsum<a name='1548'>
+<a name='1549'>
+end function fun_real<a name='1550'>
+<a name='1551'>
+end module module_fr_fire_util<a name='1552'>
+</pre></body></html>

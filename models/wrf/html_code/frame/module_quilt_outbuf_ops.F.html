@@ -1,0 +1,1504 @@
+<HTML> <BODY BGCOLOR=#eeddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_QUILT_OUTBUF_OPS'><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MODULE_QUILT_OUTBUF_OPS' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_quilt_outbuf_ops</font> <A href='../../call_to/MODULE_QUILT_OUTBUF_OPS.html' TARGET='index'>9</A><a name='3'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='4'></font>
+<font color=#447700>!&lt;PRE&gt;<a name='5'></font>
+<font color=#447700>! This module contains routines and data structures used by the I/O quilt <a name='6'></font>
+<font color=#447700>! servers to assemble fields ("quilting") and write them to disk.  <a name='7'></font>
+<font color=#447700>!&lt;/PRE&gt;<a name='8'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='9'></font>
+  INTEGER, PARAMETER :: tabsize = 5<a name='10'>
+  <font color=#447700>! The number of entries in outpatch_table (up to a maximum of tabsize)<a name='11'></font>
+  INTEGER, SAVE      :: num_entries<a name='12'>
+<a name='13'>
+<font color=#447700>! ARP, for PNC-enabled quilting, 02/06/2010<a name='14'></font>
+  TYPE varpatch<a name='15'>
+    LOGICAL                            :: forDeletion <font color=#447700>! TRUE if patch to be <a name='16'></font>
+                                                      <font color=#447700>! deleted<a name='17'></font>
+    INTEGER, DIMENSION(3)              :: PatchStart, PatchEnd, PatchExtent<a name='18'>
+    REAL,    POINTER, DIMENSION(:,:,:) :: rptr <a name='19'>
+    INTEGER, POINTER, DIMENSION(:,:,:) :: iptr<a name='20'>
+  END TYPE varpatch<a name='21'>
+<a name='22'>
+  <font color=#447700>! With PNC-enabled quilting, each table entry consists of a series of<a name='23'></font>
+  <font color=#447700>! 'npatch' patches (one for each of the compute PEs that this IOServer has<a name='24'></font>
+  <font color=#447700>! as clients). We attempt to stitch these together before finally <a name='25'></font>
+  <font color=#447700>! writing the data to disk.<a name='26'></font>
+  TYPE outpatchlist<a name='27'>
+    CHARACTER*80                       :: VarName, DateStr, MemoryOrder, &amp;<a name='28'>
+                                          Stagger, DimNames(3)<a name='29'>
+    INTEGER, DIMENSION(3)              :: DomainStart, DomainEnd<a name='30'>
+    INTEGER                            :: FieldType<a name='31'>
+    <font color=#447700>! Total no. of patches in the list PatchList<a name='32'></font>
+    INTEGER                            :: nPatch<a name='33'>
+    <font color=#447700>! How many of the patches remain active in PatchList<a name='34'></font>
+    INTEGER                            :: nActivePatch<a name='35'>
+    TYPE(varpatch), ALLOCATABLE, DIMENSION(:) :: PatchList<a name='36'>
+<font color=#447700>!    TYPE(varpatch), DIMENSION(tabsize) :: PatchList<a name='37'></font>
+  END TYPE outpatchlist<a name='38'>
+<a name='39'>
+  TYPE(outpatchlist), DIMENSION(tabsize), SAVE :: outpatch_table<a name='40'>
+<a name='41'>
+  <font color=#447700>! List of which of the initial set of patches saved by the IOServer have <a name='42'></font>
+  <font color=#447700>! been successfully stitched together. Without any stitching, each patch's <a name='43'></font>
+  <font color=#447700>! entry contains just itself:<a name='44'></font>
+  <font color=#447700>!   JoinedPatches(1,ipatch) = ipatch<a name='45'></font>
+  <font color=#447700>! If jpatch is then stitched to ipatch then we do:<a name='46'></font>
+  <font color=#447700>!   JoinedPatches(2,ipatch) = jpatch<a name='47'></font>
+  <font color=#447700>! and so on.<a name='48'></font>
+  INTEGER, ALLOCATABLE, DIMENSION(:,:), SAVE :: JoinedPatches <a name='49'>
+ <a name='50'>
+  <font color=#447700>! The no. of original patches to be stitched together to make each new patch<a name='51'></font>
+  <font color=#447700>! i.e. if the 2nd new patch consists of 4 of the original patches stitched<a name='52'></font>
+  <font color=#447700>! together then:<a name='53'></font>
+  <font color=#447700>!   PatchCount(2) = 4<a name='54'></font>
+  INTEGER, ALLOCATABLE, DIMENSION(:), SAVE   :: PatchCount<a name='55'>
+<a name='56'>
+<font color=#447700>! endARP, for PNC-enabled quilting, 02/06/2010<a name='57'></font>
+<a name='58'>
+  TYPE outrec<a name='59'>
+    CHARACTER*80                       :: VarName, DateStr, MemoryOrder, &amp;<a name='60'>
+                                          Stagger, DimNames(3)<a name='61'>
+    INTEGER                            :: ndim<a name='62'>
+    INTEGER, DIMENSION(3)              :: DomainStart, DomainEnd<a name='63'>
+    INTEGER                            :: FieldType<a name='64'>
+    REAL,    POINTER, DIMENSION(:,:,:) :: rptr <a name='65'>
+    INTEGER, POINTER, DIMENSION(:,:,:) :: iptr<a name='66'>
+  END TYPE outrec<a name='67'>
+<a name='68'>
+  TYPE(outrec), DIMENSION(tabsize) :: outbuf_table<a name='69'>
+<a name='70'>
+CONTAINS<a name='71'>
+<a name='72'>
+<A NAME='INIT_OUTBUF'><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#INIT_OUTBUF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='73'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>init_outbuf</font> <A href='../../call_to/INIT_OUTBUF.html' TARGET='index'>2</A><a name='74'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='75'></font>
+<font color=#447700>!&lt;PRE&gt;<a name='76'></font>
+<font color=#447700>! This routine re-initializes module data structures.  <a name='77'></font>
+<font color=#447700>!&lt;/PRE&gt;<a name='78'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='79'></font>
+    IMPLICIT NONE<a name='80'>
+    INTEGER :: i, j<a name='81'>
+    DO i = 1, tabsize<a name='82'>
+<a name='83'>
+#ifdef PNETCDF_QUILT<a name='84'>
+      <font color=#447700>! This section for PNC-enabled IO quilting<a name='85'></font>
+      outpatch_table(i)%VarName = ""<a name='86'>
+      outpatch_table(i)%DateStr = ""<a name='87'>
+      outpatch_table(i)%MemoryOrder = ""<a name='88'>
+      outpatch_table(i)%Stagger = ""<a name='89'>
+      outpatch_table(i)%DimNames(1:3) = ""<a name='90'>
+      outpatch_table(i)%DomainStart(1:3) = 0<a name='91'>
+      outpatch_table(i)%DomainEnd(1:3)   = 0<a name='92'>
+      <font color=#447700>! We don't free any memory here - that is done immediately after the<a name='93'></font>
+      <font color=#447700>! write of each patch is completed<a name='94'></font>
+      DO j = 1, outpatch_table(i)%npatch<a name='95'>
+         IF (ALLOCATED(outpatch_table(i)%PatchList)) THEN<a name='96'>
+            outpatch_table(i)%PatchList(j)%forDeletion   = .FALSE.<a name='97'>
+            outpatch_table(i)%PatchList(j)%PatchStart(:) = 0<a name='98'>
+            outpatch_table(i)%PatchList(j)%PatchEnd(:)   = 0<a name='99'>
+            outpatch_table(i)%PatchList(j)%PatchExtent(:)= 0<a name='100'>
+            IF (ASSOCIATED(outpatch_table(i)%PatchList(j)%rptr)) &amp;<a name='101'>
+               NULLIFY( outpatch_table(i)%PatchList(j)%rptr )<a name='102'>
+            IF (ASSOCIATED(outpatch_table(i)%PatchList(j)%iptr)) &amp;<a name='103'>
+               NULLIFY( outpatch_table(i)%PatchList(j)%iptr )<a name='104'>
+            DEALLOCATE(outpatch_table(i)%PatchList)<a name='105'>
+         ENDIF<a name='106'>
+      END DO<a name='107'>
+      outpatch_table(i)%npatch           = 0<a name='108'>
+      outpatch_table(i)%nActivePatch     = 0<a name='109'>
+#else<a name='110'>
+      outbuf_table(i)%VarName = ""<a name='111'>
+      outbuf_table(i)%DateStr = ""<a name='112'>
+      outbuf_table(i)%MemoryOrder = ""<a name='113'>
+      outbuf_table(i)%Stagger = ""<a name='114'>
+      outbuf_table(i)%DimNames(1) = ""<a name='115'>
+      outbuf_table(i)%DimNames(2) = ""<a name='116'>
+      outbuf_table(i)%DimNames(3) = ""<a name='117'>
+      outbuf_table(i)%ndim = 0<a name='118'>
+      NULLIFY( outbuf_table(i)%rptr )<a name='119'>
+      NULLIFY( outbuf_table(i)%iptr )<a name='120'>
+#endif<a name='121'>
+<a name='122'>
+    ENDDO<a name='123'>
+<font color=#447700>!write(0,*)'initializing num_entries to 0 '<a name='124'></font>
+    num_entries = 0<a name='125'>
+  END SUBROUTINE init_outbuf<a name='126'>
+<a name='127'>
+#ifdef PNETCDF_QUILT<a name='128'>
+<A NAME='WRITE_OUTBUF_PNC'><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF_PNC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='129'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>write_outbuf_pnc</font> ( DataHandle, io_form_arg, local_comm, &amp; <A href='../../call_to/WRITE_OUTBUF_PNC.html' TARGET='index'>2</A>,<A href='../../call_from/WRITE_OUTBUF_PNC.html' TARGET='index'>8</A><a name='130'>
+                                mytask, ntasks )<a name='131'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='132'></font>
+<font color=#447700>!&lt;PRE&gt;<a name='133'></font>
+<font color=#447700>! This routine writes all of the records stored in outpatch_table to the <a name='134'></font>
+<font color=#447700>! file referenced by DataHandle using pNetCDF. The patches constituting<a name='135'></font>
+<font color=#447700>! each record are stitched together as far as is possible before<a name='136'></font>
+<font color=#447700>! the pNetCDF I/O routines are called to accomplish the write.<a name='137'></font>
+<font color=#447700>! <a name='138'></font>
+<font color=#447700>! It then re-initializes module data structures.  <a name='139'></font>
+<font color=#447700>!&lt;/PRE&gt;<a name='140'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='141'></font>
+    USE <A href='../../html_code/frame/module_state_description.F.html#MODULE_STATE_DESCRIPTION'>module_state_description</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STATE_DESCRIPTION_103"><a name='142'>
+    IMPLICIT NONE<a name='143'>
+    INCLUDE 'mpif.h'<a name='144'>
+#include "<A href='../../html_code/include/wrf_io_flags.h.html'>wrf_io_flags.h</A>"<A NAME="wrf_io_flags.h_1"><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='145'>
+    INTEGER , INTENT(IN)  :: DataHandle, io_form_arg, &amp;<a name='146'>
+                             local_comm, mytask, ntasks<a name='147'>
+    INTEGER               :: ii, jj<a name='148'>
+    INTEGER               :: DomainDesc <font color=#447700>! dummy<a name='149'></font>
+    INTEGER               :: Status<a name='150'>
+    INTEGER               :: ipatch, icnt<a name='151'>
+    INTEGER, ALLOCATABLE, DIMENSION(:) :: count_buf<a name='152'>
+    INTEGER               :: min_count<a name='153'>
+    LOGICAL               :: do_indep_write <font color=#447700>! If no. of patches differs between<a name='154'></font>
+                                            <font color=#447700>! IO Servers then we will have to <a name='155'></font>
+                                            <font color=#447700>! switch pnetcdf into <a name='156'></font>
+                                            <font color=#447700>! independent-writes mode for some <a name='157'></font>
+                                            <font color=#447700>! of them<a name='158'></font>
+    CHARACTER*256         :: mess<a name='159'>
+<a name='160'>
+    DomainDesc = 0 <a name='161'>
+<a name='162'>
+    ALLOCATE(count_buf(ntasks), Stat=Status)<a name='163'>
+    IF(Status /= 0)THEN<a name='164'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_368">("write_outbuf_pnc: allocate failed")<a name='165'>
+    END IF<a name='166'>
+<a name='167'>
+    WRITE(mess,"('write_outbuf_pnc: table has ', I3,' entries')") num_entries<a name='168'>
+    CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_364">(mess)<a name='169'>
+<a name='170'>
+    DO ii = 1, num_entries<a name='171'>
+<a name='172'>
+      WRITE(mess,*)'write_outbuf_pnc: writing ', &amp;<a name='173'>
+                    TRIM(outpatch_table(ii)%DateStr)," ",                    &amp;<a name='174'>
+                    TRIM(outpatch_table(ii)%VarName)," ",                    &amp;<a name='175'>
+                    TRIM(outpatch_table(ii)%MemoryOrder)<a name='176'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_365">(mess)<a name='177'>
+<a name='178'>
+      SELECT CASE ( io_form_arg )<a name='179'>
+<a name='180'>
+        CASE ( IO_PNETCDF   )<a name='181'>
+<a name='182'>
+          <font color=#447700>! Situation is more complicated in this case since field data stored <a name='183'></font>
+          <font color=#447700>! as a list of patches rather than in one array of global-domain <a name='184'></font>
+          <font color=#447700>! extent.<a name='185'></font>
+          <font color=#447700>! PatchStart(1) - PatchEnd(1) is dimension with unit stride.<a name='186'></font>
+<a name='187'>
+          <font color=#447700>! Quilt patches back together where possible in order to minimise <a name='188'></font>
+          <font color=#447700>! number of individual writes<a name='189'></font>
+          CALL <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES'>stitch_outbuf_patches</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="STITCH_OUTBUF_PATCHES_1">(ii)<a name='190'>
+<a name='191'>
+          <font color=#447700>! Check how many patches each of the other IO servers has - we can<a name='192'></font>
+          <font color=#447700>! only use pNetCDF in collective mode for the same no. of writes<a name='193'></font>
+          <font color=#447700>! on each IO server. Any other patches will have to be written in<a name='194'></font>
+          <font color=#447700>! independent mode.<a name='195'></font>
+          do_indep_write = .FALSE.<a name='196'>
+          count_buf(:) = 0<a name='197'>
+          min_count = outpatch_table(ii)%nActivePatch<a name='198'>
+<a name='199'>
+          CALL MPI_AllGather(min_count, 1, MPI_INTEGER,      &amp;<a name='200'>
+	                     count_buf, 1, MPI_INTEGER, &amp;<a name='201'>
+	                     local_comm, Status)<a name='202'>
+<a name='203'>
+          <font color=#447700>! Work out the minimum no. of patches on any IO Server and whether <a name='204'></font>
+          <font color=#447700>! or not we will have to enter independent IO mode.<a name='205'></font>
+          min_count = outpatch_table(ii)%nActivePatch<a name='206'>
+          DO jj=1,ntasks, 1<a name='207'>
+             IF(count_buf(jj) &lt; min_count) min_count = count_buf(jj)<a name='208'>
+             IF(outpatch_table(ii)%nActivePatch /= count_buf(jj)) do_indep_write = .TRUE.<a name='209'>
+<a name='210'>
+          END DO<a name='211'>
+<a name='212'>
+<font color=#447700>!          WRITE(mess,*) 'ARPDBG: Min. no. of patches is ', min_count<a name='213'></font>
+<font color=#447700>!          CALL wrf_message(mess)<a name='214'></font>
+<font color=#447700>!          WRITE(mess,*) 'ARPDBG: I have ',count_buf(mytask+1),' patches.'<a name='215'></font>
+<font color=#447700>!          CALL wrf_message(mess)<a name='216'></font>
+<a name='217'>
+          IF ( outpatch_table(ii)%FieldType .EQ. WRF_FLOAT ) THEN<a name='218'>
+             <a name='219'>
+             <font color=#447700>! Loop over the patches in this field up to the number that <a name='220'></font>
+             <font color=#447700>! every IO Server has. This is slightly tricky now<a name='221'></font>
+             <font color=#447700>! that some of them may be 'deleted.' <a name='222'></font>
+<a name='223'>
+             ipatch = 0<a name='224'>
+             icnt = 0<a name='225'>
+             DO WHILE ( icnt &lt; min_count )<a name='226'>
+<a name='227'>
+                ipatch = ipatch + 1<a name='228'>
+<a name='229'>
+                IF(outpatch_table(ii)%PatchList(ipatch)%forDeletion) CYCLE<a name='230'>
+<a name='231'>
+                icnt = icnt + 1<a name='232'>
+<a name='233'>
+                WRITE (mess, "('Calling write for patch: ',I3, ' Start = ',3I4)") ipatch, outpatch_table(ii)%PatchList(ipatch)%PatchStart(1:3)<a name='234'>
+                CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_366">(mess)<a name='235'>
+                WRITE (mess,"(29x,'End = ',3I4)") outpatch_table(ii)%PatchList(ipatch)%PatchEnd(1:3)<a name='236'>
+                CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_367">(mess)<a name='237'>
+<a name='238'>
+                CALL ext_pnc_write_field ( DataHandle ,                          &amp;<a name='239'>
+                                 TRIM(outpatch_table(ii)%DateStr),               &amp;<a name='240'>
+                                 TRIM(outpatch_table(ii)%VarName),               &amp;<a name='241'>
+                                 outpatch_table(ii)%PatchList(ipatch)%rptr,      &amp;<a name='242'>
+                                 outpatch_table(ii)%FieldType,                   &amp;<font color=#447700>!*<a name='243'></font>
+                                 local_comm, local_comm, DomainDesc ,            &amp;<a name='244'>
+                                 TRIM(outpatch_table(ii)%MemoryOrder),           &amp;<a name='245'>
+                                 TRIM(outpatch_table(ii)%Stagger),               &amp;<font color=#447700>!*<a name='246'></font>
+                                 outpatch_table(ii)%DimNames ,                   &amp;<font color=#447700>!*<a name='247'></font>
+                                 outpatch_table(ii)%DomainStart,                 &amp;<a name='248'>
+                                 outpatch_table(ii)%DomainEnd,                   &amp;<a name='249'>
+                                 <font color=#447700>! ARP supply magic number as MemoryStart and <a name='250'></font>
+                                 <font color=#447700>! MemoryEnd to signal that this routine is <a name='251'></font>
+                                 <font color=#447700>! being called from quilting.<a name='252'></font>
+                                 -998899,                                        &amp;<a name='253'>
+                                 -998899,                                        &amp;<a name='254'>
+                                 outpatch_table(ii)%PatchList(ipatch)%PatchStart,&amp;<a name='255'>
+                                 outpatch_table(ii)%PatchList(ipatch)%PatchEnd,  &amp;<a name='256'>
+                                 Status )<a name='257'>
+<a name='258'>
+                <font color=#447700>! Free memory associated with this patch<a name='259'></font>
+                DEALLOCATE(outpatch_table(ii)%PatchList(ipatch)%rptr)<a name='260'>
+<a name='261'>
+             END DO<a name='262'>
+<a name='263'>
+             IF( do_indep_write )THEN<a name='264'>
+                <font color=#447700>! We must do the next few patches (if any) in independent IO <a name='265'></font>
+                <font color=#447700>! mode as not all of the IO Servers have the same no. of <a name='266'></font>
+                <font color=#447700>! patches. <a name='267'></font>
+                <font color=#447700>! outpatch_table(ii)%nActivePatch holds the no. of live patches<a name='268'></font>
+                <font color=#447700>! for this IO Server<a name='269'></font>
+<a name='270'>
+                CALL ext_pnc_start_independent_mode(DataHandle, Status)<a name='271'>
+<a name='272'>
+                DO WHILE ( icnt&lt;outpatch_table(ii)%nActivePatch )<a name='273'>
+<a name='274'>
+                   ipatch = ipatch + 1<a name='275'>
+<a name='276'>
+                   IF(outpatch_table(ii)%PatchList(ipatch)%forDeletion) CYCLE<a name='277'>
+<a name='278'>
+                   icnt = icnt + 1<a name='279'>
+<a name='280'>
+                   CALL ext_pnc_write_field ( DataHandle ,                          &amp;<a name='281'>
+                                 TRIM(outpatch_table(ii)%DateStr),               &amp;<a name='282'>
+                                 TRIM(outpatch_table(ii)%VarName),               &amp;<a name='283'>
+                                 outpatch_table(ii)%PatchList(ipatch)%rptr,      &amp;<a name='284'>
+                                 outpatch_table(ii)%FieldType,                   &amp;<font color=#447700>!*<a name='285'></font>
+                                 local_comm, local_comm, DomainDesc ,                      &amp;<a name='286'>
+                                 TRIM(outpatch_table(ii)%MemoryOrder),           &amp;<a name='287'>
+                                 TRIM(outpatch_table(ii)%Stagger),               &amp;<font color=#447700>!*<a name='288'></font>
+                                 outpatch_table(ii)%DimNames ,                   &amp;<font color=#447700>!*<a name='289'></font>
+                                 outpatch_table(ii)%DomainStart,                 &amp;<a name='290'>
+                                 outpatch_table(ii)%DomainEnd,                   &amp;<a name='291'>
+                                 <font color=#447700>! ARP supply magic number as MemoryStart and <a name='292'></font>
+                                 <font color=#447700>! MemoryEnd to signal that this routine is <a name='293'></font>
+                                 <font color=#447700>! being called from quilting.<a name='294'></font>
+                                 -998899,                                        &amp;<a name='295'>
+                                 -998899,                                        &amp;<a name='296'>
+                                 outpatch_table(ii)%PatchList(ipatch)%PatchStart,&amp;<a name='297'>
+                                 outpatch_table(ii)%PatchList(ipatch)%PatchEnd,  &amp;<a name='298'>
+                                 Status )<a name='299'>
+<a name='300'>
+                   <font color=#447700>! Free memory associated with this patch<a name='301'></font>
+                   DEALLOCATE(outpatch_table(ii)%PatchList(ipatch)%rptr)<a name='302'>
+<a name='303'>
+                END DO<a name='304'>
+<a name='305'>
+                <font color=#447700>! End of patches that not every IO Server has so can switch<a name='306'></font>
+                <font color=#447700>! back to collective mode.<a name='307'></font>
+                CALL ext_pnc_end_independent_mode(DataHandle, Status)<a name='308'>
+<a name='309'>
+<a name='310'>
+             END IF <font color=#447700>! Additional patches<a name='311'></font>
+<a name='312'>
+          ELSE IF ( outpatch_table(ii)%FieldType .EQ. WRF_INTEGER ) THEN<a name='313'>
+<a name='314'>
+             <font color=#447700>! Loop over the patches in this field up to the number that <a name='315'></font>
+             <font color=#447700>! every IO Server has. This is slightly tricky now<a name='316'></font>
+             <font color=#447700>! that some of them may be 'deleted.' <a name='317'></font>
+             ipatch = 0<a name='318'>
+             icnt = 0<a name='319'>
+             DO WHILE ( icnt &lt; min_count )<a name='320'>
+<a name='321'>
+                ipatch = ipatch + 1<a name='322'>
+<a name='323'>
+                IF(outpatch_table(ii)%PatchList(ipatch)%forDeletion) CYCLE<a name='324'>
+<a name='325'>
+                icnt = icnt + 1<a name='326'>
+<a name='327'>
+                CALL ext_pnc_write_field ( DataHandle ,                           &amp;<a name='328'>
+                                 TRIM(outpatch_table(ii)%DateStr),                &amp;<a name='329'>
+                                 TRIM(outpatch_table(ii)%VarName),                &amp;<a name='330'>
+                                 outpatch_table(ii)%PatchList(ipatch)%iptr,       &amp;<a name='331'>
+                                 outpatch_table(ii)%FieldType,                    &amp;<font color=#447700>!*<a name='332'></font>
+                                 local_comm, local_comm, DomainDesc,              &amp;<a name='333'>
+                                 TRIM(outpatch_table(ii)%MemoryOrder),            &amp;<a name='334'>
+                                 TRIM(outpatch_table(ii)%Stagger),                &amp;<font color=#447700>!*<a name='335'></font>
+                                 outpatch_table(ii)%DimNames ,                    &amp;<font color=#447700>!*<a name='336'></font>
+                                 outpatch_table(ii)%DomainStart,                  &amp;<a name='337'>
+                                 outpatch_table(ii)%DomainEnd,                    &amp;<a name='338'>
+                                 <font color=#447700>! ARP supply magic number as MemoryStart and <a name='339'></font>
+                                 <font color=#447700>! MemoryEnd to signal that this routine is <a name='340'></font>
+                                 <font color=#447700>! being called from quilting.<a name='341'></font>
+                                 -998899,                                         &amp;<a name='342'>
+                                 -998899,                                         &amp;<a name='343'>
+                                 outpatch_table(ii)%PatchList(ipatch)%PatchStart, &amp;<a name='344'>
+                                 outpatch_table(ii)%PatchList(ipatch)%PatchEnd,   &amp;<a name='345'>
+                                 Status )<a name='346'>
+<a name='347'>
+                <font color=#447700>! Free memory associated with this patch<a name='348'></font>
+                DEALLOCATE(outpatch_table(ii)%PatchList(ipatch)%iptr)<a name='349'>
+<a name='350'>
+             END DO<a name='351'>
+<a name='352'>
+             IF( do_indep_write )THEN<a name='353'>
+<a name='354'>
+                <font color=#447700>! We have to do the next few patches in independent IO mode as <a name='355'></font>
+                <font color=#447700>! not all of the IO Servers have this many patches. <a name='356'></font>
+                <font color=#447700>! outpatch_table(ii)%npatch holds the no. of live patches for <a name='357'></font>
+                <font color=#447700>! this IO Server<a name='358'></font>
+                CALL ext_pnc_start_independent_mode(DataHandle, Status)<a name='359'>
+<a name='360'>
+                DO WHILE ( icnt&lt;outpatch_table(ii)%nActivePatch )<a name='361'>
+<a name='362'>
+                   ipatch = ipatch + 1<a name='363'>
+<a name='364'>
+                   IF(outpatch_table(ii)%PatchList(ipatch)%forDeletion) CYCLE<a name='365'>
+<a name='366'>
+                   icnt = icnt + 1<a name='367'>
+<a name='368'>
+                   CALL ext_pnc_write_field ( DataHandle ,                          &amp;<a name='369'>
+                                 TRIM(outpatch_table(ii)%DateStr),               &amp;<a name='370'>
+                                 TRIM(outpatch_table(ii)%VarName),               &amp;<a name='371'>
+                                 outpatch_table(ii)%PatchList(ipatch)%iptr,      &amp;<a name='372'>
+                                 outpatch_table(ii)%FieldType,                   &amp;<font color=#447700>!*<a name='373'></font>
+                                 local_comm, local_comm, DomainDesc ,                      &amp;<a name='374'>
+                                 TRIM(outpatch_table(ii)%MemoryOrder),           &amp;<a name='375'>
+                                 TRIM(outpatch_table(ii)%Stagger),               &amp;<font color=#447700>!*<a name='376'></font>
+                                 outpatch_table(ii)%DimNames ,                   &amp;<font color=#447700>!*<a name='377'></font>
+                                 outpatch_table(ii)%DomainStart,                 &amp;<a name='378'>
+                                 outpatch_table(ii)%DomainEnd,                   &amp;<a name='379'>
+                                 <font color=#447700>! ARP supply magic number as MemoryStart and <a name='380'></font>
+                                 <font color=#447700>! MemoryEnd to signal that this routine is <a name='381'></font>
+                                 <font color=#447700>! being called from quilting.<a name='382'></font>
+                                 -998899,                                        &amp;<a name='383'>
+                                 -998899,                                        &amp;<a name='384'>
+                                 outpatch_table(ii)%PatchList(ipatch)%PatchStart,&amp;<a name='385'>
+                                 outpatch_table(ii)%PatchList(ipatch)%PatchEnd,  &amp;<a name='386'>
+                                 Status )<a name='387'>
+<a name='388'>
+                   <font color=#447700>! Free memory associated with this patch<a name='389'></font>
+                   DEALLOCATE(outpatch_table(ii)%PatchList(ipatch)%iptr)<a name='390'>
+<a name='391'>
+                END DO<a name='392'>
+<a name='393'>
+                <font color=#447700>! End of patches that not every IO Server has so can switch<a name='394'></font>
+                <font color=#447700>! back to collective mode.<a name='395'></font>
+                CALL ext_pnc_end_independent_mode(DataHandle, Status)<a name='396'>
+<a name='397'>
+             ENDIF <font color=#447700>! Have additional patches<a name='398'></font>
+          ENDIF<a name='399'>
+<a name='400'>
+        CASE DEFAULT<a name='401'>
+      END SELECT<a name='402'>
+<a name='403'>
+    ENDDO <font color=#447700>! Loop over output buffers<a name='404'></font>
+<a name='405'>
+    <font color=#447700>! Reset the table of output buffers<a name='406'></font>
+    CALL <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#INIT_OUTBUF'>init_outbuf</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INIT_OUTBUF_1">()<a name='407'>
+<a name='408'>
+    DEALLOCATE(count_buf)<a name='409'>
+<a name='410'>
+  END SUBROUTINE write_outbuf_pnc<a name='411'>
+#endif<a name='412'>
+<a name='413'>
+<A NAME='WRITE_OUTBUF'><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='414'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>write_outbuf</font> ( DataHandle , io_form_arg ) <A href='../../call_to/WRITE_OUTBUF.html' TARGET='index'>2</A>,<A href='../../call_from/WRITE_OUTBUF.html' TARGET='index'>8</A><a name='415'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='416'></font>
+<font color=#447700>!&lt;PRE&gt;<a name='417'></font>
+<font color=#447700>! This routine writes all of the records stored in outbuf_table to the <a name='418'></font>
+<font color=#447700>! file referenced by DataHandle using format specified by io_form_arg.  <a name='419'></font>
+<font color=#447700>! This routine calls the package-specific I/O routines to accomplish <a name='420'></font>
+<font color=#447700>! the write.  <a name='421'></font>
+<font color=#447700>! It then re-initializes module data structures.  <a name='422'></font>
+<font color=#447700>!&lt;/PRE&gt;<a name='423'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='424'></font>
+    USE <A href='../../html_code/frame/module_state_description.F.html#MODULE_STATE_DESCRIPTION'>module_state_description</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STATE_DESCRIPTION_104"><a name='425'>
+    IMPLICIT NONE<a name='426'>
+#include "<A href='../../html_code/include/wrf_io_flags.h.html'>wrf_io_flags.h</A>"<A NAME="wrf_io_flags.h_2"><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='427'>
+    INTEGER , INTENT(IN)  :: DataHandle, io_form_arg<a name='428'>
+    INTEGER               :: ii,ds1,de1,ds2,de2,ds3,de3<a name='429'>
+    INTEGER               :: Comm, IOComm, DomainDesc <font color=#447700>! dummy<a name='430'></font>
+    INTEGER               :: Status<a name='431'>
+    CHARACTER*256         :: mess<a name='432'>
+    Comm = 0 ; IOComm = 0 ; DomainDesc = 0 <a name='433'>
+<a name='434'>
+    DO ii = 1, num_entries<a name='435'>
+      WRITE(mess,*)'writing ', &amp;<a name='436'>
+                    TRIM(outbuf_table(ii)%DateStr)," ",                                   &amp;<a name='437'>
+                    TRIM(outbuf_table(ii)%VarName)," ",                                   &amp;<a name='438'>
+                    TRIM(outbuf_table(ii)%MemoryOrder)<a name='439'>
+      ds1 = outbuf_table(ii)%DomainStart(1) ; de1 = outbuf_table(ii)%DomainEnd(1)<a name='440'>
+      ds2 = outbuf_table(ii)%DomainStart(2) ; de2 = outbuf_table(ii)%DomainEnd(2)<a name='441'>
+      ds3 = outbuf_table(ii)%DomainStart(3) ; de3 = outbuf_table(ii)%DomainEnd(3)<a name='442'>
+<a name='443'>
+      SELECT CASE ( io_form_arg )<a name='444'>
+<a name='445'>
+#ifdef NETCDF<a name='446'>
+        CASE ( IO_NETCDF   )<a name='447'>
+<a name='448'>
+          IF ( outbuf_table(ii)%FieldType .EQ. WRF_FLOAT ) THEN<a name='449'>
+<a name='450'>
+          CALL <A href='../../html_code/io_netcdf/wrf_io.F90.html#EXT_NCD_WRITE_FIELD'>ext_ncd_write_field</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXT_NCD_WRITE_FIELD_5"> ( DataHandle ,                                     &amp;<a name='451'>
+                                 TRIM(outbuf_table(ii)%DateStr),                      &amp;<a name='452'>
+                                 TRIM(outbuf_table(ii)%VarName),                      &amp;<a name='453'>
+                                 outbuf_table(ii)%rptr(ds1:de1,ds2:de2,ds3:de3),      &amp;<a name='454'>
+                                 outbuf_table(ii)%FieldType,                          &amp;  <font color=#447700>!*<a name='455'></font>
+                                 Comm, IOComm, DomainDesc ,                           &amp;<a name='456'>
+                                 TRIM(outbuf_table(ii)%MemoryOrder),                  &amp;<a name='457'>
+                                 TRIM(outbuf_table(ii)%Stagger),                      &amp;  <font color=#447700>!*<a name='458'></font>
+                                 outbuf_table(ii)%DimNames ,                          &amp;  <font color=#447700>!*<a name='459'></font>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='460'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='461'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='462'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='463'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='464'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='465'>
+                                 Status )<a name='466'>
+<a name='467'>
+          ELSE IF ( outbuf_table(ii)%FieldType .EQ. WRF_INTEGER ) THEN<a name='468'>
+          CALL <A href='../../html_code/io_netcdf/wrf_io.F90.html#EXT_NCD_WRITE_FIELD'>ext_ncd_write_field</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXT_NCD_WRITE_FIELD_6"> ( DataHandle ,                                     &amp;<a name='469'>
+                                 TRIM(outbuf_table(ii)%DateStr),                      &amp;<a name='470'>
+                                 TRIM(outbuf_table(ii)%VarName),                      &amp;<a name='471'>
+                                 outbuf_table(ii)%iptr(ds1:de1,ds2:de2,ds3:de3),      &amp;<a name='472'>
+                                 outbuf_table(ii)%FieldType,                          &amp;  <font color=#447700>!*<a name='473'></font>
+                                 Comm, IOComm, DomainDesc ,                           &amp;<a name='474'>
+                                 TRIM(outbuf_table(ii)%MemoryOrder),                  &amp;<a name='475'>
+                                 TRIM(outbuf_table(ii)%Stagger),                      &amp;  <font color=#447700>!*<a name='476'></font>
+                                 outbuf_table(ii)%DimNames ,                          &amp;  <font color=#447700>!*<a name='477'></font>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='478'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='479'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='480'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='481'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='482'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='483'>
+                                 Status )<a name='484'>
+          ENDIF<a name='485'>
+#endif<a name='486'>
+#ifdef YYY<a name='487'>
+      CASE ( IO_YYY   )<a name='488'>
+<a name='489'>
+          IF ( outbuf_table(ii)%FieldType .EQ. WRF_FLOAT ) THEN<a name='490'>
+<a name='491'>
+          CALL ext_yyy_write_field ( DataHandle ,                                     &amp;<a name='492'>
+                                 TRIM(outbuf_table(ii)%DateStr),                      &amp;<a name='493'>
+                                 TRIM(outbuf_table(ii)%VarName),                      &amp;<a name='494'>
+                                 outbuf_table(ii)%rptr(ds1:de1,ds2:de2,ds3:de3),      &amp;<a name='495'>
+                                 outbuf_table(ii)%FieldType,                          &amp;  <font color=#447700>!*<a name='496'></font>
+                                 Comm, IOComm, DomainDesc ,                           &amp;<a name='497'>
+                                 TRIM(outbuf_table(ii)%MemoryOrder),                  &amp;<a name='498'>
+                                 TRIM(outbuf_table(ii)%Stagger),                      &amp;  <font color=#447700>!*<a name='499'></font>
+                                 outbuf_table(ii)%DimNames ,                          &amp;  <font color=#447700>!*<a name='500'></font>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='501'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='502'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='503'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='504'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='505'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='506'>
+                                 Status )<a name='507'>
+<a name='508'>
+          ELSE IF ( outbuf_table(ii)%FieldType .EQ. WRF_INTEGER ) THEN<a name='509'>
+          CALL ext_yyy_write_field ( DataHandle ,                                     &amp;<a name='510'>
+                                 TRIM(outbuf_table(ii)%DateStr),                      &amp;<a name='511'>
+                                 TRIM(outbuf_table(ii)%VarName),                      &amp;<a name='512'>
+                                 outbuf_table(ii)%iptr(ds1:de1,ds2:de2,ds3:de3),      &amp;<a name='513'>
+                                 outbuf_table(ii)%FieldType,                          &amp;  <font color=#447700>!*<a name='514'></font>
+                                 Comm, IOComm, DomainDesc ,                           &amp;<a name='515'>
+                                 TRIM(outbuf_table(ii)%MemoryOrder),                  &amp;<a name='516'>
+                                 TRIM(outbuf_table(ii)%Stagger),                      &amp;  <font color=#447700>!*<a name='517'></font>
+                                 outbuf_table(ii)%DimNames ,                          &amp;  <font color=#447700>!*<a name='518'></font>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='519'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='520'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='521'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='522'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='523'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='524'>
+                                 Status )<a name='525'>
+          ENDIF<a name='526'>
+#endif<a name='527'>
+#ifdef GRIB1<a name='528'>
+      CASE ( IO_GRIB1   )<a name='529'>
+<a name='530'>
+          IF ( outbuf_table(ii)%FieldType .EQ. WRF_FLOAT ) THEN<a name='531'>
+<a name='532'>
+          CALL <A href='../../html_code/io_grib1/io_grib1.F.html#EXT_GR1_WRITE_FIELD'>ext_gr1_write_field</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXT_GR1_WRITE_FIELD_1"> ( DataHandle ,                                   &amp;<a name='533'>
+                                 TRIM(outbuf_table(ii)%DateStr),                      &amp;<a name='534'>
+                                 TRIM(outbuf_table(ii)%VarName),                      &amp;<a name='535'>
+                                 outbuf_table(ii)%rptr(ds1:de1,ds2:de2,ds3:de3),      &amp;<a name='536'>
+                                 outbuf_table(ii)%FieldType,                          &amp;  <font color=#447700>!*<a name='537'></font>
+                                 Comm, IOComm, DomainDesc ,                           &amp;<a name='538'>
+                                 TRIM(outbuf_table(ii)%MemoryOrder),                  &amp;<a name='539'>
+                                 TRIM(outbuf_table(ii)%Stagger),                      &amp;  <font color=#447700>!*<a name='540'></font>
+                                 outbuf_table(ii)%DimNames ,                          &amp;  <font color=#447700>!*<a name='541'></font>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='542'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='543'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='544'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='545'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='546'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='547'>
+                                 Status )<a name='548'>
+<a name='549'>
+          ELSE IF ( outbuf_table(ii)%FieldType .EQ. WRF_INTEGER ) THEN<a name='550'>
+          CALL <A href='../../html_code/io_grib1/io_grib1.F.html#EXT_GR1_WRITE_FIELD'>ext_gr1_write_field</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXT_GR1_WRITE_FIELD_2"> ( DataHandle ,                                   &amp;<a name='551'>
+                                 TRIM(outbuf_table(ii)%DateStr),                      &amp;<a name='552'>
+                                 TRIM(outbuf_table(ii)%VarName),                      &amp;<a name='553'>
+                                 outbuf_table(ii)%iptr(ds1:de1,ds2:de2,ds3:de3),      &amp;<a name='554'>
+                                 outbuf_table(ii)%FieldType,                          &amp;  <font color=#447700>!*<a name='555'></font>
+                                 Comm, IOComm, DomainDesc ,                           &amp;<a name='556'>
+                                 TRIM(outbuf_table(ii)%MemoryOrder),                  &amp;<a name='557'>
+                                 TRIM(outbuf_table(ii)%Stagger),                      &amp;  <font color=#447700>!*<a name='558'></font>
+                                 outbuf_table(ii)%DimNames ,                          &amp;  <font color=#447700>!*<a name='559'></font>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='560'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='561'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='562'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='563'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='564'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='565'>
+                                 Status )<a name='566'>
+          ENDIF<a name='567'>
+#endif<a name='568'>
+#ifdef GRIB2<a name='569'>
+      CASE ( IO_GRIB2   )<a name='570'>
+<a name='571'>
+          IF ( outbuf_table(ii)%FieldType .EQ. WRF_FLOAT ) THEN<a name='572'>
+<a name='573'>
+          CALL <A href='../../html_code/io_grib2/io_grib2.F.html#EXT_GR2_WRITE_FIELD'>ext_gr2_write_field</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXT_GR2_WRITE_FIELD_1"> ( DataHandle ,                                   &amp;<a name='574'>
+                                 TRIM(outbuf_table(ii)%DateStr),                      &amp;<a name='575'>
+                                 TRIM(outbuf_table(ii)%VarName),                      &amp;<a name='576'>
+                                 outbuf_table(ii)%rptr(ds1:de1,ds2:de2,ds3:de3),      &amp;<a name='577'>
+                                 outbuf_table(ii)%FieldType,                          &amp;  <font color=#447700>!*<a name='578'></font>
+                                 Comm, IOComm, DomainDesc ,                           &amp;<a name='579'>
+                                 TRIM(outbuf_table(ii)%MemoryOrder),                  &amp;<a name='580'>
+                                 TRIM(outbuf_table(ii)%Stagger),                      &amp;  <font color=#447700>!*<a name='581'></font>
+                                 outbuf_table(ii)%DimNames ,                          &amp;  <font color=#447700>!*<a name='582'></font>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='583'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='584'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='585'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='586'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='587'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='588'>
+                                 Status )<a name='589'>
+<a name='590'>
+          ELSE IF ( outbuf_table(ii)%FieldType .EQ. WRF_INTEGER ) THEN<a name='591'>
+          CALL <A href='../../html_code/io_grib2/io_grib2.F.html#EXT_GR2_WRITE_FIELD'>ext_gr2_write_field</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="EXT_GR2_WRITE_FIELD_2"> ( DataHandle ,                                   &amp;<a name='592'>
+                                 TRIM(outbuf_table(ii)%DateStr),                      &amp;<a name='593'>
+                                 TRIM(outbuf_table(ii)%VarName),                      &amp;<a name='594'>
+                                 outbuf_table(ii)%iptr(ds1:de1,ds2:de2,ds3:de3),      &amp;<a name='595'>
+                                 outbuf_table(ii)%FieldType,                          &amp;  <font color=#447700>!*<a name='596'></font>
+                                 Comm, IOComm, DomainDesc ,                           &amp;<a name='597'>
+                                 TRIM(outbuf_table(ii)%MemoryOrder),                  &amp;<a name='598'>
+                                 TRIM(outbuf_table(ii)%Stagger),                      &amp;  <font color=#447700>!*<a name='599'></font>
+                                 outbuf_table(ii)%DimNames ,                          &amp;  <font color=#447700>!*<a name='600'></font>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='601'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='602'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='603'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='604'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='605'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='606'>
+                                 Status )<a name='607'>
+          ENDIF<a name='608'>
+#endif<a name='609'>
+#ifdef INTIO<a name='610'>
+        CASE ( IO_INTIO  )<a name='611'>
+          IF ( outbuf_table(ii)%FieldType .EQ. WRF_FLOAT ) THEN<a name='612'>
+<a name='613'>
+          CALL ext_int_write_field ( DataHandle ,                                     &amp;<a name='614'>
+                                 TRIM(outbuf_table(ii)%DateStr),                      &amp;<a name='615'>
+                                 TRIM(outbuf_table(ii)%VarName),                      &amp;<a name='616'>
+                                 outbuf_table(ii)%rptr(ds1:de1,ds2:de2,ds3:de3),      &amp;<a name='617'>
+                                 outbuf_table(ii)%FieldType,                          &amp;  <font color=#447700>!*<a name='618'></font>
+                                 Comm, IOComm, DomainDesc ,                           &amp;<a name='619'>
+                                 TRIM(outbuf_table(ii)%MemoryOrder),                  &amp;<a name='620'>
+                                 TRIM(outbuf_table(ii)%Stagger),                      &amp;  <font color=#447700>!*<a name='621'></font>
+                                 outbuf_table(ii)%DimNames ,                          &amp;  <font color=#447700>!*<a name='622'></font>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='623'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='624'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='625'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='626'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='627'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='628'>
+                                 Status )<a name='629'>
+<a name='630'>
+          ELSE IF ( outbuf_table(ii)%FieldType .EQ. WRF_INTEGER ) THEN<a name='631'>
+<a name='632'>
+          CALL ext_int_write_field ( DataHandle ,                                     &amp;<a name='633'>
+                                 TRIM(outbuf_table(ii)%DateStr),                      &amp;<a name='634'>
+                                 TRIM(outbuf_table(ii)%VarName),                      &amp;<a name='635'>
+                                 outbuf_table(ii)%iptr(ds1:de1,ds2:de2,ds3:de3),      &amp;<a name='636'>
+                                 outbuf_table(ii)%FieldType,                          &amp;  <font color=#447700>!*<a name='637'></font>
+                                 Comm, IOComm, DomainDesc ,                           &amp;<a name='638'>
+                                 TRIM(outbuf_table(ii)%MemoryOrder),                  &amp;<a name='639'>
+                                 TRIM(outbuf_table(ii)%Stagger),                      &amp;  <font color=#447700>!*<a name='640'></font>
+                                 outbuf_table(ii)%DimNames ,                          &amp;  <font color=#447700>!*<a name='641'></font>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='642'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='643'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='644'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='645'>
+                                 outbuf_table(ii)%DomainStart,                        &amp;<a name='646'>
+                                 outbuf_table(ii)%DomainEnd,                          &amp;<a name='647'>
+                                 Status )<a name='648'>
+<a name='649'>
+          ENDIF<a name='650'>
+#endif<a name='651'>
+        CASE DEFAULT<a name='652'>
+      END SELECT<a name='653'>
+<a name='654'>
+<a name='655'>
+      IF ( ASSOCIATED( outbuf_table(ii)%rptr) ) DEALLOCATE(outbuf_table(ii)%rptr)<a name='656'>
+      IF ( ASSOCIATED( outbuf_table(ii)%iptr) ) DEALLOCATE(outbuf_table(ii)%iptr)<a name='657'>
+      NULLIFY( outbuf_table(ii)%rptr )<a name='658'>
+      NULLIFY( outbuf_table(ii)%iptr )<a name='659'>
+    ENDDO<a name='660'>
+    CALL <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#INIT_OUTBUF'>init_outbuf</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#WRITE_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="INIT_OUTBUF_2"><a name='661'>
+  END SUBROUTINE write_outbuf<a name='662'>
+<a name='663'>
+<a name='664'>
+<A NAME='STITCH_OUTBUF_PATCHES'><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='665'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>stitch_outbuf_patches</font>(ibuf) <A href='../../call_to/STITCH_OUTBUF_PATCHES.html' TARGET='index'>1</A>,<A href='../../call_from/STITCH_OUTBUF_PATCHES.html' TARGET='index'>11</A><a name='666'>
+    USE <A href='../../html_code/frame/module_timing.F.html#MODULE_TIMING'>module_timing</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_TIMING_30"><a name='667'>
+    IMPLICIT none<a name='668'>
+    INTEGER, INTENT(in) :: ibuf<a name='669'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='670'></font>
+<font color=#447700>!&lt;PRE&gt;<a name='671'></font>
+<font color=#447700>! This routine does the "output quilting" for the case where quilting has been<a name='672'></font>
+<font color=#447700>! built to use Parallel NetCDF. Unlike store_patch_in_outbuf() we do not have<a name='673'></font>
+<font color=#447700>! data for the whole domain --- instead we aim to quilt as much of the data as<a name='674'></font>
+<font color=#447700>! possible in order to reduce the number of separate writes that we must do.<a name='675'></font>
+<font color=#447700>!&lt;/PRE&gt;<a name='676'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='677'></font>
+#include "<A href='../../html_code/include/wrf_io_flags.h.html'>wrf_io_flags.h</A>"<A NAME="wrf_io_flags.h_3"><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='678'>
+    INTEGER                              :: ipatch, jpatch, ii<a name='679'>
+    INTEGER                              :: ierr<a name='680'>
+    INTEGER                              :: npatches<a name='681'>
+    INTEGER,              DIMENSION(3)   :: newExtent, pos<a name='682'>
+    INTEGER, ALLOCATABLE, DIMENSION(:,:) :: OldPatchStart<a name='683'>
+    INTEGER, POINTER,   DIMENSION(:,:,:) :: ibuffer<a name='684'>
+    REAL,    POINTER,   DIMENSION(:,:,:) :: rbuffer<a name='685'>
+    CHARACTER*256                        :: mess<a name='686'>
+integer i,j<a name='687'>
+<a name='688'>
+<font color=#447700>!    CALL start_timing()<a name='689'></font>
+<a name='690'>
+    IF(LEN_TRIM(outpatch_table(ibuf)%MemoryOrder) &lt; 2)THEN<a name='691'>
+       <font color=#447700>! This field is a scalar or 1D array. Such quantities are replicated<a name='692'></font>
+       <font color=#447700>! across compute nodes and therefore we need only keep a single<a name='693'></font>
+       <font color=#447700>! patch - delete all but the first in the list<a name='694'></font>
+      IF ( outpatch_table(ibuf)%FieldType .EQ. WRF_FLOAT ) THEN<a name='695'>
+<a name='696'>
+          DO jpatch=2,outpatch_table(ibuf)%npatch,1<a name='697'>
+             outpatch_table(ibuf)%PatchList(jpatch)%forDeletion = .TRUE.<a name='698'>
+             outpatch_table(ibuf)%nActivePatch = &amp;<a name='699'>
+                                 outpatch_table(ibuf)%nActivePatch - 1<a name='700'>
+             DEALLOCATE(outpatch_table(ibuf)%PatchList(jpatch)%rptr)<a name='701'>
+          END DO<a name='702'>
+<a name='703'>
+      ELSE IF ( outpatch_table(ibuf)%FieldType .EQ. WRF_INTEGER ) THEN<a name='704'>
+<a name='705'>
+          DO jpatch=2,outpatch_table(ibuf)%npatch,1<a name='706'>
+             outpatch_table(ibuf)%PatchList(jpatch)%forDeletion = .TRUE.<a name='707'>
+             outpatch_table(ibuf)%nActivePatch = &amp;<a name='708'>
+                                 outpatch_table(ibuf)%nActivePatch - 1<a name='709'>
+             DEALLOCATE(outpatch_table(ibuf)%PatchList(jpatch)%iptr)<a name='710'>
+          END DO<a name='711'>
+<a name='712'>
+      ELSE<a name='713'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_369">("stitch_outbuf_patches: unrecognised Field Type")<a name='714'>
+      END IF<a name='715'>
+<a name='716'>
+<font color=#447700>!     CALL end_timing("stitch_outbuf_patches: deleting replicated patches")<a name='717'></font>
+<a name='718'>
+      RETURN<a name='719'>
+<a name='720'>
+    END IF <font color=#447700>! Field is scalar or 1D<a name='721'></font>
+<a name='722'>
+    <font color=#447700>! Otherwise, this field _is_ distributed across compute PEs and therefore<a name='723'></font>
+    <font color=#447700>! it's worth trying to stitch patches together...<a name='724'></font>
+    ALLOCATE(OldPatchStart(3,outpatch_table(ibuf)%npatch), &amp;<a name='725'>
+             JoinedPatches(outpatch_table(ibuf)%npatch,    &amp;<a name='726'>
+                           outpatch_table(ibuf)%npatch),   &amp;<a name='727'>
+             PatchCount(outpatch_table(ibuf)%npatch),      &amp;<a name='728'>
+             Stat=ierr)<a name='729'>
+    IF(ierr /= 0)THEN<a name='730'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_368">('stitch_outbuf_patches: unable to stitch patches as allocate failed.')<a name='731'>
+       RETURN<a name='732'>
+    END IF<a name='733'>
+<a name='734'>
+    JoinedPatches(:,:) = -1<a name='735'>
+    <font color=#447700>! Initialise these arrays to catch failures in the above allocate on<a name='736'></font>
+    <font color=#447700>! linux-based systems (e.g. Cray XE) where allocation only actually <a name='737'></font>
+    <font color=#447700>! performed when requested memory is touched.<a name='738'></font>
+    PatchCount(:) = 0<a name='739'>
+    OldPatchStart(:,:) = 0<a name='740'>
+<a name='741'>
+    NULLIFY(ibuffer)<a name='742'>
+    NULLIFY(rbuffer)<a name='743'>
+<a name='744'>
+    DO jpatch=1,outpatch_table(ibuf)%npatch,1<a name='745'>
+<a name='746'>
+       <font color=#447700>! Each patch consists of just itself initially<a name='747'></font>
+       JoinedPatches(1,jpatch) = jpatch<a name='748'>
+       PatchCount(jpatch) = 1<a name='749'>
+<a name='750'>
+       <font color=#447700>! Store the location of each patch for use after we've decided how to <a name='751'></font>
+       <font color=#447700>! stitch them together<a name='752'></font>
+       OldPatchStart(:,jpatch) = outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(:)<a name='753'>
+    END DO<a name='754'>
+<a name='755'>
+    <font color=#447700>! Search through patches to find pairs that we can stitch together<a name='756'></font>
+    ipatch = 1<a name='757'>
+    OUTER: DO WHILE(ipatch &lt; outpatch_table(ibuf)%npatch)<a name='758'>
+<a name='759'>
+       IF( outpatch_table(ibuf)%PatchList(ipatch)%forDeletion )THEN<a name='760'>
+          ipatch = ipatch + 1<a name='761'>
+          CYCLE OUTER<a name='762'>
+       END IF<a name='763'>
+<a name='764'>
+       INNER: DO jpatch=ipatch+1,outpatch_table(ibuf)%npatch,1<a name='765'>
+<a name='766'>
+          IF(outpatch_table(ibuf)%PatchList(jpatch)%forDeletion )THEN<a name='767'>
+             CYCLE INNER<a name='768'>
+          END IF<a name='769'>
+<a name='770'>
+          <font color=#447700>! Look for patches that can be concatenated with ipatch in the first<a name='771'></font>
+          <font color=#447700>! dimension (preferred since that is contiguous in memory in F90)<a name='772'></font>
+          <font color=#447700>!  ________________         ____________  <a name='773'></font>
+          <font color=#447700>!  |               |        |           |<a name='774'></font>
+          <font color=#447700>! Startx(j)     Endx(j) Startx(i)   Endx(i)<a name='775'></font>
+          <font color=#447700>!<a name='776'></font>
+          IF(outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(1) == &amp;<a name='777'>
+              (outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(1) - 1) )THEN<a name='778'>
+<a name='779'>
+             <font color=#447700>! Patches contiguous in first dimension - do they have the same<a name='780'></font>
+             <font color=#447700>! extents in the other two dimensions?<a name='781'></font>
+             IF( (outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(2)==      &amp;<a name='782'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(2) ) .AND.&amp;<a name='783'>
+		 (outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(2)  ==      &amp;<a name='784'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(2)   ) .AND.&amp;<a name='785'>
+                 (outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(3)==      &amp;<a name='786'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(3) ) .AND.&amp;<a name='787'>
+		 (outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(3)  ==      &amp;<a name='788'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(3)) )THEN<a name='789'>
+		<a name='790'>
+                <font color=#447700>! We can concatenate these two patches in first dimension<a name='791'></font>
+<font color=#447700>!                WRITE(mess,"('Can concatenate patches ',I3,' and ',I3,' in dim 1')") ipatch, jpatch<a name='792'></font>
+<font color=#447700>!                CALL wrf_message(mess)<a name='793'></font>
+<a name='794'>
+                <font color=#447700>! Grow patch ipatch to include jpatch<a name='795'></font>
+                outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(1) = &amp;<a name='796'>
+                         outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(1)<a name='797'>
+                CALL <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MERGE_PATCHES'>merge_patches</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MERGE_PATCHES_1">(ibuf, ipatch, jpatch)<a name='798'>
+<a name='799'>
+                <font color=#447700>! Go again...<a name='800'></font>
+                ipatch = 1<a name='801'>
+                CYCLE OUTER<a name='802'>
+             END IF<a name='803'>
+          END IF<a name='804'>
+          <font color=#447700>!  ______________         ____________  <a name='805'></font>
+          <font color=#447700>!  |             |        |           |<a name='806'></font>
+          <font color=#447700>! Startx(i)    Endx(i) Startx(j)   Endx(j)<a name='807'></font>
+          <font color=#447700>!<a name='808'></font>
+          IF(outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(1) == &amp;<a name='809'>
+             (outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(1) + 1))THEN<a name='810'>
+<a name='811'>
+             <font color=#447700>! Patches contiguous in first dimension - do they have the same<a name='812'></font>
+             <font color=#447700>! extents in the other two dimensions?<a name='813'></font>
+             IF( (outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(2)==      &amp;<a name='814'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(2) ) .AND.&amp;<a name='815'>
+		 (outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(2)  ==      &amp;<a name='816'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(2)   ) .AND.&amp;<a name='817'>
+                 (outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(3)==      &amp;<a name='818'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(3) ) .AND.&amp;<a name='819'>
+		 (outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(3)  ==      &amp;<a name='820'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(3)) )THEN<a name='821'>
+<a name='822'>
+                 <font color=#447700>! We can concatenate these two patches in first dimension<a name='823'></font>
+<font color=#447700>!                 WRITE(mess,"('Can concatenate patches ',I3,' and ',I3,' in dim 1')") ipatch, jpatch<a name='824'></font>
+<font color=#447700>!                 CALL wrf_message(mess)<a name='825'></font>
+<a name='826'>
+		<font color=#447700>! Grow patch ipatch to include jpatch<a name='827'></font>
+                outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(1) = &amp;<a name='828'>
+                        outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(1)<a name='829'>
+                CALL <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MERGE_PATCHES'>merge_patches</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MERGE_PATCHES_2">(ibuf, ipatch, jpatch)<a name='830'>
+<a name='831'>
+                <font color=#447700>! Go again...<a name='832'></font>
+		ipatch = 1<a name='833'>
+		CYCLE OUTER<a name='834'>
+              END IF<a name='835'>
+           END IF<a name='836'>
+<a name='837'>
+           <font color=#447700>! Try the second dimension<a name='838'></font>
+           IF(outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(2) == &amp;<a name='839'>
+                (outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(2) - 1))THEN<a name='840'>
+<a name='841'>
+              <font color=#447700>! Patches contiguous in second dimension - do they have the same<a name='842'></font>
+              <font color=#447700>! extents in the other two dimensions?<a name='843'></font>
+              IF( (outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(1)==     &amp;<a name='844'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(1) ) .AND.&amp;<a name='845'>
+		 (outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(1)  ==      &amp;<a name='846'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(1)   ) .AND.&amp;<a name='847'>
+                 (outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(3)==      &amp;<a name='848'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(3) ) .AND.&amp;<a name='849'>
+		 (outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(3)  ==      &amp;<a name='850'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(3)) )THEN<a name='851'>
+<a name='852'>
+                 <font color=#447700>! We can concatenate these two patches in second dimension<a name='853'></font>
+<font color=#447700>!                 WRITE(mess,"('Can concatenate patches ',I3,' and ',I3,' in dim 2')") ipatch, jpatch<a name='854'></font>
+<font color=#447700>!                 CALL wrf_message(mess)<a name='855'></font>
+<a name='856'>
+                 <font color=#447700>! Grow patch ipatch to include jpatch<a name='857'></font>
+                 outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(2) = &amp;<a name='858'>
+                         outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(2)<a name='859'>
+                 CALL <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MERGE_PATCHES'>merge_patches</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MERGE_PATCHES_3">(ibuf, ipatch, jpatch)<a name='860'>
+<a name='861'>
+                 <font color=#447700>! Go again...<a name='862'></font>
+                 ipatch = 1<a name='863'>
+                 CYCLE OUTER<a name='864'>
+              END IF<a name='865'>
+           END IF<a name='866'>
+<a name='867'>
+           IF(outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(2) == &amp;<a name='868'>
+                (outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(2) + 1) )THEN<a name='869'>
+<a name='870'>
+              <font color=#447700>! Patches contiguous in second dimension - do they have the same<a name='871'></font>
+              <font color=#447700>! extents in the other two dimensions?<a name='872'></font>
+              IF( (outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(1)==     &amp;<a name='873'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(1) ) .AND.&amp;<a name='874'>
+		 (outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(1)  ==      &amp;<a name='875'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(1)   ) .AND.&amp;<a name='876'>
+                 (outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(3)==      &amp;<a name='877'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(3) ) .AND.&amp;<a name='878'>
+		 (outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(3)  ==      &amp;<a name='879'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(3)) )THEN<a name='880'>
+<a name='881'>
+                 <font color=#447700>! We can concatenate these two patches in second dimension<a name='882'></font>
+<font color=#447700>!                 WRITE(mess,"('Can concatenate patches ',I3,' and ',I3,' in dim 2')") ipatch, jpatch<a name='883'></font>
+<font color=#447700>!                 CALL wrf_message(mess)<a name='884'></font>
+<a name='885'>
+                 <font color=#447700>! Grow patch ipatch to include jpatch<a name='886'></font>
+                 outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(2) = &amp;<a name='887'>
+                         outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(2)<a name='888'>
+                 CALL <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MERGE_PATCHES'>merge_patches</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MERGE_PATCHES_4">(ibuf, ipatch, jpatch)<a name='889'>
+<a name='890'>
+                 <font color=#447700>! Go again...<a name='891'></font>
+                 ipatch = 1<a name='892'>
+                 CYCLE OUTER                 <a name='893'>
+              END IF<a name='894'>
+           END IF<a name='895'>
+<a name='896'>
+           <font color=#447700>! Try the third dimension<a name='897'></font>
+           IF(outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(3) == &amp;<a name='898'>
+               (outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(3) - 1) )THEN<a name='899'>
+<a name='900'>
+              <font color=#447700>! Patches contiguous in second dimension - do they have the same<a name='901'></font>
+              <font color=#447700>! extents in the other two dimensions?<a name='902'></font>
+              IF( (outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(1)==     &amp;<a name='903'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(1) ) .AND.&amp;<a name='904'>
+		 (outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(1)  ==      &amp;<a name='905'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(1)   ) .AND.&amp;<a name='906'>
+                 (outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(2)==      &amp;<a name='907'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(2) ) .AND.&amp;<a name='908'>
+		 (outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(2)  ==      &amp;<a name='909'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(2)) )THEN<a name='910'>
+<a name='911'>
+                 <font color=#447700>! We can concatenate these two patches in the third dimension<a name='912'></font>
+<font color=#447700>!                 WRITE(mess,"('Can concatenate patches ',I3,' and ',I3,' in dim 3')") ipatch, jpatch<a name='913'></font>
+<font color=#447700>!                 CALL wrf_message(mess)<a name='914'></font>
+<a name='915'>
+                 <font color=#447700>! Grow patch ipatch to include jpatch<a name='916'></font>
+                 outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(3) = &amp;<a name='917'>
+                         outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(3)<a name='918'>
+                 CALL <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MERGE_PATCHES'>merge_patches</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MERGE_PATCHES_5">(ibuf, ipatch, jpatch)<a name='919'>
+<a name='920'>
+                 <font color=#447700>! Go again...<a name='921'></font>
+                 ipatch = 1<a name='922'>
+                 CYCLE OUTER                 <a name='923'>
+              END IF<a name='924'>
+           END IF<a name='925'>
+<a name='926'>
+           IF(outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(3) == &amp;<a name='927'>
+                (outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(3) + 1))THEN<a name='928'>
+<a name='929'>
+              <font color=#447700>! Patches contiguous in second dimension - do they have the same<a name='930'></font>
+              <font color=#447700>! extents in the other two dimensions?<a name='931'></font>
+              IF( (outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(1)==     &amp;<a name='932'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(1) ) .AND.&amp;<a name='933'>
+		 (outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(1)  ==      &amp;<a name='934'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(1)   ) .AND.&amp;<a name='935'>
+                 (outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(2)==      &amp;<a name='936'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchStart(2) ) .AND.&amp;<a name='937'>
+		 (outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(2)  ==      &amp;<a name='938'>
+                  outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(2)) )THEN<a name='939'>
+<a name='940'>
+                 <font color=#447700>! We can concatenate these two patches in the third dimension<a name='941'></font>
+<font color=#447700>!                 WRITE(mess,"('Can concatenate patches ',I3,' and ',I3,' in dim 3')") ipatch, jpatch<a name='942'></font>
+<font color=#447700>!                 CALL wrf_message(mess)<a name='943'></font>
+<a name='944'>
+                 <font color=#447700>! Grow patch ipatch to include jpatch<a name='945'></font>
+                 outpatch_table(ibuf)%PatchList(ipatch)%PatchEnd(3) = &amp;<a name='946'>
+                         outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(3)<a name='947'>
+                 CALL <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MERGE_PATCHES'>merge_patches</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MERGE_PATCHES_6">(ibuf, ipatch, jpatch)<a name='948'>
+<a name='949'>
+                 <font color=#447700>! Go again...<a name='950'></font>
+                 ipatch = 1<a name='951'>
+                 CYCLE OUTER                 <a name='952'>
+              END IF<a name='953'>
+           END IF<a name='954'>
+<a name='955'>
+       END DO INNER<a name='956'>
+<a name='957'>
+       ipatch = ipatch + 1<a name='958'>
+<a name='959'>
+    END DO OUTER<a name='960'>
+<a name='961'>
+    npatches = 0<a name='962'>
+<a name='963'>
+    DO jpatch=1,outpatch_table(ibuf)%npatch,1<a name='964'>
+<a name='965'>
+       IF ( outpatch_table(ibuf)%PatchList(jpatch)%forDeletion ) CYCLE<a name='966'>
+<a name='967'>
+<font color=#447700>!       WRITE(mess,"('Patch ',I3,': [',I3,': ',I3,'],[',I3,':',I3,'],[',I3,':',I3,']')") jpatch, outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(1), &amp;<a name='968'></font>
+<font color=#447700>!             outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(1),   &amp;<a name='969'></font>
+<font color=#447700>!             outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(2), &amp;<a name='970'></font>
+<font color=#447700>!             outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(2),   &amp;<a name='971'></font>
+<font color=#447700>!             outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(3), &amp;<a name='972'></font>
+<font color=#447700>!             outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(3)<a name='973'></font>
+<font color=#447700>!       CALL wrf_message(mess)<a name='974'></font>
+<a name='975'>
+       <font color=#447700>! Count how many patches we're left with<a name='976'></font>
+       npatches = npatches + 1<a name='977'>
+<a name='978'>
+       <font color=#447700>! If no patches have been merged together to make this patch then we <a name='979'></font>
+       <font color=#447700>! don't have to do any more with it<a name='980'></font>
+       IF(PatchCount(jpatch) == 1) CYCLE<a name='981'>
+<a name='982'>
+       <font color=#447700>! Get the extent of this patch<a name='983'></font>
+       newExtent(:) = outpatch_table(ibuf)%PatchList(jpatch)%PatchEnd(:) - &amp;<a name='984'>
+                      outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(:) + 1<a name='985'>
+       <font color=#447700>! Allocate a buffer to hold all of its data<a name='986'></font>
+       IF ( outpatch_table(ibuf)%FieldType .EQ. WRF_FLOAT ) THEN<a name='987'>
+          ALLOCATE(rbuffer(newExtent(1), newExtent(2), newExtent(3)), &amp;<a name='988'>
+                   Stat=ierr)<a name='989'>
+       ELSE IF ( outpatch_table(ibuf)%FieldType .EQ. WRF_INTEGER ) THEN<a name='990'>
+          ALLOCATE(ibuffer(newExtent(1), newExtent(2), newExtent(3)), &amp;<a name='991'>
+                   Stat=ierr)<a name='992'>
+       END IF<a name='993'>
+       IF(ierr /= 0)THEN<a name='994'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_370">('stitch_outbuf_patches: unable to stitch patches as allocate for merge buffer failed.')<a name='995'>
+          RETURN<a name='996'>
+       END IF<a name='997'>
+<a name='998'>
+       <font color=#447700>! Copy data into this buffer from each of the patches that are being<a name='999'></font>
+       <font color=#447700>! stitched together<a name='1000'></font>
+       IF( ASSOCIATED(rbuffer) )THEN<a name='1001'>
+<a name='1002'>
+<font color=#447700>!         CALL start_timing()<a name='1003'></font>
+<a name='1004'>
+          DO ipatch=1,PatchCount(jpatch),1<a name='1005'>
+<a name='1006'>
+             ii = JoinedPatches(ipatch, jpatch)<a name='1007'>
+<a name='1008'>
+             <font color=#447700>! Work out where to put it - the PatchList(i)%PatchStart() has been<a name='1009'></font>
+             <font color=#447700>! updated to hold the start of the newly quilted patch i. It will<a name='1010'></font>
+             <font color=#447700>! therefore be less than or equal to the starts of each of the <a name='1011'></font>
+             <font color=#447700>! constituent patches.<a name='1012'></font>
+             pos(:) = OldPatchStart(:,ii) - &amp;<a name='1013'>
+                      outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(:) + 1<a name='1014'>
+             <font color=#447700>! Do the copy - can use the PatchExtent data here because that<a name='1015'></font>
+             <font color=#447700>! wasn't modified during the stitching of the patches.<a name='1016'></font>
+<a name='1017'>
+             rbuffer(pos(1): pos(1)+outpatch_table(ibuf)%PatchList(ii)%PatchExtent(1)-1, &amp;<a name='1018'>
+                     pos(2): pos(2)+outpatch_table(ibuf)%PatchList(ii)%PatchExtent(2)-1, &amp;<a name='1019'>
+                     pos(3): pos(3)+outpatch_table(ibuf)%PatchList(ii)%PatchExtent(3)-1 ) &amp;<a name='1020'>
+                             = &amp;<a name='1021'>
+                      outpatch_table(ibuf)%PatchList(ii)%rptr(:, :, :)<a name='1022'>
+<a name='1023'>
+             <font color=#447700>! Having copied the data from this patch, we can free-up the <a name='1024'></font>
+             <font color=#447700>! associated buffer<a name='1025'></font>
+             DEALLOCATE(outpatch_table(ibuf)%PatchList(ii)%rptr)<a name='1026'>
+          END DO<a name='1027'>
+<a name='1028'>
+<font color=#447700>!         CALL end_timing("Data copy into new real patch")<a name='1029'></font>
+<a name='1030'>
+          <font color=#447700>! Re-assign the pointer associated with this patch to the new,<a name='1031'></font>
+          <font color=#447700>! larger, buffer containing the quilted patches<a name='1032'></font>
+          outpatch_table(ibuf)%PatchList(jpatch)%rptr =&gt; rbuffer<a name='1033'>
+<a name='1034'>
+          <font color=#447700>! Unset the original pointer to this buffer<a name='1035'></font>
+          NULLIFY(rbuffer)<a name='1036'>
+<a name='1037'>
+       ELSE IF( ASSOCIATED(ibuffer) )THEN<a name='1038'>
+<a name='1039'>
+<font color=#447700>!         CALL start_timing()<a name='1040'></font>
+<a name='1041'>
+          DO ipatch=1,PatchCount(jpatch),1<a name='1042'>
+<a name='1043'>
+             ii = JoinedPatches(ipatch, jpatch)<a name='1044'>
+<a name='1045'>
+             <font color=#447700>! Work out where to put it<a name='1046'></font>
+             pos(:) = OldPatchStart(:,ii) - &amp;<a name='1047'>
+                      outpatch_table(ibuf)%PatchList(jpatch)%PatchStart(:) + 1<a name='1048'>
+             <font color=#447700>! Do the copy - can use the PatchExtent data here because that<a name='1049'></font>
+             <font color=#447700>! wasn't modified during the stitching of the patches.<a name='1050'></font>
+             ibuffer(pos(1): &amp;<a name='1051'>
+                 pos(1)+outpatch_table(ibuf)%PatchList(ii)%PatchExtent(1)-1, &amp;<a name='1052'>
+                 pos(2): &amp;<a name='1053'>
+                 pos(2)+outpatch_table(ibuf)%PatchList(ii)%PatchExtent(2)-1, &amp;<a name='1054'>
+                 pos(3): &amp;<a name='1055'>
+                 pos(3)+outpatch_table(ibuf)%PatchList(ii)%PatchExtent(3)-1 ) = &amp;<a name='1056'>
+                      outpatch_table(ibuf)%PatchList(ii)%iptr(:, :, :)<a name='1057'>
+<a name='1058'>
+             DEALLOCATE(outpatch_table(ibuf)%PatchList(ii)%iptr)<a name='1059'>
+          END DO<a name='1060'>
+<a name='1061'>
+<font color=#447700>!         CALL end_timing("Data copy into new integer patch")<a name='1062'></font>
+<a name='1063'>
+          <font color=#447700>! Re-assign the pointer associated with this patch to the new,<a name='1064'></font>
+          <font color=#447700>! larger, buffer containing the quilted patches<a name='1065'></font>
+          outpatch_table(ibuf)%PatchList(jpatch)%iptr =&gt; ibuffer<a name='1066'>
+          NULLIFY(ibuffer)<a name='1067'>
+<a name='1068'>
+       END IF<a name='1069'>
+<a name='1070'>
+    END DO<a name='1071'>
+<a name='1072'>
+    WRITE(mess,*) "--------------------------"<a name='1073'>
+    CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STITCH_OUTBUF_PATCHES' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_369">(mess)<a name='1074'>
+<a name='1075'>
+    <font color=#447700>! Record how many patches we're left with<a name='1076'></font>
+    outpatch_table(ibuf)%nPatch = npatches<a name='1077'>
+<a name='1078'>
+    DEALLOCATE(OldPatchStart, JoinedPatches, PatchCount)<a name='1079'>
+<a name='1080'>
+<font color=#447700>!   CALL end_timing("stitch patches")<a name='1081'></font>
+<a name='1082'>
+  END SUBROUTINE stitch_outbuf_patches<a name='1083'>
+<a name='1084'>
+  <font color=#447700>!-------------------------------------------------------------------------<a name='1085'></font>
+<A NAME='MERGE_PATCHES'><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MERGE_PATCHES' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1086'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>merge_patches</font>(itab, ipatch, jpatch) <A href='../../call_to/MERGE_PATCHES.html' TARGET='index'>6</A><a name='1087'>
+    INTEGER, INTENT(in) :: itab, ipatch, jpatch<a name='1088'>
+    <font color=#447700>! Merge patch jpatch into patch ipatch and then 'delete' jpatch<a name='1089'></font>
+    INTEGER :: ii<a name='1090'>
+<a name='1091'>
+    <font color=#447700>! Keep track of which patches we've merged: ipatch takes<a name='1092'></font>
+    <font color=#447700>! on all of the original patches which currently make up <a name='1093'></font>
+    <font color=#447700>! jpatch.<a name='1094'></font>
+    DO ii=1,PatchCount(jpatch),1<a name='1095'>
+       PatchCount(ipatch) = PatchCount(ipatch) + 1<a name='1096'>
+       JoinedPatches(PatchCount(ipatch),ipatch) = JoinedPatches(ii,jpatch)<a name='1097'>
+    END DO<a name='1098'>
+    <font color=#447700>! and mark patch jpatch for deletion<a name='1099'></font>
+    outpatch_table(itab)%PatchList(jpatch)%forDeletion = .TRUE.<a name='1100'>
+    <font color=#447700>! decrement the count of active patches<a name='1101'></font>
+    outpatch_table(itab)%nActivePatch = outpatch_table(itab)%nActivePatch - 1<a name='1102'>
+<a name='1103'>
+  END SUBROUTINE merge_patches<a name='1104'>
+<a name='1105'>
+END MODULE module_quilt_outbuf_ops<a name='1106'>
+<a name='1107'>
+<font color=#447700>! don't let other programs see the definition of this; type mismatches<a name='1108'></font>
+<font color=#447700>! on inbuf will result;  may want to make a module program at some point <a name='1109'></font>
+<A NAME='STORE_PATCH_IN_OUTBUF'><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1110'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>store_patch_in_outbuf</font>( inbuf_r, inbuf_i, DateStr, VarName , FieldType, MemoryOrder, Stagger, DimNames, &amp; <A href='../../call_to/STORE_PATCH_IN_OUTBUF.html' TARGET='index'>4</A>,<A href='../../call_from/STORE_PATCH_IN_OUTBUF.html' TARGET='index'>4</A><a name='1111'>
+                                    DomainStart , DomainEnd , &amp;<a name='1112'>
+                                    MemoryStart , MemoryEnd , &amp;<a name='1113'>
+                                    PatchStart , PatchEnd )<a name='1114'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='1115'></font>
+<font color=#447700>!&lt;PRE&gt;<a name='1116'></font>
+<font color=#447700>! This routine does the "output quilting".  <a name='1117'></font>
+<font color=#447700>!<a name='1118'></font>
+<font color=#447700>! It stores a patch in the appropriate location in a domain-sized array <a name='1119'></font>
+<font color=#447700>! within an element of the outbuf_table data structure.  DateStr, VarName, and <a name='1120'></font>
+<font color=#447700>! MemoryOrder are used to uniquely identify which element of outbuf_table is <a name='1121'></font>
+<font color=#447700>! associated with this array.  If no element is associated, then this routine <a name='1122'></font>
+<font color=#447700>! first assigns an unused element and allocates space within that element for <a name='1123'></font>
+<font color=#447700>! the globally-sized array.  This routine also stores DateStr, VarName, <a name='1124'></font>
+<font color=#447700>! FieldType, MemoryOrder, Stagger, DimNames, DomainStart, and DomainEnd within <a name='1125'></font>
+<font color=#447700>! the same element of outbuf.  <a name='1126'></font>
+<font color=#447700>!&lt;/PRE&gt;<a name='1127'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='1128'></font>
+    USE <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MODULE_QUILT_OUTBUF_OPS'>module_quilt_outbuf_ops</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_QUILT_OUTBUF_OPS_5"><a name='1129'>
+    IMPLICIT NONE<a name='1130'>
+#include "<A href='../../html_code/include/wrf_io_flags.h.html'>wrf_io_flags.h</A>"<A NAME="wrf_io_flags.h_4"><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='1131'>
+    INTEGER ,                INTENT(IN) :: FieldType<a name='1132'>
+    REAL    , DIMENSION(*) , INTENT(IN) :: inbuf_r<a name='1133'>
+    INTEGER , DIMENSION(*) , INTENT(IN) :: inbuf_i<a name='1134'>
+    INTEGER , DIMENSION(3) , INTENT(IN) :: DomainStart , DomainEnd , MemoryStart , MemoryEnd , PatchStart , PatchEnd<a name='1135'>
+    CHARACTER*(*)          , INTENT(IN) :: DateStr , VarName, MemoryOrder , Stagger, DimNames(3)<a name='1136'>
+<font color=#447700>! Local<a name='1137'></font>
+    CHARACTER*256         ::  mess<a name='1138'>
+    INTEGER               :: l,m,n,ii,jj<a name='1139'>
+    LOGICAL               :: found<a name='1140'>
+<a name='1141'>
+    <font color=#447700>! Find the VarName if it's in the buffer already<a name='1142'></font>
+    ii = 1<a name='1143'>
+    found = .false.<a name='1144'>
+    DO WHILE ( .NOT. found .AND. ii .LE. num_entries )<a name='1145'>
+      <font color=#447700>!TBH:  need to test other attributes too!  <a name='1146'></font>
+      IF ( TRIM(VarName) .EQ. TRIM(outbuf_table(ii)%VarName) ) THEN<a name='1147'>
+        IF ( TRIM(DateStr) .EQ. TRIM(outbuf_table(ii)%DateStr) ) THEN<a name='1148'>
+          IF ( TRIM(MemoryOrder) .EQ. TRIM(outbuf_table(ii)%MemoryOrder) ) THEN<a name='1149'>
+            found = .true.<a name='1150'>
+          ELSE<a name='1151'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_371">("store_patch_in_outbuf: memory order disagreement")<a name='1152'>
+          ENDIF<a name='1153'>
+        ELSE<a name='1154'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_372">("store_patch_in_outbuf: multiple dates in buffer")<a name='1155'>
+        ENDIF<a name='1156'>
+      ELSE<a name='1157'>
+        ii = ii + 1<a name='1158'>
+      ENDIF<a name='1159'>
+    ENDDO<a name='1160'>
+    IF ( .NOT. found ) THEN<a name='1161'>
+      num_entries = num_entries + 1<a name='1162'>
+      IF      ( FieldType .EQ. WRF_FLOAT ) THEN<a name='1163'>
+        ALLOCATE( outbuf_table(num_entries)%rptr(DomainStart(1):DomainEnd(1), &amp;<a name='1164'>
+                                                 DomainStart(2):DomainEnd(2),DomainStart(3):DomainEnd(3)) )<a name='1165'>
+      ELSE IF ( FieldType .EQ. WRF_INTEGER ) THEN<a name='1166'>
+        ALLOCATE( outbuf_table(num_entries)%iptr(DomainStart(1):DomainEnd(1), &amp;<a name='1167'>
+                                                 DomainStart(2):DomainEnd(2),DomainStart(3):DomainEnd(3)) )<a name='1168'>
+      ELSE<a name='1169'>
+        write(mess,*)"store_patch_in_outbuf: unsupported type ", FieldType<a name='1170'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_373">(mess)<a name='1171'>
+      ENDIF<a name='1172'>
+      outbuf_table(num_entries)%VarName = TRIM(VarName)<a name='1173'>
+      outbuf_table(num_entries)%DateStr = TRIM(DateStr)<a name='1174'>
+      outbuf_table(num_entries)%MemoryOrder = TRIM(MemoryOrder)<a name='1175'>
+      outbuf_table(num_entries)%Stagger = TRIM(Stagger)<a name='1176'>
+      outbuf_table(num_entries)%DimNames(1) = TRIM(DimNames(1))<a name='1177'>
+      outbuf_table(num_entries)%DimNames(2) = TRIM(DimNames(2))<a name='1178'>
+      outbuf_table(num_entries)%DimNames(3) = TRIM(DimNames(3))<a name='1179'>
+      outbuf_table(num_entries)%DomainStart = DomainStart<a name='1180'>
+      outbuf_table(num_entries)%DomainEnd = DomainEnd<a name='1181'>
+      outbuf_table(num_entries)%FieldType = FieldType<a name='1182'>
+      ii = num_entries<a name='1183'>
+    ENDIF<a name='1184'>
+    jj = 1<a name='1185'>
+    IF (  FieldType .EQ. WRF_FLOAT ) THEN<a name='1186'>
+      DO n = PatchStart(3),PatchEnd(3)<a name='1187'>
+        DO m = PatchStart(2),PatchEnd(2)<a name='1188'>
+          DO l = PatchStart(1),PatchEnd(1)<a name='1189'>
+            outbuf_table(ii)%rptr(l,m,n) = inbuf_r(jj)<a name='1190'>
+            jj = jj + 1<a name='1191'>
+          ENDDO<a name='1192'>
+        ENDDO<a name='1193'>
+      ENDDO<a name='1194'>
+    ENDIF<a name='1195'>
+    IF (  FieldType .EQ. WRF_INTEGER ) THEN<a name='1196'>
+      DO n = PatchStart(3),PatchEnd(3)<a name='1197'>
+        DO m = PatchStart(2),PatchEnd(2)<a name='1198'>
+          DO l = PatchStart(1),PatchEnd(1)<a name='1199'>
+            outbuf_table(ii)%iptr(l,m,n) = inbuf_i(jj)<a name='1200'>
+            jj = jj + 1<a name='1201'>
+          ENDDO<a name='1202'>
+        ENDDO<a name='1203'>
+      ENDDO<a name='1204'>
+    ENDIF<a name='1205'>
+<a name='1206'>
+    RETURN<a name='1207'>
+<a name='1208'>
+  END SUBROUTINE store_patch_in_outbuf<a name='1209'>
+<a name='1210'>
+<font color=#447700>! don't let other programs see the definition of this; type mismatches<a name='1211'></font>
+<font color=#447700>! on inbuf will result;  may want to make a module program at some point <a name='1212'></font>
+<A NAME='STORE_PATCH_IN_OUTBUF_PNC'><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1213'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>store_patch_in_outbuf_pnc</font>( inbuf_r, inbuf_i, DateStr, VarName , &amp; <A href='../../call_to/STORE_PATCH_IN_OUTBUF_PNC.html' TARGET='index'>4</A>,<A href='../../call_from/STORE_PATCH_IN_OUTBUF_PNC.html' TARGET='index'>14</A><a name='1214'>
+                                        FieldType, MemoryOrder, Stagger,     &amp;<a name='1215'>
+                                        DimNames ,                &amp;<a name='1216'>
+                                        DomainStart , DomainEnd , &amp;<a name='1217'>
+                                        MemoryStart , MemoryEnd , &amp;<a name='1218'>
+                                        PatchStart  , PatchEnd  , &amp;<a name='1219'>
+                                        ntasks )<a name='1220'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='1221'></font>
+<font color=#447700>!&lt;PRE&gt;<a name='1222'></font>
+<font color=#447700>! This routine stores a patch in an array within an element of the <a name='1223'></font>
+<font color=#447700>! outpatch_table%PatchList data structure.  DateStr, VarName, and <a name='1224'></font>
+<font color=#447700>! MemoryOrder are used to uniquely identify which element of outpatch_table is <a name='1225'></font>
+<font color=#447700>! associated with this array.  If no element is associated, then this routine <a name='1226'></font>
+<font color=#447700>! first assigns an unused element and allocates space within that element.  <a name='1227'></font>
+<font color=#447700>! This routine also stores DateStr, VarName, <a name='1228'></font>
+<font color=#447700>! FieldType, MemoryOrder, Stagger, DimNames, DomainStart, and DomainEnd within <a name='1229'></font>
+<font color=#447700>! the same element of outpatch.  <a name='1230'></font>
+<font color=#447700>!&lt;/PRE&gt;<a name='1231'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='1232'></font>
+    USE <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MODULE_QUILT_OUTBUF_OPS'>module_quilt_outbuf_ops</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_QUILT_OUTBUF_OPS_6">, Only: outpatch_table, tabsize, num_entries<a name='1233'>
+    USE <A href='../../html_code/frame/module_timing.F.html#MODULE_TIMING'>module_timing</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_TIMING_31"><a name='1234'>
+    IMPLICIT NONE<a name='1235'>
+#include "<A href='../../html_code/include/wrf_io_flags.h.html'>wrf_io_flags.h</A>"<A NAME="wrf_io_flags.h_5"><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='1236'>
+    INTEGER ,               INTENT(IN) :: FieldType<a name='1237'>
+    REAL    , DIMENSION(*), INTENT(IN) :: inbuf_r<a name='1238'>
+    INTEGER , DIMENSION(*), INTENT(IN) :: inbuf_i<a name='1239'>
+    INTEGER , DIMENSION(3), INTENT(IN) :: DomainStart, DomainEnd, MemoryStart,&amp;<a name='1240'>
+                                          MemoryEnd , PatchStart , PatchEnd<a name='1241'>
+    CHARACTER*(*)         , INTENT(IN) :: DateStr , VarName, MemoryOrder , &amp;<a name='1242'>
+                                          Stagger, DimNames(3)<a name='1243'>
+    INTEGER, INTENT(IN) :: ntasks <font color=#447700>! Number of compute tasks associated with <a name='1244'></font>
+                                  <font color=#447700>! this IO server<a name='1245'></font>
+<font color=#447700>! Local<a name='1246'></font>
+    CHARACTER*256         :: mess<a name='1247'>
+    INTEGER               :: l,m,n,ii,jj,ipatch,ierr<a name='1248'>
+    LOGICAL               :: found<a name='1249'>
+<a name='1250'>
+<font color=#447700>!   CALL start_timing()<a name='1251'></font>
+<a name='1252'>
+    <font color=#447700>! Find the VarName if it's in the buffer already<a name='1253'></font>
+    ii = 1<a name='1254'>
+    found = .false.<a name='1255'>
+    DO WHILE ( .NOT. found .AND. ii .LE. num_entries )<a name='1256'>
+      <font color=#447700>!TBH:  need to test other attributes too!  <a name='1257'></font>
+      IF ( TRIM(VarName) .EQ. TRIM(outpatch_table(ii)%VarName) ) THEN<a name='1258'>
+        IF ( TRIM(DateStr) .EQ. TRIM(outpatch_table(ii)%DateStr) ) THEN<a name='1259'>
+          IF ( TRIM(MemoryOrder) .EQ. TRIM(outpatch_table(ii)%MemoryOrder) ) THEN<a name='1260'>
+            found = .true.<a name='1261'>
+          ELSE<a name='1262'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_374">("store_patch_in_outbuf_pnc: memory order disagreement")<a name='1263'>
+          ENDIF<a name='1264'>
+        ELSE<a name='1265'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_375">("store_patch_in_outbuf_pnc: multiple dates in buffer")<a name='1266'>
+        ENDIF<a name='1267'>
+      ELSE<a name='1268'>
+        ii = ii + 1<a name='1269'>
+      ENDIF<a name='1270'>
+    ENDDO<a name='1271'>
+    IF ( .NOT. found ) THEN<a name='1272'>
+      num_entries = num_entries + 1<a name='1273'>
+      IF(num_entries &gt; tabsize)THEN<a name='1274'>
+         WRITE(mess,*) 'Number of entries in outpatch_table has exceeded tabsize (',&amp;<a name='1275'>
+         tabsize,') in module_quilt_outbuf_ops::store_patch_in_outbuf_pnc'<a name='1276'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_376">(mess)<a name='1277'>
+      END IF<a name='1278'>
+      outpatch_table(num_entries)%npatch = 0<a name='1279'>
+<a name='1280'>
+      outpatch_table(num_entries)%VarName     = TRIM(VarName)<a name='1281'>
+      outpatch_table(num_entries)%DateStr     = TRIM(DateStr)<a name='1282'>
+      outpatch_table(num_entries)%MemoryOrder = TRIM(MemoryOrder)<a name='1283'>
+      outpatch_table(num_entries)%Stagger     = TRIM(Stagger)<a name='1284'>
+      outpatch_table(num_entries)%DimNames(1) = TRIM(DimNames(1))<a name='1285'>
+      outpatch_table(num_entries)%DimNames(2) = TRIM(DimNames(2))<a name='1286'>
+      outpatch_table(num_entries)%DimNames(3) = TRIM(DimNames(3))<a name='1287'>
+      outpatch_table(num_entries)%DomainStart = DomainStart<a name='1288'>
+      outpatch_table(num_entries)%DomainEnd   = DomainEnd<a name='1289'>
+      outpatch_table(num_entries)%FieldType   = FieldType<a name='1290'>
+      <font color=#447700>! Allocate the table for the list of patches for this output - it<a name='1291'></font>
+      <font color=#447700>! will have as many entries as there are compute tasks associated with<a name='1292'></font>
+      <font color=#447700>! this IO server.<a name='1293'></font>
+      IF ( ALLOCATED(outpatch_table(num_entries)%PatchList) ) &amp;<a name='1294'>
+         DEALLOCATE(outpatch_table(num_entries)%PatchList)<a name='1295'>
+      ALLOCATE(outpatch_table(num_entries)%PatchList(ntasks), Stat=ierr)<a name='1296'>
+      IF(ierr /= 0)THEN<a name='1297'>
+         WRITE(mess,*)'num_entries ',num_entries,' ntasks ',ntasks,' ierr ',ierr<a name='1298'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_370">(mess)<a name='1299'>
+         WRITE(mess,*)'Allocation for ',ntasks, &amp;<a name='1300'>
+                      ' patches in store_patch_in_outbuf_pnc() failed.'<a name='1301'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_377">( mess )<a name='1302'>
+      ENDIF<a name='1303'>
+      <font color=#447700>! Initialise the list of patches<a name='1304'></font>
+      DO ii=1, ntasks, 1<a name='1305'>
+         outpatch_table(num_entries)%PatchList(ii)%forDeletion = .FALSE.<a name='1306'>
+         NULLIFY(outpatch_table(num_entries)%PatchList(ii)%rptr)<a name='1307'>
+         NULLIFY(outpatch_table(num_entries)%PatchList(ii)%iptr)<a name='1308'>
+         outpatch_table(num_entries)%PatchList(ii)%PatchStart(:) = 0<a name='1309'>
+         outpatch_table(num_entries)%PatchList(ii)%PatchEnd(:) = 0<a name='1310'>
+         outpatch_table(num_entries)%PatchList(ii)%PatchExtent(:) = 0<a name='1311'>
+      END DO <a name='1312'>
+<a name='1313'>
+      ii = num_entries<a name='1314'>
+<a name='1315'>
+      WRITE(mess,*)'Adding field entry no. ',num_entries<a name='1316'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_371">(mess)<a name='1317'>
+      WRITE(mess,*)'Variable = ',TRIM(VarName)<a name='1318'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_372">(mess)<a name='1319'>
+      WRITE(mess,*)'Domain start = ',DomainStart(:)<a name='1320'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_373">(mess)<a name='1321'>
+      WRITE(mess,*)'Domain end   = ',DomainEnd(:)<a name='1322'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_374">(mess)<a name='1323'>
+    ENDIF<a name='1324'>
+<a name='1325'>
+    <font color=#447700>! We only store &gt; 1 patch if the field has two or more dimensions. Scalars<a name='1326'></font>
+    <font color=#447700>! and 1D arrays are replicated across compute nodes and therefore we only<a name='1327'></font>
+    <font color=#447700>! need keep a single patch.<a name='1328'></font>
+    IF(LEN_TRIM(outpatch_table(ii)%MemoryOrder) &gt;= 2 .OR. &amp;<a name='1329'>
+       outpatch_table(ii)%npatch &lt; 1)THEN<a name='1330'>
+<a name='1331'>
+       <font color=#447700>! Add another patch<a name='1332'></font>
+       outpatch_table(ii)%npatch = outpatch_table(ii)%npatch + 1<a name='1333'>
+       outpatch_table(ii)%nActivePatch = outpatch_table(ii)%npatch<a name='1334'>
+<a name='1335'>
+       ipatch = outpatch_table(ii)%npatch<a name='1336'>
+<a name='1337'>
+       outpatch_table(ii)%PatchList(ipatch)%PatchStart(:) = PatchStart(:)<a name='1338'>
+       outpatch_table(ii)%PatchList(ipatch)%PatchEnd(:)   = PatchEnd(:)<a name='1339'>
+       outpatch_table(ii)%PatchList(ipatch)%PatchExtent(:)= PatchEnd(:) - PatchStart(:) + 1<a name='1340'>
+<a name='1341'>
+       ierr = 0<a name='1342'>
+<a name='1343'>
+       IF      ( FieldType .EQ. WRF_FLOAT ) THEN<a name='1344'>
+          ALLOCATE( outpatch_table(ii)%PatchList(ipatch)%rptr( &amp;<a name='1345'>
+                                                 outpatch_table(ii)%PatchList(ipatch)%PatchExtent(1), &amp;<a name='1346'>
+                                                 outpatch_table(ii)%PatchList(ipatch)%PatchExtent(2), &amp;<a name='1347'>
+                                                 outpatch_table(ii)%PatchList(ipatch)%PatchExtent(3)),&amp;<a name='1348'>
+                                                 Stat=ierr)<a name='1349'>
+       ELSE IF ( FieldType .EQ. WRF_INTEGER ) THEN<a name='1350'>
+          ALLOCATE( outpatch_table(ii)%PatchList(ipatch)%iptr( &amp;<a name='1351'>
+                                                 outpatch_table(ii)%PatchList(ipatch)%PatchExtent(1), &amp;<a name='1352'>
+                                                 outpatch_table(ii)%PatchList(ipatch)%PatchExtent(2), &amp;<a name='1353'>
+                                                 outpatch_table(ii)%PatchList(ipatch)%PatchExtent(3)),&amp;<a name='1354'>
+                                                 Stat=ierr)<a name='1355'>
+       ELSE<a name='1356'>
+          WRITE(mess,*)"store_patch_in_outbuf_pnc: unsupported type ", FieldType<a name='1357'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_378">(mess)<a name='1358'>
+       ENDIF<a name='1359'>
+<a name='1360'>
+       IF(ierr /= 0)THEN<a name='1361'>
+          WRITE(mess,*)"store_patch_in_outbuf_pnc: failed to allocate memory to hold patch for var. ", TRIM(VarName)<a name='1362'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_379">(mess)<a name='1363'>
+       END IF<a name='1364'>
+<a name='1365'>
+       jj = 1<a name='1366'>
+<a name='1367'>
+       WRITE(mess,"('Variable ',(A),', patch ',I3,': (',I3,':',I3,',',I3,':',I3,',',I3,':',I3,')')")&amp;<a name='1368'>
+                TRIM(outpatch_table(ii)%VarName),  &amp;<a name='1369'>
+                ipatch, &amp;<a name='1370'>
+                PatchStart(1),PatchEnd(1), &amp;<a name='1371'>
+                PatchStart(2),PatchEnd(2), &amp;<a name='1372'>
+                PatchStart(3),PatchEnd(3)<a name='1373'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PATCH_IN_OUTBUF_PNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_375">(mess)<a name='1374'>
+<a name='1375'>
+       IF (  FieldType .EQ. WRF_FLOAT ) THEN<a name='1376'>
+          DO n = 1,outpatch_table(ii)%PatchList(ipatch)%PatchExtent(3),1<a name='1377'>
+             DO m = 1,outpatch_table(ii)%PatchList(ipatch)%PatchExtent(2),1<a name='1378'>
+                DO l = 1,outpatch_table(ii)%PatchList(ipatch)%PatchExtent(1),1<a name='1379'>
+                   outpatch_table(ii)%PatchList(ipatch)%rptr(l,m,n) = inbuf_r(jj)<a name='1380'>
+                   jj = jj + 1<a name='1381'>
+                ENDDO<a name='1382'>
+             ENDDO<a name='1383'>
+          ENDDO<a name='1384'>
+       ENDIF<a name='1385'>
+       IF (  FieldType .EQ. WRF_INTEGER ) THEN<a name='1386'>
+          DO n = 1,outpatch_table(ii)%PatchList(ipatch)%PatchExtent(3),1<a name='1387'>
+             DO m = 1,outpatch_table(ii)%PatchList(ipatch)%PatchExtent(2),1<a name='1388'>
+                DO l = 1,outpatch_table(ii)%PatchList(ipatch)%PatchExtent(1),1<a name='1389'>
+                   outpatch_table(ii)%PatchList(ipatch)%iptr(l,m,n) = inbuf_i(jj)<a name='1390'>
+                   jj = jj + 1<a name='1391'>
+                ENDDO<a name='1392'>
+             ENDDO<a name='1393'>
+          ENDDO<a name='1394'>
+       ENDIF<a name='1395'>
+<a name='1396'>
+    END IF <font color=#447700>! We need to add another patch<a name='1397'></font>
+<a name='1398'>
+<font color=#447700>!   CALL end_timing("store patch in outbuf")<a name='1399'></font>
+<a name='1400'>
+    RETURN<a name='1401'>
+<a name='1402'>
+  END SUBROUTINE store_patch_in_outbuf_pnc<a name='1403'>
+<a name='1404'>
+<font color=#447700>!call add_to_bufsize_for_field( VarName, hdrbufsize+chunksize )<a name='1405'></font>
+<a name='1406'>
+<A NAME='ADD_TO_BUFSIZE_FOR_FIELD'><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#ADD_TO_BUFSIZE_FOR_FIELD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1407'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>add_to_bufsize_for_field</font>( VarName, Nbytes ) <A href='../../call_to/ADD_TO_BUFSIZE_FOR_FIELD.html' TARGET='index'>20</A>,<A href='../../call_from/ADD_TO_BUFSIZE_FOR_FIELD.html' TARGET='index'>1</A><a name='1408'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='1409'></font>
+<font color=#447700>!&lt;PRE&gt;<a name='1410'></font>
+<font color=#447700>! This routine is a wrapper for C routine add_to_bufsize_for_field_c() that <a name='1411'></font>
+<font color=#447700>! is used to accumulate buffer sizes.  Buffer size Nbytes is added to the <a name='1412'></font>
+<font color=#447700>! curent buffer size for the buffer named VarName.  Any buffer space <a name='1413'></font>
+<font color=#447700>! associated with VarName is freed.  If a buffer named VarName does not exist, <a name='1414'></font>
+<font color=#447700>! a new one is assigned and its size is set to Nbytes.  <a name='1415'></font>
+<font color=#447700>!&lt;/PRE&gt;<a name='1416'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='1417'></font>
+    USE <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MODULE_QUILT_OUTBUF_OPS'>module_quilt_outbuf_ops</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#ADD_TO_BUFSIZE_FOR_FIELD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_QUILT_OUTBUF_OPS_7"><a name='1418'>
+    IMPLICIT NONE<a name='1419'>
+    CHARACTER*(*)    , INTENT(IN) :: VarName<a name='1420'>
+    INTEGER          , INTENT(IN) :: Nbytes<a name='1421'>
+<font color=#447700>! Local<a name='1422'></font>
+    CHARACTER*256         :: mess<a name='1423'>
+    INTEGER               :: i, ierr<a name='1424'>
+    INTEGER               :: VarNameAsInts( 256 )<a name='1425'>
+    VarNameAsInts( 1 ) = len(trim(VarName))<a name='1426'>
+    DO i = 2, len(trim(VarName)) + 1<a name='1427'>
+      VarNameAsInts( i ) = ICHAR( VarName(i-1:i-1) )<a name='1428'>
+    ENDDO<a name='1429'>
+    CALL add_to_bufsize_for_field_c ( VarNameAsInts, Nbytes )<a name='1430'>
+    RETURN<a name='1431'>
+  END SUBROUTINE add_to_bufsize_for_field<a name='1432'>
+  <a name='1433'>
+<A NAME='STORE_PIECE_OF_FIELD'><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PIECE_OF_FIELD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1434'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>store_piece_of_field</font>( inbuf, VarName, Nbytes ) <A href='../../call_to/STORE_PIECE_OF_FIELD.html' TARGET='index'>20</A>,<A href='../../call_from/STORE_PIECE_OF_FIELD.html' TARGET='index'>2</A><a name='1435'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='1436'></font>
+<font color=#447700>!&lt;PRE&gt;<a name='1437'></font>
+<font color=#447700>! This routine is a wrapper for C routine store_piece_of_field_c() that <a name='1438'></font>
+<font color=#447700>! is used to store pieces of a field in an internal buffer.  Nbytes bytes of <a name='1439'></font>
+<font color=#447700>! buffer inbuf are appended to the end of the internal buffer named VarName.  <a name='1440'></font>
+<font color=#447700>! An error occurs if either an internal buffer named VarName does not exist or <a name='1441'></font>
+<font color=#447700>! if there are fewer than Nbytes bytes left in the internal buffer.  <a name='1442'></font>
+<font color=#447700>!&lt;/PRE&gt;<a name='1443'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='1444'></font>
+    USE <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MODULE_QUILT_OUTBUF_OPS'>module_quilt_outbuf_ops</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PIECE_OF_FIELD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_QUILT_OUTBUF_OPS_8"><a name='1445'>
+    IMPLICIT NONE<a name='1446'>
+    INTEGER ,                INTENT(IN) :: Nbytes<a name='1447'>
+    INTEGER , DIMENSION(*) , INTENT(IN) :: inbuf<a name='1448'>
+    CHARACTER*(*)          , INTENT(IN) :: VarName<a name='1449'>
+<font color=#447700>! Local<a name='1450'></font>
+    CHARACTER*256         :: mess<a name='1451'>
+    INTEGER               :: i, ierr<a name='1452'>
+    INTEGER               :: VarNameAsInts( 256 )<a name='1453'>
+<a name='1454'>
+    VarNameAsInts( 1 ) = len(trim(VarName))<a name='1455'>
+    DO i = 2, len(trim(VarName)) + 1<a name='1456'>
+      VarNameAsInts( i ) = ICHAR( VarName(i-1:i-1) )<a name='1457'>
+    ENDDO<a name='1458'>
+    CALL store_piece_of_field_c ( inbuf, VarNameAsInts, Nbytes, ierr )<a name='1459'>
+    IF ( ierr .NE. 0 ) CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#STORE_PIECE_OF_FIELD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_380"> ( "store_piece_of_field" )<a name='1460'>
+    RETURN<a name='1461'>
+  END SUBROUTINE store_piece_of_field<a name='1462'>
+<a name='1463'>
+<A NAME='RETRIEVE_PIECES_OF_FIELD'><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#RETRIEVE_PIECES_OF_FIELD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1464'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>retrieve_pieces_of_field</font>( outbuf, VarName, obufsz, Nbytes_tot, lret ) <A href='../../call_to/RETRIEVE_PIECES_OF_FIELD.html' TARGET='index'>8</A>,<A href='../../call_from/RETRIEVE_PIECES_OF_FIELD.html' TARGET='index'>1</A><a name='1465'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='1466'></font>
+<font color=#447700>!&lt;PRE&gt;<a name='1467'></font>
+<font color=#447700>! This routine is a wrapper for C routine retrieve_pieces_of_field_c() that <a name='1468'></font>
+<font color=#447700>! is used to extract the entire contents (i.e. all previously stored pieces of <a name='1469'></font>
+<font color=#447700>! fields) of the next internal buffer.  The name associated with this internal <a name='1470'></font>
+<font color=#447700>! buffer is returned in VarName.  The number of bytes read is returned in <a name='1471'></font>
+<font color=#447700>! Nbytes_tot.  Bytes are stored in outbuf whose size (in bytes) is obufsz.  <a name='1472'></font>
+<font color=#447700>! If there are more than obufsz bytes left in the next internal buffer, then <a name='1473'></font>
+<font color=#447700>! only obufsz bytes are returned and the rest are discarded (probably an error <a name='1474'></font>
+<font color=#447700>! in the making!).  The internal buffer is then freed.  Flag lret is set to <a name='1475'></font>
+<font color=#447700>! .TRUE. iff there are more fields left to extract.  <a name='1476'></font>
+<font color=#447700>!&lt;/PRE&gt;<a name='1477'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='1478'></font>
+    USE <A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#MODULE_QUILT_OUTBUF_OPS'>module_quilt_outbuf_ops</A><A href='../../html_code/frame/module_quilt_outbuf_ops.F.html#RETRIEVE_PIECES_OF_FIELD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_QUILT_OUTBUF_OPS_9"><a name='1479'>
+    IMPLICIT NONE<a name='1480'>
+    INTEGER ,                INTENT(IN) :: obufsz<a name='1481'>
+    INTEGER ,                INTENT(OUT) :: Nbytes_tot<a name='1482'>
+    INTEGER , DIMENSION(*) , INTENT(OUT) :: outbuf<a name='1483'>
+    CHARACTER*(*)    , INTENT(OUT) :: VarName<a name='1484'>
+    LOGICAL                       :: lret   <font color=#447700>! true if more, false if not<a name='1485'></font>
+<font color=#447700>! Local<a name='1486'></font>
+    CHARACTER*256         :: mess<a name='1487'>
+    INTEGER               :: i, iret<a name='1488'>
+    INTEGER               :: VarNameAsInts( 256 )<a name='1489'>
+<a name='1490'>
+    CALL retrieve_pieces_of_field_c ( outbuf, VarNameAsInts, obufsz, Nbytes_tot, iret )<a name='1491'>
+    IF ( iret .NE.  0 ) THEN<a name='1492'>
+       lret = .FALSE.<a name='1493'>
+    ELSE<a name='1494'>
+       lret = .TRUE.<a name='1495'>
+       VarName = ' '<a name='1496'>
+       DO i = 2, VarNameAsInts(1) + 1<a name='1497'>
+         VarName(i-1:i-1) = CHAR(VarNameAsInts( i ))<a name='1498'>
+       ENDDO<a name='1499'>
+    ENDIF<a name='1500'>
+    RETURN<a name='1501'>
+  END SUBROUTINE retrieve_pieces_of_field<a name='1502'>
+<a name='1503'>
+</pre></body></html>

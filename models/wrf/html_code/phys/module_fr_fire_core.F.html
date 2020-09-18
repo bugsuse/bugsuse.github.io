@@ -1,0 +1,1958 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!<a name='2'></font>
+#define DEBUG_OUT<a name='3'>
+#define DEBUG_PRINT<a name='4'>
+<font color=#447700>!#define FUEL_LEFT<a name='5'></font>
+<font color=#447700>!#define DEBUG_OUT_FUEL_LEFT    <a name='6'></font>
+<a name='7'>
+<A NAME='MODULE_FR_FIRE_CORE'><A href='../../html_code/phys/module_fr_fire_core.F.html#MODULE_FR_FIRE_CORE' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='8'>
+<font color=#993300>module </font><font color=#cc0000>module_fr_fire_core</font> <A href='../../call_to/MODULE_FR_FIRE_CORE.html' TARGET='index'>2</A><a name='9'>
+<a name='10'>
+use <A href='../../html_code/phys/module_fr_fire_phys.F.html#MODULE_FR_FIRE_PHYS'>module_fr_fire_phys</A><A href='../../html_code/phys/module_fr_fire_core.F.html#module_fr_fire_core.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_FR_FIRE_PHYS_1">, only: fire_params , fire_ros<a name='11'>
+use <A href='../../html_code/phys/module_fr_fire_util.F.html#MODULE_FR_FIRE_UTIL'>module_fr_fire_util</A><A href='../../html_code/phys/module_fr_fire_core.F.html#module_fr_fire_core.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_FR_FIRE_UTIL_2"><a name='12'>
+<a name='13'>
+<font color=#447700>! The mathematical core of the fire spread model. No physical constants here.<a name='14'></font>
+<font color=#447700>! <a name='15'></font>
+<font color=#447700>! subroutine fire_core: only this routine should be called from the outside.<a name='16'></font>
+<font color=#447700>! subroutine fuel_left:  compute remaining fuel from time of ignition.<a name='17'></font>
+<font color=#447700>! subroutine prop_ls: propagation of curve in normal direction.<a name='18'></font>
+<a name='19'>
+<font color=#447700>! describe one ignition line<a name='20'></font>
+type ignition_line_type<a name='21'>
+  REAL  ros, &amp;          <font color=#447700>! subscale rate of spread during the ignition process<a name='22'></font>
+        stop_time, &amp;    <font color=#447700>! when the ignition process stops from ignition start (s)<a name='23'></font>
+        wind_red,  &amp;    <font color=#447700>! wind reduction factor at the ignition line<a name='24'></font>
+        wrdist,   &amp;     <font color=#447700>! distance from the ignition line when the wind reduction stops<a name='25'></font>
+        wrupwind, &amp;     <font color=#447700>! use distance interpolated between 0. = nearest 1. = upwind<a name='26'></font>
+        start_x, &amp;      <font color=#447700>! x coordinate of the ignition line start point (m, or long/lat)<a name='27'></font>
+        start_y, &amp;      <font color=#447700>! y coordinate of the ignition line start point<a name='28'></font>
+        end_x, &amp;        <font color=#447700>! x coordinate of the ignition line end point<a name='29'></font>
+        end_y, &amp;        <font color=#447700>! y coordinate of the ignition line end point<a name='30'></font>
+        start_time, &amp;   <font color=#447700>! ignition time for the start point from simulation start (s)<a name='31'></font>
+        end_time, &amp;     <font color=#447700>! ignition time for the end poin from simulation start (s)<a name='32'></font>
+        radius          <font color=#447700>! all within this radius ignites immediately<a name='33'></font>
+end type ignition_line_type<a name='34'>
+<a name='35'>
+contains<a name='36'>
+<a name='37'>
+<font color=#447700>!<a name='38'></font>
+<font color=#447700>!****************************************<a name='39'></font>
+<font color=#447700>!<a name='40'></font>
+    <a name='41'>
+<A NAME='INIT_NO_FIRE'><A href='../../html_code/phys/module_fr_fire_core.F.html#INIT_NO_FIRE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='42'>
+<font color=#993300>subroutine </font><font color=#cc0000>init_no_fire</font>(&amp; <A href='../../call_to/INIT_NO_FIRE.html' TARGET='index'>1</A>,<A href='../../call_from/INIT_NO_FIRE.html' TARGET='index'>1</A><a name='43'>
+    ifds,ifde,jfds,jfde, &amp;<a name='44'>
+    ifms,ifme,jfms,jfme, &amp;<a name='45'>
+    ifts,ifte,jfts,jfte, &amp;<a name='46'>
+    fdx,fdy,time_now,    &amp; <font color=#447700>! scalars in<a name='47'></font>
+    fuel_frac,fire_area,lfn,tign)    <font color=#447700>! arrays out            <a name='48'></font>
+implicit none<a name='49'>
+             <a name='50'>
+<font color=#447700>!*** purpose: initialize model to no fire<a name='51'></font>
+<a name='52'>
+<font color=#447700>!*** arguments<a name='53'></font>
+integer, intent(in):: ifds,ifde,jfds,jfde   <font color=#447700>! fire domain bounds<a name='54'></font>
+integer, intent(in):: ifts,ifte,jfts,jfte   <font color=#447700>! fire tile bounds<a name='55'></font>
+integer, intent(in):: ifms,ifme,jfms,jfme   <font color=#447700>! array bounds<a name='56'></font>
+real, intent(in) :: fdx,fdy,time_now        <font color=#447700>! mesh spacing, time<a name='57'></font>
+real, intent(out), dimension (ifms:ifme,jfms:jfme) :: &amp; <a name='58'>
+                   fuel_frac,fire_area,lfn,tign       <font color=#447700>! model state<a name='59'></font>
+<a name='60'>
+<font color=#447700>!*** calls<a name='61'></font>
+intrinsic epsilon<a name='62'>
+                                                <a name='63'>
+<font color=#447700>!*** local<a name='64'></font>
+integer:: i,j<a name='65'>
+real lfn_init,time_init<a name='66'>
+<a name='67'>
+lfn_init = 2*max((ifde-ifds+1)*fdx,(jfde-jfds+1)*fdy)      <font color=#447700>! more than domain diameter<a name='68'></font>
+time_init=time_now + max(time_now,1.0)*epsilon(time_now) <font color=#447700>! a bit in future<a name='69'></font>
+ <a name='70'>
+do j=jfts,jfte<a name='71'>
+    do i=ifts,ifte<a name='72'>
+        fuel_frac(i,j)=1.          <font color=#447700>! fuel at start is 1 by definition<a name='73'></font>
+        fire_area(i,j)=0.          <font color=#447700>! nothing burning<a name='74'></font>
+        tign(i,j) = time_init      <font color=#447700>! ignition in future<a name='75'></font>
+        lfn(i,j) = lfn_init        <font color=#447700>! no fire <a name='76'></font>
+    enddo<a name='77'>
+enddo<a name='78'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#INIT_NO_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_1">('init_no_fire: state set to no fire')<a name='79'>
+<a name='80'>
+end subroutine init_no_fire<a name='81'>
+<a name='82'>
+<font color=#447700>!<a name='83'></font>
+<font color=#447700>!******************<a name='84'></font>
+<font color=#447700>!<a name='85'></font>
+ <a name='86'>
+<a name='87'>
+<A NAME='IGNITE_FIRE'><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='88'>
+<font color=#993300>subroutine </font><font color=#cc0000>ignite_fire</font>( ifds,ifde,jfds,jfde,                    &amp; <font color=#447700>! fire domain dims - the whole domain <A href='../../call_to/IGNITE_FIRE.html' TARGET='index'>1</A>,<A href='../../call_from/IGNITE_FIRE.html' TARGET='index'>12</A><a name='89'></font>
+                        ifms,ifme,jfms,jfme,                      &amp;<a name='90'>
+                        ifts,ifte,jfts,jfte,                      &amp;<a name='91'>
+                        ignition_line,                            &amp;<a name='92'>
+                        start_ts,end_ts,                    &amp;<a name='93'>
+                        coord_xf,coord_yf,                &amp;     <a name='94'>
+                        unit_xf,unit_yf,                  &amp;<a name='95'>
+                        lfn,tign,ignited)<a name='96'>
+implicit none<a name='97'>
+<a name='98'>
+<font color=#447700>!*** purpose: ignite a circular/line fire <a name='99'></font>
+<a name='100'>
+<font color=#447700>!*** description<a name='101'></font>
+<font color=#447700>! ignite fire in the region within radius r from the line (sx,sy) to (ex,ey).<a name='102'></font>
+<font color=#447700>! the coordinates of nodes are given as the arrays coord_xf and coord_yf<a name='103'></font>
+<font color=#447700>! r is given in m<a name='104'></font>
+<font color=#447700>! one unit of coord_xf is unit_xf m <a name='105'></font>
+<font color=#447700>! one unit of coord_yf is unit_yf m <a name='106'></font>
+<font color=#447700>! so a node (i,j) will be ignited iff for some (x,y) on the line<a name='107'></font>
+<font color=#447700>! || ( (coord_xf(i,j) - x)*unit_xf , (coord_yf(i,j) - y)*unit_yf ) || &lt;= r <a name='108'></font>
+<a name='109'>
+<a name='110'>
+<font color=#447700>!*** arguments<a name='111'></font>
+integer, intent(in):: ifds,ifde,jfds,jfde   <font color=#447700>! fire domain bounds<a name='112'></font>
+integer, intent(in):: ifts,ifte,jfts,jfte   <font color=#447700>! fire tile bounds<a name='113'></font>
+integer, intent(in):: ifms,ifme,jfms,jfme   <font color=#447700>! array bounds<a name='114'></font>
+type(ignition_line_type), intent(in):: ignition_line    <font color=#447700>! description of the ignition line<a name='115'></font>
+real, intent(in):: start_ts,end_ts          <font color=#447700>! the time step start and end <a name='116'></font>
+real, dimension(ifms:ifme, jfms:jfme), intent(in):: &amp; <a name='117'>
+    coord_xf,coord_yf                       <font color=#447700>!  node coordinates  <a name='118'></font>
+real, intent(in):: unit_xf,unit_yf          <font color=#447700>!  coordinate units in m<a name='119'></font>
+real, intent(inout), dimension (ifms:ifme,jfms:jfme) :: &amp; <a name='120'>
+                   lfn, tign                <font color=#447700>! level function, ignition time (state)<a name='121'></font>
+integer, intent(out):: ignited              <font color=#447700>! number of nodes newly ignited<a name='122'></font>
+                        <a name='123'>
+<font color=#447700>!*** local<a name='124'></font>
+integer:: i,j<a name='125'>
+real::lfn_new,time_ign,ax,ay,rels,rele,d<a name='126'>
+real:: sx,sy                    <font color=#447700>! start of ignition line, from lower left corner<a name='127'></font>
+real:: ex,ey                    <font color=#447700>! end of ignition line, or zero<a name='128'></font>
+real:: st,et                    <font color=#447700>! start and end of time of the ignition line<a name='129'></font>
+character(len=128):: msg<a name='130'>
+real::cx2,cy2,dmax,axmin,axmax,aymin,aymax,dmin<a name='131'>
+real:: start_x,start_y          <font color=#447700>! start of ignition line, from lower left corner<a name='132'></font>
+real:: end_x,end_y              <font color=#447700>! end of ignition line, or zero<a name='133'></font>
+real:: radius                   <font color=#447700>! all within the radius of the line will ignite<a name='134'></font>
+real:: start_time,end_time      <font color=#447700>! the ignition time for the start and the end of the line<a name='135'></font>
+real:: ros,tos                  <font color=#447700>! ignition rate and time of spread<a name='136'></font>
+<a name='137'>
+<font color=#447700>!*** executable<a name='138'></font>
+<a name='139'>
+<font color=#447700>! copy ignition line fields to local variables<a name='140'></font>
+start_x    = ignition_line%start_x <font color=#447700>! x coordinate of the ignition line start point (m, or long/lat)<a name='141'></font>
+start_y    = ignition_line%start_y <font color=#447700>! y coordinate of the ignition line start point<a name='142'></font>
+end_x      = ignition_line%end_x   <font color=#447700>! x coordinate of the ignition line end point<a name='143'></font>
+end_y      = ignition_line%end_y   <font color=#447700>! y coordinate of the ignition line end point<a name='144'></font>
+start_time = ignition_line%start_time <font color=#447700>! ignition time for the start point from simulation start (s)<a name='145'></font>
+end_time   = ignition_line%end_time<font color=#447700>! ignition time for the end poin from simulation start (s)<a name='146'></font>
+radius     = ignition_line%radius  <font color=#447700>! all within this radius ignites immediately<a name='147'></font>
+ros        = ignition_line%ros     <font color=#447700>! rate of spread<a name='148'></font>
+<a name='149'>
+<a name='150'>
+tos        = radius/ros            <font color=#447700>! time of spread to the given radius<a name='151'></font>
+st         = start_time            <font color=#447700>! the start time of ignition considered in this time step<a name='152'></font>
+et         = min(end_ts,end_time)  <font color=#447700>! the end time of the ignition segment in this time step<a name='153'></font>
+<a name='154'>
+<font color=#447700>! this should be called whenever (start_ts, end_ts) \subset (start_time, end_time + tos) <a name='155'></font>
+if(start_ts&gt;et+tos .or. end_ts&lt;st)return   <font color=#447700>! too late or too early, nothing to do<a name='156'></font>
+<a name='157'>
+if(start_time &lt; end_time)then  <font color=#447700>! we really want to test start_time .ne. end_time, but avoiding test of floats on equality<a name='158'></font>
+        <font color=#447700>! segment of nonzero length<a name='159'></font>
+        <font color=#447700>!rels =  (st - start_time) / (end_time - start_time)  ! relative position of st in the segment (start,end)<a name='160'></font>
+	<font color=#447700>!sx = start_x + rels * (end_x - start_x)<a name='161'></font>
+	<font color=#447700>!sy = start_y + rels * (end_y - start_y)<a name='162'></font>
+        rels = 0.<a name='163'>
+        sx = start_x<a name='164'>
+        sy = start_y<a name='165'>
+        rele =  (et - start_time) / (end_time - start_time)    <font color=#447700>! relative position of et in the segment (start,end)<a name='166'></font>
+	ex = start_x + rele * (end_x - start_x)<a name='167'>
+	ey = start_y + rele * (end_y - start_y)<a name='168'>
+else<a name='169'>
+        <font color=#447700>! just a point<a name='170'></font>
+        rels = 0.<a name='171'>
+        rele = 1.<a name='172'>
+	sx = start_x<a name='173'>
+	sy = start_y<a name='174'>
+	ex = end_x<a name='175'>
+	ey = end_y<a name='176'>
+endif<a name='177'>
+<a name='178'>
+<a name='179'>
+cx2=unit_xf*unit_xf<a name='180'>
+cy2=unit_yf*unit_yf<a name='181'>
+<a name='182'>
+axmin=coord_xf(ifts,jfts)<a name='183'>
+aymin=coord_yf(ifts,jfts)<a name='184'>
+axmax=coord_xf(ifte,jfte)<a name='185'>
+aymax=coord_yf(ifte,jfte)<a name='186'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='187'></font>
+write(msg,'(a,2f11.6,a,2f11.6)')'IGN from ',sx,sy,' to ',ex,ey<a name='188'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_2">(msg)<a name='189'>
+write(msg,'(a,2f10.2,a,2f10.2,a)')'IGN timestep [',start_ts,end_ts,'] in [',start_time,end_time,']'<a name='190'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_3">(msg)<a name='191'>
+write(msg,'(a,2g13.6,a,2g13.6)')'IGN tile coord from  ',axmin,aymin,' to ',axmax,aymax<a name='192'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_4">(msg)<a name='193'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='194'></font>
+ignited=0<a name='195'>
+dmax=0<a name='196'>
+dmin=huge(dmax)<a name='197'>
+11      format('IGN ',6(a,g17.7,1x)) <a name='198'>
+12      format('IGN ',4(a,2g13.7,1x))<a name='199'>
+do j=jfts,jfte   <a name='200'>
+    do i=ifts,ifte<a name='201'>
+        ax=coord_xf(i,j)<a name='202'>
+        ay=coord_yf(i,j)<a name='203'>
+<a name='204'>
+        <font color=#447700>! get d= distance from the nearest point on the ignition segment<a name='205'></font>
+        <font color=#447700>! and time_ign = the ignition time there<a name='206'></font>
+        call <A href='../../html_code/phys/module_fr_fire_core.F.html#NEAREST'>nearest</A><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NEAREST_1">(d,time_ign,ax,ay,sx,sy,st,ex,ey,et,cx2,cy2)<a name='207'>
+        dmax=max(d,dmax)<a name='208'>
+        dmin=min(d,dmin)<a name='209'>
+<a name='210'>
+        lfn_new=d - min( radius, ros*(end_ts - time_ign) )  <font color=#447700>! lft at end_ts<a name='211'></font>
+        if(fire_print_msg.ge.3)then<a name='212'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='213'></font>
+            write(msg,*)'IGN1 i,j=',i,j,' lfn(i,j)=',lfn(i,j),' tign(i,j)=',tign(i,j)<a name='214'>
+            call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_5">(msg)<a name='215'>
+            write(msg,*)'IGN2 i,j=',i,j,' lfn_new= ',lfn_new, ' time_ign= ',time_ign,' d=',d<a name='216'>
+            call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_6">(msg)<a name='217'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='218'></font>
+        endif<a name='219'>
+        if(.not.lfn_new&gt;0.) then<a name='220'>
+            ignited=ignited+1   <font color=#447700>! count<a name='221'></font>
+        endif<a name='222'>
+        if(lfn(i,j)&gt;0. .and. .not. lfn_new &gt; 0.) then<a name='223'>
+            tign(i,j)=time_ign + d/ros  <font color=#447700>! newly ignited now<a name='224'></font>
+            if(fire_print_msg.ge.3)then<a name='225'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='226'></font>
+                write(msg,'(a,2i6,a,2g13.6,a,f10.2,a,2f10.2,a)')'IGN ignited cell ',i,j,' at',ax,ay, &amp;<a name='227'>
+                    ' time',tign(i,j),' in [',start_ts,end_ts,']'<a name='228'>
+                call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_7">(msg)<a name='229'>
+                write(msg,'(a,g10.3,a,f10.2,a,2f10.2,a)')'IGN distance',d,' from ignition line at',time_ign,' in [',st,et,']'<a name='230'>
+                call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_8">(msg)<a name='231'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='232'></font>
+            endif<a name='233'>
+            if(tign(i,j) &lt; start_ts .or. tign(i,j) &gt; end_ts )then<a name='234'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='235'></font>
+                write(msg,'(a,2i6,a,f11.6,a,2f11.6,a)')'WARNING ',i,j, &amp;<a name='236'>
+                ' fixing ignition time ',tign(i,j),' outside of the time step [',start_ts,end_ts,']'<a name='237'>
+                call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_9"> (msg)<a name='238'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='239'></font>
+                tign(i,j) = min(max(tign(i,j),start_ts),end_ts)<a name='240'>
+            endif<a name='241'>
+        endif<a name='242'>
+        lfn(i,j)=min(lfn(i,j),lfn_new)  <font color=#447700>! update the level set function<a name='243'></font>
+        if(fire_print_msg.ge.3)then<a name='244'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='245'></font>
+            write(msg,*)'IGN3 i,j=',i,j,' lfn(i,j)=',lfn(i,j),' tign(i,j)=',tign(i,j)<a name='246'>
+            call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_10">(msg)<a name='247'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='248'></font>
+        endif<a name='249'>
+    enddo<a name='250'>
+enddo<a name='251'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='252'></font>
+write(msg,'(a,2g13.2,a,g10.2,a,g10.2)')'IGN units ',unit_xf,unit_yf,' m max dist ',dmax,' min',dmin<a name='253'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_11">(msg)<a name='254'>
+write(msg,'(a,f6.1,a,f8.1,a,i10)')'IGN radius ',radius,' time of spread',tos,' ignited nodes',ignited<a name='255'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#IGNITE_FIRE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_12">(msg)<a name='256'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='257'></font>
+<a name='258'>
+return<a name='259'>
+99 continue<a name='260'>
+<a name='261'>
+end subroutine ignite_fire<a name='262'>
+<a name='263'>
+<font color=#447700>! called from the inside of a loop, inline if possible<a name='264'></font>
+<font color=#447700>!DEC$ ATTRIBUTES FORCEINLINE<a name='265'></font>
+<A NAME='NEAREST'><A href='../../html_code/phys/module_fr_fire_core.F.html#NEAREST' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='266'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>nearest</font>(d,t,ax,ay,sx,sy,st,ex,ey,et,cx2,cy2) <A href='../../call_to/NEAREST.html' TARGET='index'>1</A>,<A href='../../call_from/NEAREST.html' TARGET='index'>6</A><a name='267'>
+        implicit none<a name='268'>
+<font color=#447700>!***    arguments<a name='269'></font>
+        real, intent(out):: d,t<a name='270'>
+        real, intent(in):: ax,ay,sx,sy,st,ex,ey,et,cx2,cy2<a name='271'>
+        <font color=#447700>! input:<a name='272'></font>
+        <font color=#447700>! ax, ay       coordinates of point a<a name='273'></font>
+        <font color=#447700>! sx,sy,ex,ey  coordinates of endpoints of segment [x,y]<a name='274'></font>
+        <font color=#447700>! st,et        values at the endpoints x,y<a name='275'></font>
+        <font color=#447700>! cx2,cy2      x and y unit squared for computing distance <a name='276'></font>
+<a name='277'>
+        <font color=#447700>! output<a name='278'></font>
+        <font color=#447700>! d            the distance of a and the nearest point z on the segment [x,y]<a name='279'></font>
+        <font color=#447700>! t            linear interpolation from the values st,et to the point z<a name='280'></font>
+        <font color=#447700>!<a name='281'></font>
+        <font color=#447700>! method: compute d as the distance (ax,ay) from the midpoint (mx,my)<a name='282'></font>
+        <font color=#447700>! minus a correction (because of rounding errors): |a-c|^2 = |a-m|^2 - |m-c|^2<a name='283'></font>
+        <font color=#447700>! when |m-c| &gt;= |s-e|/2 the nearest point is one of the endpoints<a name='284'></font>
+        <font color=#447700>! the computation work also for the case when s=e exactly or approximately <a name='285'></font>
+        <font color=#447700>!<a name='286'></font>
+        <font color=#447700>!<a name='287'></font>
+        <font color=#447700>!           a    <a name='288'></font>
+        <font color=#447700>!          /| \<a name='289'></font>
+        <font color=#447700>!     s---m-c--e<a name='290'></font>
+        <font color=#447700>!<a name='291'></font>
+        <font color=#447700>! |m-c| = |a-m| cos (a-m,e-s) <a name='292'></font>
+        <font color=#447700>!       = |a-m| (a-m).(e-s))/(|a-m|*|e-s|)<a name='293'></font>
+<font color=#447700>!***    local<a name='294'></font>
+        real:: mx,my,dam2,dames,am_es,cos2,dmc2,mcrel,mid_t,dif_t,des2,cx,cy<a name='295'>
+        character(len=128):: msg<a name='296'>
+<font color=#447700>!***    executable<a name='297'></font>
+<a name='298'>
+11      format('IGN ',6(a,g17.7,1x))<a name='299'>
+12      format('IGN ',4(a,2g13.7,1x))<a name='300'>
+<a name='301'>
+        <font color=#447700>! midpoint m = (mx,my)<a name='302'></font>
+        mx = (sx + ex)*0.5<a name='303'>
+        my = (sy + ey)*0.5<a name='304'>
+        dam2=(ax-mx)*(ax-mx)*cx2+(ay-my)*(ay-my)*cy2      <font color=#447700>! |a-m|^2<a name='305'></font>
+        des2 = (ex-sx)*(ex-sx)*cx2+(ey-sy)*(ey-sy)*cy2          <font color=#447700>! des2 = |e-s|^2<a name='306'></font>
+        dames = dam2*des2<a name='307'>
+        am_es=(ax-mx)*(ex-sx)*cx2+(ay-my)*(ey-sy)*cy2       <font color=#447700>! am_es = (a-m).(e-s)<a name='308'></font>
+        if(dames&gt;0)then<a name='309'>
+            cos2 = (am_es*am_es)/dames                  <font color=#447700>! cos2 = cos^2 (a-m,e-s)<a name='310'></font>
+        else <font color=#447700>! point a already is the midpoint<a name='311'></font>
+            cos2 = 0.<a name='312'>
+        endif<a name='313'>
+        dmc2 = dam2*cos2                                <font color=#447700>! dmc2 = |m-c|^2<a name='314'></font>
+        if(4.*dmc2 &lt; des2)then                          <font color=#447700>! if |m-c|&lt;=|e-s|/2<a name='315'></font>
+            <font color=#447700>! d = sqrt(max(dam2 - dmc2,0.))               ! d=|a-m|^2 - |m-c|^2, guard rounding<a name='316'></font>
+            mcrel = sign(sqrt(4.*dmc2/des2),am_es)      <font color=#447700>! relative distance of c from m <a name='317'></font>
+        elseif(am_es&gt;0)then                             <font color=#447700>! if cos &gt; 0, closest is e<a name='318'></font>
+            mcrel = 1.0 <a name='319'>
+        else                                            <font color=#447700>! closest is s<a name='320'></font>
+            mcrel = -1.0<a name='321'>
+        endif<a name='322'>
+	cx = (ex + sx)*0.5 + mcrel*(ex - sx)*0.5     <font color=#447700>! interpolate to c by going from m<a name='323'></font>
+	cy = (ey + sy)*0.5 + mcrel*(ey - sy)*0.5     <font color=#447700>! interpolate to c by going from m<a name='324'></font>
+        d=sqrt((ax-cx)*(ax-cx)*cx2+(ay-cy)*(ay-cy)*cy2) <font color=#447700>! |a-c|^2<a name='325'></font>
+	t = (et + st)*0.5 + mcrel*(et - st)*0.5     <font color=#447700>! interpolate to c by going from m<a name='326'></font>
+        if(fire_print_msg.ge.3)then<a name='327'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='328'></font>
+            write(msg,12)'find nearest to [',ax,ay,'] from [',sx,sy,'] [',ex,ey,']' <font color=#447700>! DEB<a name='329'></font>
+            call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#NEAREST' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_13">(msg)<a name='330'>
+            write(msg,12)'end times',st,et,' scale squared',cx2,cy2 <font color=#447700>! DEB<a name='331'></font>
+            call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#NEAREST' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_14">(msg)<a name='332'>
+            write(msg,11)'nearest at mcrel=',mcrel,'from the midpoint, t=',t <font color=#447700>! DEB<a name='333'></font>
+            call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#NEAREST' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_15">(msg)<a name='334'>
+            write(msg,12)'nearest is [',cx,cy,'] d=',d <font color=#447700>! DEB<a name='335'></font>
+            call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#NEAREST' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_16">(msg)<a name='336'>
+            write(msg,11)'dam2=',dam2,'des2=',des2,'dames=',dames<a name='337'>
+            call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#NEAREST' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_17">(msg)<a name='338'>
+            write(msg,11)'am_es=',am_es,'cos2=',cos2,'dmc2=',dmc2 <font color=#447700>! DEB<a name='339'></font>
+            call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#NEAREST' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_18">(msg)<a name='340'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='341'></font>
+        endif<a name='342'>
+END SUBROUTINE nearest<a name='343'>
+<a name='344'>
+<a name='345'>
+<font color=#447700>!<a name='346'></font>
+<font color=#447700>!**********************<a name='347'></font>
+<font color=#447700>!            <a name='348'></font>
+<a name='349'>
+<A NAME='FUEL_LEFT'><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='350'>
+<font color=#993300>subroutine </font><font color=#cc0000>fuel_left</font>(&amp; <A href='../../call_to/FUEL_LEFT.html' TARGET='index'>1</A>,<A href='../../call_from/FUEL_LEFT.html' TARGET='index'>16</A><a name='351'>
+    ims,ime,jms,jme, &amp;<a name='352'>
+    its,ite,jts,jte, &amp;<a name='353'>
+    ifs,ife,jfs,jfe, &amp;<a name='354'>
+    lfn, tign, fuel_time, time_now, fuel_frac, fire_area)<a name='355'>
+implicit none<a name='356'>
+<a name='357'>
+<font color=#447700>!*** purpose: determine fraction of fuel remaining<a name='358'></font>
+<font color=#447700>!*** NOTE: because variables are cell centered, need halo/sync width 1 before<a name='359'></font>
+<a name='360'>
+<font color=#447700>!*** arguments<a name='361'></font>
+<a name='362'>
+integer, intent(in) :: its,ite,jts,jte,ims,ime,jms,jme,ifs,ife,jfs,jfe<a name='363'>
+real, intent(in), dimension(ims:ime,jms:jme)::lfn,tign,fuel_time<a name='364'>
+real, intent(in):: time_now<a name='365'>
+real, intent(out), dimension(ifs:ife,jfs:jfe)::fuel_frac<a name='366'>
+real, intent(out), dimension(ims:ime,jms:jme):: fire_area<a name='367'>
+<a name='368'>
+<font color=#447700>! ims,ime,jms,jme   in   memory dimensions<a name='369'></font>
+<font color=#447700>! its,ite,jts,jte   in   tile dimensions (cells where fuel_frac computed)<a name='370'></font>
+<font color=#447700>! ifs,ife,jfs,jfe   in   fuel_frac memory dimensions<a name='371'></font>
+<font color=#447700>! lfn               in   level function, at nodes at midpoints of cells<a name='372'></font>
+<font color=#447700>! tign              in   ignition time, at nodes at nodes at midpoints of cells<a name='373'></font>
+<font color=#447700>! fuel_time         in   time constant of fuel, per cell<a name='374'></font>
+<font color=#447700>! time_now          in   time now<a name='375'></font>
+<font color=#447700>! fuel_frac         out  fraction of fuel remaining, per cell<a name='376'></font>
+<font color=#447700>! fire_area         out  fraction of cell area on fire<a name='377'></font>
+<a name='378'>
+<font color=#447700>!*** local<a name='379'></font>
+<a name='380'>
+integer::i,j,ir,jr,icl,jcl,isubcl,jsubcl,i2,j2,ii,jj<a name='381'>
+real::fmax,frat,helpsum1,helpsum2,fuel_left_ff,fire_area_ff,rx,ry,tignf(2,2)<a name='382'>
+<font color=#447700>! help variables instead of arrays fuel_left_f and fire_area_f <a name='383'></font>
+real::lffij,lffi1j,lffij1,lffi1j1,tifij,tifi1j,tifij1,tifi1j1,tx,ty,txx,tyy<a name='384'>
+<font color=#447700>! variables for calculation instead of lff(i,j) and tif(i,j)is lffij,tifij etc..#define IFCELLS (ite-its+1)*fuel_left_irl<a name='385'></font>
+#define JFCELLS (jte-jts+1)*fuel_left_jrl<a name='386'>
+character(len=128)::msg<a name='387'>
+integer::m,omp_get_thread_num<a name='388'>
+     <a name='389'>
+<a name='390'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_1">(its-1,ite+1,jts-1,jte+1,ims,ime,jms,jme)<a name='391'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_2">(its,ite,jts,jte,ifs,ife,jfs,jfe)<a name='392'>
+<a name='393'>
+<font color=#447700>! refinement<a name='394'></font>
+ir=fuel_left_irl<a name='395'>
+jr=fuel_left_jrl<a name='396'>
+<a name='397'>
+if ((ir.ne.2).or.(jr.ne.2)) then <a name='398'>
+   call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_1">('fuel_left: ir.ne.2 or jr.ne.2 ')<a name='399'>
+endif<a name='400'>
+<a name='401'>
+rx=1./ir <a name='402'>
+ry=1./jr<a name='403'>
+<a name='404'>
+<font color=#447700>! interpolate level set function to finer grid<a name='405'></font>
+#ifdef DEBUG_OUT_FUEL_LEFT    <a name='406'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_1">(1,IFCELLS+1,1,JFCELLS+1,1,IFCELLS+1,1,JFCELLS+1,lff,'lff',0)<a name='407'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_2">(1,IFCELLS+1,1,JFCELLS+1,1,IFCELLS+1,1,JFCELLS+1,tif,'tif',0)<a name='408'>
+#endif<a name='409'>
+<a name='410'>
+<font color=#447700>!<a name='411'></font>
+<font color=#447700>! example for ir=2:<a name='412'></font>
+<font color=#447700>!<a name='413'></font>
+<font color=#447700>!                     |      coarse cell      |<a name='414'></font>
+<font color=#447700>!      its-1                     its                                   ite             ite+1<a name='415'></font>
+<font color=#447700>! -------X------------|-----.-----X-----.-----|--........----|----------X----------|---------X<a name='416'></font>
+<font color=#447700>!           fine node 1           2           3                   2*(ite-its+1) <a name='417'></font>
+<font color=#447700>!                fine cell  1           2                             cell 2*(ite-its+1)<a name='418'></font>
+<a name='419'>
+<a name='420'>
+<a name='421'>
+<font color=#447700>!  Loop over cells in Tile <a name='422'></font>
+<font color=#447700>!  Changes made by Volodymyr Kondratenko 09/24/2009<a name='423'></font>
+do icl=its,ite<a name='424'>
+  do jcl=jts,jte<a name='425'>
+    helpsum1=0<a name='426'>
+    helpsum2=0<a name='427'>
+<font color=#447700>!   Loop over subcells in cell #(icl,jcl)<a name='428'></font>
+    do isubcl=1,ir<a name='429'>
+      do jsubcl=1,jr <a name='430'>
+        i=(icl-its)*ir+isubcl<a name='431'>
+        j=(jcl-jts)*jr+jsubcl<a name='432'>
+<a name='433'>
+<font color=#447700>!       Direct calculation tif and lff, avoiding arrays, just for case ir=jr=2<a name='434'></font>
+        if ((isubcl.eq.1).and.(jsubcl.eq.1)) then<a name='435'>
+           i2=icl-1<a name='436'>
+           j2=jcl-1<a name='437'>
+           ty=0.5<a name='438'>
+           tx=0.5<a name='439'>
+           tyy=1.0<a name='440'>
+           txx=1.0<a name='441'>
+        else if ((isubcl.eq.2).and.(jsubcl.eq.1)) then<a name='442'>
+           i2=icl<a name='443'>
+           j2=jcl-1<a name='444'>
+           ty=0.5<a name='445'>
+           tx=0<a name='446'>
+           tyy=1.0<a name='447'>
+           txx=0.5<a name='448'>
+        else if ((isubcl.eq.1).and.(jsubcl.eq.2)) then<a name='449'>
+           i2=icl-1<a name='450'>
+           j2=jcl<a name='451'>
+           tx=0.5<a name='452'>
+           ty=0<a name='453'>
+           txx=1.0<a name='454'>
+           tyy=0.5<a name='455'>
+        else if ((isubcl.eq.2).and.(jsubcl.eq.2)) then<a name='456'>
+           i2=icl<a name='457'>
+           j2=jcl<a name='458'>
+           tx=0<a name='459'>
+           ty=0<a name='460'>
+           txx=0.5<a name='461'>
+           tyy=0.5<a name='462'>
+        else<a name='463'>
+           call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_2">('fuel_left: isubcl,jsubcl should be only 1 or 2')<a name='464'>
+        endif <a name='465'>
+<a name='466'>
+<font color=#447700>! calculation lff and tif in 4 endpoints of subcell                    <a name='467'></font>
+        lffij=                             &amp;    <a name='468'>
+                  (1-tx)*(1-ty)*lfn(i2,j2)      &amp;<a name='469'>
+             +    (1-tx)*ty  *lfn(i2,j2+1)      &amp;<a name='470'>
+             +     tx*(1-ty)*lfn(i2+1,j2)       &amp;<a name='471'>
+             +       tx*ty  *lfn(i2+1,j2+1)<a name='472'>
+        lffi1j=                            &amp;<a name='473'>
+                    (1-txx)*(1-ty)*lfn(i2,j2)   &amp;<a name='474'>
+             +      (1-txx)*ty  *lfn(i2,j2+1)   &amp;<a name='475'>
+             +      (txx)*(1-ty)*lfn(i2+1,j2)   &amp;<a name='476'>
+             +      (txx)*ty  *lfn(i2+1,j2+1)<a name='477'>
+        lffij1=                            &amp;<a name='478'>
+                    (1-tx)*(1-tyy)*lfn(i2,j2)   &amp;<a name='479'>
+             +      (1-tx)*(tyy)  *lfn(i2,j2+1) &amp;<a name='480'>
+             +      tx*(1-tyy)*lfn(i2+1,j2)     &amp;<a name='481'>
+             +      tx*(tyy)  *lfn(i2+1,j2+1)<a name='482'>
+        lffi1j1 =                               &amp;<a name='483'>
+                      (1-txx)*(1-tyy)*lfn(i2,j2)     &amp;<a name='484'>
+             +      (1-txx)*(tyy)  *lfn(i2,j2+1)   &amp;        <a name='485'>
+             +      (txx)*(1-tyy)*lfn(i2+1,j2)     &amp;<a name='486'>
+             +      (txx)*(tyy)  *lfn(i2+1,j2+1)<a name='487'>
+<a name='488'>
+        <font color=#447700>! get ready to fix up tign values to be interpolated<a name='489'></font>
+        do ii=1,2<a name='490'>
+          do jj=1,2<a name='491'>
+            tignf(ii,jj)=tign(i2+ii-1,j2+jj-1)<a name='492'>
+          enddo<a name='493'>
+        enddo<a name='494'>
+        tifij=                                 &amp;<a name='495'>
+                   (1-tx)*(1-ty)*tignf(1,1)        &amp;<a name='496'>
+             +     (1-tx)*ty*tignf(1,1+1)          &amp;<a name='497'>
+             +     tx*(1-ty)*tignf(1+1,1)          &amp;<a name='498'>
+             +     tx*ty*tignf(1+1,1+1)<a name='499'>
+        tifi1j=                               &amp;<a name='500'>
+                   (1-txx)*(1-ty)*tignf(1,1)      &amp;<a name='501'>
+             +     (1-txx)*ty*tignf(1,1+1)        &amp;<a name='502'>
+             +     (txx)*(1-ty)*tignf(1+1,1)      &amp;<a name='503'>
+             +     (txx)*(ty)*tignf(1+1,1+1)            <a name='504'>
+        tifij1=                               &amp;<a name='505'>
+                   (1-tx)*(1-tyy)*tignf(1,1)      &amp;<a name='506'>
+             +     (1-tx)*(tyy)*tignf(1,1+1)      &amp;<a name='507'>
+             +      tx*(1-tyy)*tignf(1+1,1)       &amp;<a name='508'>
+             +      tx*(tyy)*tignf(1+1,1+1)<a name='509'>
+        tifi1j1=                               &amp;<a name='510'>
+                   (1-txx)*(1-tyy)*tignf(1,1)     &amp;<a name='511'>
+             +     (1-txx)*(tyy)*tignf(1,1+1)     &amp;<a name='512'>
+             +     (txx)*(1-tyy)*tignf(1+1,1)     &amp;<a name='513'>
+             +     (txx)*(tyy)*tignf(1+1,1+1) <a name='514'>
+<a name='515'>
+         <a name='516'>
+        if(fuel_left_method.eq.1)then<a name='517'>
+          call <A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT_CELL_1'>fuel_left_cell_1</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FUEL_LEFT_CELL_1_1">( fuel_left_ff, fire_area_ff, &amp;<a name='518'>
+             lffij,lffij1,lffi1j,lffi1j1,&amp;<a name='519'>
+             tifij,tifij1,tifi1j,tifi1j1,&amp;<a name='520'>
+             time_now, fuel_time(icl,jcl))<a name='521'>
+        elseif(fuel_left_method.eq.2)then<a name='522'>
+          fire_area_ff=0  <font color=#447700>! initialize to something until computed in fuel_left_f(i,j)<a name='523'></font>
+          fuel_left_ff=<A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT_CELL_2'>fuel_left_cell_2</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FUEL_LEFT_CELL_2_1">( &amp;<a name='524'>
+             lffij,lffij1,lffi1j,lffi1j1,&amp;<a name='525'>
+             tifij,tifij1,tifi1j,tifi1j1,&amp;<a name='526'>
+             time_now, fuel_time(icl,jcl)) <a name='527'>
+        else<a name='528'>
+          call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_3">('fuel_left: unknown fuel_left_method')<a name='529'>
+        endif<a name='530'>
+<a name='531'>
+        <font color=#447700>! consistency check<a name='532'></font>
+        if(fire_area_ff.lt.-1e-6 .or.  &amp;<a name='533'>
+          (fire_area_ff.eq.0. .and. fuel_left_ff.lt.1.-1e-6))then<a name='534'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='535'></font>
+           write(msg,'(a,2i6,2(a,f11.8))')'fuel_left: at node',i,j, &amp;<a name='536'>
+              ' of refined mesh fuel burnt',1-fuel_left_ff,' fire area',fire_area_ff<a name='537'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='538'></font>
+           call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_4">(msg)<a name='539'>
+        endif<a name='540'>
+<a name='541'>
+        helpsum1=helpsum1+fuel_left_ff<a name='542'>
+        helpsum2=helpsum2+fire_area_ff<a name='543'>
+      enddo<a name='544'>
+    enddo<a name='545'>
+    fuel_frac(icl,jcl)=helpsum1 <a name='546'>
+    fire_area(icl,jcl)=helpsum2<a name='547'>
+  enddo <a name='548'>
+enddo<a name='549'>
+  <a name='550'>
+<a name='551'>
+<a name='552'>
+<a name='553'>
+#ifdef DEBUG_OUT_FUEL_LEFT<a name='554'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_3">(its,ite,jts,jte,ims,ime,jms,jme,fire_area,'fire_area',0)<a name='555'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_4">(its,ite,jts,jte,ims,ime,jms,jme,fuel_frac,'fuel_frac',0)<a name='556'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_5">(1,IFCELLS,1,JFCELLS,1,IFCELLS,1,JFCELLS,fuel_left_f,'fuel_left_f',0)<a name='557'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_6">(1,IFCELLS,1,JFCELLS,1,IFCELLS,1,JFCELLS,fire_area_f,'fire_area_f',0)<a name='558'>
+#endif<a name='559'>
+<a name='560'>
+<font color=#447700>! finish the averaging<a name='561'></font>
+do j=jts,jte<a name='562'>
+    do i=its,ite        <a name='563'>
+        fuel_frac(i,j) = fuel_frac(i,j) /(ir*jr) <font color=#447700>! multiply by weight for averaging over coarse cell<a name='564'></font>
+        fire_area(i,j) = fire_area(i,j) /(ir*jr) <font color=#447700>! <a name='565'></font>
+    enddo<a name='566'>
+enddo<a name='567'>
+<a name='568'>
+<font color=#447700>! consistency check after sum<a name='569'></font>
+fmax=0<a name='570'>
+do j=jts,jte<a name='571'>
+    do i=its,ite        <a name='572'>
+       if(fire_area(i,j).eq.0.)then<a name='573'>
+           if(fuel_frac(i,j).lt.1.-1e-6)then<a name='574'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='575'></font>
+               write(msg,'(a,2i6,2(a,f11.8))')'fuel_left: at node',i,j, &amp;<a name='576'>
+                   ' fuel burnt',1-fuel_frac(i,j),' but fire area',fire_area(i,j)<a name='577'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='578'></font>
+               call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_5">(msg)<a name='579'>
+           endif<a name='580'>
+       else<a name='581'>
+           frat=(1-fuel_frac(i,j))/fire_area(i,j)<a name='582'>
+           fmax=max(fmax,frat)<a name='583'>
+       endif<a name='584'>
+    enddo<a name='585'>
+enddo<a name='586'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='587'></font>
+write(msg,'(a,4i6,a,f10.7)')'fuel_left: tile',its,ite,jts,jte,' max fuel burnt/area',fmax <a name='588'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='589'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_19">(msg)<a name='590'>
+return<a name='591'>
+<a name='592'>
+<a name='593'>
+end subroutine fuel_left<a name='594'>
+<a name='595'>
+<font color=#447700>!<a name='596'></font>
+<font color=#447700>!************************<a name='597'></font>
+<font color=#447700>!<a name='598'></font>
+<a name='599'>
+<A NAME='FUEL_LEFT_CELL_1'><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT_CELL_1' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='600'>
+<font color=#993300>subroutine </font><font color=#cc0000>fuel_left_cell_1</font>( fuel_frac_left, fire_frac_area, &amp; <A href='../../call_to/FUEL_LEFT_CELL_1.html' TARGET='index'>1</A>,<A href='../../call_from/FUEL_LEFT_CELL_1.html' TARGET='index'>3</A><a name='601'>
+    lfn00,lfn01,lfn10,lfn11, &amp;<a name='602'>
+    tign00,tign01,tign10,tign11,&amp;<a name='603'>
+    time_now, fuel_time_cell)<a name='604'>
+<font color=#447700>!*** purpose: compute the fuel fraction left in one cell<a name='605'></font>
+implicit none<a name='606'>
+<font color=#447700>!*** arguments<a name='607'></font>
+real, intent(out):: fuel_frac_left, fire_frac_area <font color=#447700>! <a name='608'></font>
+real, intent(in)::lfn00,lfn01,lfn10,lfn11    <font color=#447700>! level set function at 4 corners of the cell<a name='609'></font>
+real, intent(in)::tign00,tign01,tign10,tign11<font color=#447700>! ignition time at the  4 corners of the cell<a name='610'></font>
+real, intent(in)::time_now                   <font color=#447700>! the time now<a name='611'></font>
+real, intent(in)::fuel_time_cell            <font color=#447700>! time to burns off to 1/e<a name='612'></font>
+<font color=#447700>!*** Description<a name='613'></font>
+<font color=#447700>! The area burning is given by the condition L &lt;= 0, where the function P is<a name='614'></font>
+<font color=#447700>! interpolated from lfn(i,j)<a name='615'></font>
+<font color=#447700>!<a name='616'></font>
+<font color=#447700>! The time since ignition is the function T, interpolated in from tign(i,j)-time_now.<a name='617'></font>
+<font color=#447700>! The values of tign(i,j) where lfn(i,j)&gt;=0 are ignored, tign(i,j)=0 is taken <a name='618'></font>
+<font color=#447700>! when lfn(i,j)=0.<a name='619'></font>
+<font color=#447700>!<a name='620'></font>
+<font color=#447700>! The function computes an approxmation  of the integral<a name='621'></font>
+<font color=#447700>!<a name='622'></font>
+<font color=#447700>!<a name='623'></font>
+<font color=#447700>!                                  /\<a name='624'></font>
+<font color=#447700>!                                  |              <a name='625'></font>
+<font color=#447700>! fuel_frac_left  =      1   -     | 1 -  exp(-T(x,y)/fuel_time_cell)) dxdy<a name='626'></font>
+<font color=#447700>!                                  |            <a name='627'></font>
+<font color=#447700>!                                 \/<a name='628'></font>
+<font color=#447700>!                                0&lt;x&lt;1<a name='629'></font>
+<font color=#447700>!                                0&lt;y&lt;1<a name='630'></font>
+<font color=#447700>!                             L(x,y)&lt;=0<a name='631'></font>
+<font color=#447700>!<a name='632'></font>
+<font color=#447700>! When the cell is not burning at all (all lfn&gt;=0), then fuel_frac(i,j)=1.<a name='633'></font>
+<font color=#447700>! Because of symmetries, the result should not depend on the mesh spacing dx dy<a name='634'></font>
+<font color=#447700>! so dx=1 and dy=1 assumed.<a name='635'></font>
+<font color=#447700>!<a name='636'></font>
+<font color=#447700>! Example:<a name='637'></font>
+<font color=#447700>!<a name='638'></font>
+<font color=#447700>!        lfn&lt;0         lfn&gt;0<a name='639'></font>
+<font color=#447700>!      (0,1) -----O--(1,1)            O = points on the fireline, T=tnow<a name='640'></font>
+<font color=#447700>!            |      \ |               A = the burning area for computing<a name='641'></font>
+<font color=#447700>!            |       \|                        fuel_frac(i,j)<a name='642'></font>
+<font color=#447700>!            |   A    O <a name='643'></font>
+<font color=#447700>!            |        |<a name='644'></font>
+<font color=#447700>!            |        |<a name='645'></font>
+<font color=#447700>!       (0,0)---------(1,0)<a name='646'></font>
+<font color=#447700>!       lfn&lt;0          lfn&lt;0<a name='647'></font>
+<font color=#447700>!<a name='648'></font>
+<font color=#447700>! Approximations allowed: <a name='649'></font>
+<font color=#447700>! The fireline can be approximated by straight line(s).<a name='650'></font>
+<font color=#447700>! When all cell is burning, approximation by 1 point Gaussian quadrature is OK.<a name='651'></font>
+<font color=#447700>! <a name='652'></font>
+<font color=#447700>! Requirements:<a name='653'></font>
+<font color=#447700>! 1. The output should be a continuous function of the arrays lfn and<a name='654'></font>
+<font color=#447700>!  tign whenever lfn(i,j)=0 implies tign(i,j)=tnow.  <a name='655'></font>
+<font color=#447700>! 2. The output should be invariant to the symmetries of the input in each cell.<a name='656'></font>
+<font color=#447700>! 3. Arbitrary combinations of the signs of lfn(i,j) should work.<a name='657'></font>
+<font color=#447700>! 4. The result should be at least 1st order accurate in the sense that it is<a name='658'></font>
+<font color=#447700>!    exact if the time from ignition is a linear function.<a name='659'></font>
+<font color=#447700>!<a name='660'></font>
+<font color=#447700>! If time from ignition is approximated by polynomial in the burnt<a name='661'></font>
+<font color=#447700>! region of the cell, this is integral of polynomial times exponential<a name='662'></font>
+<font color=#447700>! over a polygon, which can be computed exactly.<a name='663'></font>
+<font color=#447700>!<a name='664'></font>
+<font color=#447700>! Requirement 4 is particularly important when there is a significant decrease<a name='665'></font>
+<font color=#447700>! of the fuel fraction behind the fireline on the mesh scale, because the<a name='666'></font>
+<font color=#447700>! rate of fuel decrease right behind the fireline is much larger <a name='667'></font>
+<font color=#447700>! (exponential...). This will happen when<a name='668'></font>
+<font color=#447700>!<a name='669'></font>
+<font color=#447700>! change of time from ignition within one mesh cell / fuel_time_cell is not &lt;&lt; 1<a name='670'></font>
+<font color=#447700>!<a name='671'></font>
+<font color=#447700>! This is the same as<a name='672'></font>
+<font color=#447700>!<a name='673'></font>
+<font color=#447700>!               mesh cell size<a name='674'></font>
+<font color=#447700>!  X =    -------------------------      is not &lt;&lt; 1<a name='675'></font>
+<font color=#447700>!       fireline speed * fuel_time_cell<a name='676'></font>
+<font color=#447700>!         <a name='677'></font>
+<font color=#447700>!<a name='678'></font>
+<font color=#447700>! When X is large then the fuel burnt in one timestep in the cell is<a name='679'></font>
+<font color=#447700>! approximately proportional to length of  fireline in that cell.<a name='680'></font>
+<font color=#447700>!<a name='681'></font>
+<font color=#447700>! When X is small then the fuel burnt in one timestep in the cell is<a name='682'></font>
+<font color=#447700>! approximately proportional to the area of the burning region.<a name='683'></font>
+<font color=#447700>!<a name='684'></font>
+<a name='685'>
+<font color=#447700>!*** calls<a name='686'></font>
+intrinsic tiny<a name='687'>
+<a name='688'>
+<font color=#447700>!*** local<a name='689'></font>
+real::ps,aps,area,ta,out<a name='690'>
+real::t00,t01,t10,t11<a name='691'>
+real,parameter::safe=tiny(aps)<a name='692'>
+character(len=128)::msg<a name='693'>
+<a name='694'>
+<font color=#447700>! the following algorithm is a very crude approximation<a name='695'></font>
+<a name='696'>
+<font color=#447700>! minus time since ignition, 0 if no ignition yet<a name='697'></font>
+<font color=#447700>! it is possible to have 0 in fire region when ignitin time falls in <a name='698'></font>
+<font color=#447700>! inside the time step because lfn is updated at the beginning of the time step<a name='699'></font>
+<a name='700'>
+t00=tign00-time_now<a name='701'>
+if(lfn00&gt;0. .or. t00&gt;0.)t00=0.<a name='702'>
+t01=tign01-time_now<a name='703'>
+if(lfn01&gt;0. .or. t01&gt;0.)t01=0.<a name='704'>
+t10=tign10-time_now<a name='705'>
+if(lfn10&gt;0. .or. t10&gt;0.)t10=0.<a name='706'>
+t11=tign11-time_now<a name='707'>
+if(lfn11&gt;0. .or. t11&gt;0.)t11=0.<a name='708'>
+<a name='709'>
+<font color=#447700>! approximate burning area, between 0 and 1   <a name='710'></font>
+ps = lfn00+lfn01+lfn10+lfn11   <a name='711'>
+aps = abs(lfn00)+abs(lfn01)+abs(lfn10)+abs(lfn11)<a name='712'>
+aps=max(aps,safe)<a name='713'>
+area =(-ps/aps+1.)/2.<a name='714'>
+area = max(area,0.) <font color=#447700>! make sure area is between 0 and 1<a name='715'></font>
+area = min(area,1.)<a name='716'>
+    <a name='717'>
+<font color=#447700>! average negative time since ignition<a name='718'></font>
+ta=0.25*(t00+t01+t10+t11)<a name='719'>
+<a name='720'>
+<font color=#447700>! exp decay in the burning area<a name='721'></font>
+out=1.<a name='722'>
+<font color=#447700>!if(area&gt;0.)out=1. - area*(1. - exp(ta/fuel_time_cell))<a name='723'></font>
+if(area&gt;0)out=area*exp(ta/fuel_time_cell) + (1. - area)<a name='724'>
+<a name='725'>
+if(out&gt;1.)then<a name='726'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='727'></font>
+    write(msg,*)'out=',out,'&gt;1 area=',area,' ta=',ta<a name='728'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT_CELL_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_20">(msg)<a name='729'>
+    write(msg,*)'tign=',tign00,tign01,tign10,tign11,' time_now=',time_now<a name='730'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='731'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT_CELL_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_21">(msg)<a name='732'>
+    <font color=#447700>!call message('WARNING: fuel_left_cell_1: fuel fraction &gt; 1')<a name='733'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT_CELL_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_6">('fuel_left_cell_1: fuel fraction &gt; 1')<a name='734'>
+endif<a name='735'>
+<a name='736'>
+<font color=#447700>!out = max(out,0.) ! make sure out is between 0 and 1<a name='737'></font>
+<font color=#447700>!out = min(out,1.)<a name='738'></font>
+<a name='739'>
+fuel_frac_left = out<a name='740'>
+fire_frac_area = area<a name='741'>
+<a name='742'>
+end subroutine fuel_left_cell_1<a name='743'>
+<a name='744'>
+<font color=#447700>!<a name='745'></font>
+<font color=#447700>!****************************************<a name='746'></font>
+<font color=#447700>!<a name='747'></font>
+<a name='748'>
+<A NAME='FUEL_LEFT_CELL_2'><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT_CELL_2' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='749'>
+real <font color=#993300>function </font><font color=#cc0000>fuel_left_cell_2</font>(  &amp; <A href='../../call_to/FUEL_LEFT_CELL_2.html' TARGET='index'>1</A>,<A href='../../call_from/FUEL_LEFT_CELL_2.html' TARGET='index'>5</A><a name='750'>
+    lfn00,lfn01,lfn10,lfn11, &amp;<a name='751'>
+    tign00,tign01,tign10,tign11,&amp;<a name='752'>
+    time_now, fuel_time_cell)<a name='753'>
+<font color=#447700>!*** purpose: compute the fuel fraction left in one cell<a name='754'></font>
+implicit none<a name='755'>
+<font color=#447700>!*** arguments<a name='756'></font>
+real, intent(in)::lfn00,lfn01,lfn10,lfn11    <font color=#447700>! level set function at 4 corners of the cell<a name='757'></font>
+real, intent(in)::tign00,tign01,tign10,tign11<font color=#447700>! ignition time at the  4 corners of the cell<a name='758'></font>
+real, intent(in)::time_now                   <font color=#447700>! the time now<a name='759'></font>
+real, intent(in)::fuel_time_cell            <font color=#447700>! time to burns off to 1/e<a name='760'></font>
+<font color=#447700>!*** Description<a name='761'></font>
+<font color=#447700>! The area burning is given by the condition L &lt;= 0, where the function P is<a name='762'></font>
+<font color=#447700>! interpolated from lfn(i,j)<a name='763'></font>
+<font color=#447700>!<a name='764'></font>
+<font color=#447700>! The time since ignition is the function T, interpolated in from tign(i,j)-time_now.<a name='765'></font>
+<font color=#447700>! The values of tign(i,j) where lfn(i,j)&gt;=0 are ignored, tign(i,j)=0 is taken <a name='766'></font>
+<font color=#447700>! when lfn(i,j)=0.<a name='767'></font>
+<font color=#447700>!<a name='768'></font>
+<font color=#447700>! The function computes an approxmation  of the integral<a name='769'></font>
+<font color=#447700>!<a name='770'></font>
+<font color=#447700>!<a name='771'></font>
+<font color=#447700>!                                  /\<a name='772'></font>
+<font color=#447700>!                                  |              <a name='773'></font>
+<font color=#447700>! fuel_frac_left  =      1   -     | 1 -  exp(-T(x,y)/fuel_time_cell)) dxdy<a name='774'></font>
+<font color=#447700>!                                  |            <a name='775'></font>
+<font color=#447700>!                                 \/<a name='776'></font>
+<font color=#447700>!                                0&lt;x&lt;1<a name='777'></font>
+<font color=#447700>!                                0&lt;y&lt;1<a name='778'></font>
+<font color=#447700>!                             L(x,y)&lt;=0<a name='779'></font>
+<font color=#447700>!<a name='780'></font>
+<font color=#447700>! When the cell is not burning at all (all lfn&gt;=0), then fuel_frac(i,j)=1.<a name='781'></font>
+<font color=#447700>! Because of symmetries, the result should not depend on the mesh spacing dx dy<a name='782'></font>
+<font color=#447700>! so dx=1 and dy=1 assumed.<a name='783'></font>
+<font color=#447700>!<a name='784'></font>
+<font color=#447700>! Example:<a name='785'></font>
+<font color=#447700>!<a name='786'></font>
+<font color=#447700>!        lfn&lt;0         lfn&gt;0<a name='787'></font>
+<font color=#447700>!      (0,1) -----O--(1,1)            O = points on the fireline, T=tnow<a name='788'></font>
+<font color=#447700>!            |      \ |               A = the burning area for computing<a name='789'></font>
+<font color=#447700>!            |       \|                        fuel_frac(i,j)<a name='790'></font>
+<font color=#447700>!            |   A    O <a name='791'></font>
+<font color=#447700>!            |        |<a name='792'></font>
+<font color=#447700>!            |        |<a name='793'></font>
+<font color=#447700>!       (0,0)---------(1,0)<a name='794'></font>
+<font color=#447700>!       lfn&lt;0          lfn&lt;0<a name='795'></font>
+<font color=#447700>!<a name='796'></font>
+<font color=#447700>! Approximations allowed: <a name='797'></font>
+<font color=#447700>! The fireline can be approximated by straight line(s).<a name='798'></font>
+<font color=#447700>! When all cell is burning, approximation by 1 point Gaussian quadrature is OK.<a name='799'></font>
+<font color=#447700>! <a name='800'></font>
+<font color=#447700>! Requirements:<a name='801'></font>
+<font color=#447700>! 1. The output should be a continuous function of the arrays lfn and<a name='802'></font>
+<font color=#447700>!  tign whenever lfn(i,j)=0 implies tign(i,j)=tnow.  <a name='803'></font>
+<font color=#447700>! 2. The output should be invariant to the symmetries of the input in each cell.<a name='804'></font>
+<font color=#447700>! 3. Arbitrary combinations of the signs of lfn(i,j) should work.<a name='805'></font>
+<font color=#447700>! 4. The result should be at least 1st order accurate in the sense that it is<a name='806'></font>
+<font color=#447700>!    exact if the time from ignition is a linear function.<a name='807'></font>
+<font color=#447700>!<a name='808'></font>
+<font color=#447700>! If time from ignition is approximated by polynomial in the burnt<a name='809'></font>
+<font color=#447700>! region of the cell, this is integral of polynomial times exponential<a name='810'></font>
+<font color=#447700>! over a polygon, which can be computed exactly.<a name='811'></font>
+<font color=#447700>!<a name='812'></font>
+<font color=#447700>! Requirement 4 is particularly important when there is a significant decrease<a name='813'></font>
+<font color=#447700>! of the fuel fraction behind the fireline on the mesh scale, because the<a name='814'></font>
+<font color=#447700>! rate of fuel decrease right behind the fireline is much larger <a name='815'></font>
+<font color=#447700>! (exponential...). This will happen when<a name='816'></font>
+<font color=#447700>! <a name='817'></font>
+<font color=#447700>! change of time from ignition within one mesh cell * fuel speed is not &lt;&lt; 1<a name='818'></font>
+<font color=#447700>!<a name='819'></font>
+<font color=#447700>! This is the same as<a name='820'></font>
+<font color=#447700>!<a name='821'></font>
+<font color=#447700>!         mesh cell size*fuel_speed <a name='822'></font>
+<font color=#447700>!         -------------------------      is not &lt;&lt; 1<a name='823'></font>
+<font color=#447700>!             fireline speed<a name='824'></font>
+<font color=#447700>!         <a name='825'></font>
+<font color=#447700>!<a name='826'></font>
+<font color=#447700>! When X is large then the fuel burnt in one timestep in the cell is<a name='827'></font>
+<font color=#447700>! approximately proportional to length of  fireline in that cell.<a name='828'></font>
+<font color=#447700>!<a name='829'></font>
+<font color=#447700>! When X is small then the fuel burnt in one timestep in the cell is<a name='830'></font>
+<font color=#447700>! approximately proportional to the area of the burning region.<a name='831'></font>
+<font color=#447700>!<a name='832'></font>
+<a name='833'>
+#ifndef FUEL_LEFT<a name='834'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT_CELL_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_7">('fuel_left_cell_2: not implemented, please use fire_fuel_left_method=1')<a name='835'>
+fuel_left_cell_2=0.  <font color=#447700>! to avoid compiler warning about value not set<a name='836'></font>
+end function fuel_left_cell_2<a name='837'>
+#else<a name='838'>
+<a name='839'>
+<font color=#447700>!*** calls<a name='840'></font>
+intrinsic tiny<a name='841'>
+<a name='842'>
+<font color=#447700>!*** local<a name='843'></font>
+real::ps,aps,area,ta,out<a name='844'>
+real::t00,t01,t10,t11<a name='845'>
+real,parameter::safe=tiny(aps)<a name='846'>
+character(len=128)::msg<a name='847'>
+<a name='848'>
+<font color=#447700>!*** local<a name='849'></font>
+integer::i,j,k<a name='850'>
+<a name='851'>
+<font color=#447700>! least squares<a name='852'></font>
+integer::mmax,nb,nmax,pmax,nin,nout<a name='853'>
+parameter(mmax=3,nb=64,nmax=8,pmax=8)<a name='854'>
+integer lda, ldb, lwork, info<a name='855'>
+parameter (lda=nmax, ldb=nmax, lwork=mmax+nmax+nb*(nmax+pmax))<a name='856'>
+integer n,m,p<a name='857'>
+real,dimension(lda,mmax):: mA<a name='858'>
+real,dimension(nmax):: vecD<a name='859'>
+real,dimension(lwork):: WORK<a name='860'>
+real,dimension(pmax):: vecY<a name='861'>
+real,dimension(mmax):: vecX<a name='862'>
+real,dimension(ldb,pmax)::mB<a name='863'>
+real,dimension(mmax)::u<a name='864'>
+<a name='865'>
+real::tweight,tdist<a name='866'>
+integer::kk,ll,ss<a name='867'>
+real::rnorm<a name='868'>
+real,dimension(8,2)::xylist,xytlist<a name='869'>
+real,dimension(8)::tlist,llist,xt<a name='870'>
+real,dimension(5)::xx,yy<a name='871'>
+real,dimension(5)::lfn,tign<a name='872'>
+<a name='873'>
+integer:: npoint<a name='874'>
+real::tt,x0,y0,xts,xte,yts,yte,xt1,xt2<a name='875'>
+real::lfn0,lfn1,dist,nr,c,s,errQ,ae,ce,ceae,a0,a1,a2,d,cet<a name='876'>
+real::s1,s2,s3<a name='877'>
+real::upper,lower,ah,ch,aa,cc,aupp,cupp,alow,clow<a name='878'>
+real,dimension(2,2)::mQ<a name='879'>
+real,dimension(2)::ut<a name='880'>
+<a name='881'>
+<font color=#447700>!calls<a name='882'></font>
+intrinsic epsilon<a name='883'>
+<a name='884'>
+real, parameter:: zero=0.,one=1.,eps=epsilon(zero)<a name='885'>
+<a name='886'>
+<a name='887'>
+<font color=#447700>! external functions    <a name='888'></font>
+real::snrm2<a name='889'>
+double precision :: dnrm2<a name='890'>
+external dnrm2<a name='891'>
+external snrm2<a name='892'>
+<font color=#447700>! external subroutines<a name='893'></font>
+external sggglm<a name='894'>
+external dggglm<a name='895'>
+<font color=#447700>!executable statements<a name='896'></font>
+<a name='897'>
+<font color=#447700>! a very crude approximation - replace by a better code<a name='898'></font>
+<font color=#447700>! call check_mesh_2dim(ids,ide+1,jds,jde+1,ims,ime,jms,jme)<a name='899'></font>
+t00=tign00-time_now<a name='900'>
+if(lfn00&gt;=0. .or. t00&gt;0.)t00=0.<a name='901'>
+t01=tign01-time_now<a name='902'>
+if(lfn01&gt;=0. .or. t01&gt;0.)t01=0.<a name='903'>
+t10=tign10-time_now<a name='904'>
+if(lfn10&gt;=0. .or. t10&gt;0.)t10=0.<a name='905'>
+t11=tign11-time_now<a name='906'>
+if(lfn11&gt;=0. .or. t11&gt;0.)t11=0.<a name='907'>
+<a name='908'>
+<font color=#447700>!if (t00&lt;0 .or. t01 &lt;0 .or. t10&lt;0 .or. t11&lt;0) then<a name='909'></font>
+<font color=#447700>!   print *,'tign00=',tign00,'tign10=',tign10,&amp;<a name='910'></font>
+<font color=#447700>!          'tign01=',tign01,'tign11=',tign11<a name='911'></font>
+<font color=#447700>!end if<a name='912'></font>
+<a name='913'>
+<a name='914'>
+<a name='915'>
+<font color=#447700>!*** case0 Do nothing<a name='916'></font>
+if ( lfn00&gt;=0 .and. lfn10&gt;=0 .and. lfn01&gt;=0 .and. lfn11&gt;=0 ) then<a name='917'>
+    out = 1.0 <font color=#447700>!  fuel_left, no burning<a name='918'></font>
+<font color=#447700>!*** case4 all four coners are burning<a name='919'></font>
+else if (lfn00&lt;=0 .and. lfn10&lt;=0 .and. lfn01&lt;=0 .and. lfn11&lt;=0) then<a name='920'>
+    <font color=#447700>! least squares, A matrix for points<a name='921'></font>
+    mA(1,1)=0.0<a name='922'>
+    mA(2,1)=1.0<a name='923'>
+    mA(3,1)=0.0<a name='924'>
+    mA(4,1)=1.0<a name='925'>
+    mA(1,2)=0.0<a name='926'>
+    mA(2,2)=0.0<a name='927'>
+    mA(3,2)=1.0<a name='928'>
+    mA(4,2)=1.0<a name='929'>
+    mA(1,3)=1.0<a name='930'>
+    mA(2,3)=1.0<a name='931'>
+    mA(3,3)=1.0<a name='932'>
+    mA(4,3)=1.0<a name='933'>
+    <font color=#447700>! D vector, time from ignition<a name='934'></font>
+    vecD(1)=time_now-tign00<a name='935'>
+    vecD(2)=time_now-tign10<a name='936'>
+    vecD(3)=time_now-tign01<a name='937'>
+    vecD(4)=time_now-tign11<a name='938'>
+    <font color=#447700>! B matrix, weights<a name='939'></font>
+    do kk=1,4<a name='940'>
+    do ll=1,4<a name='941'>
+        mB(kk,ll)=0.0<a name='942'>
+    end do<a name='943'>
+        mB(kk,kk)=2.0<a name='944'>
+    end do<a name='945'>
+    <font color=#447700>! set the m,n,p<a name='946'></font>
+    n=4 <font color=#447700>! rows of matrix A and B<a name='947'></font>
+    m=3 <font color=#447700>! columns of matrix A<a name='948'></font>
+    p=4 <font color=#447700>! columns of matrix B<a name='949'></font>
+    <font color=#447700>! call least squqres in LAPACK            <a name='950'></font>
+    call SGGGLM(N,M,P,mA,LDA,mB,LDB,vecD,vecX,vecY, &amp;<a name='951'>
+                WORK,LWORK,INFO)<a name='952'>
+    rnorm=snrm2(p,vecY,1)            <a name='953'>
+    <font color=#447700>! integrate<a name='954'></font>
+    u(1)=-vecX(1)/fuel_time_cell<a name='955'>
+    u(2)=-vecX(2)/fuel_time_cell<a name='956'>
+    u(3)=-vecX(3)/fuel_time_cell            <a name='957'>
+    <font color=#447700>!fuel_burn(i,j)=1-exp(u(3))*intexp(u(1)*dx)*intexp(u(2)*dy)<a name='958'></font>
+    s1=u(1)<a name='959'>
+    s2=u(2)            <a name='960'>
+    out=1-exp(u(3))*intexp(s1)*intexp(s2)<a name='961'>
+    <font color=#447700>!print *,'intexp<a name='962'></font>
+    if ( out&lt;0 .or. out&gt;1.0 ) then<a name='963'>
+        print *,'case4, out should be between 0 and 1'<a name='964'>
+    end if<a name='965'>
+<font color=#447700>!*** case 1,2,3<a name='966'></font>
+else<a name='967'>
+    <font color=#447700>! set xx, yy for the coner points<a name='968'></font>
+    <font color=#447700>! move these values out of i and j loop to speed up<a name='969'></font>
+    xx(1) = -0.5<a name='970'>
+    xx(2) =  0.5<a name='971'>
+    xx(3) =  0.5<a name='972'>
+    xx(4) = -0.5<a name='973'>
+    xx(5) = -0.5<a name='974'>
+    yy(1) = -0.5<a name='975'>
+    yy(2) = -0.5<a name='976'>
+    yy(3) =  0.5<a name='977'>
+    yy(4) =  0.5<a name='978'>
+    yy(5) = -0.5     <a name='979'>
+    lfn(1)=lfn00<a name='980'>
+    lfn(2)=lfn10<a name='981'>
+    lfn(3)=lfn11<a name='982'>
+    lfn(4)=lfn01<a name='983'>
+    lfn(5)=lfn00<a name='984'>
+    tign(1)=t00<a name='985'>
+    tign(2)=t10<a name='986'>
+    tign(3)=t11<a name='987'>
+    tign(4)=t01<a name='988'>
+    tign(5)=t00<a name='989'>
+    npoint = 0 <font color=#447700>! number of points in polygon<a name='990'></font>
+    <font color=#447700>!print *,'time_now=',time_now<a name='991'></font>
+    <font color=#447700>!print *,'lfn00=',lfn00,'lfn10=',lfn10,&amp;<a name='992'></font>
+    <font color=#447700>!        'lfn01=',lfn01,'lfn11=',lfn11<a name='993'></font>
+    <font color=#447700>!print *,'t00=',t00,'t10=',t10,&amp;<a name='994'></font>
+    <font color=#447700>!        't01=',t01,'t11=',t11<a name='995'></font>
+<a name='996'>
+    do k=1,4<a name='997'>
+        lfn0=lfn(k  )<a name='998'>
+        lfn1=lfn(k+1)<a name='999'>
+        if ( lfn0 &lt;= 0.0 ) then<a name='1000'>
+            npoint = npoint + 1<a name='1001'>
+            xylist(npoint,1)=xx(k)<a name='1002'>
+            xylist(npoint,2)=yy(k)<a name='1003'>
+            tlist(npoint)=-tign(k)<a name='1004'>
+            llist(npoint)=lfn0<a name='1005'>
+        end if<a name='1006'>
+        if ( lfn0*lfn1 &lt; 0 ) then<a name='1007'>
+            npoint = npoint + 1<a name='1008'>
+            tt=lfn0/(lfn0-lfn1)<a name='1009'>
+            x0=xx(k)+( xx(k+1)-xx(k) )*tt<a name='1010'>
+            y0=yy(k)+( yy(k+1)-yy(k) )*tt<a name='1011'>
+            xylist(npoint,1)=x0<a name='1012'>
+            xylist(npoint,2)=y0<a name='1013'>
+            tlist(npoint)=0 <font color=#447700>! on fireline<a name='1014'></font>
+            llist(npoint)=0<a name='1015'>
+        end if<a name='1016'>
+    end do<a name='1017'>
+<a name='1018'>
+    <font color=#447700>! make the list circular<a name='1019'></font>
+    tlist(npoint+1)=tlist(1)<a name='1020'>
+    llist(npoint+1)=llist(1)   <a name='1021'>
+    xylist(npoint+1,1)=xylist(1,1)<a name='1022'>
+    xylist(npoint+1,2)=xylist(1,2)<a name='1023'>
+    <font color=#447700>!* least squares, A matrix for points<a name='1024'></font>
+    do kk=1,npoint<a name='1025'>
+        mA(kk,1)=xylist(kk,1)<a name='1026'>
+        mA(kk,2)=xylist(kk,2)<a name='1027'>
+        mA(kk,3)=1.0<a name='1028'>
+        vecD(kk)=tlist(kk) <font color=#447700>! D vector,time from ignition<a name='1029'></font>
+    end do<a name='1030'>
+    <font color=#447700>! B matrix, weights<a name='1031'></font>
+    do kk=1,ldb<a name='1032'>
+    do ll=1,pmax<a name='1033'>
+        mB(kk,ll)=0.0 <font color=#447700>! clear<a name='1034'></font>
+    end do<a name='1035'>
+    end do<a name='1036'>
+        <a name='1037'>
+    do kk=1,npoint<a name='1038'>
+        mb(kk,kk) = 10 <font color=#447700>! large enough<a name='1039'></font>
+        do ll=1,npoint<a name='1040'>
+            if ( kk .ne. ll ) then<a name='1041'>
+                dist = sqrt( (xylist(kk,1)-xylist(ll,1))**2+ &amp;<a name='1042'>
+                             (xylist(kk,2)-xylist(ll,2))**2 )                   <a name='1043'>
+                mB(kk,kk)=min( mB(kk,kk) , dist )<a name='1044'>
+            end if              <a name='1045'>
+        end do <font color=#447700>!ll<a name='1046'></font>
+        mB(kk,kk)=mB(kk,kk)+1.<a name='1047'>
+    end do <font color=#447700>! kk<a name='1048'></font>
+    <font color=#447700>! set the m,n,p<a name='1049'></font>
+    n=npoint <font color=#447700>! rows of matrix A and B<a name='1050'></font>
+    m=3 <font color=#447700>! columns of matrix A<a name='1051'></font>
+    p=npoint <font color=#447700>! columns of matrix B<a name='1052'></font>
+    <font color=#447700>!* call least squqres in LAPACK                  <a name='1053'></font>
+    call SGGGLM(N,M,P,mA,LDA,mB,LDB,vecD,vecX,vecY, &amp;<a name='1054'>
+                        WORK,LWORK,INFO)<a name='1055'>
+    <font color=#447700>!print *,'after LS in case3'<a name='1056'></font>
+    <font color=#447700>!print *,'vecX from LS',vecX<a name='1057'></font>
+    <font color=#447700>!print *,'tign inputed',tign00,tign10,tign11,tign01<a name='1058'></font>
+    rnorm=snrm2(p,vecY,1)<a name='1059'>
+    u(1)=vecX(1)<a name='1060'>
+    u(2)=vecX(2)<a name='1061'>
+    u(3)=vecX(3)            <a name='1062'>
+    <font color=#447700>! rotate to gradient on x only<a name='1063'></font>
+    nr = sqrt(u(1)**2+u(2)**2)<a name='1064'>
+    if(.not.nr.gt.eps)then<a name='1065'>
+        out=1.<a name='1066'>
+        goto 900<a name='1067'>
+    endif<a name='1068'>
+    c = u(1)/nr<a name='1069'>
+    s = u(2)/nr<a name='1070'>
+    mQ(1,1)=c<a name='1071'>
+    mQ(1,2)=s<a name='1072'>
+    mQ(2,1)=-s<a name='1073'>
+    mQ(2,2)=c            <a name='1074'>
+    <font color=#447700>! mat vec multiplication<a name='1075'></font>
+    call <A href='../../html_code/phys/module_fr_fire_core.F.html#MATVEC'>matvec</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT_CELL_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MATVEC_1">(mQ,2,2,u,3,ut,2,2,2)            <a name='1076'>
+    errQ = ut(2) <font color=#447700>! should be zero            <a name='1077'></font>
+    ae = -ut(1)/fuel_time_cell<a name='1078'>
+    ce = -u(3)/fuel_time_cell      <a name='1079'>
+    cet=ce<font color=#447700>!keep ce<a name='1080'></font>
+    call <A href='../../html_code/phys/module_fr_fire_core.F.html#MATMATP'>matmatp</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT_CELL_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MATMATP_1">(xylist,8,2,mQ,2,2,xytlist,8,2,npoint+1,2,2)            <a name='1081'>
+    call <A href='../../html_code/phys/module_fr_fire_core.F.html#SORTXT'>sortxt</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT_CELL_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SORTXT_1">( xytlist, 8,2, xt,8,npoint )            <a name='1082'>
+    out=0.0<a name='1083'>
+    aupp=0.0<a name='1084'>
+    cupp=0.0<a name='1085'>
+    alow=0.0<a name='1086'>
+    clow=0.0<a name='1087'>
+    do k=1,npoint-1<a name='1088'>
+        xt1=xt(k)<a name='1089'>
+        xt2=xt(k+1)<a name='1090'>
+        upper=0<a name='1091'>
+        lower=0<a name='1092'>
+        ah=0<a name='1093'>
+        ch=0<a name='1094'>
+        if ( xt2-xt1 &gt; eps*100 ) then<a name='1095'>
+                <a name='1096'>
+            do ss=1,npoint<a name='1097'>
+                xts=xytlist(ss,1)<a name='1098'>
+                yts=xytlist(ss,2)<a name='1099'>
+                xte=xytlist(ss+1,1)<a name='1100'>
+                yte=xytlist(ss+1,2)<a name='1101'>
+                  <a name='1102'>
+                if ( (xts&gt;xt1 .and. xte&gt;xt1) .or. &amp;<a name='1103'>
+                     (xts&lt;xt2 .and. xte&lt;xt2) ) then<a name='1104'>
+                    aa = 0 <font color=#447700>! do nothing<a name='1105'></font>
+                    cc = 0<a name='1106'>
+                else<a name='1107'>
+                    aa = (yts-yte)/(xts-xte)<a name='1108'>
+                    cc = (xts*yte-xte*yts)/(xts-xte)                    <a name='1109'>
+                    if (xte&lt;xts) then<a name='1110'>
+                        aupp = aa<a name='1111'>
+                        cupp = cc<a name='1112'>
+                        ah=ah+aa<a name='1113'>
+                        ch=ch+cc<a name='1114'>
+                        upper=upper+1<a name='1115'>
+                    else<a name='1116'>
+                        alow = aa<a name='1117'>
+                        clow = cc<a name='1118'>
+                        lower=lower+1<a name='1119'>
+                    end if<a name='1120'>
+                end if<font color=#447700>!(xts&gt;xt1 .and. xte&gt;xt1)              <a name='1121'></font>
+            end do <font color=#447700>! ss<a name='1122'></font>
+            ce=cet <font color=#447700>!use stored ce<a name='1123'></font>
+            if (ae*xt1+ce &gt; 0 ) then<a name='1124'>
+              ce=ce-(ae*xt1+ce)<font color=#447700>!shift small amounts exp(-**)<a name='1125'></font>
+            end if<a name='1126'>
+            if (ae*xt2+ce &gt; 0) then<a name='1127'>
+            ce=ce-(ae*xt2+ce)<a name='1128'>
+            end if<a name='1129'>
+<a name='1130'>
+            ah = aupp-alow<a name='1131'>
+            ch = cupp-clow  <a name='1132'>
+            <font color=#447700>! integrate (ah*x+ch)*(1-exp(ae*x+ce) from xt1 to xt2<a name='1133'></font>
+            <font color=#447700>! numerically sound for ae-&gt;0, ae -&gt; infty<a name='1134'></font>
+            <font color=#447700>! this can be important for different model scales<a name='1135'></font>
+            <font color=#447700>! esp. if someone runs the model in single precision!!<a name='1136'></font>
+            <font color=#447700>! s1=int((ah*x+ch),x,xt1,xt2)<a name='1137'></font>
+            s1 = (xt2-xt1)*((1./2.)*ah*(xt2+xt1)+ch)            <a name='1138'>
+            <font color=#447700>! s2=int((ch)*(-exp(ae*x+ce)),x,xt1,xt2)<a name='1139'></font>
+            ceae=ce/ae;<a name='1140'>
+            s2 = -ch*exp(ae*(xt1+ceae))*(xt2-xt1)*intexp(ae*(xt2-xt1))                <a name='1141'>
+            <font color=#447700>! s3=int((ah*x)*(-exp(ae*x+ce)),x,xt1,xt2)<a name='1142'></font>
+            <font color=#447700>! s3=int((ah*x)*(-exp(ae*(x+ceae))),x,xt1,xt2)<a name='1143'></font>
+            <font color=#447700>! expand in Taylor series around ae=0<a name='1144'></font>
+            <font color=#447700>! collect(expand(taylor(int(x*(-exp(ae*(x+ceae))),x,xt1,xt2)*ae^2,ae,4)/ae^2),ae)<a name='1145'></font>
+            <font color=#447700>! =(1/8*xt1^4+1/3*xt1^3*ceae+1/4*xt1^2*ceae^2-1/8*xt2^4-1/3*xt2^3*ceae-1/4*xt2^2*ceae^2)*ae^2<a name='1146'></font>
+            <font color=#447700>!     + (-1/3*xt2^3-1/2*xt2^2*ceae+1/3*xt1^3+1/2*xt1^2*ceae)*ae <a name='1147'></font>
+            <font color=#447700>!     + 1/2*xt1^2-1/2*xt2^2<a name='1148'></font>
+            <font color=#447700>!<a name='1149'></font>
+            <font color=#447700>! coefficient at ae^2 in the expansion, after some algebra            <a name='1150'></font>
+            a2=(xt1-xt2)*((1./4.)*(xt1+xt2)*ceae**2+(1./3.)* &amp;<a name='1151'>
+               (xt1**2+xt1*xt2+xt2**2)*ceae+(1./8.)* &amp;<a name='1152'>
+               (xt1**3+xt1*(xt2**2)+xt1**2*xt2+xt2**3))               <a name='1153'>
+            d=(ae**4)*a2<a name='1154'>
+            <a name='1155'>
+            if (abs(d)&gt;eps) then<a name='1156'>
+            <font color=#447700>! since ae*xt1+ce&lt;=0 ae*xt2+ce&lt;=0 all fine for large ae<a name='1157'></font>
+            <font color=#447700>! for ae, ce -&gt; 0 rounding error approx eps/ae^2<a name='1158'></font>
+                s3=( exp(ae*(xt1+ceae))*(ae*xt1-1)-&amp;<a name='1159'>
+                     exp(ae*(xt2+ceae))*(ae*xt2-1) )/(ae**2)<a name='1160'>
+                <a name='1161'>
+            <font color=#447700>!we do not worry about rounding as xt1 -&gt; xt2, then s3 -&gt; 0<a name='1162'></font>
+            else<a name='1163'>
+                <font color=#447700>! coefficient at ae^1 in the expansion<a name='1164'></font>
+                a1=(xt1-xt2)*((1./2.)*ceae*(xt1+xt2)+(1./3.)*&amp;<a name='1165'>
+                   (xt1**2+xt1*xt2+xt2**2))<a name='1166'>
+                <font color=#447700>! coefficient at ae^0 in the expansion for ae-&gt;0<a name='1167'></font>
+                a0=(1./2.)*(xt1-xt2)*(xt1+xt2)<a name='1168'>
+                s3=a0+a1*ae+a2*ae**2; <font color=#447700>! approximate the integral<a name='1169'></font>
+                            end if<a name='1170'>
+<a name='1171'>
+            s3=ah*s3                                                <a name='1172'>
+            out=out+s1+s2+s3<a name='1173'>
+            out=1-out <font color=#447700>!fuel_left<a name='1174'></font>
+            if(out&lt;0 .or. out&gt;1) then                                  <a name='1175'>
+                print *,':fuel_fraction should be between 0 and 1'<a name='1176'>
+                <font color=#447700>!print *, 'eps= ', eps<a name='1177'></font>
+                <font color=#447700>!print *, 'xt1= ', xt1, 'xt2= ', xt2<a name='1178'></font>
+                <font color=#447700>!print *,'ae= ',ae,'ce= ',ce,'ah= ',ah,'ch= ',ch<a name='1179'></font>
+                <font color=#447700>!print *,'a0= ', a0,'a1= ', a1,'a2= ', a2<a name='1180'></font>
+                print *,'s1= ', s1,'s2= ', s2,'s3= ', s3<a name='1181'>
+                print *,':fuel_fraction =',out<a name='1182'>
+            end if<font color=#447700>!print<a name='1183'></font>
+                <a name='1184'>
+        end if<a name='1185'>
+    end do <font color=#447700>! k     <a name='1186'></font>
+    <a name='1187'>
+end if <font color=#447700>! if case0, elseif case4 ,else case123<a name='1188'></font>
+<a name='1189'>
+900 continue <a name='1190'>
+if(out&gt;1. .or. out&lt;0.)call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_core.F.html#FUEL_LEFT_CELL_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_8">('fuel_left_cell_2: fuel fraction out of bounds [0,1]')<a name='1191'>
+fuel_left_cell_2 = out<a name='1192'>
+end function fuel_left_cell_2<a name='1193'>
+<a name='1194'>
+<font color=#447700>!<a name='1195'></font>
+<font color=#447700>!****************************************<a name='1196'></font>
+<font color=#447700>!<a name='1197'></font>
+<A NAME='INTEXP'><A href='../../html_code/phys/module_fr_fire_core.F.html#INTEXP' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1198'>
+real <font color=#993300>function </font><font color=#cc0000>intexp</font>(ab)<a name='1199'>
+implicit none<a name='1200'>
+real::ab<a name='1201'>
+<font color=#447700>!calls<a name='1202'></font>
+intrinsic epsilon<a name='1203'>
+<a name='1204'>
+real, parameter:: zero=0.,one=1.,eps=epsilon(zero)<a name='1205'>
+<a name='1206'>
+<font color=#447700>!eps = 2.2204*(10.0**(-8))!from matlab<a name='1207'></font>
+if ( eps &lt; abs(ab)**3/6. ) then<a name='1208'>
+    intexp=(exp(ab)-1)/ab<a name='1209'>
+  else<a name='1210'>
+    intexp=1+ab/2.<a name='1211'>
+end if<a name='1212'>
+end function<a name='1213'>
+<font color=#447700>!<a name='1214'></font>
+<font color=#447700>!****************************************<a name='1215'></font>
+<font color=#447700>!<a name='1216'></font>
+<A NAME='SORTXT'><A href='../../html_code/phys/module_fr_fire_core.F.html#SORTXT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1217'>
+<font color=#993300>subroutine </font><font color=#cc0000>sortxt</font>(xytlist,nrow,ncolumn,xt,nxt,nvec) <A href='../../call_to/SORTXT.html' TARGET='index'>1</A><a name='1218'>
+implicit none<a name='1219'>
+integer::nrow,ncolumn,nxt,nvec<a name='1220'>
+real,dimension(nrow,ncolumn)::xytlist<a name='1221'>
+real,dimension(nxt)::xt<a name='1222'>
+<a name='1223'>
+integer::i,j<a name='1224'>
+real::temp<a name='1225'>
+<a name='1226'>
+do i=1,nvec<a name='1227'>
+  xt(i)=xytlist(i,1)<a name='1228'>
+end do<a name='1229'>
+<a name='1230'>
+do i=1,nvec-1<a name='1231'>
+  do j=i+1,nvec<a name='1232'>
+    if ( xt(i) &gt; xt(j) ) then<a name='1233'>
+         temp = xt(i)<a name='1234'>
+         xt(i)=xt(j)<a name='1235'>
+         xt(j)=temp<a name='1236'>
+    end if<a name='1237'>
+  end do<a name='1238'>
+end do<a name='1239'>
+<a name='1240'>
+end subroutine <font color=#447700>!sortxt<a name='1241'></font>
+<font color=#447700>!<a name='1242'></font>
+<font color=#447700>!****************************************<a name='1243'></font>
+<font color=#447700>!<a name='1244'></font>
+<A NAME='MATVEC'><A href='../../html_code/phys/module_fr_fire_core.F.html#MATVEC' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1245'>
+<font color=#993300>subroutine </font><font color=#cc0000>matvec</font>(A,m,n,V,nv,out,nout,nrow,ncolumn) <A href='../../call_to/MATVEC.html' TARGET='index'>1</A><a name='1246'>
+implicit none<a name='1247'>
+integer::m,n,nv,nout,nrow,ncolumn<a name='1248'>
+real,dimension(m,n)::A   <font color=#447700>! allocated m by n <a name='1249'></font>
+real,dimension(nv)::V    <font color=#447700>! allocated nv<a name='1250'></font>
+real,dimension(nout)::out<font color=#447700>! allocated nout <a name='1251'></font>
+<a name='1252'>
+integer::i,j<a name='1253'>
+<a name='1254'>
+do i=1,nrow<a name='1255'>
+  out(i)=0.0<a name='1256'>
+  do j=1,ncolumn<a name='1257'>
+    out(i)=out(i)+A(i,j)*V(j)<a name='1258'>
+  end do<a name='1259'>
+end do<a name='1260'>
+end subroutine<a name='1261'>
+<font color=#447700>!<a name='1262'></font>
+<font color=#447700>!****************************************<a name='1263'></font>
+<font color=#447700>!<a name='1264'></font>
+<A NAME='MATMATP'><A href='../../html_code/phys/module_fr_fire_core.F.html#MATMATP' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1265'>
+<font color=#993300>subroutine </font><font color=#cc0000>matmatp</font>(A,mA,nA,B,mB,nB,C,mC,nC,nrow,ncolumn,nP) <A href='../../call_to/MATMATP.html' TARGET='index'>1</A><a name='1266'>
+implicit none<a name='1267'>
+integer::mA,nA,mB,nB,mC,nC,nrow,ncolumn,nP<a name='1268'>
+real,dimension(mA,nA)::A   <font color=#447700>! allocated m by n <a name='1269'></font>
+real,dimension(mB,nB)::B   <font color=#447700>! allocated m by n <a name='1270'></font>
+real,dimension(mC,nC)::C   <font color=#447700>! allocated m by n <a name='1271'></font>
+integer::i,j,k<a name='1272'>
+do i=1,nrow  <a name='1273'>
+  do j=1,ncolumn<a name='1274'>
+    C(i,j)=0.0<a name='1275'>
+  do k=1,nP<a name='1276'>
+    C(i,j)=C(i,j)+A(i,k)*B(j,k) <font color=#447700>! B'<a name='1277'></font>
+  end do<a name='1278'>
+end do<a name='1279'>
+end do<a name='1280'>
+end subroutine<a name='1281'>
+<a name='1282'>
+<font color=#447700>!<a name='1283'></font>
+<font color=#447700>!****************************************<a name='1284'></font>
+<font color=#447700>!<a name='1285'></font>
+#endif<a name='1286'>
+<a name='1287'>
+<A NAME='PROP_LS'><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1288'>
+<font color=#993300>subroutine </font><font color=#cc0000>prop_ls</font>( id, &amp;                                <font color=#447700>! for debug <A href='../../call_to/PROP_LS.html' TARGET='index'>1</A>,<A href='../../call_from/PROP_LS.html' TARGET='index'>19</A><a name='1289'></font>
+                ids,ide,jds,jde, &amp;                       <font color=#447700>! domain dims<a name='1290'></font>
+                ims,ime,jms,jme, &amp;                       <font color=#447700>! memory dims<a name='1291'></font>
+                ips,ipe,jps,jpe, &amp;                <font color=#447700>! patch - nodes owned by this process <a name='1292'></font>
+                its,ite,jts,jte, &amp;                       <font color=#447700>! tile dims<a name='1293'></font>
+                ts,dt,dx,dy,     &amp;                       <font color=#447700>! scalars in<a name='1294'></font>
+                tbound,          &amp;                       <font color=#447700>! scalars out<a name='1295'></font>
+                lfn_in,lfn_out,tign,ros,  &amp;              <font color=#447700>! arrays inout          <a name='1296'></font>
+                fp               &amp;<a name='1297'>
+                   )<a name='1298'>
+implicit none<a name='1299'>
+<a name='1300'>
+<font color=#447700>!*** purpose: advance level function in time<a name='1301'></font>
+<a name='1302'>
+<font color=#447700>!*** description<a name='1303'></font>
+<font color=#447700>!<a name='1304'></font>
+<font color=#447700>! Propagation of closed curve by a level function method. The level function<a name='1305'></font>
+<font color=#447700>! lfn is defined by its values at the nodes of a rectangular grid. <a name='1306'></font>
+<font color=#447700>! The area where lfn &lt; 0 is inside the curve. The curve is <a name='1307'></font>
+<font color=#447700>! described implicitly by lfn=0. Points where the curve intersects gridlines<a name='1308'></font>
+<font color=#447700>! can be found by linear interpolation from nodes.<a name='1309'></font>
+<font color=#447700>!<a name='1310'></font>
+<font color=#447700>! The level function is advanced from time ts to time ts + dt. <a name='1311'></font>
+<font color=#447700>!<a name='1312'></font>
+<font color=#447700>! The level function should be initialized to (an approximation of) the signed<a name='1313'></font>
+<font color=#447700>! distance from the curve. If the initial curve is a circle, the initial level<a name='1314'></font>
+<font color=#447700>! function is simply the distance from the center minus the radius.<a name='1315'></font>
+<font color=#447700>! <a name='1316'></font>
+<font color=#447700>! The curve moves outside with speed given by function speed_func.<a name='1317'></font>
+<font color=#447700>!   <a name='1318'></font>
+<font color=#447700>! Method: Godunov/ENO method for the normal motion. The timestep is checked for<a name='1319'></font>
+<font color=#447700>! CFL condition. For a straight segment in a constant field and locally linear<a name='1320'></font>
+<font color=#447700>! level function, the method reduces to the exact normal motion. The advantage of <a name='1321'></font>
+<font color=#447700>! the level set method is that it treats automatically special cases such as<a name='1322'></font>
+<font color=#447700>! the curve approaching itself and merging components of the area inside the curve.<a name='1323'></font>
+<font color=#447700>!<a name='1324'></font>
+<font color=#447700>! Based on S. Osher and R. Fedkiw, Level set methods and dynamic implicit surfaces,<a name='1325'></font>
+<font color=#447700>! Springer, 2003, Sec. 6.4, as implemented in toolboxLS for Matlab by <a name='1326'></font>
+<font color=#447700>! I. Mitchell, A toolbox of Level Set Methods (Version 1.1), TR-2007-11,<a name='1327'></font>
+<font color=#447700>! Dept. Computer Science, University of British Columbia, 2007<a name='1328'></font>
+<font color=#447700>! http://www.cs.ubc.ca/\~mitchell/Toolbo\LS<a name='1329'></font>
+<font color=#447700>! <a name='1330'></font>
+  <a name='1331'>
+<font color=#447700>!*** arguments <a name='1332'></font>
+<a name='1333'>
+<font color=#447700>! id                in    unique identification for prints and dumps<a name='1334'></font>
+<font color=#447700>! ids,ide,jds,jde   in    domain dimensions<a name='1335'></font>
+<font color=#447700>! ims,ime,jms,jme   in    memory dimensions<a name='1336'></font>
+<font color=#447700>! its,ite,jts,jte   in    tile dimensions<a name='1337'></font>
+<font color=#447700>! ts                in    start time<a name='1338'></font>
+<font color=#447700>! dt                in    time step<a name='1339'></font>
+<font color=#447700>! dx,dy             in    grid spacing<a name='1340'></font>
+<font color=#447700>! tbound            out   bound on stable time step from CFL condition, if tbound&gt;=dt then OK<a name='1341'></font>
+<font color=#447700>! lfn_in,lfn_out    inout,out the level set function at nodes<a name='1342'></font>
+<font color=#447700>! tign              inout the ignition time at nodes<a name='1343'></font>
+<a name='1344'>
+<font color=#447700>! The dimensions are cell-based, the nodal value is associated with the south-west corner.<a name='1345'></font>
+<font color=#447700>! The whole computation is on domain indices ids:ide+1,jds:jde+1.<a name='1346'></font>
+<font color=#447700>!<a name='1347'></font>
+<font color=#447700>! The region where new lfn and tign are computed is the tile its:ite,jts:jte <a name='1348'></font>
+<font color=#447700>! except when the tile is at domain upper boundary, an extra band of points is added:<a name='1349'></font>
+<font color=#447700>! if ite=ide then region goes up to ite+1, if jte=jde then region goes up to jte+1.<a name='1350'></font>
+<a name='1351'>
+<font color=#447700>! The time step requires values from 2 rows of nodes beyond the region except when at the <a name='1352'></font>
+<font color=#447700>! domain boundary one-sided derivatives are used. This is implemented by extending the input<a name='1353'></font>
+<font color=#447700>! beyond the domain boundary so sufficient memory bounds must be allocated. <a name='1354'></font>
+<font color=#447700>! The update on all tiles can be done in parallel. To avoid the race condition (different regions<a name='1355'></font>
+<font color=#447700>! of the same array updated by different threads), the in and out versions of the<a name='1356'></font>
+<font color=#447700>! arrays lft and tign are distinct. If the time step dt is larger<a name='1357'></font>
+<font color=#447700>! that the returned tbound, the routine should be called again with timestep td&lt;=tbound, and then<a name='1358'></font>
+<font color=#447700>! having distinct inputs and outputs comes handy.<a name='1359'></font>
+<a name='1360'>
+<font color=#447700>!*** calls<a name='1361'></font>
+<font color=#447700>!<a name='1362'></font>
+<font color=#447700>! tend_ls<a name='1363'></font>
+<font color=#447700>!<a name='1364'></font>
+<a name='1365'>
+integer,intent(in)::id,ims,ime,jms,jme,ids,ide,jds,jde,its,ite,jts,jte,ips,ipe,jps,jpe <a name='1366'>
+real,dimension(ims:ime,jms:jme),intent(inout)::lfn_in,tign<a name='1367'>
+real,dimension(ims:ime,jms:jme),intent(out)::lfn_out,ros<a name='1368'>
+real,intent(in)::dx,dy,ts,dt<a name='1369'>
+real,intent(out)::tbound<a name='1370'>
+type(fire_params),intent(in)::fp<a name='1371'>
+<a name='1372'>
+<font color=#447700>!*** local <a name='1373'></font>
+<font color=#447700>! arrays<a name='1374'></font>
+#define IMTS its-1<a name='1375'>
+#define IMTE ite+1<a name='1376'>
+#define JMTS jts-1<a name='1377'>
+#define JMTE jte+1<a name='1378'>
+real,dimension(IMTS:IMTE,JMTS:JMTE):: tend, lfn1 <font color=#447700>! region-sized with halo<a name='1379'></font>
+<font color=#447700>! scalars<a name='1380'></font>
+real::grad2,rr,tbound2,a,a1 <font color=#447700>! a=0 euler, a=0.5 heun<a name='1381'></font>
+<a name='1382'>
+real::gradx,grady,aspeed,err,aerr,time_now<a name='1383'>
+integer::ihs,ihe,jhs,jhe<a name='1384'>
+integer::ihs2,ihe2,jhs2,jhe2<a name='1385'>
+integer::i,j,its1,ite1,jts1,jte1,k,kk,id1<a name='1386'>
+character(len=128)::msg<a name='1387'>
+integer::nfirenodes,nfireline<a name='1388'>
+real::sum_err,min_err,max_err,sum_aerr,min_aerr,max_aerr   <a name='1389'>
+<a name='1390'>
+<font color=#447700>! constants<a name='1391'></font>
+integer,parameter :: mstep=1000, printl=1<a name='1392'>
+real, parameter:: zero=0.,one=1.,eps=epsilon(zero),tol=100*eps, &amp;<a name='1393'>
+    safe=2.,rmin=safe*tiny(zero),rmax=huge(zero)/safe<a name='1394'>
+<a name='1395'>
+<font color=#447700>! f90 intrinsic function<a name='1396'></font>
+<a name='1397'>
+intrinsic max,min,sqrt,nint,epsilon,tiny,huge<a name='1398'>
+  <a name='1399'>
+<font color=#447700>!*** executable<a name='1400'></font>
+<a name='1401'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='1402'></font>
+write(msg,'(a8,i5,a6,i5,3(a1,i5))')'prop_ls:',id,' tile ',its,':',ite,',',jts,':',jte<a name='1403'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='1404'></font>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_22">(msg)<a name='1405'>
+<a name='1406'>
+    a=fire_back_weight <font color=#447700>! from module_fr_fire_util<a name='1407'></font>
+    a1=1. - a<a name='1408'>
+    <a name='1409'>
+    <font color=#447700>! tend = F(lfn)<a name='1410'></font>
+<a name='1411'>
+    ihs2=max(its-2,ids)   <font color=#447700>! need lfn two beyond the tile but not outside the domain <a name='1412'></font>
+    ihe2=min(ite+2,ide)<a name='1413'>
+    jhs2=max(jts-2,jds) <a name='1414'>
+    jhe2=min(jte+2,jde)<a name='1415'>
+<a name='1416'>
+    ihs=max(its-1,ids)   <font color=#447700>! compute tend one beyond the tile but not outside the domain <a name='1417'></font>
+    ihe=min(ite+1,ide)<a name='1418'>
+    jhs=max(jts-1,jds) <a name='1419'>
+    jhe=min(jte+1,jde)<a name='1420'>
+<a name='1421'>
+#ifdef DEBUG_OUT    <a name='1422'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_7">(ihs,ihe,jhs,jhe,ims,ime,jms,jme,lfn_in,'lfn_in',id)<a name='1423'>
+#endif<a name='1424'>
+<a name='1425'>
+    <font color=#447700>! check array dimensions<a name='1426'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_3">(ihs2,ihe2,jhs2,jhe2,ims,ime,jms,jme)<a name='1427'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_3">(ihs2,ihe2,jhs2,jhe2,ims,ime,jms,jme, &amp;<a name='1428'>
+                   lfn_in,'prop_ls: lfn in')<a name='1429'>
+    <a name='1430'>
+    <font color=#447700>! NOTE: tend_ls will extrapolate to one node strip at domain boundaries<a name='1431'></font>
+    <font color=#447700>! so that it can compute gradient at domain boundaries.<a name='1432'></font>
+    <font color=#447700>! To avoid copying, lfn_in is declared inout.<a name='1433'></font>
+    <font color=#447700>! At tile boundaries that are not domain boundaries values of lfn_in two nodes<a name='1434'></font>
+    <font color=#447700>! outside of the tile are needed.<a name='1435'></font>
+    id1 = id  <font color=#447700>! for debug prints<a name='1436'></font>
+    if(id1.ne.0)id1=id1+1000<a name='1437'>
+    call  <A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS'>tend_ls</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TEND_LS_1">( id1, &amp;<a name='1438'>
+    ims,ime,jms,jme, &amp;                       <font color=#447700>! memory dims for lfn_in<a name='1439'></font>
+    IMTS,IMTE,JMTS,JMTE, &amp;                   <font color=#447700>! memory dims for tend <a name='1440'></font>
+    ids,ide,jds,jde, &amp;                       <font color=#447700>! domain dims - where lfn exists<a name='1441'></font>
+    ips,ipe,jps,jpe, &amp;                       <font color=#447700>! patch - nodes owned by this process <a name='1442'></font>
+    ihs,ihe,jhs,jhe, &amp;                       <font color=#447700>! where tend computed<a name='1443'></font>
+    ims,ime,jms,jme, &amp;                       <font color=#447700>! memory dims for ros <a name='1444'></font>
+    its,ite,jts,jte, &amp;                       <font color=#447700>! tile dims - where to set ros<a name='1445'></font>
+    ts,dt,dx,dy,      &amp;                      <font color=#447700>! scalars in<a name='1446'></font>
+    lfn_in, &amp;                                <font color=#447700>! arrays in<a name='1447'></font>
+    tbound, &amp;                                <font color=#447700>! scalars out <a name='1448'></font>
+    tend, ros, &amp;                              <font color=#447700>! arrays out        <a name='1449'></font>
+    fp         &amp;                             <font color=#447700>! params<a name='1450'></font>
+)<a name='1451'>
+<a name='1452'>
+#ifdef DEBUG_OUT    <a name='1453'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_8">(ihs,ihe,jhs,jhe,IMTS,IMTE,JMTS,JMTE,tend,'tend1',id)<a name='1454'>
+#endif<a name='1455'>
+<a name='1456'>
+    <font color=#447700>! Euler method, the half-step, same region as ted<a name='1457'></font>
+    do j=jhs,jhe<a name='1458'>
+        do i=ihs,ihe<a name='1459'>
+            lfn1(i,j) = lfn_in(i,j) + dt*tend(i,j)<a name='1460'>
+        enddo<a name='1461'>
+    enddo<a name='1462'>
+    <a name='1463'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_4">(ihs,ihe,jhs,jhe,IMTS,IMTE,JMTS,JMTE, &amp;<a name='1464'>
+                   lfn1,'prop_ls: lfn1')<a name='1465'>
+    <font color=#447700>! tend = F(lfn1) on the tile (not beyond)<a name='1466'></font>
+<a name='1467'>
+    if(id1.ne.0)id1=id1+1000<a name='1468'>
+    call  <A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS'>tend_ls</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TEND_LS_2">( id1,&amp;<a name='1469'>
+    IMTS,IMTE,JMTS,JMTE, &amp;                   <font color=#447700>! memory dims for lfn<a name='1470'></font>
+    IMTS,IMTE,JMTS,JMTE, &amp;                   <font color=#447700>! memory dims for tend <a name='1471'></font>
+    ids,ide,jds,jde,     &amp;                   <font color=#447700>! domain dims - where lfn exists<a name='1472'></font>
+    ips,ipe,jps,jpe, &amp;                       <font color=#447700>! patch - nodes owned by this process <a name='1473'></font>
+    its,ite,jts,jte, &amp;                       <font color=#447700>! tile dims - where is tend computed<a name='1474'></font>
+    ims,ime,jms,jme, &amp;                       <font color=#447700>! memory dims for ros <a name='1475'></font>
+    its,ite,jts,jte, &amp;                       <font color=#447700>! tile dims - where is ros set<a name='1476'></font>
+    ts+dt,dt,dx,dy,      &amp;                   <font color=#447700>! scalars in<a name='1477'></font>
+    lfn1, &amp;                                  <font color=#447700>! arrays in<a name='1478'></font>
+    tbound2, &amp;                               <font color=#447700>! scalars out <a name='1479'></font>
+    tend,ros, &amp;                               <font color=#447700>! arrays out        <a name='1480'></font>
+    fp &amp;<a name='1481'>
+)<a name='1482'>
+<a name='1483'>
+#ifdef DEBUG_OUT    <a name='1484'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_9">(its,ite,jts,jte,IMTS,IMTE,JMTS,JMTE,tend,'tend2',id)<a name='1485'>
+#endif<a name='1486'>
+<a name='1487'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_5">(its,ite,jts,jte,IMTS,IMTE,JMTS,JMTE,tend,'prop_ls: tend2')<a name='1488'>
+        <a name='1489'>
+    tbound=min(tbound,tbound2)<a name='1490'>
+<a name='1491'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='1492'></font>
+    write(msg,'(a,f10.2,4(a,f7.2))')'prop_ls: time',ts,' dt=',dt,' bound',min(tbound,999.99), &amp;<a name='1493'>
+        ' dx=',dx,' dy=',dy<a name='1494'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='1495'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_23">(msg)<a name='1496'>
+    if(dt&gt;tbound)then<a name='1497'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='1498'></font>
+        write(msg,'(2(a,f10.2))')'prop_ls: WARNING: time step ',dt, &amp;<a name='1499'>
+        ' &gt; bound =',tbound<a name='1500'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='1501'></font>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_24">(msg)<a name='1502'>
+    endif<a name='1503'>
+    <a name='1504'>
+    <font color=#447700>! combine lfn1 and lfn_in + dt*tend -&gt; lfn_out<a name='1505'></font>
+    <a name='1506'>
+    do j=jts,jte<a name='1507'>
+        do i=its,ite<a name='1508'>
+            lfn_out(i,j) = a1*lfn1(i,j) + a*(lfn_in(i,j) + dt*tend(i,j))<a name='1509'>
+            lfn_out(i,j) = min(lfn_out(i,j),lfn_in(i,j)) <font color=#447700>! fire area can only increase<a name='1510'></font>
+        enddo<a name='1511'>
+    enddo      <a name='1512'>
+<a name='1513'>
+    <font color=#447700>! compute ignition time by interpolation<a name='1514'></font>
+    <font color=#447700>! the node was not burning at start but it is burning at end<a name='1515'></font>
+    <font color=#447700>! interpolate from the level functions at start and at end<a name='1516'></font>
+    <font color=#447700>! lfn_in   is the level set function value at time ts<a name='1517'></font>
+    <font color=#447700>! lfn_out  is the level set function value at time ts+dt<a name='1518'></font>
+    <font color=#447700>! 0        is the level set function value at time tign(i,j)<a name='1519'></font>
+    <font color=#447700>! thus assuming the level function is approximately linear =&gt;<a name='1520'></font>
+    <font color=#447700>! tign(i,j)= ts + ((ts + td) - ts) * lfn_in / (lfn_in - lfn_out)<a name='1521'></font>
+    <font color=#447700>!        = ts + dt * lfn_in / (lfn_in - lfn_out)<a name='1522'></font>
+<a name='1523'>
+    time_now=ts+dt<a name='1524'>
+    time_now = time_now + abs(time_now)*epsilon(time_now)*2.<a name='1525'>
+    do j=jts,jte<a name='1526'>
+        do i=its,ite<a name='1527'>
+            <font color=#447700>! interpolate the cross-over time<a name='1528'></font>
+            if (.not. lfn_out(i,j)&gt;0 .and. lfn_in(i,j)&gt;0)then<a name='1529'>
+                tign(i,j) = ts + dt * lfn_in(i,j) / (lfn_in(i,j) - lfn_out(i,j))<a name='1530'>
+            endif<a name='1531'>
+            <font color=#447700>! set the ignition time outside of burning region<a name='1532'></font>
+            if(lfn_out(i,j)&gt;0.)tign(i,j)=time_now<a name='1533'>
+        enddo<a name='1534'>
+    enddo<a name='1535'>
+    <a name='1536'>
+    <font color=#447700>! check local speed error and stats <a name='1537'></font>
+    <font color=#447700>! may not work correctly in parallel<a name='1538'></font>
+    <font color=#447700>! init stats<a name='1539'></font>
+    nfirenodes=0<a name='1540'>
+    nfireline=0<a name='1541'>
+    sum_err=0.<a name='1542'>
+    min_err=rmax<a name='1543'>
+    max_err=rmin     <a name='1544'>
+    sum_aerr=0.<a name='1545'>
+    min_aerr=rmax<a name='1546'>
+    max_aerr=rmin    <a name='1547'>
+    its1=its+1<a name='1548'>
+    jts1=jts+1<a name='1549'>
+    ite1=ite-1<a name='1550'>
+    jte1=jte-1<a name='1551'>
+    <font color=#447700>! loop over right inside of the domain<a name='1552'></font>
+    <font color=#447700>! cannot use values outside of the domain, would have to reflect and that<a name='1553'></font>
+    <font color=#447700>! would change lfn_out<a name='1554'></font>
+    <font color=#447700>! cannot use values outside of tile, not synchronized yet<a name='1555'></font>
+    <font color=#447700>! so in parallel mode the statistics is not accurate<a name='1556'></font>
+    do j=jts1,jte1<a name='1557'>
+        do i=its1,ite1<a name='1558'>
+            if(lfn_out(i,j)&gt;0.0)then   <font color=#447700>! a point out of burning region<a name='1559'></font>
+                if(lfn_out(i+1,j)&lt;=0.or.lfn_out(i,j+1)&lt;=0.or. &amp; <font color=#447700>! neighbor in burning region<a name='1560'></font>
+                   lfn_out(i-1,j)&lt;=0.or.lfn_out(i,j-1)&lt;=0)then <font color=#447700>! point next to fireline<a name='1561'></font>
+                   gradx=(lfn_out(i+1,j)-lfn_out(i-1,j))/(2.0*dx) <font color=#447700>! central differences<a name='1562'></font>
+                   grady=(lfn_out(i,j+1)-lfn_out(i,j-1))/(2.0*dy)<a name='1563'>
+                   grad2=sqrt(gradx*gradx+grady*grady)<a name='1564'>
+                   aspeed = (lfn_in(i,j)-lfn_out(i,j))/(dt*max(grad2,rmin))                   <a name='1565'>
+                    rr = <A href='../../html_code/phys/module_fr_fire_core.F.html#SPEED_FUNC'>speed_func</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SPEED_FUNC_1">(gradx,grady,dx,dy,i,j,fp)<a name='1566'>
+                   err=aspeed-rr<a name='1567'>
+                   sum_err=sum_err+err<a name='1568'>
+                   min_err=min(min_err,err)<a name='1569'>
+                   max_err=max(max_err,err)     <a name='1570'>
+                   aerr=abs(err)<a name='1571'>
+                   sum_aerr=sum_aerr+aerr<a name='1572'>
+                   min_aerr=min(min_aerr,aerr)<a name='1573'>
+                   max_aerr=max(max_aerr,aerr)<a name='1574'>
+                   nfireline=nfireline+1<a name='1575'>
+                endif<a name='1576'>
+            else<a name='1577'>
+                nfirenodes=nfirenodes+1<a name='1578'>
+            endif<a name='1579'>
+        enddo<a name='1580'>
+    enddo<a name='1581'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='1582'></font>
+    write(msg,'(2(a,i6,f8.4))')'prop_ls: nodes burning',nfirenodes, &amp;<a name='1583'>
+        (100.*nfirenodes)/((ite1-its1+1)*(jte1-jts1+1)),'% next to fireline',nfireline<a name='1584'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='1585'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_25">(msg)<a name='1586'>
+    if(nfireline&gt;0)then<a name='1587'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_STAT_LINE'>print_stat_line</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_STAT_LINE_1">('speed error',its1,ite1,jts1,jte1,min_err,max_err,sum_err/nfireline)<a name='1588'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_STAT_LINE'>print_stat_line</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_STAT_LINE_2">('abs(speed error)',its1,ite1,jts1,jte1,min_aerr,max_aerr,sum_aerr/nfireline)<a name='1589'>
+    endif<a name='1590'>
+<a name='1591'>
+    <font color=#447700>! check if the fire did not get to the domain boundary<a name='1592'></font>
+    do k=-1,1,2<a name='1593'>
+        <font color=#447700>! do kk=1,(boundary_guard*(ide-ids+1))/100  ! in %<a name='1594'></font>
+        do kk=1,boundary_guard   <font color=#447700>! measured in cells<a name='1595'></font>
+            i=ids+k*kk<a name='1596'>
+            if(i.ge.its.and.i.le.ite)then<a name='1597'>
+                do j=jts,jte<a name='1598'>
+                    if(lfn_out(i,j)&lt;=0.)goto 9<a name='1599'>
+                enddo<a name='1600'>
+            endif<a name='1601'>
+    enddo<a name='1602'>
+        <font color=#447700>! do kk=1,(boundary_guard*(jde-jds+1))/100<a name='1603'></font>
+        do kk=1,boundary_guard    <font color=#447700>! measured in cells<a name='1604'></font>
+            j=jds+k*kk<a name='1605'>
+            if(j.ge.jts.and.j.le.jte)then<a name='1606'>
+                do i=its,ite<a name='1607'>
+                    if(lfn_out(i,j)&lt;=0.)goto 9<a name='1608'>
+                enddo<a name='1609'>
+            endif<a name='1610'>
+        enddo<a name='1611'>
+    enddo<a name='1612'>
+    goto 10<a name='1613'>
+9   continue<a name='1614'>
+<font color=#447700>!$OMP CRITICAL(FIRE_CORE_CRIT)<a name='1615'></font>
+    write(msg,'(a,i2,a,2i8)')'prop_ls: fire',boundary_guard, &amp;<a name='1616'>
+        ' cells from domain boundary at node ',i,j<a name='1617'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_CORE_CRIT)<a name='1618'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_26">(msg)     <a name='1619'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_9">('prop_ls: increase the fire region')<a name='1620'>
+10  continue<a name='1621'>
+<a name='1622'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_core.F.html#PROP_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_6">(its,ite,jts,jte,ims,ime,jms,jme, &amp;<a name='1623'>
+                   lfn_out,'prop_ls: lfn out')<a name='1624'>
+<a name='1625'>
+end subroutine prop_ls<a name='1626'>
+<a name='1627'>
+<font color=#447700>!<a name='1628'></font>
+<font color=#447700>!*****************************<a name='1629'></font>
+<font color=#447700>!<a name='1630'></font>
+<a name='1631'>
+<A NAME='TEND_LS'><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1632'>
+<font color=#993300>subroutine </font><font color=#cc0000>tend_ls</font>( id, &amp; <A href='../../call_to/TEND_LS.html' TARGET='index'>2</A>,<A href='../../call_from/TEND_LS.html' TARGET='index'>20</A><a name='1633'>
+    lims,lime,ljms,ljme, &amp;                   <font color=#447700>! memory dims for lfn<a name='1634'></font>
+    tims,time,tjms,tjme, &amp;                   <font color=#447700>! memory dims for tend <a name='1635'></font>
+    ids,ide,jds,jde, &amp;                       <font color=#447700>! domain - nodes where lfn defined<a name='1636'></font>
+    ips,ipe,jps,jpe, &amp;                       <font color=#447700>! patch - nodes owned by this process <a name='1637'></font>
+    ints,inte,jnts,jnte, &amp;                   <font color=#447700>! region - nodes where tend computed<a name='1638'></font>
+    ims,ime,jms,jme, &amp;                       <font color=#447700>! memory dims for ros <a name='1639'></font>
+    its,ite,jts,jte, &amp;                       <font color=#447700>! tile dims - where is ros set<a name='1640'></font>
+    t,dt,dx,dy,      &amp;                       <font color=#447700>! scalars in<a name='1641'></font>
+    lfn, &amp;                                   <font color=#447700>! arrays in<a name='1642'></font>
+    tbound, &amp;                                <font color=#447700>! scalars out <a name='1643'></font>
+    tend, ros,  &amp;                              <font color=#447700>! arrays out<a name='1644'></font>
+    fp &amp;<a name='1645'>
+)<a name='1646'>
+<a name='1647'>
+implicit none<a name='1648'>
+<font color=#447700>! purpose<a name='1649'></font>
+<font color=#447700>! compute the right hand side of the level set equation<a name='1650'></font>
+<a name='1651'>
+<font color=#447700>!*** arguments<a name='1652'></font>
+integer,intent(in)::id,lims,lime,ljms,ljme,tims,time,tjms,tjme<a name='1653'>
+integer,intent(in)::ims,ime,jms,jme,its,ite,jts,jte<a name='1654'>
+integer, intent(in)::ids,ide,jds,jde,ints,inte,jnts,jnte,ips,ipe,jps,jpe <a name='1655'>
+real,intent(in)::t                                     <font color=#447700>! time<a name='1656'></font>
+real,intent(in)::dt,dx,dy                                 <font color=#447700>! mesh step<a name='1657'></font>
+real,dimension(lims:lime,ljms:ljme),intent(inout)::lfn <font color=#447700>! level set function<a name='1658'></font>
+real,intent(out)::tbound                               <font color=#447700>! max allowed time step<a name='1659'></font>
+real,dimension(tims:time,tjms:tjme),intent(out)::tend  <font color=#447700>! tendency (rhs of the level set pde)<a name='1660'></font>
+real,dimension(ims:ime,jms:jme),intent(out)::ros  <font color=#447700>! rate of spread <a name='1661'></font>
+type(fire_params),intent(in)::fp<a name='1662'>
+<a name='1663'>
+<font color=#447700>!*** local <a name='1664'></font>
+real:: te,diffLx,diffLy,diffRx,diffRy, &amp; <a name='1665'>
+   diffCx,diffCy,diff2x,diff2y,grad,rr, &amp;<a name='1666'>
+   ros_base,ros_wind,ros_slope,ros_back,advx,advy,scale,nvx,nvy, &amp;<a name='1667'>
+   speed,tanphi<a name='1668'>
+integer::i,j,itso,iteo,jtso,jteo<a name='1669'>
+character(len=128)msg<a name='1670'>
+<a name='1671'>
+<font color=#447700>! constants<a name='1672'></font>
+real, parameter:: eps=epsilon(0.0)<a name='1673'>
+<font color=#447700>!intrinsic epsilon<a name='1674'></font>
+real, parameter:: zero=0.,one=1.,tol=100*eps, &amp;<a name='1675'>
+    safe=2.,rmin=safe*tiny(zero),rmax=huge(zero)/safe<a name='1676'>
+<a name='1677'>
+<a name='1678'>
+<font color=#447700>! f90 intrinsic function<a name='1679'></font>
+<a name='1680'>
+intrinsic max,min,sqrt,nint,tiny,huge<a name='1681'>
+<a name='1682'>
+<a name='1683'>
+#ifdef DEBUG_OUT<a name='1684'>
+real,dimension(tims:time,tjms:tjme)::rra,grada,speeda,tanphia<a name='1685'>
+#endif<a name='1686'>
+<a name='1687'>
+<font color=#447700>!*** executable<a name='1688'></font>
+    <a name='1689'>
+    <font color=#447700>! check array dimensions<a name='1690'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_4">(ints-1,inte+1,jnts-1,jnte+1,lims,lime,ljms,ljme)<a name='1691'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CHECK_MESH_2DIM'>check_mesh_2dim</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CHECK_MESH_2DIM_5">(ints,inte,jnts,jnte,tims,time,tjms,tjme)<a name='1692'>
+    <a name='1693'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CONTINUE_AT_BOUNDARY'>continue_at_boundary</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CONTINUE_AT_BOUNDARY_1">(1,1,fire_lfn_ext_up, &amp;   <font color=#447700>!extend by extrapolation but never down <a name='1694'></font>
+    lims,lime,ljms,ljme, &amp;                <font color=#447700>! memory dims<a name='1695'></font>
+    ids,ide,jds,jde, &amp;                    <font color=#447700>! domain - nodes where lfn defined<a name='1696'></font>
+    ips,ipe,jps,jpe, &amp;                    <font color=#447700>! patch - nodes owned by this process <a name='1697'></font>
+    ints,inte,jnts,jnte, &amp;                <font color=#447700>! tile - nodes update by this thread<a name='1698'></font>
+    itso,iteo,jtso,jteo, &amp;                <font color=#447700>! where set now<a name='1699'></font>
+    lfn)                                  <font color=#447700>! array<a name='1700'></font>
+<a name='1701'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_7">(itso,iteo,jtso,jteo,lims,lime,ljms,ljme, &amp;<a name='1702'>
+                   lfn,'tend_ls: lfn cont')<a name='1703'>
+<a name='1704'>
+#ifdef DEBUG_OUT<a name='1705'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_10">(ints-1,inte+1,jnts-1,jnte+1,lims,lime,ljms,ljme,lfn,'tend_lfn_in',id)<a name='1706'>
+#endif<a name='1707'>
+    <a name='1708'>
+    tbound=0    <a name='1709'>
+    do j=jnts,jnte<a name='1710'>
+        do i=ints,inte<a name='1711'>
+            <font color=#447700>! one sided differences<a name='1712'></font>
+            diffRx = (lfn(i+1,j)-lfn(i,j))/dx<a name='1713'>
+            diffLx = (lfn(i,j)-lfn(i-1,j))/dx<a name='1714'>
+            diffRy = (lfn(i,j+1)-lfn(i,j))/dy<a name='1715'>
+            diffLy = (lfn(i,j)-lfn(i,j-1))/dy<a name='1716'>
+            diffCx = diffLx+diffRx   <font color=#447700>! 	TWICE CENTRAL DIFFERENCE<a name='1717'></font>
+            diffCy = diffLy+diffRy<a name='1718'>
+    <a name='1719'>
+            <font color=#447700>!upwinding - select right or left derivative<a name='1720'></font>
+            select case(fire_upwinding)<a name='1721'>
+            case(0)  <font color=#447700>! none<a name='1722'></font>
+                grad=sqrt(diffCx**2 + diffCy**2)<a name='1723'>
+            case(1) <font color=#447700>! standard<a name='1724'></font>
+                diff2x=<A href='../../html_code/phys/module_fr_fire_core.F.html#SELECT_UPWIND'>select_upwind</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SELECT_UPWIND_1">(diffLx,diffRx)<a name='1725'>
+                diff2y=<A href='../../html_code/phys/module_fr_fire_core.F.html#SELECT_UPWIND'>select_upwind</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SELECT_UPWIND_2">(diffLy,diffRy)<a name='1726'>
+                grad=sqrt(diff2x*diff2x + diff2y*diff2y)<a name='1727'>
+            case(2) <font color=#447700>! godunov per osher/fedkiw<a name='1728'></font>
+                diff2x=<A href='../../html_code/phys/module_fr_fire_core.F.html#SELECT_GODUNOV'>select_godunov</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SELECT_GODUNOV_1">(diffLx,diffRx)<a name='1729'>
+                diff2y=<A href='../../html_code/phys/module_fr_fire_core.F.html#SELECT_GODUNOV'>select_godunov</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SELECT_GODUNOV_2">(diffLy,diffRy)<a name='1730'>
+                grad=sqrt(diff2x*diff2x + diff2y*diff2y)<a name='1731'>
+            case(3) <font color=#447700>! eno<a name='1732'></font>
+                diff2x=<A href='../../html_code/phys/module_fr_fire_core.F.html#SELECT_ENO'>select_eno</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SELECT_ENO_1">(diffLx,diffRx)<a name='1733'>
+                diff2y=<A href='../../html_code/phys/module_fr_fire_core.F.html#SELECT_ENO'>select_eno</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SELECT_ENO_2">(diffLy,diffRy)<a name='1734'>
+                grad=sqrt(diff2x*diff2x + diff2y*diff2y)<a name='1735'>
+            case(4) <font color=#447700>! Sethian - twice stronger pushdown of bumps<a name='1736'></font>
+                grad=sqrt(max(diffLx,0.)**2+min(diffRx,0.)**2   &amp;<a name='1737'>
+                        + max(diffLy,0.)**2+min(diffRy,0.)**2)<a name='1738'>
+            case default<a name='1739'>
+                grad=0.<a name='1740'>
+            end select<a name='1741'>
+  <a name='1742'>
+            <font color=#447700>! normal direction, from central differences<a name='1743'></font>
+            scale=sqrt(diffCx*diffCx+diffCy*diffCy+eps) <a name='1744'>
+            nvx=diffCx/scale<a name='1745'>
+            nvy=diffCy/scale<a name='1746'>
+                      <a name='1747'>
+            <font color=#447700>! wind speed in direction of spread<a name='1748'></font>
+            speed =  fp%vx(i,j)*nvx + fp%vy(i,j)*nvy<a name='1749'>
+        <a name='1750'>
+    <a name='1751'>
+            <font color=#447700>! get rate of spread from wind speed and slope<a name='1752'></font>
+<a name='1753'>
+            call <A href='../../html_code/phys/module_fr_fire_phys.F.html#FIRE_ROS'>fire_ros</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FIRE_ROS_1">(ros_base,ros_wind,ros_slope, &amp;<a name='1754'>
+            nvx,nvy,i,j,fp)<a name='1755'>
+<a name='1756'>
+            rr=ros_base + ros_wind + ros_slope<a name='1757'>
+            if(fire_grows_only.gt.0)rr=max(rr,0.)<a name='1758'>
+<a name='1759'>
+            <font color=#447700>! set ros for output<a name='1760'></font>
+            if(i.ge.its.and.i.le.ite.and.j.ge.jts.and.j.le.jte)ros(i,j)=rr<a name='1761'>
+<a name='1762'>
+            if(fire_upwind_split.eq.0)then<a name='1763'>
+<a name='1764'>
+                <font color=#447700>! get rate of spread<a name='1765'></font>
+                te = -rr*grad   <font color=#447700>! normal term <a name='1766'></font>
+<a name='1767'>
+            else<a name='1768'>
+<a name='1769'>
+                <font color=#447700>! normal direction backing rate only<a name='1770'></font>
+                te = - ros_base*grad<a name='1771'>
+<a name='1772'>
+		<font color=#447700>! advection in wind direction <a name='1773'></font>
+                if (abs(speed)&gt; eps) then<a name='1774'>
+                    advx=fp%vx(i,j)*ros_wind/speed<a name='1775'>
+                    advy=fp%vy(i,j)*ros_wind/speed<a name='1776'>
+                else <a name='1777'>
+                    advx=0<a name='1778'>
+                    advy=0<a name='1779'>
+                endif<a name='1780'>
+<a name='1781'>
+                tanphi =  fp%dzdxf(i,j)*nvx + fp%dzdyf(i,j)*nvy<a name='1782'>
+		<font color=#447700>! advection from slope direction <a name='1783'></font>
+                if(abs(tanphi)&gt;eps) then<a name='1784'>
+                    advx=advx+fp%dzdxf(i,j)*ros_slope/tanphi<a name='1785'>
+                    advy=advy+fp%dzdyf(i,j)*ros_slope/tanphi<a name='1786'>
+                endif<a name='1787'>
+<a name='1788'>
+                if(fire_upwind_split.eq.1)then   <a name='1789'>
+<a name='1790'>
+                    <font color=#447700>! one-sided upwinding<a name='1791'></font>
+                    te = te - max(advx,0.)*diffLx - min(advx,0.)*diffRy &amp;<a name='1792'>
+                            - max(advy,0.)*diffLy - min(advy,0.)*diffRy<a name='1793'>
+<a name='1794'>
+<a name='1795'>
+                elseif(fire_upwind_split.eq.2)then   <a name='1796'>
+ <a name='1797'>
+                    <font color=#447700>! Lax-Friedrichs<a name='1798'></font>
+                    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_10">('prop_ls: bad fire_upwind_split, Lax-Friedrichs not done yet')<a name='1799'>
+<a name='1800'>
+                else<a name='1801'>
+<a name='1802'>
+                    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_11">('prop_ls: bad fire_upwind_split')<a name='1803'>
+<a name='1804'>
+                endif<a name='1805'>
+            endif<a name='1806'>
+<a name='1807'>
+            <font color=#447700>! cfl condition<a name='1808'></font>
+            if (grad &gt; 0.) then<a name='1809'>
+                 tbound = max(tbound,rr*(abs(diff2x)/dx+abs(diff2y)/dy)/grad)<a name='1810'>
+            endif<a name='1811'>
+<a name='1812'>
+            <font color=#447700>! add numerical viscosity<a name='1813'></font>
+            te=te + fire_viscosity*abs(rr)*((diffRx-diffLx)+(diffRy-diffLy))<a name='1814'>
+<a name='1815'>
+            tend(i,j)=te<a name='1816'>
+#ifdef DEBUG_OUT    <a name='1817'>
+            rra(i,j)=rr<a name='1818'>
+            grada(i,j)=grad    <a name='1819'>
+            speeda(i,j)=speed<a name='1820'>
+            tanphia(i,j)=tanphi<a name='1821'>
+#endif<a name='1822'>
+            <font color=#447700>!write(msg,*)i,j,grad,dzdx,dzdy<a name='1823'></font>
+            <font color=#447700>!call message(msg)<a name='1824'></font>
+<a name='1825'>
+            <font color=#447700>!if(abs(te)&gt;1e4)then<a name='1826'></font>
+            <font color=#447700>!    write(msg,'(a,2i5,e12.3)')'tend_ls: tend out of bounds at ',i,j,te<a name='1827'></font>
+            <font color=#447700>!    call crash(msg)<a name='1828'></font>
+            <font color=#447700>!endif<a name='1829'></font>
+        enddo<a name='1830'>
+    enddo        <a name='1831'>
+<a name='1832'>
+#ifdef DEBUG_OUT    <a name='1833'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_11">(ints,inte,jnts,jnte,tims,time,tjms,tjme,rra,'rr',id)<a name='1834'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_12">(ints,inte,jnts,jnte,tims,time,tjms,tjme,grada,'grad',id)<a name='1835'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_13">(ints,inte,jnts,jnte,tims,time,tjms,tjme,speeda,'speed',id)<a name='1836'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_14">(ints,inte,jnts,jnte,tims,time,tjms,tjme,tanphia,'tanphi',id)<a name='1837'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#WRITE_ARRAY_M'>write_array_m</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_ARRAY_M_15">(ints,inte,jnts,jnte,tims,time,tjms,tjme,tend,'tend',id)<a name='1838'>
+#endif<a name='1839'>
+<a name='1840'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_core.F.html#TEND_LS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_8">(ints,inte,jnts,jnte,tims,time,tjms,tjme, &amp;<a name='1841'>
+                   tend,'tend_ls: tend out')<a name='1842'>
+<a name='1843'>
+    <font color=#447700>! the final CFL bound<a name='1844'></font>
+    tbound = 1/(tbound+tol)<a name='1845'>
+<a name='1846'>
+end subroutine tend_ls<a name='1847'>
+<a name='1848'>
+<font color=#447700>!<a name='1849'></font>
+<font color=#447700>!**************************<a name='1850'></font>
+<font color=#447700>!<a name='1851'></font>
+<a name='1852'>
+<A NAME='SELECT_UPWIND'><A href='../../html_code/phys/module_fr_fire_core.F.html#SELECT_UPWIND' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1853'>
+real <font color=#993300>function </font><font color=#cc0000>select_upwind</font>(diffLx,diffRx) <A href='../../call_to/SELECT_UPWIND.html' TARGET='index'>2</A><a name='1854'>
+implicit none<a name='1855'>
+real, intent(in):: diffLx, diffRx<a name='1856'>
+real diff2x<a name='1857'>
+<a name='1858'>
+<font color=#447700>! upwind differences, L or R if bith same sign, otherwise zero    <a name='1859'></font>
+<a name='1860'>
+diff2x=0<a name='1861'>
+if (diffLx&gt;0.and.diffRx&gt;0.)diff2x=diffLx<a name='1862'>
+if (diffLx&lt;0.and.diffRx&lt;0.)diff2x=diffRx<a name='1863'>
+<a name='1864'>
+select_upwind=diff2x<a name='1865'>
+end function select_upwind<a name='1866'>
+<a name='1867'>
+<a name='1868'>
+<font color=#447700>!<a name='1869'></font>
+<font color=#447700>!**************************<a name='1870'></font>
+<font color=#447700>!<a name='1871'></font>
+<a name='1872'>
+<a name='1873'>
+<A NAME='SELECT_GODUNOV'><A href='../../html_code/phys/module_fr_fire_core.F.html#SELECT_GODUNOV' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1874'>
+real <font color=#993300>function </font><font color=#cc0000>select_godunov</font>(diffLx,diffRx) <A href='../../call_to/SELECT_GODUNOV.html' TARGET='index'>2</A><a name='1875'>
+implicit none<a name='1876'>
+real, intent(in):: diffLx, diffRx<a name='1877'>
+real diff2x,diffCx<a name='1878'>
+<a name='1879'>
+<font color=#447700>! Godunov scheme: upwind differences, L or R or none    <a name='1880'></font>
+<font color=#447700>! always test on &gt; or &lt; never = , much faster because of IEEE<a name='1881'></font>
+<font color=#447700>! central diff &gt;= 0 =&gt; take left diff if &gt;0, ortherwise 0<a name='1882'></font>
+<font color=#447700>! central diff &lt;= 0 =&gt; take right diff if &lt;0, ortherwise 0<a name='1883'></font>
+<a name='1884'>
+diff2x=0<a name='1885'>
+diffCx=diffRx+diffLx<a name='1886'>
+if (diffLx&gt;0.and..not.diffCx&lt;0)diff2x=diffLx<a name='1887'>
+if (diffRx&lt;0.and.     diffCx&lt;0)diff2x=diffRx<a name='1888'>
+<a name='1889'>
+select_godunov=diff2x<a name='1890'>
+end function select_godunov<a name='1891'>
+<a name='1892'>
+<font color=#447700>!<a name='1893'></font>
+<font color=#447700>!**************************<a name='1894'></font>
+<font color=#447700>!<a name='1895'></font>
+<a name='1896'>
+<A NAME='SELECT_ENO'><A href='../../html_code/phys/module_fr_fire_core.F.html#SELECT_ENO' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1897'>
+real <font color=#993300>function </font><font color=#cc0000>select_eno</font>(diffLx,diffRx) <A href='../../call_to/SELECT_ENO.html' TARGET='index'>2</A><a name='1898'>
+implicit none<a name='1899'>
+real, intent(in):: diffLx, diffRx<a name='1900'>
+real diff2x<a name='1901'>
+<a name='1902'>
+<font color=#447700>! 1st order ENO scheme<a name='1903'></font>
+<a name='1904'>
+if    (.not.diffLx&gt;0 .and. .not.diffRx&gt;0)then<a name='1905'>
+    diff2x=diffRx<a name='1906'>
+elseif(.not.diffLx&lt;0 .and. .not.diffRx&lt;0)then<a name='1907'>
+    diff2x=diffLx<a name='1908'>
+elseif(.not.diffLx&lt;0 .and. .not.diffRx&gt;0)then<a name='1909'>
+    if(.not. abs(diffRx) &lt; abs(diffLx))then<a name='1910'>
+        diff2x=diffRx<a name='1911'>
+    else<a name='1912'>
+        diff2x=diffLx<a name='1913'>
+    endif<a name='1914'>
+else<a name='1915'>
+    diff2x=0.<a name='1916'>
+endif<a name='1917'>
+<a name='1918'>
+select_eno=diff2x<a name='1919'>
+end function select_eno<a name='1920'>
+      <a name='1921'>
+<font color=#447700>!<a name='1922'></font>
+<font color=#447700>!**************************<a name='1923'></font>
+<font color=#447700>!<a name='1924'></font>
+<a name='1925'>
+<A NAME='SPEED_FUNC'><A href='../../html_code/phys/module_fr_fire_core.F.html#SPEED_FUNC' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1926'>
+real <font color=#993300>function </font><font color=#cc0000>speed_func</font>(diffCx,diffCy,dx,dy,i,j,fp) <A href='../../call_to/SPEED_FUNC.html' TARGET='index'>1</A>,<A href='../../call_from/SPEED_FUNC.html' TARGET='index'>1</A><a name='1927'>
+<font color=#447700>!*** purpose<a name='1928'></font>
+<font color=#447700>!    the level set method speed function<a name='1929'></font>
+implicit none<a name='1930'>
+<font color=#447700>!*** arguments<a name='1931'></font>
+real, intent(in)::diffCx,diffCy  <font color=#447700>! x and y coordinates of the direction of propagation<a name='1932'></font>
+real, intent(in)::dx,dy  <font color=#447700>! x and y coordinates of the direction of propagation<a name='1933'></font>
+integer, intent(in)::i,j         <font color=#447700>! indices of the node to compute the speed at<a name='1934'></font>
+type(fire_params),intent(in)::fp<a name='1935'>
+<font color=#447700>!*** local<a name='1936'></font>
+real::scale,nvx,nvy,r<a name='1937'>
+real::ros_base , ros_wind , ros_slope<a name='1938'>
+real, parameter:: eps=epsilon(0.0)<a name='1939'>
+<font color=#447700>!*** executable<a name='1940'></font>
+            <font color=#447700>! normal direction, from central differences<a name='1941'></font>
+            scale=sqrt(diffCx*diffCx+diffCy*diffCy+eps) <a name='1942'>
+            nvx=diffCx/scale<a name='1943'>
+            nvy=diffCy/scale<a name='1944'>
+                      <a name='1945'>
+            <font color=#447700>! get rate of spread from wind speed and slope<a name='1946'></font>
+<a name='1947'>
+            call <A href='../../html_code/phys/module_fr_fire_phys.F.html#FIRE_ROS'>fire_ros</A><A href='../../html_code/phys/module_fr_fire_core.F.html#SPEED_FUNC' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FIRE_ROS_2">(ros_base,ros_wind,ros_slope, &amp;<a name='1948'>
+            nvx,nvy,i,j,fp)<a name='1949'>
+<a name='1950'>
+            r=ros_base + ros_wind + ros_slope<a name='1951'>
+            if(fire_grows_only.gt.0)r=max(r,0.)<a name='1952'>
+            speed_func=r<a name='1953'>
+<a name='1954'>
+end function speed_func<a name='1955'>
+<a name='1956'>
+end module module_fr_fire_core<a name='1957'>
+</pre></body></html>

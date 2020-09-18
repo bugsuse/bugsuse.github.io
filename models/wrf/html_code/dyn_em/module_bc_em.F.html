@@ -1,0 +1,1777 @@
+<HTML> <BODY BGCOLOR=#ddeeee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#if ( HYBRID_COORD==1 ) <a name='2'>
+#  define mut(...) (c1(k)*XXPCTXX(__VA_ARGS__)+c2(k))<a name='3'>
+#  define XXPCTXX(...) mut(__VA_ARGS__)<a name='4'>
+<a name='5'>
+#  define muts(...) (c1(k)*XXPCTSXX(__VA_ARGS__)+c2(k))<a name='6'>
+#  define XXPCTSXX(...) muts(__VA_ARGS__)<a name='7'>
+<a name='8'>
+#  define mu_old(...) (c1(k)*XXPCOLDXX(__VA_ARGS__)+c2(k))<a name='9'>
+#  define XXPCOLDXX(...) mu_old(__VA_ARGS__)<a name='10'>
+#endif<a name='11'>
+<a name='12'>
+<font color=#447700>!WRF:MODEL_LAYER:BOUNDARY<a name='13'></font>
+<font color=#447700>!<a name='14'></font>
+<A NAME='MODULE_BC_EM'><A href='../../html_code/dyn_em/module_bc_em.F.html#MODULE_BC_EM' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='15'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_bc_em</font> <A href='../../call_to/MODULE_BC_EM.html' TARGET='index'>3</A><a name='16'>
+<a name='17'>
+   USE <A href='../../html_code/share/module_bc.F.html#MODULE_BC'>module_bc</A><A href='../../html_code/dyn_em/module_bc_em.F.html#module_bc_em.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_BC_4">, ONLY: set_physical_bc2d, set_physical_bc3d, spec_bdytend, &amp;<a name='18'>
+                        spec_bdytend_perturb, relax_bdytend_tile, relax_bdytend, &amp;<a name='19'>
+                        spec_bdytend_perturb_chem<a name='20'>
+   USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>module_configure</A><A href='../../html_code/dyn_em/module_bc_em.F.html#module_bc_em.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_5">, ONLY: grid_config_rec_type<a name='21'>
+   USE <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/dyn_em/module_bc_em.F.html#module_bc_em.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_3"><a name='22'>
+   USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/dyn_em/module_bc_em.F.html#module_bc_em.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_3">, ONLY: R_d, R_v, T0<a name='23'>
+<a name='24'>
+CONTAINS<a name='25'>
+<a name='26'>
+<font color=#447700>!------------------------------------------------------------------------<a name='27'></font>
+<a name='28'>
+<A NAME='SPEC_BDYUPDATE_PH'><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDYUPDATE_PH' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='29'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>spec_bdyupdate_ph</font>( ph_save, field,           &amp; <A href='../../call_to/SPEC_BDYUPDATE_PH.html' TARGET='index'>1</A><a name='30'>
+                               field_tend, mu_tend, muts,  &amp;<a name='31'>
+                               c1, c2, dt,                 &amp;<a name='32'>
+                               variable_in, config_flags,  &amp; <a name='33'>
+                               spec_zone,                  &amp;<a name='34'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='35'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='36'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='37'></font>
+                               its,ite, jts,jte, kts,kte )<a name='38'>
+<a name='39'>
+<font color=#447700>!  This subroutine adds the tendencies in the boundary specified region.<a name='40'></font>
+<font color=#447700>!  spec_zone is the width of the outer specified b.c.s that are set here.<a name='41'></font>
+<font color=#447700>!  (JD August 2000)<a name='42'></font>
+<a name='43'>
+      IMPLICIT NONE<a name='44'>
+<a name='45'>
+      INTEGER,      INTENT(IN   )    :: ids,ide, jds,jde, kds,kde<a name='46'>
+      INTEGER,      INTENT(IN   )    :: ims,ime, jms,jme, kms,kme<a name='47'>
+      INTEGER,      INTENT(IN   )    :: ips,ipe, jps,jpe, kps,kpe<a name='48'>
+      INTEGER,      INTENT(IN   )    :: its,ite, jts,jte, kts,kte<a name='49'>
+      INTEGER,      INTENT(IN   )    :: spec_zone<a name='50'>
+      CHARACTER,    INTENT(IN   )    :: variable_in<a name='51'>
+      REAL,         INTENT(IN   )    :: dt<a name='52'>
+<a name='53'>
+<a name='54'>
+      REAL,  DIMENSION( ims:ime , kms:kme , jms:jme ), INTENT(INOUT) :: field<a name='55'>
+      REAL,  DIMENSION( ims:ime , kms:kme , jms:jme ), INTENT(IN   ) :: field_tend, ph_save<a name='56'>
+      REAL,  DIMENSION( ims:ime , jms:jme ), INTENT(IN   ) :: mu_tend, muts<a name='57'>
+      REAL,  DIMENSION( kms:kme ), INTENT(IN   ) :: c1, c2<a name='58'>
+      TYPE( grid_config_rec_type ) config_flags<a name='59'>
+<a name='60'>
+      CHARACTER  :: variable<a name='61'>
+      INTEGER    :: i, j, k, ibs, ibe, jbs, jbe, itf, jtf, ktf<a name='62'>
+      INTEGER    :: b_dist, b_limit<a name='63'>
+<a name='64'>
+<font color=#447700>!     Local array<a name='65'></font>
+<a name='66'>
+      REAL,  DIMENSION( its:ite , jts:jte ) :: mu_old<a name='67'>
+      LOGICAL    :: periodic_x<a name='68'>
+<a name='69'>
+      periodic_x = config_flags%periodic_x<a name='70'>
+<a name='71'>
+      variable = variable_in<a name='72'>
+<a name='73'>
+      IF (variable == 'U') variable = 'u'<a name='74'>
+      IF (variable == 'V') variable = 'v'<a name='75'>
+      IF (variable == 'M') variable = 'm'<a name='76'>
+      IF (variable == 'H') variable = 'h'<a name='77'>
+<a name='78'>
+      ibs = ids<a name='79'>
+      ibe = ide-1<a name='80'>
+      itf = min(ite,ide-1)<a name='81'>
+      jbs = jds<a name='82'>
+      jbe = jde-1<a name='83'>
+      jtf = min(jte,jde-1)<a name='84'>
+      ktf = kde-1<a name='85'>
+      IF (variable == 'u') ibe = ide<a name='86'>
+      IF (variable == 'u') itf = min(ite,ide)<a name='87'>
+      IF (variable == 'v') jbe = jde<a name='88'>
+      IF (variable == 'v') jtf = min(jte,jde)<a name='89'>
+      IF (variable == 'm') ktf = kte<a name='90'>
+      IF (variable == 'h') ktf = kte<a name='91'>
+<a name='92'>
+      IF (jts - jbs .lt. spec_zone) THEN<a name='93'>
+<font color=#447700>! Y-start boundary<a name='94'></font>
+        DO j = jts, min(jtf,jbs+spec_zone-1)<a name='95'>
+          b_dist = j - jbs<a name='96'>
+          b_limit = b_dist<a name='97'>
+          IF(periodic_x)b_limit = 0<a name='98'>
+          DO k = kts, ktf<a name='99'>
+            DO i = max(its,b_limit+ibs), min(itf,ibe-b_limit)<a name='100'>
+<a name='101'>
+              MU_OLD(i,j) = MUTS(i,j) - dt*MU_TEND(i,j)<a name='102'>
+<a name='103'>
+              field(i,k,j) = field(i,k,j)*mu_old(i,j)/muts(i,j) + &amp;<a name='104'>
+                   dt*field_tend(i,k,j)/muts(i,j) +               &amp;<a name='105'>
+                   ph_save(i,k,j)*(mu_old(i,j)/muts(i,j) - 1.)<a name='106'>
+<a name='107'>
+            ENDDO<a name='108'>
+          ENDDO<a name='109'>
+        ENDDO<a name='110'>
+      ENDIF <a name='111'>
+      IF (jbe - jtf .lt. spec_zone) THEN <a name='112'>
+<font color=#447700>! Y-end boundary <a name='113'></font>
+        DO j = max(jts,jbe-spec_zone+1), jtf <a name='114'>
+          b_dist = jbe - j <a name='115'>
+          b_limit = b_dist<a name='116'>
+          IF(periodic_x)b_limit = 0<a name='117'>
+          DO k = kts, ktf <a name='118'>
+            DO i = max(its,b_limit+ibs), min(itf,ibe-b_limit)<a name='119'>
+<a name='120'>
+              MU_OLD(i,j) = MUTS(i,j) - dt*MU_TEND(i,j)<a name='121'>
+<a name='122'>
+              field(i,k,j) = field(i,k,j)*mu_old(i,j)/muts(i,j) + &amp;<a name='123'>
+                   dt*field_tend(i,k,j)/muts(i,j) +               &amp;<a name='124'>
+                   ph_save(i,k,j)*(mu_old(i,j)/muts(i,j) - 1.)<a name='125'>
+<a name='126'>
+            ENDDO<a name='127'>
+          ENDDO<a name='128'>
+        ENDDO<a name='129'>
+      ENDIF <a name='130'>
+<a name='131'>
+    IF(.NOT.periodic_x)THEN<a name='132'>
+      IF (its - ibs .lt. spec_zone) THEN<a name='133'>
+<font color=#447700>! X-start boundary<a name='134'></font>
+        DO i = its, min(itf,ibs+spec_zone-1)<a name='135'>
+          b_dist = i - ibs<a name='136'>
+          DO k = kts, ktf<a name='137'>
+            DO j = max(jts,b_dist+jbs+1), min(jtf,jbe-b_dist-1)<a name='138'>
+<a name='139'>
+              MU_OLD(i,j) = MUTS(i,j) - dt*MU_TEND(i,j)<a name='140'>
+<a name='141'>
+              field(i,k,j) = field(i,k,j)*mu_old(i,j)/muts(i,j) + &amp;<a name='142'>
+                   dt*field_tend(i,k,j)/muts(i,j) +               &amp;<a name='143'>
+                   ph_save(i,k,j)*(mu_old(i,j)/muts(i,j) - 1.)<a name='144'>
+<a name='145'>
+            ENDDO<a name='146'>
+          ENDDO<a name='147'>
+        ENDDO<a name='148'>
+      ENDIF <a name='149'>
+<a name='150'>
+      IF (ibe - itf .lt. spec_zone) THEN<a name='151'>
+<font color=#447700>! X-end boundary<a name='152'></font>
+        DO i = max(its,ibe-spec_zone+1), itf<a name='153'>
+          b_dist = ibe - i<a name='154'>
+          DO k = kts, ktf<a name='155'>
+            DO j = max(jts,b_dist+jbs+1), min(jtf,jbe-b_dist-1)<a name='156'>
+<a name='157'>
+              MU_OLD(i,j) = MUTS(i,j) - dt*MU_TEND(i,j)<a name='158'>
+<a name='159'>
+              field(i,k,j) = field(i,k,j)*mu_old(i,j)/muts(i,j) + &amp;<a name='160'>
+                   dt*field_tend(i,k,j)/muts(i,j) +               &amp;<a name='161'>
+                   ph_save(i,k,j)*(mu_old(i,j)/muts(i,j) - 1.)<a name='162'>
+<a name='163'>
+            ENDDO<a name='164'>
+          ENDDO<a name='165'>
+        ENDDO<a name='166'>
+      ENDIF <a name='167'>
+    ENDIF<a name='168'>
+<a name='169'>
+   END SUBROUTINE spec_bdyupdate_ph<a name='170'>
+<a name='171'>
+<font color=#447700>!------------------------------------------------------------------------<a name='172'></font>
+<a name='173'>
+<A NAME='RELAX_BDY_DRY'><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_DRY' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='174'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>relax_bdy_dry</font> ( config_flags,                                    &amp; <A href='../../call_to/RELAX_BDY_DRY.html' TARGET='index'>1</A>,<A href='../../call_from/RELAX_BDY_DRY.html' TARGET='index'>9</A><a name='175'>
+                              ru_tendf, rv_tendf, ph_tendf, t_tendf,           &amp;<a name='176'>
+                              rw_tendf, mu_tend, c1h, c2h, c1f, c2f,           &amp;<a name='177'>
+                              ru, rv, ph, t,                                   &amp;<a name='178'>
+                              w, mu, mut,                                      &amp;<a name='179'>
+                              u_bxs,u_bxe,u_bys,u_bye,                         &amp;<a name='180'>
+                              v_bxs,v_bxe,v_bys,v_bye,                         &amp;<a name='181'>
+                              ph_bxs,ph_bxe,ph_bys,ph_bye,                     &amp;<a name='182'>
+                              t_bxs,t_bxe,t_bys,t_bye,                         &amp;<a name='183'>
+                              w_bxs,w_bxe,w_bys,w_bye,                         &amp;<a name='184'>
+                              mu_bxs,mu_bxe,mu_bys,mu_bye,                     &amp;<a name='185'>
+                              u_btxs,u_btxe,u_btys,u_btye,                     &amp;<a name='186'>
+                              v_btxs,v_btxe,v_btys,v_btye,                     &amp;<a name='187'>
+                              ph_btxs,ph_btxe,ph_btys,ph_btye,                 &amp;<a name='188'>
+                              t_btxs,t_btxe,t_btys,t_btye,                     &amp;<a name='189'>
+                              w_btxs,w_btxe,w_btys,w_btye,                     &amp;<a name='190'>
+                              mu_btxs,mu_btxe,mu_btys,mu_btye,                 &amp;<a name='191'>
+                              spec_bdy_width, spec_zone, relax_zone,           &amp;<a name='192'>
+                              dtbc, fcx, gcx,             &amp;<a name='193'>
+                              ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='194'></font>
+                              ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='195'></font>
+                              ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='196'></font>
+                              its, ite, jts, jte, kts, kte)<a name='197'>
+   IMPLICIT NONE<a name='198'>
+<a name='199'>
+   <font color=#447700>!  Input data.<a name='200'></font>
+   TYPE( grid_config_rec_type ) config_flags<a name='201'>
+<a name='202'>
+   INTEGER ,               INTENT(IN   ) :: ids, ide, jds, jde, kds, kde, &amp;<a name='203'>
+                                            ims, ime, jms, jme, kms, kme, &amp;<a name='204'>
+                                            ips, ipe, jps, jpe, kps, kpe, &amp; <a name='205'>
+                                            its, ite, jts, jte, kts, kte<a name='206'>
+   INTEGER ,               INTENT(IN   ) :: spec_bdy_width, spec_zone, relax_zone<a name='207'>
+<a name='208'>
+   REAL , DIMENSION( ims:ime , kms:kme, jms:jme  ) , INTENT(IN   ) :: ru,     &amp;<a name='209'>
+                                                                      rv,     &amp;<a name='210'>
+                                                                      ph,     &amp;<a name='211'>
+                                                                      w,      &amp;<a name='212'>
+                                                                      t<a name='213'>
+   REAL , DIMENSION( ims:ime , jms:jme  ) , INTENT(IN   )          :: mu  , &amp;<a name='214'>
+                                                                      mut<a name='215'>
+   REAL , DIMENSION( ims:ime , kms:kme, jms:jme  ) , INTENT(INOUT) :: ru_tendf, &amp;<a name='216'>
+                                                                      rv_tendf, &amp;<a name='217'>
+                                                                      ph_tendf, &amp;<a name='218'>
+                                                                      rw_tendf, &amp;<a name='219'>
+                                                                      t_tendf<a name='220'>
+   REAL , DIMENSION( ims:ime , jms:jme  ) , INTENT(INOUT)          :: mu_tend<a name='221'>
+<a name='222'>
+   REAL , DIMENSION( kms:kme ) , INTENT(IN   ) :: c1h, c2h, c1f, c2f<a name='223'>
+<a name='224'>
+   REAL , DIMENSION( spec_bdy_width) , INTENT(IN   ) :: fcx, gcx<a name='225'>
+<a name='226'>
+   REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width    ), INTENT(IN   ) :: u_bxs,u_bxe, &amp;<a name='227'>
+                                                                               v_bxs,v_bxe, &amp;<a name='228'>
+                                                                               ph_bxs,ph_bxe, &amp;<a name='229'>
+                                                                               w_bxs,w_bxe, &amp;<a name='230'>
+                                                                               t_bxs,t_bxe, &amp;<a name='231'>
+                                                                               u_btxs,u_btxe, &amp;<a name='232'>
+                                                                               v_btxs,v_btxe, &amp;<a name='233'>
+                                                                               ph_btxs,ph_btxe, &amp;<a name='234'>
+                                                                               w_btxs,w_btxe, &amp;<a name='235'>
+                                                                               t_btxs,t_btxe<a name='236'>
+<a name='237'>
+   REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width    ), INTENT(IN   ) :: u_bys,u_bye, &amp;<a name='238'>
+                                                                               v_bys,v_bye, &amp;<a name='239'>
+                                                                               ph_bys,ph_bye, &amp;<a name='240'>
+                                                                               w_bys,w_bye, &amp;<a name='241'>
+                                                                               t_bys,t_bye, &amp;<a name='242'>
+                                                                               u_btys,u_btye, &amp;<a name='243'>
+                                                                               v_btys,v_btye, &amp;<a name='244'>
+                                                                               ph_btys,ph_btye, &amp;<a name='245'>
+                                                                               w_btys,w_btye, &amp;<a name='246'>
+                                                                               t_btys,t_btye<a name='247'>
+<a name='248'>
+<a name='249'>
+   REAL,  DIMENSION( jms:jme , 1:1     , spec_bdy_width    ), INTENT(IN   ) :: mu_bxs,mu_bxe, &amp;<a name='250'>
+                                                                               mu_btxs,mu_btxe<a name='251'>
+<a name='252'>
+   REAL,  DIMENSION( ims:ime , 1:1     , spec_bdy_width    ), INTENT(IN   ) :: mu_bys,mu_bye, &amp;<a name='253'>
+                                                                               mu_btys,mu_btye<a name='254'>
+   REAL, INTENT(IN   ) :: dtbc<a name='255'>
+<a name='256'>
+<font color=#447700>! changed to tile dimensions, 20090923, JM<a name='257'></font>
+   REAL , DIMENSION( its-1:ite+1 , kts:kte, jts-1:jte+1  ) :: rfield<a name='258'>
+   INTEGER :: i_start, i_end, j_start, j_end, i, j, k<a name='259'>
+<a name='260'>
+           CALL <A href='../../html_code/share/module_bc.F.html#RELAX_BDYTEND'>relax_bdytend</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RELAX_BDYTEND_1"> ( ru, ru_tendf,             &amp;<a name='261'>
+                               u_bxs,u_bxe,u_bys,u_bye,u_btxs,u_btxe,u_btys,u_btye, &amp;<a name='262'>
+                               'u'        , config_flags, &amp;<a name='263'>
+                               spec_bdy_width, spec_zone, relax_zone, &amp;<a name='264'>
+                               dtbc, fcx, gcx,             &amp;<a name='265'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='266'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='267'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='268'></font>
+                               its,ite, jts,jte, kts,kte )<a name='269'>
+           CALL <A href='../../html_code/share/module_bc.F.html#RELAX_BDYTEND'>relax_bdytend</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RELAX_BDYTEND_2"> ( rv, rv_tendf,             &amp;<a name='270'>
+                               v_bxs,v_bxe,v_bys,v_bye,v_btxs,v_btxe,v_btys,v_btye, &amp;<a name='271'>
+                               'v'        , config_flags, &amp;<a name='272'>
+                               spec_bdy_width, spec_zone, relax_zone, &amp;<a name='273'>
+                               dtbc, fcx, gcx,             &amp;<a name='274'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='275'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='276'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='277'></font>
+                               its,ite, jts,jte, kts,kte )<a name='278'>
+<a name='279'>
+<font color=#447700>! rfield will be calculated beyond tile limits because relax_bdytend<a name='280'></font>
+<font color=#447700>!   requires a 5-point stencil, and this avoids need for inter-tile/patch <a name='281'></font>
+<font color=#447700>!   communication here<a name='282'></font>
+           i_start = max(its-1, ids)<a name='283'>
+           i_end = min(ite+1, ide-1)<a name='284'>
+           j_start = max(jts-1, jds)<a name='285'>
+           j_end = min(jte+1, jde-1)<a name='286'>
+<a name='287'>
+           CALL <A href='../../html_code/dyn_em/module_bc_em.F.html#MASS_WEIGHT'>mass_weight</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MASS_WEIGHT_1"> ( ph , mut , rfield , c1f, c2f, &amp;<a name='288'>
+                              ids,ide, jds,jde, kds,kde,    &amp;        <font color=#447700>! domain dims<a name='289'></font>
+                              ims,ime, jms,jme, kms,kme,    &amp;        <font color=#447700>! memory dims<a name='290'></font>
+                              its-1,ite+1 , jts-1,jte+1 ,   &amp;        <font color=#447700>! rfield dims<a name='291'></font>
+                              kts,kte,                      &amp;        <font color=#447700>! rfield<a name='292'></font>
+                              i_start,i_end, j_start,j_end, kts,kte)  <font color=#447700>! tile dims<a name='293'></font>
+<a name='294'>
+           CALL <A href='../../html_code/share/module_bc.F.html#RELAX_BDYTEND_TILE'>relax_bdytend_tile</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RELAX_BDYTEND_TILE_1"> ( rfield, ph_tendf,             &amp;<a name='295'>
+                               ph_bxs,ph_bxe,ph_bys,ph_bye, ph_btxs,ph_btxe,ph_btys,ph_btye,       &amp;<a name='296'>
+                               'h'        , config_flags, &amp;<a name='297'>
+                               spec_bdy_width, spec_zone, relax_zone, &amp;<a name='298'>
+                               dtbc, fcx, gcx,             &amp;<a name='299'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='300'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='301'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='302'></font>
+                               its,ite, jts,jte, kts,kte,  &amp;<a name='303'>
+                               its-1, ite+1, jts-1,jte+1,kts,kte )  <font color=#447700>! dims of first argument<a name='304'></font>
+<a name='305'>
+           CALL <A href='../../html_code/dyn_em/module_bc_em.F.html#MASS_WEIGHT'>mass_weight</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MASS_WEIGHT_2"> ( t,   mut , rfield , c1h, c2h, &amp;<a name='306'>
+                              ids,ide, jds,jde, kds,kde,    &amp;         <font color=#447700>! domain dims<a name='307'></font>
+                              ims,ime, jms,jme, kms,kme,    &amp;         <font color=#447700>! memory dims<a name='308'></font>
+                              its-1,ite+1 , jts-1,jte+1 ,   &amp;        <font color=#447700>! rfield dims<a name='309'></font>
+                              kts,kte,                      &amp;        <font color=#447700>! rfield<a name='310'></font>
+                              i_start,i_end, j_start,j_end, kts,kte-1) <font color=#447700>! tile dims<a name='311'></font>
+<a name='312'>
+           CALL <A href='../../html_code/share/module_bc.F.html#RELAX_BDYTEND_TILE'>relax_bdytend_tile</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RELAX_BDYTEND_TILE_2"> ( rfield, t_tendf,              &amp;<a name='313'>
+                               t_bxs,t_bxe,t_bys,t_bye, t_btxs,t_btxe,t_btys,t_btye,       &amp;<a name='314'>
+                               't'        , config_flags, &amp;<a name='315'>
+                               spec_bdy_width, spec_zone, relax_zone, &amp;<a name='316'>
+                               dtbc, fcx, gcx,             &amp;<a name='317'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='318'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='319'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='320'></font>
+                               its,ite, jts,jte, kts,kte,  &amp;<a name='321'>
+                               its-1, ite+1, jts-1,jte+1,kts,kte )  <font color=#447700>! dims of first argument<a name='322'></font>
+<a name='323'>
+           CALL <A href='../../html_code/share/module_bc.F.html#RELAX_BDYTEND'>relax_bdytend</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RELAX_BDYTEND_3"> ( mu, mu_tend,               &amp;<a name='324'>
+                               mu_bxs,mu_bxe,mu_bys,mu_bye, mu_btxs,mu_btxe,mu_btys,mu_btye,                &amp;<a name='325'>
+                               'm'        , config_flags,  &amp;<a name='326'>
+                               spec_bdy_width, spec_zone, relax_zone, &amp;<a name='327'>
+                               dtbc, fcx, gcx,             &amp;<a name='328'>
+                               ids,ide, jds,jde, 1  ,1  ,  &amp; <font color=#447700>! domain dims<a name='329'></font>
+                               ims,ime, jms,jme, 1  ,1  ,  &amp; <font color=#447700>! memory dims<a name='330'></font>
+                               ips,ipe, jps,jpe, 1  ,1  ,  &amp; <font color=#447700>! patch  dims<a name='331'></font>
+                               its,ite, jts,jte, 1  ,1   )<a name='332'>
+<a name='333'>
+         IF( config_flags%nested) THEN<a name='334'>
+<a name='335'>
+           i_start = max(its-1, ids)<a name='336'>
+           i_end = min(ite+1, ide-1)<a name='337'>
+           j_start = max(jts-1, jds)<a name='338'>
+           j_end = min(jte+1, jde-1)<a name='339'>
+<a name='340'>
+           CALL <A href='../../html_code/dyn_em/module_bc_em.F.html#MASS_WEIGHT'>mass_weight</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MASS_WEIGHT_3"> ( w , mut , rfield , c1f, c2f, &amp;<a name='341'>
+                              ids,ide, jds,jde, kds,kde,   &amp;        <font color=#447700>! domain dims<a name='342'></font>
+                              ims,ime, jms,jme, kms,kme,   &amp;        <font color=#447700>! memory dims<a name='343'></font>
+                              its-1,ite+1 , jts-1,jte+1 ,  &amp;        <font color=#447700>! rfield dims<a name='344'></font>
+                              kts,kte,                     &amp;        <font color=#447700>! rfield<a name='345'></font>
+                              i_start,i_end, j_start,j_end, kts,kte) <font color=#447700>! tile dims<a name='346'></font>
+<a name='347'>
+           CALL <A href='../../html_code/share/module_bc.F.html#RELAX_BDYTEND_TILE'>relax_bdytend_tile</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RELAX_BDYTEND_TILE_3"> ( rfield, rw_tendf,             &amp;<a name='348'>
+                               w_bxs,w_bxe,w_bys,w_bye, w_btxs,w_btxe,w_btys,w_btye,       &amp;<a name='349'>
+                               'h'        , config_flags, &amp;<a name='350'>
+                               spec_bdy_width, spec_zone, relax_zone, &amp;<a name='351'>
+                               dtbc, fcx, gcx,             &amp;<a name='352'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='353'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='354'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='355'></font>
+                               its,ite, jts,jte, kts,kte,  &amp;<a name='356'>
+                               its-1, ite+1, jts-1,jte+1,kts,kte )  <font color=#447700>! dims of first argument<a name='357'></font>
+<a name='358'>
+        END IF<a name='359'>
+   END SUBROUTINE relax_bdy_dry <a name='360'>
+<font color=#447700>!------------------------------------------------------------------------<a name='361'></font>
+<A NAME='RELAX_BDY_SCALAR'><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_SCALAR' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='362'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>relax_bdy_scalar</font> ( scalar_tend,                &amp; <A href='../../call_to/RELAX_BDY_SCALAR.html' TARGET='index'>4</A>,<A href='../../call_from/RELAX_BDY_SCALAR.html' TARGET='index'>2</A><a name='363'>
+                                 scalar, mu, c1h, c2h,       &amp;<a name='364'>
+                                 scalar_bxs,scalar_bxe,scalar_bys,scalar_bye, &amp;<a name='365'>
+                                 scalar_btxs,scalar_btxe,scalar_btys,scalar_btye, &amp;<a name='366'>
+                                 spec_bdy_width, spec_zone, relax_zone,       &amp;<a name='367'>
+                                 dtbc, fcx, gcx,             &amp;<a name='368'>
+                                 config_flags,               &amp;<a name='369'>
+                                 ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='370'></font>
+                                 ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='371'></font>
+                                 ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='372'></font>
+                                 its, ite, jts, jte, kts, kte)<a name='373'>
+   IMPLICIT NONE<a name='374'>
+<a name='375'>
+   <font color=#447700>!  Input data.<a name='376'></font>
+   TYPE( grid_config_rec_type ) config_flags<a name='377'>
+<a name='378'>
+   INTEGER ,               INTENT(IN   ) :: ids, ide, jds, jde, kds, kde, &amp;<a name='379'>
+                                            ims, ime, jms, jme, kms, kme, &amp;<a name='380'>
+                                            ips, ipe, jps, jpe, kps, kpe, &amp; <a name='381'>
+                                            its, ite, jts, jte, kts, kte<a name='382'>
+   INTEGER ,               INTENT(IN   ) :: spec_bdy_width, spec_zone, relax_zone<a name='383'>
+<a name='384'>
+   REAL , DIMENSION( ims:ime , kms:kme, jms:jme  ) , INTENT(IN   ) :: scalar<a name='385'>
+   REAL , DIMENSION( ims:ime , jms:jme  ) , INTENT(IN   ) :: mu<a name='386'>
+   REAL , DIMENSION( ims:ime , kms:kme, jms:jme  ) , INTENT(INOUT) :: scalar_tend<a name='387'>
+   REAL , DIMENSION( spec_bdy_width) , INTENT(IN   ) :: fcx, gcx<a name='388'>
+<a name='389'>
+   REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width    ), INTENT(IN   ) :: scalar_bxs,scalar_bxe, &amp;<a name='390'>
+                                                                               scalar_btxs,scalar_btxe<a name='391'>
+   REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width    ), INTENT(IN   ) :: scalar_bys,scalar_bye, &amp;<a name='392'>
+                                                                               scalar_btys,scalar_btye<a name='393'>
+   REAL , DIMENSION( kms:kme ) , INTENT(IN   ) :: c1h, c2h<a name='394'>
+   REAL, INTENT(IN   ) :: dtbc<a name='395'>
+<font color=#447700>!Local<a name='396'></font>
+   INTEGER :: i,j,k, i_start, i_end, j_start, j_end<a name='397'>
+   REAL , DIMENSION( ims:ime , kms:kme, jms:jme  ) :: rscalar<a name='398'>
+<a name='399'>
+<font color=#447700>! rscalar will be calculated beyond tile limits because relax_bdytend<a name='400'></font>
+<font color=#447700>!   requires a 5-point stencil, and this avoids need for inter-tile/patch <a name='401'></font>
+<font color=#447700>!   communication here<a name='402'></font>
+           i_start = max(its-1, ids)<a name='403'>
+           i_end = min(ite+1, ide-1)<a name='404'>
+           j_start = max(jts-1, jds)<a name='405'>
+           j_end = min(jte+1, jde-1)<a name='406'>
+<a name='407'>
+           CALL <A href='../../html_code/dyn_em/module_bc_em.F.html#MASS_WEIGHT'>mass_weight</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_SCALAR' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MASS_WEIGHT_4"> ( scalar , mu , rscalar, c1h, c2h, &amp;<a name='408'>
+                              ids,ide, jds,jde, kds,kde,   &amp;          <font color=#447700>! domain dims<a name='409'></font>
+                              ims,ime, jms,jme, kms,kme,   &amp;          <font color=#447700>! memory dims<a name='410'></font>
+                              ims,ime, jms,jme, kms,kme,   &amp;          <font color=#447700>! rfield dims<a name='411'></font>
+                              i_start,i_end, j_start,j_end, kts,kte-1) <font color=#447700>! tile dims<a name='412'></font>
+<a name='413'>
+           CALL <A href='../../html_code/share/module_bc.F.html#RELAX_BDYTEND'>relax_bdytend</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RELAX_BDY_SCALAR' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RELAX_BDYTEND_4"> (rscalar, scalar_tend,             &amp;<a name='414'>
+                               scalar_bxs,scalar_bxe,scalar_bys,scalar_bye, scalar_btxs,scalar_btxe,scalar_btys,scalar_btye,       &amp;<a name='415'>
+                               'q'        , config_flags, &amp;<a name='416'>
+                               spec_bdy_width, spec_zone, relax_zone, &amp;<a name='417'>
+                               dtbc, fcx, gcx,             &amp;<a name='418'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='419'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='420'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='421'></font>
+                               its,ite, jts,jte, kts,kte )<a name='422'>
+<a name='423'>
+<a name='424'>
+   END SUBROUTINE relax_bdy_scalar <a name='425'>
+<a name='426'>
+<font color=#447700>!------------------------------------------------------------------------<a name='427'></font>
+<A NAME='SPEC_BDY_DRY'><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_DRY' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='428'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>spec_bdy_dry</font> ( config_flags,                        &amp; <A href='../../call_to/SPEC_BDY_DRY.html' TARGET='index'>1</A>,<A href='../../call_from/SPEC_BDY_DRY.html' TARGET='index'>6</A><a name='429'>
+                             ru_tend, rv_tend, ph_tend, t_tend,   &amp;<a name='430'>
+                             rw_tend, mu_tend,                    &amp;<a name='431'>
+                             u_bxs,u_bxe,u_bys,u_bye,             &amp;<a name='432'>
+                             v_bxs,v_bxe,v_bys,v_bye,             &amp;<a name='433'>
+                             ph_bxs,ph_bxe,ph_bys,ph_bye,         &amp;<a name='434'>
+                             t_bxs,t_bxe,t_bys,t_bye,             &amp;<a name='435'>
+                             w_bxs,w_bxe,w_bys,w_bye,             &amp;<a name='436'>
+                             mu_bxs,mu_bxe,mu_bys,mu_bye,         &amp;<a name='437'>
+                             u_btxs,u_btxe,u_btys,u_btye,         &amp;<a name='438'>
+                             v_btxs,v_btxe,v_btys,v_btye,         &amp;<a name='439'>
+                             ph_btxs,ph_btxe,ph_btys,ph_btye,     &amp;<a name='440'>
+                             t_btxs,t_btxe,t_btys,t_btye,         &amp;<a name='441'>
+                             w_btxs,w_btxe,w_btys,w_btye,         &amp;<a name='442'>
+                             mu_btxs,mu_btxe,mu_btys,mu_btye,     &amp;<a name='443'>
+                             spec_bdy_width, spec_zone,           &amp;<a name='444'>
+                             ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='445'></font>
+                             ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='446'></font>
+                             ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='447'></font>
+                             its, ite, jts, jte, kts, kte)<a name='448'>
+   IMPLICIT NONE<a name='449'>
+<a name='450'>
+   <font color=#447700>!  Input data.<a name='451'></font>
+   TYPE( grid_config_rec_type ) config_flags<a name='452'>
+<a name='453'>
+<a name='454'>
+   INTEGER ,               INTENT(IN   ) :: ids, ide, jds, jde, kds, kde, &amp;<a name='455'>
+                                            ims, ime, jms, jme, kms, kme, &amp;<a name='456'>
+                                            ips, ipe, jps, jpe, kps, kpe, &amp; <a name='457'>
+                                            its, ite, jts, jte, kts, kte<a name='458'>
+   INTEGER ,               INTENT(IN   ) :: spec_bdy_width, spec_zone<a name='459'>
+<a name='460'>
+   REAL , DIMENSION( ims:ime , kms:kme, jms:jme  ) , INTENT(OUT  ) :: ru_tend, &amp;<a name='461'>
+                                                                      rv_tend, &amp;<a name='462'>
+                                                                      ph_tend, &amp;<a name='463'>
+                                                                      rw_tend, &amp;<a name='464'>
+                                                                      t_tend<a name='465'>
+   REAL , DIMENSION( ims:ime , jms:jme  ) , INTENT(OUT  )          :: mu_tend<a name='466'>
+<a name='467'>
+   REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width    ), INTENT(IN   ) :: u_bxs,u_bxe,  &amp;<a name='468'>
+                                                                               v_bxs,v_bxe,  &amp;<a name='469'>
+                                                                               ph_bxs,ph_bxe, &amp;<a name='470'>
+                                                                               w_bxs,w_bxe, &amp;<a name='471'>
+                                                                               t_bxs,t_bxe,  &amp;<a name='472'>
+                                                                               u_btxs,u_btxe, &amp;<a name='473'>
+                                                                               v_btxs,v_btxe, &amp;<a name='474'>
+                                                                               ph_btxs,ph_btxe, &amp;<a name='475'>
+                                                                               w_btxs,w_btxe, &amp;<a name='476'>
+                                                                               t_btxs,t_btxe<a name='477'>
+<a name='478'>
+   REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width    ), INTENT(IN   ) :: u_bys,u_bye,  &amp;<a name='479'>
+                                                                               v_bys,v_bye,  &amp;<a name='480'>
+                                                                               ph_bys,ph_bye, &amp;<a name='481'>
+                                                                               w_bys,w_bye, &amp;<a name='482'>
+                                                                               t_bys,t_bye,  &amp;<a name='483'>
+                                                                               u_btys,u_btye, &amp;<a name='484'>
+                                                                               v_btys,v_btye, &amp;<a name='485'>
+                                                                               ph_btys,ph_btye, &amp;<a name='486'>
+                                                                               w_btys,w_btye, &amp;<a name='487'>
+                                                                               t_btys,t_btye<a name='488'>
+<a name='489'>
+   REAL,  DIMENSION( jms:jme , 1:1 ,     spec_bdy_width    ), INTENT(IN   ) :: mu_bxs,mu_bxe, &amp;<a name='490'>
+                                                                               mu_btxs,mu_btxe<a name='491'>
+<a name='492'>
+   REAL,  DIMENSION( ims:ime , 1:1 ,     spec_bdy_width    ), INTENT(IN   ) :: mu_bys,mu_bye, &amp;<a name='493'>
+                                                                               mu_btys,mu_btye<a name='494'>
+         CALL <A href='../../html_code/share/module_bc.F.html#SPEC_BDYTEND'>spec_bdytend</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SPEC_BDYTEND_1"> (   ru_tend,                &amp;<a name='495'>
+                               u_bxs,u_bxe,u_bys,u_bye, u_btxs,u_btxe,u_btys,u_btye,    &amp;<a name='496'>
+                               'u'     , config_flags, &amp;<a name='497'>
+                               spec_bdy_width, spec_zone, &amp;<a name='498'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='499'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='500'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='501'></font>
+                               its,ite, jts,jte, kts,kte )<a name='502'>
+         CALL <A href='../../html_code/share/module_bc.F.html#SPEC_BDYTEND'>spec_bdytend</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SPEC_BDYTEND_2"> (   rv_tend,                &amp;<a name='503'>
+                               v_bxs,v_bxe,v_bys,v_bye, v_btxs,v_btxe,v_btys,v_btye,    &amp;<a name='504'>
+                               'v'     , config_flags, &amp;<a name='505'>
+                               spec_bdy_width, spec_zone, &amp;<a name='506'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='507'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='508'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='509'></font>
+                               its,ite, jts,jte, kts,kte )<a name='510'>
+         CALL <A href='../../html_code/share/module_bc.F.html#SPEC_BDYTEND'>spec_bdytend</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SPEC_BDYTEND_3"> (   ph_tend,                &amp;<a name='511'>
+                               ph_bxs,ph_bxe,ph_bys,ph_bye, ph_btxs,ph_btxe,ph_btys,ph_btye,    &amp;<a name='512'>
+                               'h'     , config_flags, &amp;<a name='513'>
+                               spec_bdy_width, spec_zone, &amp;<a name='514'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='515'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='516'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='517'></font>
+                               its,ite, jts,jte, kts,kte )<a name='518'>
+         CALL <A href='../../html_code/share/module_bc.F.html#SPEC_BDYTEND'>spec_bdytend</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SPEC_BDYTEND_4"> (   t_tend,                &amp;<a name='519'>
+                               t_bxs,t_bxe,t_bys,t_bye, t_btxs,t_btxe,t_btys,t_btye,    &amp;<a name='520'>
+                               't'     , config_flags, &amp;<a name='521'>
+                               spec_bdy_width, spec_zone, &amp;<a name='522'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='523'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='524'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='525'></font>
+                               its,ite, jts,jte, kts,kte )<a name='526'>
+         CALL <A href='../../html_code/share/module_bc.F.html#SPEC_BDYTEND'>spec_bdytend</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SPEC_BDYTEND_5"> (   mu_tend,                &amp;<a name='527'>
+                               mu_bxs,mu_bxe,mu_bys,mu_bye, mu_btxs,mu_btxe,mu_btys,mu_btye,       &amp;<a name='528'>
+                               'm'     , config_flags, &amp;<a name='529'>
+                               spec_bdy_width, spec_zone, &amp;<a name='530'>
+                               ids,ide, jds,jde, 1  ,1  ,  &amp; <font color=#447700>! domain dims<a name='531'></font>
+                               ims,ime, jms,jme, 1  ,1  ,  &amp; <font color=#447700>! memory dims<a name='532'></font>
+                               ips,ipe, jps,jpe, 1  ,1  ,  &amp; <font color=#447700>! patch  dims<a name='533'></font>
+                               its,ite, jts,jte, 1  ,1   )<a name='534'>
+<a name='535'>
+         if(config_flags%nested)                           &amp;<a name='536'>
+         CALL <A href='../../html_code/share/module_bc.F.html#SPEC_BDYTEND'>spec_bdytend</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_DRY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SPEC_BDYTEND_6"> (   rw_tend,                    &amp;<a name='537'>
+                               w_bxs,w_bxe,w_bys,w_bye, w_btxs,w_btxe,w_btys,w_btye,                  &amp;<a name='538'>
+                               'h'     , config_flags,     &amp;<a name='539'>
+                               spec_bdy_width, spec_zone,  &amp;<a name='540'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='541'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='542'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='543'></font>
+                               its,ite, jts,jte, kts,kte )<a name='544'>
+<a name='545'>
+   END SUBROUTINE spec_bdy_dry <a name='546'>
+<a name='547'>
+<a name='548'>
+<font color=#447700>!------------------------------------------------------------------------<a name='549'></font>
+<font color=#447700>! KRS 9/13/2012: New subroutine spec_bdy_dry_perturb.<a name='550'></font>
+<font color=#447700>! Perturbation field passed in: field_(u,v,t)_tend_perturb<a name='551'></font>
+<font color=#447700>! field_(u,v,t)_tend_perturb=r(u,v,t)_tendf_stoch if perturb_bdy=1<a name='552'></font>
+<font color=#447700>! field_(u,v,t)_tend_perturb=User provided patterns if perturb_bdy=2<a name='553'></font>
+<font color=#447700>! This routine calls spec_bdytend_perturb in share/module_bc.F for u,v,t.<a name='554'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='555'></font>
+<a name='556'>
+<A NAME='SPEC_BDY_DRY_PERTURB'><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_DRY_PERTURB' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='557'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>spec_bdy_dry_perturb</font> ( config_flags,                                   &amp; <A href='../../call_to/SPEC_BDY_DRY_PERTURB.html' TARGET='index'>2</A>,<A href='../../call_from/SPEC_BDY_DRY_PERTURB.html' TARGET='index'>3</A><a name='558'>
+                                     ru_tend, rv_tend, t_tend,mu_2, mub, c1, c2,     &amp;<a name='559'>
+      			             msfu, msfv, msft,                               &amp;<a name='560'>
+                                     field_u_tend_perturb,field_v_tend_perturb,field_t_tend_perturb, &amp;<a name='561'>
+				     spec_bdy_width, spec_zone,  &amp;<a name='562'>
+                                     kme_stoch,                  &amp; <font color=#447700>! stoch dims<a name='563'></font>
+                                     ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='564'></font>
+				     ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='565'></font>
+                                     ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='566'></font>
+                                     its, ite, jts, jte, kts, kte)<a name='567'>
+   IMPLICIT NONE<a name='568'>
+<a name='569'>
+   <font color=#447700>!  Input data.<a name='570'></font>
+   TYPE( grid_config_rec_type ) config_flags<a name='571'>
+<a name='572'>
+<a name='573'>
+   INTEGER ,               INTENT(IN   ) :: ids, ide, jds, jde, kds, kde, &amp;<a name='574'>
+                                            ims, ime, jms, jme, kms, kme, &amp;<a name='575'>
+                                            ips, ipe, jps, jpe, kps, kpe, &amp; <a name='576'>
+                                            its, ite, jts, jte, kts, kte, &amp; <a name='577'>
+                                            kme_stoch<a name='578'>
+   INTEGER ,               INTENT(IN   ) :: spec_bdy_width, spec_zone<a name='579'>
+<a name='580'>
+   REAL , DIMENSION( ims:ime , kms:kme ,jms:jme  ) , INTENT(INOUT) :: ru_tend, &amp;<a name='581'>
+                                                                      rv_tend, &amp;<a name='582'>
+                                                                      t_tend<a name='583'>
+<a name='584'>
+   REAL,  DIMENSION( ims:ime ,           jms:jme ), INTENT(INOUT  )   :: mu_2	<a name='585'>
+   REAL,  DIMENSION( ims:ime ,           jms:jme ), INTENT(INOUT  )   :: mub<a name='586'>
+   REAL,  DIMENSION( ims:ime ,           jms:jme ), INTENT(IN     )   :: msfu<a name='587'>
+   REAL,  DIMENSION( ims:ime ,           jms:jme ), INTENT(IN     )   :: msfv<a name='588'>
+   REAL,  DIMENSION( ims:ime ,           jms:jme ), INTENT(IN     )   :: msft<a name='589'>
+   REAL,  DIMENSION(           kms:kme           ), INTENT(IN     )   :: c1, c2<a name='590'>
+<a name='591'>
+   REAL,  DIMENSION( ims:ime , kms:kme_stoch , jms:jme ), INTENT(IN     )   :: field_u_tend_perturb, &amp;<a name='592'>
+                                                                         field_v_tend_perturb, &amp;<a name='593'>
+                                                                         field_t_tend_perturb<a name='594'>
+<a name='595'>
+         CALL <A href='../../html_code/share/module_bc.F.html#SPEC_BDYTEND_PERTURB'>spec_bdytend_perturb</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_DRY_PERTURB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SPEC_BDYTEND_PERTURB_1"> (   ru_tend,            &amp;<a name='596'>
+                               field_u_tend_perturb,       &amp;<a name='597'>
+                               mu_2,mub, c1, c2,           &amp;<a name='598'>
+                               'u', msfu, config_flags,    &amp;<a name='599'>
+                               spec_bdy_width, spec_zone,  &amp; <a name='600'>
+                               kme_stoch,                  &amp; <font color=#447700>! stoch  dims<a name='601'></font>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='602'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='603'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='604'></font>
+                               its,ite, jts,jte, kts,kte )<a name='605'>
+         CALL <A href='../../html_code/share/module_bc.F.html#SPEC_BDYTEND_PERTURB'>spec_bdytend_perturb</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_DRY_PERTURB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SPEC_BDYTEND_PERTURB_2"> (   rv_tend,            &amp;<a name='606'>
+                               field_v_tend_perturb,       &amp;<a name='607'>
+                               mu_2,mub, c1, c2,           &amp;<a name='608'>
+                               'v', msfv, config_flags,    &amp;<a name='609'>
+                               spec_bdy_width, spec_zone,  &amp;<a name='610'>
+                               kme_stoch,                  &amp; <font color=#447700>! stoch  dims<a name='611'></font>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='612'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='613'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='614'></font>
+                               its,ite, jts,jte, kts,kte )<a name='615'>
+<a name='616'>
+         CALL <A href='../../html_code/share/module_bc.F.html#SPEC_BDYTEND_PERTURB'>spec_bdytend_perturb</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_DRY_PERTURB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SPEC_BDYTEND_PERTURB_3"> (   t_tend,             &amp;<a name='617'>
+                               field_t_tend_perturb,       &amp;<a name='618'>
+                               mu_2,mub, c1, c2,           &amp;<a name='619'>
+                               't', msft, config_flags,    &amp;<a name='620'>
+                               spec_bdy_width, spec_zone,  &amp;<a name='621'>
+                               kme_stoch,                  &amp; <font color=#447700>! stoch  dims<a name='622'></font>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='623'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='624'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='625'></font>
+                               its,ite, jts,jte, kts,kte )<a name='626'>
+<a name='627'>
+   END SUBROUTINE spec_bdy_dry_perturb <a name='628'>
+<a name='629'>
+<a name='630'>
+<a name='631'>
+<font color=#447700>!------------------------------------------------------------------------<a name='632'></font>
+<A NAME='SPEC_BDY_CHEM_PERTURB'><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_CHEM_PERTURB' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='633'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>spec_bdy_chem_perturb</font> (periodic_x,                &amp; <A href='../../call_to/SPEC_BDY_CHEM_PERTURB.html' TARGET='index'>1</A>,<A href='../../call_from/SPEC_BDY_CHEM_PERTURB.html' TARGET='index'>1</A><a name='634'>
+                                     field_bdy_tend_xs, field_bdy_tend_xe, &amp;<a name='635'>
+                                     field_bdy_tend_ys, field_bdy_tend_ye, &amp;<a name='636'>
+                                     field_scalar_perturb, &amp;<a name='637'>
+                                     spec_bdy_width, spec_zone,  &amp;<a name='638'>
+                                     kme_stoch,                  &amp; <font color=#447700>! stoch  dims<a name='639'></font>
+                                     ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='640'></font>
+				     ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='641'></font>
+                                     ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='642'></font>
+                                     its, ite, jts, jte, kts, kte)<a name='643'>
+   IMPLICIT NONE<a name='644'>
+<a name='645'>
+<a name='646'>
+   LOGICAL ,               INTENT(IN   ) :: periodic_x<a name='647'>
+   INTEGER ,               INTENT(IN   ) :: ids, ide, jds, jde, kds, kde, &amp;<a name='648'>
+                                            ims, ime, jms, jme, kms, kme, &amp;<a name='649'>
+                                            ips, ipe, jps, jpe, kps, kpe, &amp; <a name='650'>
+                                            its, ite, jts, jte, kts, kte, &amp; <a name='651'>
+                                            kme_stoch<a name='652'>
+   INTEGER ,               INTENT(IN   ) :: spec_bdy_width, spec_zone<a name='653'>
+<a name='654'>
+   REAL,  DIMENSION( ims:ime , kms:kme , jms:jme ),        INTENT(IN   ) :: field_scalar_perturb<a name='655'>
+   REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width ), INTENT(INOUT) :: field_bdy_tend_xs, field_bdy_tend_xe<a name='656'>
+   REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width ), INTENT(INOUT) :: field_bdy_tend_ys, field_bdy_tend_ye<a name='657'>
+<a name='658'>
+<a name='659'>
+         CALL <A href='../../html_code/share/module_bc.F.html#SPEC_BDYTEND_PERTURB_CHEM'>spec_bdytend_perturb_chem</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_CHEM_PERTURB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SPEC_BDYTEND_PERTURB_CHEM_1"> ( field_bdy_tend_xs, field_bdy_tend_xe, &amp;<a name='660'>
+                                          field_bdy_tend_ys, field_bdy_tend_ye, &amp;<a name='661'>
+                                          field_scalar_perturb, 'c',       &amp;<a name='662'>
+                                          periodic_x,                 &amp;<a name='663'>
+                                          spec_bdy_width, spec_zone,  &amp;<a name='664'>
+                                          kme_stoch,                  &amp; <a name='665'>
+                                          ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='666'></font>
+                                          ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='667'></font>
+                                          ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='668'></font>
+                                          its,ite, jts,jte, kts,kte )<a name='669'>
+<a name='670'>
+   END SUBROUTINE spec_bdy_chem_perturb   <a name='671'>
+<a name='672'>
+<a name='673'>
+<a name='674'>
+<font color=#447700>!------------------------------------------------------------------------<a name='675'></font>
+<A NAME='SPEC_BDY_SCALAR'><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_SCALAR' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='676'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>spec_bdy_scalar</font> ( scalar_tend,    &amp; <A href='../../call_to/SPEC_BDY_SCALAR.html' TARGET='index'>4</A>,<A href='../../call_from/SPEC_BDY_SCALAR.html' TARGET='index'>1</A><a name='677'>
+                          scalar_bxs,scalar_bxe,scalar_bys,scalar_bye,  &amp;<a name='678'>
+                          scalar_btxs,scalar_btxe,scalar_btys,scalar_btye, &amp;<a name='679'>
+                          spec_bdy_width, spec_zone,                   &amp;<a name='680'>
+                          config_flags,               &amp;<a name='681'>
+                          ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='682'></font>
+                          ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='683'></font>
+                          ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='684'></font>
+                          its, ite, jts, jte, kts, kte)<a name='685'>
+   IMPLICIT NONE<a name='686'>
+<a name='687'>
+   <font color=#447700>!  Input data.<a name='688'></font>
+   TYPE( grid_config_rec_type ) config_flags<a name='689'>
+<a name='690'>
+<a name='691'>
+   INTEGER ,               INTENT(IN   ) :: ids, ide, jds, jde, kds, kde, &amp;<a name='692'>
+                                            ims, ime, jms, jme, kms, kme, &amp;<a name='693'>
+                                            ips, ipe, jps, jpe, kps, kpe, &amp; <a name='694'>
+                                            its, ite, jts, jte, kts, kte<a name='695'>
+   INTEGER ,               INTENT(IN   ) :: spec_bdy_width, spec_zone<a name='696'>
+<a name='697'>
+   REAL , DIMENSION( ims:ime , kms:kme, jms:jme  ) , INTENT(OUT  ) :: scalar_tend<a name='698'>
+<a name='699'>
+   REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width    ), INTENT(IN   ) :: scalar_bxs,scalar_bxe, &amp;<a name='700'>
+                                                                               scalar_btxs,scalar_btxe<a name='701'>
+<a name='702'>
+   REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width    ), INTENT(IN   ) :: scalar_bys,scalar_bye, &amp;<a name='703'>
+                                                                               scalar_btys,scalar_btye<a name='704'>
+<a name='705'>
+<font color=#447700>!Local<a name='706'></font>
+   INTEGER :: i,j,k<a name='707'>
+<a name='708'>
+<a name='709'>
+         CALL <A href='../../html_code/share/module_bc.F.html#SPEC_BDYTEND'>spec_bdytend</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SPEC_BDY_SCALAR' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SPEC_BDYTEND_7"> (   scalar_tend,                &amp;<a name='710'>
+                               scalar_bxs,scalar_bxe,scalar_bys,scalar_bye, scalar_btxs,scalar_btxe,scalar_btys,scalar_btye,    &amp;<a name='711'>
+                               'q'     , config_flags, &amp;<a name='712'>
+                               spec_bdy_width, spec_zone, &amp;<a name='713'>
+                               ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='714'></font>
+                               ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='715'></font>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='716'></font>
+                               its,ite, jts,jte, kts,kte )<a name='717'>
+<a name='718'>
+<a name='719'>
+   END SUBROUTINE spec_bdy_scalar <a name='720'>
+<a name='721'>
+<font color=#447700>!------------------------------------------------------------------------<a name='722'></font>
+<a name='723'>
+<A NAME='SET_PHYS_BC_DRY_1'><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='724'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_phys_bc_dry_1</font>( config_flags, u_1, u_2, v_1, v_2,   &amp;,<A href='../../call_from/SET_PHYS_BC_DRY_1.html' TARGET='index'>14</A><a name='725'>
+                                 rw_1, rw_2, w_1, w_2,           &amp;<a name='726'>
+                                 t_1, t_2, tp_1, tp_2, pp, pip,  &amp;<a name='727'>
+                                 ids,ide, jds,jde, kds,kde,      &amp;<a name='728'>
+                                 ims,ime, jms,jme, kms,kme,      &amp;<a name='729'>
+                                 ips,ipe, jps,jpe, kps,kpe,      &amp;<a name='730'>
+                                 its,ite, jts,jte, kts,kte      )<a name='731'>
+<a name='732'>
+<font color=#447700>!<a name='733'></font>
+<font color=#447700>!  this is just a wrapper to call the boundary condition routines<a name='734'></font>
+<font color=#447700>!  for each variable<a name='735'></font>
+<font color=#447700>!<a name='736'></font>
+<a name='737'>
+      IMPLICIT NONE<a name='738'>
+<a name='739'>
+      INTEGER,      INTENT(IN   )    :: ids,ide, jds,jde, kds,kde<a name='740'>
+      INTEGER,      INTENT(IN   )    :: ims,ime, jms,jme, kms,kme<a name='741'>
+      INTEGER,      INTENT(IN   )    :: ips,ipe, jps,jpe, kps,kpe<a name='742'>
+      INTEGER,      INTENT(IN   )    :: its,ite, jts,jte, kts,kte<a name='743'>
+<a name='744'>
+      TYPE( grid_config_rec_type ) config_flags<a name='745'>
+<a name='746'>
+      REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(INOUT) :: &amp;<a name='747'>
+           u_1,u_2, v_1, v_2, rw_1, rw_2, w_1, w_2,                  &amp;<a name='748'>
+           t_1, t_2, tp_1, tp_2, pp, pip<a name='749'>
+<a name='750'>
+<a name='751'>
+<a name='752'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_15">( u_1  , 'u', config_flags,               &amp;<a name='753'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='754'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='755'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='756'>
+                              its, ite, jts, jte, kts, kte )<a name='757'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_16">( u_2  , 'u', config_flags,               &amp;<a name='758'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='759'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='760'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='761'>
+                              its, ite, jts, jte, kts, kte )<a name='762'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_17">( v_1  , 'v', config_flags,               &amp;<a name='763'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='764'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='765'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='766'>
+                              its, ite, jts, jte, kts, kte )<a name='767'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_18">( v_2  , 'v', config_flags,               &amp;<a name='768'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='769'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='770'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='771'>
+                              its, ite, jts, jte, kts, kte )<a name='772'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_19">( rw_1 , 'w', config_flags,               &amp;<a name='773'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='774'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='775'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='776'>
+                              its, ite, jts, jte, kts, kte )<a name='777'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_20">( rw_2 , 'w', config_flags,               &amp;<a name='778'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='779'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='780'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='781'>
+                              its, ite, jts, jte, kts, kte )<a name='782'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_21">( w_1  , 'w', config_flags,               &amp;<a name='783'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='784'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='785'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='786'>
+                              its, ite, jts, jte, kts, kte )<a name='787'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_22">( w_2  , 'w', config_flags,               &amp;<a name='788'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='789'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='790'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='791'>
+                              its, ite, jts, jte, kts, kte )<a name='792'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_23">( t_1, 'p', config_flags,                 &amp;<a name='793'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='794'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='795'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='796'>
+                              its, ite, jts, jte, kts, kte )<a name='797'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_24">( t_2, 'p', config_flags,                 &amp;<a name='798'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='799'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='800'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='801'>
+                              its, ite, jts, jte, kts, kte )<a name='802'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_25">( tp_1, 'p', config_flags,                &amp;<a name='803'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='804'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='805'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='806'>
+                              its, ite, jts, jte, kts, kte )<a name='807'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_26">( tp_2, 'p', config_flags,                &amp;<a name='808'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='809'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='810'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='811'>
+                              its, ite, jts, jte, kts, kte )<a name='812'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_27">( pp , 'p', config_flags,                 &amp;<a name='813'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='814'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='815'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='816'>
+                              its, ite, jts, jte, kts, kte )<a name='817'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_28">( pip , 'p', config_flags,                &amp;<a name='818'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='819'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='820'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='821'>
+                              its, ite, jts, jte, kts, kte )<a name='822'>
+<a name='823'>
+  END SUBROUTINE set_phys_bc_dry_1<a name='824'>
+<a name='825'>
+<font color=#447700>!--------------------------------------------------------------<a name='826'></font>
+<a name='827'>
+<A NAME='SET_PHYS_BC_DRY_2'><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='828'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_phys_bc_dry_2</font>( config_flags,                     &amp; <A href='../../call_to/SET_PHYS_BC_DRY_2.html' TARGET='index'>1</A>,<A href='../../call_from/SET_PHYS_BC_DRY_2.html' TARGET='index'>12</A><a name='829'>
+                                 u_1, u_2, v_1, v_2, w_1, w_2,     &amp;<a name='830'>
+                                 t_1, t_2, ph_1, ph_2, mu_1, mu_2, &amp;<a name='831'>
+                                 ids,ide, jds,jde, kds,kde,        &amp;<a name='832'>
+                                 ims,ime, jms,jme, kms,kme,        &amp;<a name='833'>
+                                 ips,ipe, jps,jpe, kps,kpe,        &amp;<a name='834'>
+                                 its,ite, jts,jte, kts,kte        )<a name='835'>
+<a name='836'>
+<font color=#447700>!<a name='837'></font>
+<font color=#447700>!  this is just a wrapper to call the boundary condition routines<a name='838'></font>
+<font color=#447700>!  for each variable<a name='839'></font>
+<font color=#447700>!<a name='840'></font>
+<a name='841'>
+      IMPLICIT NONE<a name='842'>
+<a name='843'>
+      TYPE( grid_config_rec_type ) config_flags<a name='844'>
+<a name='845'>
+      INTEGER,      INTENT(IN   )    :: ids,ide, jds,jde, kds,kde<a name='846'>
+      INTEGER,      INTENT(IN   )    :: ims,ime, jms,jme, kms,kme<a name='847'>
+      INTEGER,      INTENT(IN   )    :: ips,ipe, jps,jpe, kps,kpe<a name='848'>
+      INTEGER,      INTENT(IN   )    :: its,ite, jts,jte, kts,kte<a name='849'>
+<a name='850'>
+      REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(INOUT) :: &amp;<a name='851'>
+         u_1, u_2, v_1, v_2, w_1, w_2,                       &amp;<a name='852'>
+         t_1, t_2, ph_1, ph_2<a name='853'>
+<a name='854'>
+      REAL, DIMENSION( ims:ime, jms:jme ), INTENT(INOUT) :: &amp;<a name='855'>
+                             mu_1, mu_2<a name='856'>
+<a name='857'>
+<a name='858'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_29">( u_1, 'U', config_flags,           &amp;<a name='859'>
+                              ids, ide, jds, jde, kds, kde, &amp;<a name='860'>
+                              ims, ime, jms, jme, kms, kme, &amp;<a name='861'>
+                              ips, ipe, jps, jpe, kps, kpe, &amp;<a name='862'>
+                              its, ite, jts, jte, kts, kte )<a name='863'>
+<a name='864'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_30">( u_2, 'U', config_flags,           &amp;<a name='865'>
+                              ids, ide, jds, jde, kds, kde, &amp;<a name='866'>
+                              ims, ime, jms, jme, kms, kme, &amp;<a name='867'>
+                              ips, ipe, jps, jpe, kps, kpe, &amp;<a name='868'>
+                              its, ite, jts, jte, kts, kte )<a name='869'>
+<a name='870'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_31">( v_1 , 'V', config_flags,          &amp;<a name='871'>
+                              ids, ide, jds, jde, kds, kde, &amp;<a name='872'>
+                              ims, ime, jms, jme, kms, kme, &amp;<a name='873'>
+                              ips, ipe, jps, jpe, kps, kpe, &amp;<a name='874'>
+                              its, ite, jts, jte, kts, kte )<a name='875'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_32">( v_2 , 'V', config_flags,          &amp;<a name='876'>
+                              ids, ide, jds, jde, kds, kde, &amp;<a name='877'>
+                              ims, ime, jms, jme, kms, kme, &amp;<a name='878'>
+                              ips, ipe, jps, jpe, kps, kpe, &amp;<a name='879'>
+                              its, ite, jts, jte, kts, kte )<a name='880'>
+<a name='881'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_33">( w_1, 'w', config_flags,           &amp;<a name='882'>
+                              ids, ide, jds, jde, kds, kde, &amp;<a name='883'>
+                              ims, ime, jms, jme, kms, kme, &amp;<a name='884'>
+                              ips, ipe, jps, jpe, kps, kpe, &amp;<a name='885'>
+                              its, ite, jts, jte, kts, kte )<a name='886'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_34">( w_2, 'w', config_flags,           &amp;<a name='887'>
+                              ids, ide, jds, jde, kds, kde, &amp;<a name='888'>
+                              ims, ime, jms, jme, kms, kme, &amp;<a name='889'>
+                              ips, ipe, jps, jpe, kps, kpe, &amp;<a name='890'>
+                              its, ite, jts, jte, kts, kte )<a name='891'>
+<a name='892'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_35">( t_1, 'p', config_flags,           &amp;<a name='893'>
+                              ids, ide, jds, jde, kds, kde, &amp;<a name='894'>
+                              ims, ime, jms, jme, kms, kme, &amp;<a name='895'>
+                              ips, ipe, jps, jpe, kps, kpe, &amp;<a name='896'>
+                              its, ite, jts, jte, kts, kte )<a name='897'>
+<a name='898'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_36">( t_2, 'p', config_flags,           &amp;<a name='899'>
+                              ids, ide, jds, jde, kds, kde, &amp;<a name='900'>
+                              ims, ime, jms, jme, kms, kme, &amp;<a name='901'>
+                              ips, ipe, jps, jpe, kps, kpe, &amp;<a name='902'>
+                              its, ite, jts, jte, kts, kte )<a name='903'>
+<a name='904'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_37">( ph_1 , 'w', config_flags,         &amp;<a name='905'>
+                              ids, ide, jds, jde, kds, kde, &amp;<a name='906'>
+                              ims, ime, jms, jme, kms, kme, &amp;<a name='907'>
+                              ips, ipe, jps, jpe, kps, kpe, &amp;<a name='908'>
+                              its, ite, jts, jte, kts, kte )<a name='909'>
+<a name='910'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_38">( ph_2 , 'w', config_flags,         &amp;<a name='911'>
+                              ids, ide, jds, jde, kds, kde, &amp;<a name='912'>
+                              ims, ime, jms, jme, kms, kme, &amp;<a name='913'>
+                              ips, ipe, jps, jpe, kps, kpe, &amp;<a name='914'>
+                              its, ite, jts, jte, kts, kte )<a name='915'>
+<a name='916'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC2D'>set_physical_bc2d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC2D_4">( mu_1, 't', config_flags, &amp;<a name='917'>
+                              ids, ide, jds, jde,  &amp;<a name='918'>
+                              ims, ime, jms, jme,  &amp;<a name='919'>
+                              ips, ipe, jps, jpe,  &amp;<a name='920'>
+                              its, ite, jts, jte  )<a name='921'>
+<a name='922'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC2D'>set_physical_bc2d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC2D_5">( mu_2, 't', config_flags, &amp;<a name='923'>
+                              ids, ide, jds, jde,  &amp;<a name='924'>
+                              ims, ime, jms, jme,  &amp;<a name='925'>
+                              ips, ipe, jps, jpe,  &amp;<a name='926'>
+                              its, ite, jts, jte  )<a name='927'>
+<a name='928'>
+   END SUBROUTINE set_phys_bc_dry_2<a name='929'>
+<a name='930'>
+<font color=#447700>!------------------------------------------------------------------------<a name='931'></font>
+<a name='932'>
+<A NAME='SET_PHYS_BC_SMALLSTEP_1'><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_SMALLSTEP_1' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='933'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_phys_bc_smallstep_1</font>( config_flags, ru_1, du, rv_1, dv,   &amp;,<A href='../../call_from/SET_PHYS_BC_SMALLSTEP_1.html' TARGET='index'>4</A><a name='934'>
+                                       ids,ide, jds,jde, kds,kde,      &amp;<a name='935'>
+                                       ims,ime, jms,jme, kms,kme,      &amp;<a name='936'>
+                                       ips,ipe, jps,jpe, kps,kpe,      &amp;<a name='937'>
+                                       its,ite, jts,jte, kts,kte      )<a name='938'>
+<a name='939'>
+<font color=#447700>!<a name='940'></font>
+<font color=#447700>!  this is just a wrapper to call the boundary condition routines<a name='941'></font>
+<font color=#447700>!  for each variable<a name='942'></font>
+<font color=#447700>!<a name='943'></font>
+<a name='944'>
+      IMPLICIT NONE<a name='945'>
+<a name='946'>
+      INTEGER,      INTENT(IN   )    :: ids,ide, jds,jde, kds,kde<a name='947'>
+      INTEGER,      INTENT(IN   )    :: ims,ime, jms,jme, kms,kme<a name='948'>
+      INTEGER,      INTENT(IN   )    :: ips,ipe, jps,jpe, kps,kpe<a name='949'>
+      INTEGER,      INTENT(IN   )    :: its,ite, jts,jte, kts,kte<a name='950'>
+<a name='951'>
+      TYPE( grid_config_rec_type ) config_flags<a name='952'>
+<a name='953'>
+      REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(INOUT) :: &amp;<a name='954'>
+           ru_1,du, rv_1, dv<a name='955'>
+<a name='956'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_SMALLSTEP_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_39">( ru_1  , 'u', config_flags,              &amp;<a name='957'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='958'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='959'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='960'>
+                              its, ite, jts, jte, kts, kde )<a name='961'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_SMALLSTEP_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_40">( du , 'u', config_flags,                 &amp;<a name='962'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='963'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='964'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='965'>
+                              its, ite, jts, jte, kts, kde )<a name='966'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_SMALLSTEP_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_41">( rv_1  , 'v', config_flags,              &amp;<a name='967'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='968'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='969'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='970'>
+                              its, ite, jts, jte, kts, kde )<a name='971'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_PHYS_BC_SMALLSTEP_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_42">( dv  , 'v', config_flags,                &amp;<a name='972'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='973'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='974'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='975'>
+                              its, ite, jts, jte, kts, kde )<a name='976'>
+<a name='977'>
+  END SUBROUTINE set_phys_bc_smallstep_1<a name='978'>
+<a name='979'>
+<font color=#447700>!-------------------------------------------------------------------<a name='980'></font>
+<a name='981'>
+<A NAME='RK_PHYS_BC_DRY_1'><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_1' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='982'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>rk_phys_bc_dry_1</font>( config_flags, u, v, rw, w,  &amp; <A href='../../call_to/RK_PHYS_BC_DRY_1.html' TARGET='index'>1</A>,<A href='../../call_from/RK_PHYS_BC_DRY_1.html' TARGET='index'>10</A><a name='983'>
+                                muu, muv, mut, php, alt, p, &amp;<a name='984'>
+                                ids,ide, jds,jde, kds,kde,  &amp;<a name='985'>
+                                ims,ime, jms,jme, kms,kme,  &amp;<a name='986'>
+                                ips,ipe, jps,jpe, kps,kpe,  &amp;<a name='987'>
+                                its,ite, jts,jte, kts,kte  )<a name='988'>
+<a name='989'>
+<font color=#447700>!<a name='990'></font>
+<font color=#447700>!  this is just a wrapper to call the boundary condition routines<a name='991'></font>
+<font color=#447700>!  for each variable<a name='992'></font>
+<font color=#447700>!<a name='993'></font>
+<a name='994'>
+      IMPLICIT NONE<a name='995'>
+<a name='996'>
+      INTEGER,      INTENT(IN   )    :: ids,ide, jds,jde, kds,kde<a name='997'>
+      INTEGER,      INTENT(IN   )    :: ims,ime, jms,jme, kms,kme<a name='998'>
+      INTEGER,      INTENT(IN   )    :: ips,ipe, jps,jpe, kps,kpe<a name='999'>
+      INTEGER,      INTENT(IN   )    :: its,ite, jts,jte, kts,kte<a name='1000'>
+<a name='1001'>
+      TYPE( grid_config_rec_type ) config_flags<a name='1002'>
+<a name='1003'>
+      REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                    &amp;<a name='1004'>
+                                INTENT(INOUT) ::  u, v, rw, w, php, alt, p<a name='1005'>
+      REAL, DIMENSION( ims:ime, jms:jme ),                             &amp;<a name='1006'>
+                                INTENT(INOUT) ::    muu, muv, mut<a name='1007'>
+<a name='1008'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_43">( u  , 'u', config_flags,             &amp;<a name='1009'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='1010'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='1011'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='1012'>
+                              its, ite, jts, jte, kts, kte )<a name='1013'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_44">( v  , 'v', config_flags,             &amp;<a name='1014'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='1015'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='1016'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='1017'>
+                              its, ite, jts, jte, kts, kte )<a name='1018'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_45">(rw , 'w', config_flags,              &amp;<a name='1019'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='1020'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='1021'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='1022'>
+                              its, ite, jts, jte, kts, kte )<a name='1023'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_46">( w , 'w', config_flags,              &amp;<a name='1024'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='1025'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='1026'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='1027'>
+                              its, ite, jts, jte, kts, kte )<a name='1028'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_47">( php , 'w', config_flags,            &amp;<a name='1029'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='1030'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='1031'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='1032'>
+                              its, ite, jts, jte, kts, kte )<a name='1033'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_48">( alt, 't', config_flags,             &amp;<a name='1034'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='1035'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='1036'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='1037'>
+                              its, ite, jts, jte, kts, kte )<a name='1038'>
+<a name='1039'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_49">( p, 'p', config_flags,               &amp;<a name='1040'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='1041'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='1042'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='1043'>
+                              its, ite, jts, jte, kts, kte )<a name='1044'>
+<a name='1045'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC2D'>set_physical_bc2d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC2D_6">( muu, 'u', config_flags,  &amp;<a name='1046'>
+                              ids, ide, jds, jde,      &amp;<a name='1047'>
+                              ims, ime, jms, jme,      &amp;<a name='1048'>
+                              ips, ipe, jps, jpe,      &amp;<a name='1049'>
+                              its, ite, jts, jte  )<a name='1050'>
+<a name='1051'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC2D'>set_physical_bc2d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC2D_7">( muv, 'v', config_flags,  &amp;<a name='1052'>
+                              ids, ide, jds, jde,      &amp;<a name='1053'>
+                              ims, ime, jms, jme,      &amp;<a name='1054'>
+                              ips, ipe, jps, jpe,      &amp;<a name='1055'>
+                              its, ite, jts, jte  )<a name='1056'>
+<a name='1057'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC2D'>set_physical_bc2d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC2D_8">( mut, 't', config_flags,  &amp;<a name='1058'>
+                              ids, ide, jds, jde,      &amp;<a name='1059'>
+                              ims, ime, jms, jme,      &amp;<a name='1060'>
+                              ips, ipe, jps, jpe,      &amp;<a name='1061'>
+                              its, ite, jts, jte  )<a name='1062'>
+<a name='1063'>
+  END SUBROUTINE rk_phys_bc_dry_1<a name='1064'>
+<a name='1065'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1066'></font>
+<a name='1067'>
+<A NAME='RK_PHYS_BC_DRY_2'><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_2' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1068'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>rk_phys_bc_dry_2</font>( config_flags, u, v, w,      &amp; <A href='../../call_to/RK_PHYS_BC_DRY_2.html' TARGET='index'>1</A>,<A href='../../call_from/RK_PHYS_BC_DRY_2.html' TARGET='index'>6</A><a name='1069'>
+                               t, ph, mu,                  &amp;<a name='1070'>
+                               ids,ide, jds,jde, kds,kde,  &amp;<a name='1071'>
+                               ims,ime, jms,jme, kms,kme,  &amp;<a name='1072'>
+                               ips,ipe, jps,jpe, kps,kpe,  &amp;<a name='1073'>
+                               its,ite, jts,jte, kts,kte  )<a name='1074'>
+<a name='1075'>
+<font color=#447700>!<a name='1076'></font>
+<font color=#447700>!  this is just a wrapper to call the boundary condition routines<a name='1077'></font>
+<font color=#447700>!  for each variable<a name='1078'></font>
+<font color=#447700>!<a name='1079'></font>
+<a name='1080'>
+      IMPLICIT NONE<a name='1081'>
+<a name='1082'>
+      INTEGER,      INTENT(IN   )    :: ids,ide, jds,jde, kds,kde<a name='1083'>
+      INTEGER,      INTENT(IN   )    :: ims,ime, jms,jme, kms,kme<a name='1084'>
+      INTEGER,      INTENT(IN   )    :: ips,ipe, jps,jpe, kps,kpe<a name='1085'>
+      INTEGER,      INTENT(IN   )    :: its,ite, jts,jte, kts,kte<a name='1086'>
+<a name='1087'>
+      TYPE( grid_config_rec_type ) config_flags<a name='1088'>
+<a name='1089'>
+      REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(INOUT) :: &amp;<a name='1090'>
+                             u, v, w, t, ph<a name='1091'>
+<a name='1092'>
+      REAL, DIMENSION( ims:ime, jms:jme ), INTENT(INOUT) :: &amp;<a name='1093'>
+                             mu<a name='1094'>
+<a name='1095'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_50">( u   , 'U', config_flags,            &amp;<a name='1096'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='1097'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='1098'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='1099'>
+                              its, ite, jts, jte, kts, kte )<a name='1100'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_51">( v   , 'V', config_flags,            &amp;<a name='1101'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='1102'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='1103'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='1104'>
+                              its, ite, jts, jte, kts, kte )<a name='1105'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_52">( w  , 'w', config_flags,             &amp;<a name='1106'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='1107'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='1108'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='1109'>
+                              its, ite, jts, jte, kts, kte )<a name='1110'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_53">( t, 'p', config_flags,               &amp;<a name='1111'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='1112'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='1113'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='1114'>
+                              its, ite, jts, jte, kts, kte )<a name='1115'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC3D'>set_physical_bc3d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC3D_54">( ph  , 'w', config_flags,            &amp;<a name='1116'>
+                              ids, ide, jds, jde, kds, kde,       &amp;<a name='1117'>
+                              ims, ime, jms, jme, kms, kme,       &amp;<a name='1118'>
+                              ips, ipe, jps, jpe, kps, kpe,       &amp;<a name='1119'>
+                              its, ite, jts, jte, kts, kte )<a name='1120'>
+<a name='1121'>
+      CALL <A href='../../html_code/share/module_bc.F.html#SET_PHYSICAL_BC2D'>set_physical_bc2d</A><A href='../../html_code/dyn_em/module_bc_em.F.html#RK_PHYS_BC_DRY_2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PHYSICAL_BC2D_9">( mu, 't', config_flags, &amp;<a name='1122'>
+                              ids, ide, jds, jde,    &amp;<a name='1123'>
+                              ims, ime, jms, jme,    &amp;<a name='1124'>
+                              ips, ipe, jps, jpe,    &amp;<a name='1125'>
+                              its, ite, jts, jte    )<a name='1126'>
+<a name='1127'>
+  END SUBROUTINE rk_phys_bc_dry_2<a name='1128'>
+<a name='1129'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1130'></font>
+<a name='1131'>
+<A NAME='ZERO_BDYTEND'><A href='../../html_code/dyn_em/module_bc_em.F.html#ZERO_BDYTEND' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1132'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>zero_bdytend</font>  (                                                  &amp; <A href='../../call_to/ZERO_BDYTEND.html' TARGET='index'>1</A>,<A href='../../call_from/ZERO_BDYTEND.html' TARGET='index'>1</A><a name='1133'>
+                              u_btxs,u_btxe,u_btys,u_btye,                     &amp;<a name='1134'>
+                              v_btxs,v_btxe,v_btys,v_btye,                     &amp;<a name='1135'>
+                              ph_btxs,ph_btxe,ph_btys,ph_btye,                 &amp;<a name='1136'>
+                              t_btxs,t_btxe,t_btys,t_btye,                     &amp;<a name='1137'>
+                              w_btxs,w_btxe,w_btys,w_btye,                     &amp;<a name='1138'>
+                              mu_btxs,mu_btxe,mu_btys,mu_btye,                 &amp;<a name='1139'>
+                              moist_btxs,moist_btxe,   &amp;<a name='1140'>
+                              moist_btys,moist_btye,   &amp;<a name='1141'>
+                              scalar_btxs,scalar_btxe,   &amp;<a name='1142'>
+                              scalar_btys,scalar_btye,   &amp;<a name='1143'>
+                              spec_bdy_width,n_moist,n_scalar,                 &amp;<a name='1144'>
+                              ids,ide, jds,jde, kds,kde,  &amp; <font color=#447700>! domain dims<a name='1145'></font>
+                              ims,ime, jms,jme, kms,kme,  &amp; <font color=#447700>! memory dims<a name='1146'></font>
+                              ips,ipe, jps,jpe, kps,kpe,  &amp; <font color=#447700>! patch  dims<a name='1147'></font>
+                              its,ite, jts,jte, kts,kte   )<a name='1148'>
+   IMPLICIT NONE<a name='1149'>
+<a name='1150'>
+   <font color=#447700>!  Input data.<a name='1151'></font>
+<a name='1152'>
+   INTEGER ,               INTENT(IN   ) :: spec_bdy_width, n_moist,n_scalar<a name='1153'>
+<a name='1154'>
+   INTEGER ,               INTENT(IN   ) :: ids, ide, jds, jde, kds, kde, &amp;<a name='1155'>
+                                            ims, ime, jms, jme, kms, kme, &amp;<a name='1156'>
+                                            ips, ipe, jps, jpe, kps, kpe, &amp;<a name='1157'>
+                                            its, ite, jts, jte, kts, kte<a name='1158'>
+<a name='1159'>
+   REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width    ), INTENT(INOUT) :: u_btxs,u_btxe, &amp;<a name='1160'>
+                                                                               v_btxs,v_btxe, &amp;<a name='1161'>
+                                                                               ph_btxs,ph_btxe, &amp;<a name='1162'>
+                                                                               w_btxs,w_btxe, &amp;<a name='1163'>
+                                                                               t_btxs,t_btxe<a name='1164'>
+<a name='1165'>
+   REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width    ), INTENT(INOUT) :: u_btys,u_btye, &amp;<a name='1166'>
+                                                                               v_btys,v_btye, &amp;<a name='1167'>
+                                                                               ph_btys,ph_btye, &amp;<a name='1168'>
+                                                                               w_btys,w_btye, &amp;<a name='1169'>
+                                                                               t_btys,t_btye<a name='1170'>
+<a name='1171'>
+   REAL,  DIMENSION( jms:jme , 1:1     , spec_bdy_width    ), INTENT(INOUT) :: mu_btxs,mu_btxe<a name='1172'>
+   REAL,  DIMENSION( ims:ime , 1:1     , spec_bdy_width    ), INTENT(INOUT) :: mu_btys,mu_btye<a name='1173'>
+<a name='1174'>
+   REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width , n_moist ), INTENT(INOUT) :: moist_btxs,moist_btxe<a name='1175'>
+   REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width , n_moist ), INTENT(INOUT) :: moist_btys,moist_btye<a name='1176'>
+<a name='1177'>
+   REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width , n_scalar ), INTENT(INOUT) :: scalar_btxs,scalar_btxe<a name='1178'>
+   REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width , n_scalar ), INTENT(INOUT) :: scalar_btys,scalar_btye<a name='1179'>
+<a name='1180'>
+<a name='1181'>
+<font color=#447700>! setting bdy tendencies to zero during DFI<a name='1182'></font>
+<a name='1183'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/dyn_em/module_bc_em.F.html#ZERO_BDYTEND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_2">( 10, 'In zero_bdytend, setting bdy tendencies to 0 during DFI' )<a name='1184'>
+       u_btxs = 0.<a name='1185'>
+       u_btxe = 0.<a name='1186'>
+       u_btys = 0.<a name='1187'>
+       u_btye = 0.<a name='1188'>
+       v_btxs = 0.<a name='1189'>
+       v_btxe = 0.<a name='1190'>
+       v_btys = 0.<a name='1191'>
+       v_btye = 0.<a name='1192'>
+       t_btxs = 0.<a name='1193'>
+       t_btxe = 0.<a name='1194'>
+       t_btys = 0.<a name='1195'>
+       t_btye = 0.<a name='1196'>
+       ph_btxs = 0.<a name='1197'>
+       ph_btxe = 0.<a name='1198'>
+       ph_btys = 0.<a name='1199'>
+       ph_btye = 0.<a name='1200'>
+       mu_btxs = 0.<a name='1201'>
+       mu_btxe = 0.<a name='1202'>
+       mu_btys = 0.<a name='1203'>
+       mu_btye = 0.<a name='1204'>
+       moist_btxs = 0.<a name='1205'>
+       moist_btxe = 0.<a name='1206'>
+       moist_btys = 0.<a name='1207'>
+       moist_btye = 0.<a name='1208'>
+       scalar_btxs = 0.<a name='1209'>
+       scalar_btxe = 0.<a name='1210'>
+       scalar_btys = 0.<a name='1211'>
+       scalar_btye = 0.<a name='1212'>
+<a name='1213'>
+<a name='1214'>
+<font color=#447700>!  ENDIF<a name='1215'></font>
+<a name='1216'>
+   END SUBROUTINE zero_bdytend<a name='1217'>
+<a name='1218'>
+<font color=#447700>!---------------------------------------------------------------------<a name='1219'></font>
+<a name='1220'>
+<A NAME='SET_W_SURFACE'><A href='../../html_code/dyn_em/module_bc_em.F.html#SET_W_SURFACE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1221'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_w_surface</font>( config_flags, znw, fill_w_flag,              &amp; <A href='../../call_to/SET_W_SURFACE.html' TARGET='index'>3</A><a name='1222'>
+                            w, ht, u, v, cf1, cf2, cf3, rdx, rdy,        &amp;<a name='1223'>
+                            msftx, msfty,                                &amp;<a name='1224'>
+                            ids, ide, jds, jde, kds, kde,                &amp;<a name='1225'>
+                            ims, ime, jms, jme, kms, kme,                &amp;<a name='1226'>
+                            its, ite, jts, jte, kts, kte                 )<a name='1227'>
+     implicit none<a name='1228'>
+<a name='1229'>
+     TYPE( grid_config_rec_type ) config_flags<a name='1230'>
+<a name='1231'>
+     INTEGER ,       INTENT(IN   ) :: ids, ide, jds, jde, kds, kde, &amp;<a name='1232'>
+                                      ims, ime, jms, jme, kms, kme, &amp;<a name='1233'>
+                                      its, ite, jts, jte, kts, kte<a name='1234'>
+<a name='1235'>
+     REAL :: rdx, rdy, cf1, cf2, cf3<a name='1236'>
+<a name='1237'>
+     REAL , DIMENSION(  ims:ime , kms:kme, jms:jme ) ,                      &amp;<a name='1238'>
+                                                 INTENT(IN   ) ::  u,       &amp;<a name='1239'>
+                                                                   v<a name='1240'>
+<a name='1241'>
+     REAL , DIMENSION(  ims:ime , kms:kme, jms:jme ) ,                      &amp;<a name='1242'>
+                                              INTENT(INOUT) ::  w<a name='1243'>
+<a name='1244'>
+     REAL , DIMENSION(  ims:ime , jms:jme ) , INTENT(IN   ) ::  ht,         &amp;<a name='1245'>
+                                                                msftx,      &amp;<a name='1246'>
+                                                                msfty<a name='1247'>
+     REAL , DIMENSION( kms:kme ) , INTENT(IN   ) ::  znw<a name='1248'>
+  <a name='1249'>
+     LOGICAL, INTENT(IN   ) :: fill_w_flag<a name='1250'>
+<a name='1251'>
+<a name='1252'>
+     INTEGER :: i,j,k<a name='1253'>
+     INTEGER :: ip1,im1,jp1,jm1<a name='1254'>
+     INTEGER :: ip1_limit,im1_limit,jp1_limit,jm1_limit<a name='1255'>
+<a name='1256'>
+<font color=#447700>!  set kinematic lower boundary condition on W<a name='1257'></font>
+<a name='1258'>
+<font color=#447700>!  Comments on directional map scale factors:<a name='1259'></font>
+<font color=#447700>!  Chain rule: if Z=Z(X,Y) [true at the surface] then<a name='1260'></font>
+<font color=#447700>!  dZ/dt = dZ/dX * dX/dt + dZ/dY * dY/dt, U=dX/dt, V=dY/dt<a name='1261'></font>
+<font color=#447700>!  using capitals to denote actual values<a name='1262'></font>
+<font color=#447700>!  in mapped values, u=U, v=V, z=Z, 1/dX=mx/dx, 1/dY=my/dy<a name='1263'></font>
+<font color=#447700>!     =&gt; w = dz/dt = mx u dz/dx + my v dz/dy<a name='1264'></font>
+<font color=#447700>!  [where dz/dx is just the surface height change between x<a name='1265'></font>
+<font color=#447700>!   gridpoints, and dz/dy is the change between y gridpoints]<a name='1266'></font>
+<font color=#447700>!  [NB - cf1, cf2 and cf3 do vertical weighting of u or v values<a name='1267'></font>
+<font color=#447700>!   nearest the surface]<a name='1268'></font>
+<a name='1269'>
+<font color=#447700>! get indices for points next to edge of domain <a name='1270'></font>
+<a name='1271'>
+     jm1_limit = jds        <font color=#447700>! No periodic BC's<a name='1272'></font>
+     jp1_limit = jde-1<a name='1273'>
+     im1_limit = ids<a name='1274'>
+     ip1_limit = ide-1<a name='1275'>
+<a name='1276'>
+     IF ( config_flags%periodic_x ) THEN<a name='1277'>
+       im1_limit = ids-1<a name='1278'>
+       ip1_limit = ide<a name='1279'>
+     ENDIF<a name='1280'>
+<a name='1281'>
+     IF ( config_flags%periodic_y ) THEN<a name='1282'>
+       jm1_limit = jds-1<a name='1283'>
+       jp1_limit = jde<a name='1284'>
+     ENDIF<a name='1285'>
+<a name='1286'>
+     DO j = jts,min(jte,jde-1)<a name='1287'>
+       jm1 = max(j-1, jm1_limit)<a name='1288'>
+       jp1 = min(j+1, jp1_limit)<a name='1289'>
+     DO i = its,min(ite,ide-1)<a name='1290'>
+       im1 = max(i-1, im1_limit)<a name='1291'>
+       ip1 = min(i+1, ip1_limit)<a name='1292'>
+<a name='1293'>
+         w(i,1,j)=  msfty(i,j)*                              &amp;<a name='1294'>
+                  .5*rdy*(                                   &amp;<a name='1295'>
+                           (ht(i,jp1)-ht(i,j  ))             &amp;<a name='1296'>
+          *(cf1*v(i,1,j+1)+cf2*v(i,2,j+1)+cf3*v(i,3,j+1))    &amp;<a name='1297'>
+                          +(ht(i,j  )-ht(i,jm1))             &amp;<a name='1298'>
+          *(cf1*v(i,1,j  )+cf2*v(i,2,j  )+cf3*v(i,3,j  ))  ) &amp;<a name='1299'>
+                    +msftx(i,j)*                             &amp;<a name='1300'>
+                  .5*rdx*(                                   &amp;<a name='1301'>
+                           (ht(ip1,j)-ht(i,j  ))             &amp;<a name='1302'>
+          *(cf1*u(i+1,1,j)+cf2*u(i+1,2,j)+cf3*u(i+1,3,j))    &amp;<a name='1303'>
+                          +(ht(i  ,j)-ht(im1,j))             &amp;<a name='1304'>
+          *(cf1*u(i  ,1,j)+cf2*u(i  ,2,j)+cf3*u(i  ,3,j))  )<a name='1305'>
+<a name='1306'>
+      ENDDO<a name='1307'>
+      ENDDO<a name='1308'>
+<a name='1309'>
+<font color=#447700>! Fill the atmospheric w field with smoothly decaying values<a name='1310'></font>
+      IF (fill_w_flag) THEN<a name='1311'>
+        DO j = jts,min(jte,jde-1)<a name='1312'>
+        DO k = kts+1,kte<a name='1313'>
+        DO i = its,min(ite,ide-1)<a name='1314'>
+          w(i,k,j) = w(i,1,j)*znw(k)*znw(k)<a name='1315'>
+        ENDDO<a name='1316'>
+        ENDDO<a name='1317'>
+        ENDDO<a name='1318'>
+      ENDIF<a name='1319'>
+<a name='1320'>
+  END SUBROUTINE set_w_surface<a name='1321'>
+<a name='1322'>
+<A NAME='LBC_FCX_GCX'><A href='../../html_code/dyn_em/module_bc_em.F.html#LBC_FCX_GCX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1323'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>lbc_fcx_gcx</font> ( fcx , gcx , spec_bdy_width , &amp; <A href='../../call_to/LBC_FCX_GCX.html' TARGET='index'>2</A><a name='1324'>
+                           spec_zone , relax_zone , dt , spec_exp , &amp;<a name='1325'>
+                           specified , nested )<a name='1326'>
+  <a name='1327'>
+     IMPLICIT NONE<a name='1328'>
+  <a name='1329'>
+     INTEGER , INTENT(IN) :: spec_bdy_width , spec_zone , relax_zone<a name='1330'>
+     REAL , INTENT(IN) :: dt , spec_exp<a name='1331'>
+     LOGICAL , INTENT(IN) :: specified , nested<a name='1332'>
+     REAL , DIMENSION(spec_bdy_width) :: fcx , gcx<a name='1333'>
+  <a name='1334'>
+     <font color=#447700>! Local variables.<a name='1335'></font>
+  <a name='1336'>
+     INTEGER :: loop <a name='1337'>
+     REAL :: spongeweight<a name='1338'>
+  <a name='1339'>
+     IF (specified) THEN<a name='1340'>
+       <a name='1341'>
+       <font color=#447700>! Arrays for specified boundary conditions<a name='1342'></font>
+       <a name='1343'>
+       DO loop = spec_zone + 1, spec_zone + relax_zone<a name='1344'>
+         fcx(loop) = 0.1 / dt * (spec_zone + relax_zone - loop) / (relax_zone - 1)<a name='1345'>
+         gcx(loop) = 1.0 / dt / 50. * (spec_zone + relax_zone - loop) / (relax_zone - 1)<a name='1346'>
+         spongeweight=exp(-(loop-(spec_zone + 1))*spec_exp)<a name='1347'>
+         fcx(loop) = fcx(loop)*spongeweight<a name='1348'>
+         gcx(loop) = gcx(loop)*spongeweight<a name='1349'>
+       ENDDO   <a name='1350'>
+       <a name='1351'>
+     ELSE IF (nested) THEN<a name='1352'>
+       <a name='1353'>
+       <font color=#447700>! Arrays for specified boundary conditions<a name='1354'></font>
+       <a name='1355'>
+       DO loop = spec_zone + 1, spec_zone + relax_zone<a name='1356'>
+         fcx(loop) = 0.1 / dt * (spec_zone + relax_zone - loop) / (relax_zone - 1)<a name='1357'>
+         gcx(loop) = 1.0 / dt / 50. * (spec_zone + relax_zone - loop) / (relax_zone - 1)<a name='1358'>
+<font color=#447700>!        spongeweight=EXP(-(loop-2)/3.)<a name='1359'></font>
+<font color=#447700>!        fcx(loop) = fcx(loop)*spongeweight<a name='1360'></font>
+<font color=#447700>!        gcx(loop) = gcx(loop)*spongeweight<a name='1361'></font>
+<font color=#447700>!        fcx(loop) = 0.<a name='1362'></font>
+<font color=#447700>!        gcx(loop) = 0.<a name='1363'></font>
+       ENDDO<a name='1364'>
+       <a name='1365'>
+     ENDIF<a name='1366'>
+  <a name='1367'>
+  END SUBROUTINE lbc_fcx_gcx<a name='1368'>
+<a name='1369'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1370'></font>
+<a name='1371'>
+<A NAME='THETA_AND_THETAM_LBC_ONLY'><A href='../../html_code/dyn_em/module_bc_em.F.html#THETA_AND_THETAM_LBC_ONLY' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1372'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>theta_and_thetam_lbc_only</font> (                              &amp; <A href='../../call_to/THETA_AND_THETAM_LBC_ONLY.html' TARGET='index'>2</A><a name='1373'>
+                                theta_to_thetam,                       &amp;<a name='1374'>
+                                mub,                                   &amp;<a name='1375'>
+                                mu_bdy_xs, mu_bdy_xe,                  &amp;<a name='1376'>
+                                mu_bdy_ys, mu_bdy_ye,                  &amp;<a name='1377'>
+                                mu_bdy_tend_xs, mu_bdy_tend_xe,        &amp;<a name='1378'>
+                                mu_bdy_tend_ys, mu_bdy_tend_ye,        &amp;<a name='1379'>
+                                orig_t_bdy_xs, orig_t_bdy_xe,          &amp;<a name='1380'>
+                                orig_t_bdy_ys, orig_t_bdy_ye,          &amp;<a name='1381'>
+                                orig_t_bdy_tend_xs, orig_t_bdy_tend_xe,&amp;<a name='1382'>
+                                orig_t_bdy_tend_ys, orig_t_bdy_tend_ye,&amp;<a name='1383'>
+                                moist_bdy_xs, moist_bdy_xe,            &amp;<a name='1384'>
+                                moist_bdy_ys, moist_bdy_ye,            &amp;<a name='1385'>
+                                moist_bdy_tend_xs, moist_bdy_tend_xe,  &amp;<a name='1386'>
+                                moist_bdy_tend_ys, moist_bdy_tend_ye,  &amp;<a name='1387'>
+                                spec_bdy_width,                        &amp;<a name='1388'>
+                                dt_interval,                           &amp;<a name='1389'>
+                                ids,ide, jds,jde, kds,kde,             &amp;<a name='1390'>
+                                ims,ime, jms,jme, kms,kme,             &amp;<a name='1391'>
+                                ips,ipe, jps,jpe, kps,kpe,             &amp;<a name='1392'>
+                                its,ite, jts,jte, kts,kte              )<a name='1393'>
+<a name='1394'>
+      IMPLICIT NONE<a name='1395'>
+<a name='1396'>
+      <font color=#447700>!  This routine is called from the solve_em routine.  The purpose is to<a name='1397'></font>
+      <font color=#447700>!  convert the thermal lateral boundary conditions between dry potential<a name='1398'></font>
+      <font color=#447700>!  temperature and moist potential temperature.  The first argument is a <a name='1399'></font>
+      <font color=#447700>!  flag telling us the direction of the conversion:<a name='1400'></font>
+      <font color=#447700>!     True  = convert dry to moist potential temp<a name='1401'></font>
+      <font color=#447700>!     False = convert moist to dry potential temp<a name='1402'></font>
+<a name='1403'>
+      LOGICAL,      INTENT(IN   )    :: theta_to_thetam<a name='1404'>
+<a name='1405'>
+      INTEGER,      INTENT(IN   )    :: ids,ide, jds,jde, kds,kde<a name='1406'>
+      INTEGER,      INTENT(IN   )    :: ims,ime, jms,jme, kms,kme<a name='1407'>
+      INTEGER,      INTENT(IN   )    :: ips,ipe, jps,jpe, kps,kpe<a name='1408'>
+      INTEGER,      INTENT(IN   )    :: its,ite, jts,jte, kts,kte<a name='1409'>
+      INTEGER,      INTENT(IN   )    :: spec_bdy_width<a name='1410'>
+      REAL   ,      INTENT(IN   )    :: dt_interval<a name='1411'>
+<a name='1412'>
+      REAL,  DIMENSION( ims:ime ,           jms:jme        ), INTENT(IN   ) :: mub<a name='1413'>
+<a name='1414'>
+      REAL,  DIMENSION( jms:jme , 1       , spec_bdy_width ), INTENT(IN   ) :: mu_bdy_xs, mu_bdy_xe<a name='1415'>
+      REAL,  DIMENSION( ims:ime , 1       , spec_bdy_width ), INTENT(IN   ) :: mu_bdy_ys, mu_bdy_ye<a name='1416'>
+      REAL,  DIMENSION( jms:jme , 1       , spec_bdy_width ), INTENT(IN   ) :: mu_bdy_tend_xs, mu_bdy_tend_xe<a name='1417'>
+      REAL,  DIMENSION( ims:ime , 1       , spec_bdy_width ), INTENT(IN   ) :: mu_bdy_tend_ys, mu_bdy_tend_ye<a name='1418'>
+<a name='1419'>
+      REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width ), INTENT(INOUT) :: orig_t_bdy_xs, orig_t_bdy_xe<a name='1420'>
+      REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width ), INTENT(INOUT) :: orig_t_bdy_ys, orig_t_bdy_ye<a name='1421'>
+      REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width ), INTENT(INOUT) :: orig_t_bdy_tend_xs, orig_t_bdy_tend_xe<a name='1422'>
+      REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width ), INTENT(INOUT) :: orig_t_bdy_tend_ys, orig_t_bdy_tend_ye<a name='1423'>
+<a name='1424'>
+      REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width ), INTENT(IN   ) :: moist_bdy_xs, moist_bdy_xe<a name='1425'>
+      REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width ), INTENT(IN   ) :: moist_bdy_ys, moist_bdy_ye<a name='1426'>
+      REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width ), INTENT(IN   ) :: moist_bdy_tend_xs, moist_bdy_tend_xe<a name='1427'>
+      REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width ), INTENT(IN   ) :: moist_bdy_tend_ys, moist_bdy_tend_ye<a name='1428'>
+<a name='1429'>
+      <font color=#447700>!  Local variables<a name='1430'></font>
+#ifdef _OPENMP<a name='1431'>
+      INTEGER, EXTERNAL :: omp_get_thread_num<a name='1432'>
+#endif<a name='1433'>
+<a name='1434'>
+      REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width ) :: t_bdy_xs, t_bdy_xe<a name='1435'>
+      REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width ) :: t_bdy_ys, t_bdy_ye<a name='1436'>
+      REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width ) :: t_bdy_tend_xs, t_bdy_tend_xe<a name='1437'>
+      REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width ) :: t_bdy_tend_ys, t_bdy_tend_ye<a name='1438'>
+<a name='1439'>
+      REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width ) :: new_t_bdy_xs, new_t_bdy_xe<a name='1440'>
+      REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width ) :: new_t_bdy_ys, new_t_bdy_ye<a name='1441'>
+      REAL,  DIMENSION( jms:jme , kds:kde , spec_bdy_width ) :: new_t_bdy_tend_xs, new_t_bdy_tend_xe<a name='1442'>
+      REAL,  DIMENSION( ims:ime , kds:kde , spec_bdy_width ) :: new_t_bdy_tend_ys, new_t_bdy_tend_ye<a name='1443'>
+<a name='1444'>
+      INTEGER    :: i, j, k, ii, jj<a name='1445'>
+<a name='1446'>
+      REAL :: dt_time_until_next_lbc<a name='1447'>
+<a name='1448'>
+      REAL :: mu_old_bdy_xs         , mu_old_bdy_xe<a name='1449'>
+      REAL :: mu_old_bdy_ys         , mu_old_bdy_ye<a name='1450'>
+      REAL :: mu_new_bdy_xs         , mu_new_bdy_xe<a name='1451'>
+      REAL :: mu_new_bdy_ys         , mu_new_bdy_ye<a name='1452'>
+<a name='1453'>
+      REAL :: t_old_bdy_xs          , t_old_bdy_xe<a name='1454'>
+      REAL :: t_old_bdy_ys          , t_old_bdy_ye<a name='1455'>
+      REAL :: t_new_bdy_xs          , t_new_bdy_xe<a name='1456'>
+      REAL :: t_new_bdy_ys          , t_new_bdy_ye<a name='1457'>
+      REAL :: t_old_bdy_tend_xs     , t_old_bdy_tend_xe<a name='1458'>
+      REAL :: t_old_bdy_tend_ys     , t_old_bdy_tend_ye<a name='1459'>
+<a name='1460'>
+      REAL :: moist_old_bdy_xs      , moist_old_bdy_xe<a name='1461'>
+      REAL :: moist_old_bdy_ys      , moist_old_bdy_ye<a name='1462'>
+      REAL :: moist_new_bdy_xs      , moist_new_bdy_xe<a name='1463'>
+      REAL :: moist_new_bdy_ys      , moist_new_bdy_ye<a name='1464'>
+      REAL :: moist_old_bdy_tend_xs , moist_old_bdy_tend_xe<a name='1465'>
+      REAL :: moist_old_bdy_tend_ys , moist_old_bdy_tend_ye<a name='1466'>
+<a name='1467'>
+      INTEGER :: i_min, i_max, j_min, j_max<a name='1468'>
+<a name='1469'>
+      <font color=#447700>!  IF      (       theta_to_thetam ) THEN<a name='1470'></font>
+      <font color=#447700>!     Convert dry potential temperature to theta_m <a name='1471'></font>
+      <font color=#447700>!     Defined as: theta_m = ( theta   + T0 ) * ( 1. + (R_v/R_d) Qv ) - T0<a name='1472'></font>
+      <font color=#447700>!  ELSE<a name='1473'></font>
+      <font color=#447700>!     Convert dry potential temperature to theta_m <a name='1474'></font>
+      <font color=#447700>!     Defined as: theta   = ( theta_m + T0 ) / ( 1. + (R_v/R_d) Qv ) - T0<a name='1475'></font>
+      <font color=#447700>!  END IF<a name='1476'></font>
+<a name='1477'>
+      <font color=#447700>!  We want the current value and the tendency, using information mostly<a name='1478'></font>
+      <font color=#447700>!  from the lateral boundary file.  In that file, the thermal variable <a name='1479'></font>
+      <font color=#447700>!  is a potential temperature with the T0 offset removed (theta-300).  Both<a name='1480'></font>
+      <font color=#447700>!  the moisture variable and the potential temperature are coupled <a name='1481'></font>
+      <font color=#447700>!  (multiplied by total dry column pressure).  And to add one more complication,<a name='1482'></font>
+      <font color=#447700>!  the MU variable in the lateral boundary array is perturbation only.<a name='1483'></font>
+<a name='1484'>
+      <font color=#447700>!  Since we need to end up with lateral boundary values that are coupled,<a name='1485'></font>
+      <font color=#447700>!  we need to first DECOUPLE T and Qv, compute Tm, and then couple that.  As<a name='1486'></font>
+      <font color=#447700>!  there is a need for the lateral tendency also, we compute the T and Qv<a name='1487'></font>
+      <font color=#447700>!  values at the two boundary times (previous/current and next).  These two <a name='1488'></font>
+      <font color=#447700>!  times are adequate to get us a tendency.  For the tendency, we need to have<a name='1489'></font>
+      <font color=#447700>!  coupled values for the T (or Tm) at both times, which gives us a coupled<a name='1490'></font>
+      <font color=#447700>!  tendency.  We cannot have an uncoupled tendency and somehow multiply that<a name='1491'></font>
+      <font color=#447700>!  by some intermediate/average column pressure.<a name='1492'></font>
+<a name='1493'>
+      <font color=#447700>!  This routine's purpose is to manufacture a lateral boundary set of arrays<a name='1494'></font>
+      <font color=#447700>!  (all eight of them) for the thermal field.  Depending on the logical flag <a name='1495'></font>
+      <font color=#447700>!  passed in, this will either be dry potential temperature or moist potential<a name='1496'></font>
+      <font color=#447700>!  temperature.<a name='1497'></font>
+<a name='1498'>
+      <font color=#447700>!  The i_min, i_max for the south and north boundaries depends on if we are doing<a name='1499'></font>
+      <font color=#447700>!  serial, OpenMP, or MPI.  For OpenMP, we do not want any overlap between tiles that<a name='1500'></font>
+      <font color=#447700>!  are on the same task (either OpenMP only, or OpenMP+MPI).<a name='1501'></font>
+<a name='1502'>
+      IF      ( its .EQ. ids ) THEN<a name='1503'>
+         i_min = its<a name='1504'>
+      ELSE IF ( its .EQ. ips ) THEN<a name='1505'>
+         i_min = ims<a name='1506'>
+      ELSE<a name='1507'>
+         i_min = its<a name='1508'>
+      END IF<a name='1509'>
+      i_min = MAX(ids,i_min)<a name='1510'>
+<a name='1511'>
+      IF      ( ite .EQ. ide ) THEN<a name='1512'>
+         i_max = ite<a name='1513'>
+      ELSE IF ( ite .EQ. ipe ) THEN<a name='1514'>
+         i_max = ime<a name='1515'>
+      ELSE<a name='1516'>
+         i_max = ite<a name='1517'>
+      END IF<a name='1518'>
+      i_max = MIN(i_max,ide-1)<a name='1519'>
+<a name='1520'>
+      <font color=#447700>!  South and north lateral boundaries.  This is the i-extent of its through ite, but j only<a name='1521'></font>
+      <font color=#447700>!  goes to within spec_bdy_width of the top and bottom (north and south) boundaries.<a name='1522'></font>
+<a name='1523'>
+      <font color=#447700>!  South boundary: i,k,j<a name='1524'></font>
+      <font color=#447700>!  jj increasing<a name='1525'></font>
+<a name='1526'>
+      DO jj = MAX(jts,1) , MIN(jte,jde-1,spec_bdy_width)<a name='1527'>
+         j = jj<a name='1528'>
+         DO k = kts , kte-1<a name='1529'>
+            DO i = i_min , i_max<a name='1530'>
+              t_bdy_ys     (i,k,j) = orig_t_bdy_ys     (i,k,j)<a name='1531'>
+              t_bdy_tend_ys(i,k,j) = orig_t_bdy_tend_ys(i,k,j)<a name='1532'>
+            END DO<a name='1533'>
+         END DO<a name='1534'>
+      END DO<a name='1535'>
+      DO jj = MAX(jts,1) , MIN(jte,jde-1,spec_bdy_width)<a name='1536'>
+         j = jj<a name='1537'>
+         DO k = kts , kte-1<a name='1538'>
+            DO i = i_min , i_max<a name='1539'>
+               mu_old_bdy_ys         =   mu_bdy_ys(i,1,j)    + mub(i,jj)<a name='1540'>
+               t_old_bdy_ys          = ( t_bdy_ys(i,k,j)                                            ) / mu_old_bdy_ys<a name='1541'>
+               moist_old_bdy_ys      = ( moist_bdy_ys(i,k,j)                                        ) / mu_old_bdy_ys<a name='1542'>
+               mu_new_bdy_ys         =   mu_old_bdy_ys       + mu_bdy_tend_ys(i,1,j)   *dt_interval<a name='1543'>
+               t_new_bdy_ys          = ( t_bdy_ys(i,k,j)     + t_bdy_tend_ys(i,k,j)    *dt_interval ) / mu_new_bdy_ys<a name='1544'>
+               moist_new_bdy_ys      = ( moist_bdy_ys(i,k,j) + moist_bdy_tend_ys(i,k,j)*dt_interval ) / mu_new_bdy_ys<a name='1545'>
+               t_old_bdy_tend_ys     = ( t_new_bdy_ys        - t_old_bdy_ys                         ) / dt_interval<a name='1546'>
+               moist_old_bdy_tend_ys = ( moist_new_bdy_ys    - moist_old_bdy_ys                     ) / dt_interval<a name='1547'>
+               IF ( theta_to_thetam ) THEN<a name='1548'>
+                  new_t_bdy_ys(i,k,j) = ( ( ( t_old_bdy_ys + T0 ) * ( 1. + (R_v/R_d) * moist_old_bdy_ys ) ) - T0 ) * mu_old_bdy_ys<a name='1549'>
+                  new_t_bdy_tend_ys(i,k,j) = ( ( mu_new_bdy_ys * ( ( t_new_bdy_ys + T0 ) * ( 1. + (R_v/R_d) * moist_new_bdy_ys ) - T0 ) ) - &amp;<a name='1550'>
+                                           ( mu_old_bdy_ys * ( ( t_old_bdy_ys + T0 ) * ( 1. + (R_v/R_d) * moist_old_bdy_ys ) - T0 ) ) ) / dt_interval<a name='1551'>
+               ELSE<a name='1552'>
+                  new_t_bdy_ys(i,k,j) = ( ( ( t_old_bdy_ys + T0 ) / ( 1. + (R_v/R_d) * moist_old_bdy_ys ) ) - T0 ) * mu_old_bdy_ys<a name='1553'>
+                  new_t_bdy_tend_ys(i,k,j) = ( ( mu_new_bdy_ys * ( ( t_new_bdy_ys + T0 ) / ( 1. + (R_v/R_d) * moist_new_bdy_ys ) - T0 ) ) - &amp;<a name='1554'>
+                                           ( mu_old_bdy_ys * ( ( t_old_bdy_ys + T0 ) / ( 1. + (R_v/R_d) * moist_old_bdy_ys ) - T0 ) ) ) / dt_interval<a name='1555'>
+               END IF<a name='1556'>
+            END DO<a name='1557'>
+         END DO<a name='1558'>
+      END DO<a name='1559'>
+<a name='1560'>
+      <font color=#447700>!  North boundary: i,k,j<a name='1561'></font>
+      <font color=#447700>!  jj decreasing<a name='1562'></font>
+<a name='1563'>
+      DO jj = MIN(jde-1,jte) , MAX(jde-spec_bdy_width,jts) , -1<a name='1564'>
+         j = jde-jj<a name='1565'>
+         DO k = kts , kte-1<a name='1566'>
+            DO i = i_min , i_max<a name='1567'>
+               t_bdy_ye     (i,k,j) = orig_t_bdy_ye     (i,k,j)<a name='1568'>
+               t_bdy_tend_ye(i,k,j) = orig_t_bdy_tend_ye(i,k,j)<a name='1569'>
+            END DO<a name='1570'>
+         END DO<a name='1571'>
+      END DO<a name='1572'>
+      DO jj = MIN(jde-1,jte) , MAX(jde-spec_bdy_width,jts) , -1<a name='1573'>
+         j = jde-jj<a name='1574'>
+         DO k = kts , kte-1<a name='1575'>
+            DO i = i_min , i_max<a name='1576'>
+               mu_old_bdy_ye         =   mu_bdy_ye(i,1,j)    + mub(i,jj)<a name='1577'>
+               t_old_bdy_ye          = ( t_bdy_ye(i,k,j)                                            ) / mu_old_bdy_ye<a name='1578'>
+               moist_old_bdy_ye      = ( moist_bdy_ye(i,k,j)                                        ) / mu_old_bdy_ye<a name='1579'>
+               mu_new_bdy_ye         =   mu_old_bdy_ye       + mu_bdy_tend_ye(i,1,j)   *dt_interval<a name='1580'>
+               t_new_bdy_ye          = ( t_bdy_ye(i,k,j)     + t_bdy_tend_ye(i,k,j)    *dt_interval ) / mu_new_bdy_ye<a name='1581'>
+               moist_new_bdy_ye      = ( moist_bdy_ye(i,k,j) + moist_bdy_tend_ye(i,k,j)*dt_interval ) / mu_new_bdy_ye<a name='1582'>
+               t_old_bdy_tend_ye     = ( t_new_bdy_ye        - t_old_bdy_ye                         ) / dt_interval<a name='1583'>
+               moist_old_bdy_tend_ye = ( moist_new_bdy_ye    - moist_old_bdy_ye                     ) / dt_interval<a name='1584'>
+               IF ( theta_to_thetam ) THEN<a name='1585'>
+                  new_t_bdy_ye(i,k,j) = ( ( ( t_old_bdy_ye + T0 ) * ( 1. + (R_v/R_d) * moist_old_bdy_ye ) ) - T0 ) * mu_old_bdy_ye<a name='1586'>
+                  new_t_bdy_tend_ye(i,k,j) = ( ( mu_new_bdy_ye * ( ( t_new_bdy_ye + T0 ) * ( 1. + (R_v/R_d) * moist_new_bdy_ye ) - T0 ) ) - &amp;<a name='1587'>
+                                           ( mu_old_bdy_ye * ( ( t_old_bdy_ye + T0 ) * ( 1. + (R_v/R_d) * moist_old_bdy_ye ) - T0 ) ) ) / dt_interval<a name='1588'>
+               ELSE<a name='1589'>
+                  new_t_bdy_ye(i,k,j) = ( ( ( t_old_bdy_ye + T0 ) / ( 1. + (R_v/R_d) * moist_old_bdy_ye ) ) - T0 ) * mu_old_bdy_ye<a name='1590'>
+                  new_t_bdy_tend_ye(i,k,j) = ( ( mu_new_bdy_ye * ( ( t_new_bdy_ye + T0 ) / ( 1. + (R_v/R_d) * moist_new_bdy_ye ) - T0 ) ) - &amp;<a name='1591'>
+                                           ( mu_old_bdy_ye * ( ( t_old_bdy_ye + T0 ) / ( 1. + (R_v/R_d) * moist_old_bdy_ye ) - T0 ) ) ) / dt_interval<a name='1592'>
+               END IF<a name='1593'>
+            END DO<a name='1594'>
+         END DO<a name='1595'>
+      END DO<a name='1596'>
+<a name='1597'>
+      <font color=#447700>!  The j_min, j_max for the west and east boundaries depends on if we are doing<a name='1598'></font>
+      <font color=#447700>!  serial, OpenMP, or MPI.  For OpenMP, we do not want any overlap between tiles that<a name='1599'></font>
+      <font color=#447700>!  are on the same task (either OpenMP only, or OpenMP+MPI).<a name='1600'></font>
+<a name='1601'>
+      IF      ( jts .EQ. jds ) THEN<a name='1602'>
+         j_min = jts<a name='1603'>
+      ELSE IF ( jts .EQ. jps ) THEN<a name='1604'>
+         j_min = jms<a name='1605'>
+      ELSE<a name='1606'>
+         j_min = jts<a name='1607'>
+      END IF<a name='1608'>
+      j_min = MAX(jds,j_min)<a name='1609'>
+<a name='1610'>
+      IF      ( jte .EQ. jde ) THEN<a name='1611'>
+         j_max = jte<a name='1612'>
+      ELSE IF ( jte .EQ. jpe ) THEN<a name='1613'>
+         j_max = jme<a name='1614'>
+      ELSE<a name='1615'>
+         j_max = jte<a name='1616'>
+      END IF<a name='1617'>
+      j_max = MIN(j_max,jde-1)<a name='1618'>
+<a name='1619'>
+      <font color=#447700>!  West and east lateral boundaries.  This is the j-extent of jts through jte, but i only<a name='1620'></font>
+      <font color=#447700>!  goes to within spec_bdy_width of the left and right (west and east) boundaries.<a name='1621'></font>
+<a name='1622'>
+      <font color=#447700>!  West boundary: j,k,i<a name='1623'></font>
+      <font color=#447700>!  ii increasing<a name='1624'></font>
+<a name='1625'>
+      DO ii = MAX(its,1) , MIN(ite,ide-1,spec_bdy_width)<a name='1626'>
+         i = ii<a name='1627'>
+         DO k = kts , kte-1<a name='1628'>
+            DO j = j_min , j_max<a name='1629'>
+               t_bdy_xs     (j,k,i) = orig_t_bdy_xs     (j,k,i)<a name='1630'>
+               t_bdy_tend_xs(j,k,i) = orig_t_bdy_tend_xs(j,k,i)<a name='1631'>
+            END DO<a name='1632'>
+         END DO<a name='1633'>
+      END DO<a name='1634'>
+      DO ii = MAX(its,1) , MIN(ite,ide-1,spec_bdy_width)<a name='1635'>
+         i = ii<a name='1636'>
+         DO k = kts , kte-1<a name='1637'>
+            DO j = j_min , j_max<a name='1638'>
+               mu_old_bdy_xs         =   mu_bdy_xs(j,1,i)    + mub(ii,j)<a name='1639'>
+               t_old_bdy_xs          = ( t_bdy_xs(j,k,i)                                            ) / mu_old_bdy_xs<a name='1640'>
+               moist_old_bdy_xs      = ( moist_bdy_xs(j,k,i)                                        ) / mu_old_bdy_xs<a name='1641'>
+               mu_new_bdy_xs         =   mu_old_bdy_xs       + mu_bdy_tend_xs(j,1,i)   *dt_interval<a name='1642'>
+               t_new_bdy_xs          = ( t_bdy_xs(j,k,i)     + t_bdy_tend_xs(j,k,i)    *dt_interval ) / mu_new_bdy_xs<a name='1643'>
+               moist_new_bdy_xs      = ( moist_bdy_xs(j,k,i) + moist_bdy_tend_xs(j,k,i)*dt_interval ) / mu_new_bdy_xs<a name='1644'>
+               t_old_bdy_tend_xs     = ( t_new_bdy_xs        - t_old_bdy_xs                         ) / dt_interval<a name='1645'>
+               moist_old_bdy_tend_xs = ( moist_new_bdy_xs    - moist_old_bdy_xs                     ) / dt_interval<a name='1646'>
+               IF ( theta_to_thetam ) THEN<a name='1647'>
+                  new_t_bdy_xs(j,k,i) = ( ( ( t_old_bdy_xs + T0 ) * ( 1. + (R_v/R_d) * moist_old_bdy_xs ) ) - T0 ) * mu_old_bdy_xs<a name='1648'>
+                  new_t_bdy_tend_xs(j,k,i) = ( ( mu_new_bdy_xs * ( ( t_new_bdy_xs + T0 ) * ( 1. + (R_v/R_d) * moist_new_bdy_xs ) - T0 ) ) - &amp;<a name='1649'>
+                                           ( mu_old_bdy_xs * ( ( t_old_bdy_xs + T0 ) * ( 1. + (R_v/R_d) * moist_old_bdy_xs ) - T0 ) ) ) / dt_interval<a name='1650'>
+               ELSE<a name='1651'>
+                  new_t_bdy_xs(j,k,i) = ( ( ( t_old_bdy_xs + T0 ) / ( 1. + (R_v/R_d) * moist_old_bdy_xs ) ) - T0 ) * mu_old_bdy_xs<a name='1652'>
+                  new_t_bdy_tend_xs(j,k,i) = ( ( mu_new_bdy_xs * ( ( t_new_bdy_xs + T0 ) / ( 1. + (R_v/R_d) * moist_new_bdy_xs ) - T0 ) ) - &amp;<a name='1653'>
+                                           ( mu_old_bdy_xs * ( ( t_old_bdy_xs + T0 ) / ( 1. + (R_v/R_d) * moist_old_bdy_xs ) - T0 ) ) ) / dt_interval<a name='1654'>
+               END IF<a name='1655'>
+            END DO<a name='1656'>
+         END DO<a name='1657'>
+      END DO<a name='1658'>
+<a name='1659'>
+      <font color=#447700>!  East boundary: j,k,i<a name='1660'></font>
+      <font color=#447700>!  ii decreasing<a name='1661'></font>
+<a name='1662'>
+      DO ii = MIN(ide-1,ite) , MAX(ide-spec_bdy_width,its) , -1<a name='1663'>
+         i = ide-ii<a name='1664'>
+         DO k = kts , kte-1<a name='1665'>
+            DO j = j_min , j_max<a name='1666'>
+               t_bdy_xe     (j,k,i) = orig_t_bdy_xe     (j,k,i)<a name='1667'>
+               t_bdy_tend_xe(j,k,i) = orig_t_bdy_tend_xe(j,k,i)<a name='1668'>
+            END DO<a name='1669'>
+         END DO<a name='1670'>
+      END DO<a name='1671'>
+      DO ii = MIN(ide-1,ite) , MAX(ide-spec_bdy_width,its) , -1<a name='1672'>
+         i = ide-ii<a name='1673'>
+         DO k = kts , kte-1<a name='1674'>
+            DO j = j_min , j_max<a name='1675'>
+               mu_old_bdy_xe         =   mu_bdy_xe(j,1,i)    + mub(ii,j)<a name='1676'>
+               t_old_bdy_xe          = ( t_bdy_xe(j,k,i)                                            ) / mu_old_bdy_xe<a name='1677'>
+               moist_old_bdy_xe      = ( moist_bdy_xe(j,k,i)                                        ) / mu_old_bdy_xe<a name='1678'>
+               mu_new_bdy_xe         =   mu_old_bdy_xe       + mu_bdy_tend_xe(j,1,i)   *dt_interval<a name='1679'>
+               t_new_bdy_xe          = ( t_bdy_xe(j,k,i)     + t_bdy_tend_xe(j,k,i)    *dt_interval ) / mu_new_bdy_xe<a name='1680'>
+               moist_new_bdy_xe      = ( moist_bdy_xe(j,k,i) + moist_bdy_tend_xe(j,k,i)*dt_interval ) / mu_new_bdy_xe<a name='1681'>
+               t_old_bdy_tend_xe     = ( t_new_bdy_xe        - t_old_bdy_xe                         ) / dt_interval<a name='1682'>
+               moist_old_bdy_tend_xe = ( moist_new_bdy_xe    - moist_old_bdy_xe                     ) / dt_interval<a name='1683'>
+               IF ( theta_to_thetam ) THEN<a name='1684'>
+                  new_t_bdy_xe(j,k,i) = ( ( ( t_old_bdy_xe + T0 ) * ( 1. + (R_v/R_d) * moist_old_bdy_xe ) ) - T0 ) * mu_old_bdy_xe<a name='1685'>
+                  new_t_bdy_tend_xe(j,k,i) = ( ( mu_new_bdy_xe * ( ( t_new_bdy_xe + T0 ) * ( 1. + (R_v/R_d) * moist_new_bdy_xe ) - T0 ) ) - &amp;<a name='1686'>
+                                           ( mu_old_bdy_xe * ( ( t_old_bdy_xe + T0 ) * ( 1. + (R_v/R_d) * moist_old_bdy_xe ) - T0 ) ) ) / dt_interval<a name='1687'>
+               ELSE<a name='1688'>
+                  new_t_bdy_xe(j,k,i) = ( ( ( t_old_bdy_xe + T0 ) / ( 1. + (R_v/R_d) * moist_old_bdy_xe ) ) - T0 ) * mu_old_bdy_xe<a name='1689'>
+                  new_t_bdy_tend_xe(j,k,i) = ( ( mu_new_bdy_xe * ( ( t_new_bdy_xe + T0 ) / ( 1. + (R_v/R_d) * moist_new_bdy_xe ) - T0 ) ) - &amp;<a name='1690'>
+                                           ( mu_old_bdy_xe * ( ( t_old_bdy_xe + T0 ) / ( 1. + (R_v/R_d) * moist_old_bdy_xe ) - T0 ) ) ) / dt_interval<a name='1691'>
+               END IF<a name='1692'>
+            END DO<a name='1693'>
+         END DO<a name='1694'>
+      END DO<a name='1695'>
+<a name='1696'>
+      <font color=#447700>!  Put the final values for the tendencies into the arrays that get passed <a name='1697'></font>
+      <font color=#447700>!  back out to the calling routine.<a name='1698'></font>
+<a name='1699'>
+      DO jj = MAX(jts,1) , MIN(jte,jde-1,spec_bdy_width)<a name='1700'>
+         j = jj<a name='1701'>
+         DO k = kts , kte-1<a name='1702'>
+            DO i = i_min , i_max<a name='1703'>
+              orig_t_bdy_ys     (i,k,j) = new_t_bdy_ys     (i,k,j)<a name='1704'>
+              orig_t_bdy_tend_ys(i,k,j) = new_t_bdy_tend_ys(i,k,j)<a name='1705'>
+            END DO<a name='1706'>
+         END DO<a name='1707'>
+      END DO<a name='1708'>
+<a name='1709'>
+      DO jj = MIN(jde-1,jte) , MAX(jde-spec_bdy_width,jts) , -1<a name='1710'>
+         j = jde-jj<a name='1711'>
+         DO k = kts , kte-1<a name='1712'>
+            DO i = i_min , i_max<a name='1713'>
+               orig_t_bdy_ye     (i,k,j) = new_t_bdy_ye     (i,k,j)<a name='1714'>
+               orig_t_bdy_tend_ye(i,k,j) = new_t_bdy_tend_ye(i,k,j)<a name='1715'>
+            END DO<a name='1716'>
+         END DO<a name='1717'>
+      END DO<a name='1718'>
+<a name='1719'>
+      DO ii = its , MIN(ite,ide-1,spec_bdy_width)<a name='1720'>
+         i = ii<a name='1721'>
+         DO k = kts , kte-1<a name='1722'>
+            DO j = j_min , j_max<a name='1723'>
+               orig_t_bdy_xs     (j,k,i) = new_t_bdy_xs     (j,k,i)<a name='1724'>
+               orig_t_bdy_tend_xs(j,k,i) = new_t_bdy_tend_xs(j,k,i)<a name='1725'>
+            END DO<a name='1726'>
+         END DO<a name='1727'>
+      END DO<a name='1728'>
+<a name='1729'>
+      DO ii = MIN(ide-1,ite) , MAX(ide-spec_bdy_width,its) , -1<a name='1730'>
+         i = ide-ii<a name='1731'>
+         DO k = kts , kte-1<a name='1732'>
+            DO j = j_min , j_max<a name='1733'>
+               orig_t_bdy_xe     (j,k,i) = new_t_bdy_xe     (j,k,i)<a name='1734'>
+               orig_t_bdy_tend_xe(j,k,i) = new_t_bdy_tend_xe(j,k,i)<a name='1735'>
+            END DO<a name='1736'>
+         END DO<a name='1737'>
+      END DO<a name='1738'>
+<a name='1739'>
+   END SUBROUTINE theta_and_thetam_lbc_only<a name='1740'>
+<a name='1741'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1742'></font>
+<a name='1743'>
+<A NAME='MASS_WEIGHT'><A href='../../html_code/dyn_em/module_bc_em.F.html#MASS_WEIGHT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1744'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>mass_weight</font>  ( field , mut, rfield , c1 , c2 , &amp; <A href='../../call_to/MASS_WEIGHT.html' TARGET='index'>4</A><a name='1745'>
+                             ids,ide, jds,jde, kds,kde,      &amp;       <font color=#447700>! domain dims<a name='1746'></font>
+                             ims,ime, jms,jme, kms,kme,      &amp;       <font color=#447700>! memory dims<a name='1747'></font>
+                             irs,ire, jrs,jre, krs,kre,      &amp;       <font color=#447700>! rfield dims<a name='1748'></font>
+                             its,ite, jts,jte, kts,kte )             <font color=#447700>! tile dims<a name='1749'></font>
+<a name='1750'>
+      IMPLICIT NONE<a name='1751'>
+<a name='1752'>
+      INTEGER , INTENT(IN   ) :: ids,ide, jds,jde, kds,kde, &amp;<a name='1753'>
+                                 ims,ime, jms,jme, kms,kme, &amp;<a name='1754'>
+                                 irs,ire, jrs,jre, krs,kre, &amp;<a name='1755'>
+                                 its,ite, jts,jte, kts,kte <a name='1756'>
+      REAL , DIMENSION(ims:ime, kms:kme, jms:jme) , INTENT(IN   ) :: field<a name='1757'>
+      REAL , DIMENSION(ims:ime,          jms:jme) , INTENT(IN   ) :: mut<a name='1758'>
+      REAL , DIMENSION(         kms:kme         ) , INTENT(IN   ) :: c1, c2<a name='1759'>
+      REAL , DIMENSION(irs:ire, krs:kre, jrs:jre) , INTENT(  OUT) :: rfield<a name='1760'>
+<a name='1761'>
+      <font color=#447700>!  Local loop counters<a name='1762'></font>
+<a name='1763'>
+      INTEGER :: i , j , k<a name='1764'>
+<a name='1765'>
+      DO j = jts , jte<a name='1766'>
+         DO k = kts , kte<a name='1767'>
+            DO i = its , ite<a name='1768'>
+               rfield(i,k,j) = field(i,k,j) * mut(i,j)<a name='1769'>
+            END DO<a name='1770'>
+         END DO<a name='1771'>
+      END DO<a name='1772'>
+<a name='1773'>
+   END SUBROUTINE mass_weight<a name='1774'>
+  <a name='1775'>
+END MODULE module_bc_em<a name='1776'>
+</pre></body></html>

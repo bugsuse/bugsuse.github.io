@@ -1,0 +1,2130 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:MEDIATION_LAYER:PHYSICS<a name='2'></font>
+<font color=#447700>! *** add new modules of schemes here<a name='3'></font>
+<font color=#447700>!<a name='4'></font>
+<A NAME='MODULE_MICROPHYSICS_DRIVER'><A href='../../html_code/phys/module_microphysics_driver.F.html#MODULE_MICROPHYSICS_DRIVER' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='5'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_microphysics_driver</font> <A href='../../call_to/MODULE_MICROPHYSICS_DRIVER.html' TARGET='index'>2</A><a name='6'>
+CONTAINS<a name='7'>
+<a name='8'>
+<A NAME='MICROPHYSICS_DRIVER'><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='9'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>microphysics_driver</font>(                                          &amp; <A href='../../call_to/MICROPHYSICS_DRIVER.html' TARGET='index'>2</A>,<A href='../../call_from/MICROPHYSICS_DRIVER.html' TARGET='index'>79</A><a name='10'>
+                       th, rho, pi_phy, p                                &amp;<a name='11'>
+                      ,ht, dz8w, p8w, dt,dx,dy                           &amp;<a name='12'>
+                      ,mp_physics, spec_zone                             &amp;<a name='13'>
+                      ,specified, channel_switch                         &amp;<a name='14'>
+                      ,warm_rain                                         &amp;<a name='15'>
+                      ,t8w                                               &amp;<a name='16'>
+                      ,chem_opt, progn                                   &amp;<a name='17'>
+                      ,cldfra, cldfra_old, exch_h, nsource               &amp;<a name='18'>
+                      ,qlsink, precr, preci, precs, precg                &amp;<a name='19'>
+                      ,xland,snowh,itimestep                             &amp;<a name='20'>
+                      ,f_ice_phy,f_rain_phy,f_rimef_phy                  &amp;<a name='21'>
+                      ,lowlyr,sr, id                                     &amp;<a name='22'>
+                      ,ids,ide, jds,jde, kds,kde                         &amp;<a name='23'>
+                      ,ims,ime, jms,jme, kms,kme                         &amp;<a name='24'>
+                      ,ips,ipe, jps,jpe, kps,kpe                         &amp;<a name='25'>
+                      ,i_start,i_end,j_start,j_end,kts,kte               &amp;<a name='26'>
+                      ,num_tiles, naer                                   &amp;<a name='27'>
+<font color=#447700>!======================<a name='28'></font>
+                      <font color=#447700>!Variables required for CAMMGMP Scheme<a name='29'></font>
+                      ,dlf,dlf2,t_phy,p_hyd,p8w_hyd,tke_pbl,z_at_w,qfx   &amp;<a name='30'>
+                      ,rliq,turbtype3d,smaw3d,wsedl3d,cldfra_old_mp      &amp;<a name='31'>
+                      ,cldfra_mp,cldfra_mp_all,lradius,iradius           &amp;<a name='32'>
+                      ,cldfrai,cldfral,cldfra_conv                       &amp;<a name='33'>
+                      ,alt                                               &amp;<a name='34'>
+                      ,accum_mode,aitken_mode,coarse_mode                &amp;<a name='35'>
+                      ,icwmrsh3d,icwmrdp3d,shfrc3d,cmfmc3d,cmfmc2_3d     &amp;<a name='36'>
+                      ,config_flags,fnm,fnp,rh_old_mp,lcd_old_mp         &amp;<a name='37'>
+#if ( WRF_CHEM == 1 )<a name='38'>
+                      ,chem                                              &amp;<font color=#447700>! For CAMMGMP scheme Prognostic aerosols<a name='39'></font>
+                      ,qme3d,prain3d,nevapr3d,rate1ord_cw2pr_st3d        &amp;<a name='40'>
+                      ,dgnum4D,dgnumwet4D                                &amp;<a name='41'>
+#endif<a name='42'>
+<font color=#447700>!======================                                   <a name='43'></font>
+                      ,qv_curr,qc_curr,qr_curr,qi_curr,qs_curr,qg_curr   &amp;<a name='44'>
+                      ,qic_curr,qip_curr,qid_curr &amp;<a name='45'>
+                      ,qnic_curr,qnip_curr,qnid_curr &amp;<a name='46'>
+                      ,qndrop_curr,qni_curr,qh_curr,qnh_curr             &amp;<a name='47'>
+                      ,qzr_curr,qzi_curr,qzs_curr,qzg_curr,qzh_curr      &amp;<a name='48'>
+                      ,qns_curr,qnr_curr,qng_curr,qnn_curr,qnc_curr      &amp;<a name='49'>
+                      ,qnwfa_curr,qnifa_curr                             &amp; <font color=#447700>! for water/ice-friendly aerosols<a name='50'></font>
+                      ,f_qnwfa,f_qnifa                                   &amp; <font color=#447700>! for water/ice-friendly aerosols<a name='51'></font>
+                      ,qvolg_curr,qvolh_curr                             &amp;<a name='52'>
+                      ,qir_curr,qib_curr                                 &amp; <font color=#447700>! for P3<a name='53'></font>
+                      ,effr_curr,ice_effr_curr,tot_effr_curr             &amp;<a name='54'>
+                       ,qic_effr_curr,qip_effr_curr,qid_effr_curr        &amp;             <a name='55'>
+                      ,f_qv,f_qc,f_qr,f_qi,f_qs,f_qg,f_qndrop,f_qni      &amp;<a name='56'>
+                      ,f_qns,f_qnr,f_qng,f_qnc,f_qnn,f_qh,f_qnh          &amp;<a name='57'>
+                      ,            f_qzr,f_qzi,f_qzs,f_qzg,f_qzh         &amp;<a name='58'>
+                      ,f_qvolg,f_qvolh                                   &amp;<a name='59'>
+                      ,f_qic,f_qip,f_qid &amp;<a name='60'>
+                      ,f_qnic,f_qnip,f_qnid &amp;<a name='61'>
+                      ,f_qir,f_qib                                       &amp; <font color=#447700>! for P3<a name='62'></font>
+                      ,f_effr,f_ice_effr,f_tot_effr                      &amp;<a name='63'>
+                      ,f_qic_effr,f_qip_effr,f_qid_effr                  &amp;                 <a name='64'>
+                      ,cu_used                                           &amp;<a name='65'>
+                      ,qrcuten, qscuten, qicuten, qccuten                &amp;<a name='66'>
+                      ,qt_curr,f_qt                                      &amp;<a name='67'>
+                      ,mp_restart_state,tbpvs_state,tbpvs0_state         &amp; <font color=#447700>! for etampnew or fer_mp_hires<a name='68'></font>
+                      ,hail,ice2                                         &amp; <font color=#447700>! for mp_gsfcgce<a name='69'></font>
+<font color=#447700>!                     ,ccntype                                           &amp; ! for mp_milbrandt2mom<a name='70'></font>
+                      ,u,v,w,z                                          &amp;   <a name='71'>
+                      ,rainnc,    rainncv                                &amp;<a name='72'>
+                      ,snownc,    snowncv                                &amp;<a name='73'>
+                      ,hailnc,    hailncv                                &amp;<a name='74'>
+                      ,graupelnc, graupelncv                             &amp;<a name='75'>
+#if ( WRF_CHEM == 1 )<a name='76'>
+                      ,rainprod, evapprod                                &amp;<a name='77'>
+                      ,qv_b4mp, qc_b4mp, qi_b4mp, qs_b4mp                &amp;<a name='78'>
+#endif<a name='79'>
+                      ,qnwfa2d                                           &amp; <font color=#447700>! for water/ice-friendly aerosols<a name='80'></font>
+                      ,refl_10cm                                         &amp; <font color=#447700>! HM, 9/22/09, add for refl<a name='81'></font>
+                      ,vmi3d                                             &amp; <font color=#447700>! for P3 <a name='82'></font>
+                      ,di3d                                              &amp; <font color=#447700>! for P3 <a name='83'></font>
+                      ,rhopo3d                                           &amp; <font color=#447700>! for P3 <a name='84'></font>
+<font color=#447700>! YLIN<a name='85'></font>
+<font color=#447700>! Added the RI_CURR array to the call<a name='86'></font>
+                      ,ri_curr                                           &amp;<a name='87'>
+                      ,diagflag,   do_radar_ref                          &amp;<a name='88'>
+                      ,re_cloud, re_ice, re_snow                         &amp; <font color=#447700>! G. Thompson<a name='89'></font>
+                      ,has_reqc, has_reqi, has_reqs                      &amp; <font color=#447700>! G. Thompson<a name='90'></font>
+                      ,ccn_conc                                          &amp; <font color=#447700>! RAS<a name='91'></font>
+                      ,scalar,num_scalar                                   &amp;<a name='92'>
+                      ,kext_ql,kext_qs,kext_qg            &amp;<a name='93'>
+                      ,kext_qh,kext_qa                         &amp;<a name='94'>
+                      ,kext_qic,kext_qid,kext_qip         &amp;<a name='95'>
+                      ,kext_ft_qic,kext_ft_qid,kext_ft_qip         &amp;<a name='96'>
+                      ,kext_ft_qs,kext_ft_qg            &amp;<a name='97'>
+                      ,height,tempc &amp;<a name='98'>
+                      ,TH_OLD                                            &amp;<a name='99'>
+                      ,QV_OLD                                            &amp;<a name='100'>
+                      ,xlat,xlong,ivgtyp                                 &amp;<a name='101'>
+                      ,qrimef_curr,f_qrimef                              &amp;<a name='102'>
+                                                   )<a name='103'>
+<font color=#447700>! Framework<a name='104'></font>
+#if(NMM_CORE==1)<a name='105'>
+   USE <A href='../../html_code/frame/module_state_description.F.html#MODULE_STATE_DESCRIPTION'>module_state_description</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STATE_DESCRIPTION_128">, ONLY :                                  &amp;<a name='106'>
+                     KESSLERSCHEME, LINSCHEME, SBU_YLINSCHEME, WSM3SCHEME, WSM5SCHEME    &amp;<a name='107'>
+                    ,WSM6SCHEME, ETAMPNEW, FER_MP_HIRES, etamp_HWRF,THOMPSON, THOMPSONAERO, MORR_TWO_MOMENT     &amp;<a name='108'>
+                    ,GSFCGCESCHEME, WDM5SCHEME, WDM6SCHEME, NSSL_2MOM, NSSL_2MOMCCN, NSSL_2MOMG  &amp;<a name='109'>
+                    ,NSSL_1MOM,NSSL_1MOMLFO, FER_MP_HIRES_ADVECT &amp;<a name='110'>
+                    ,MILBRANDT2MOM, P3_1CATEGORY, P3_1CATEGORY_NC <font color=#447700>!,MILBRANDT3MOM <a name='111'></font>
+#else<a name='112'>
+   USE <A href='../../html_code/frame/module_state_description.F.html#MODULE_STATE_DESCRIPTION'>module_state_description</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STATE_DESCRIPTION_129">, ONLY :                                  &amp;<a name='113'>
+                     KESSLERSCHEME, LINSCHEME, SBU_YLINSCHEME, WSM3SCHEME, WSM5SCHEME    &amp;<a name='114'>
+                    ,WSM6SCHEME, ETAMPNEW, FER_MP_HIRES, THOMPSON, THOMPSONAERO, FAST_KHAIN_LYNN, MORR_TWO_MOMENT     &amp;<a name='115'>
+                    ,GSFCGCESCHEME, WDM5SCHEME, WDM6SCHEME, NSSL_2MOM, NSSL_2MOMCCN, NSSL_2MOMG  &amp;<a name='116'>
+                    ,NSSL_1MOM,NSSL_1MOMLFO, FER_MP_HIRES_ADVECT &amp; <font color=#447700>! ,NSSL_3MOM       &amp;<a name='117'></font>
+                    ,MILBRANDT2MOM , CAMMGMPSCHEME,FULL_KHAIN_LYNN, P3_1CATEGORY, P3_1CATEGORY_NC <font color=#447700>!,MILBRANDT3MOM<a name='118'></font>
+#endif<a name='119'>
+<a name='120'>
+#ifdef DM_PARALLEL<a name='121'>
+  USE <A href='../../html_code/frame/module_dm_stubs.F.html#MODULE_DM'>module_dm</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DM_158">, ONLY : &amp;<a name='122'>
+                 local_communicator, mytask,  wrf_dm_min_real, wrf_dm_max_real<a name='123'>
+#endif<a name='124'>
+<a name='125'>
+<font color=#447700>! Model Layer<a name='126'></font>
+   USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_75"><a name='127'>
+   USE <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_57"><a name='128'>
+   USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>module_configure</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_154">, only: grid_config_rec_type<a name='129'>
+#if ( WRF_CHEM == 1 )   <a name='130'>
+<font color=#447700>!mchen   USE module_state_description, only: num_scalar               ! For CAMMGMP scheme Prognostic aerosols<a name='131'></font>
+   USE <A href='../../html_code/frame/module_state_description.F.html#MODULE_STATE_DESCRIPTION'>module_state_description</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STATE_DESCRIPTION_130">, only: num_chem               <font color=#447700>! mchen <a name='132'></font>
+   USE <A href='../../html_code/phys/module_data_cam_mam_aero.F.html#MODAL_AERO_DATA'>modal_aero_data</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODAL_AERO_DATA_21">, only:  ntot_amode_cam_mam =&gt; ntot_amode <font color=#447700>! For CAMMGMP scheme Prognostic aerosols<a name='133'></font>
+#endif<a name='134'>
+<a name='135'>
+<font color=#447700>! *** add new modules of schemes here<a name='136'></font>
+<a name='137'>
+   USE <A href='../../html_code/phys/module_mp_kessler.F.html#MODULE_MP_KESSLER'>module_mp_kessler</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_KESSLER_1"><a name='138'>
+   USE <A href='../../html_code/phys/module_mp_lin.F.html#MODULE_MP_LIN'>module_mp_lin</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_LIN_1"><a name='139'>
+   USE <A href='../../html_code/phys/module_mp_sbu_ylin.F.html#MODULE_MP_SBU_YLIN'>module_mp_sbu_ylin</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_SBU_YLIN_1"><a name='140'>
+   USE <A href='../../html_code/phys/module_mp_wsm3_accel.F.html#MODULE_MP_WSM3'>module_mp_wsm3</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_WSM3_1"><a name='141'>
+   USE <A href='../../html_code/phys/module_mp_wsm5_accel.F.html#MODULE_MP_WSM5'>module_mp_wsm5</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_WSM5_1"><a name='142'>
+   USE <A href='../../html_code/phys/module_mp_wsm6.F.html#MODULE_MP_WSM6'>module_mp_wsm6</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_WSM6_1"><a name='143'>
+   USE <A href='../../html_code/phys/module_mp_etanew.F.html#MODULE_MP_ETANEW'>module_mp_etanew</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_ETANEW_3"><a name='144'>
+   USE <A href='../../html_code/phys/module_mp_fer_hires.F.html#MODULE_MP_FER_HIRES'>module_mp_fer_hires</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_FER_HIRES_1"><a name='145'>
+   USE <A href='../../html_code/phys/module_mp_thompson.F.html#MODULE_MP_THOMPSON'>module_mp_thompson</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_THOMPSON_1"><a name='146'>
+   USE <A href='../../html_code/phys/module_mp_full_sbm.F.html#MODULE_MP_FULL_SBM'>module_mp_full_sbm</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_FULL_SBM_1"><a name='147'>
+   USE <A href='../../html_code/phys/module_mp_fast_sbm.F.html#MODULE_MP_FAST_SBM'>module_mp_fast_sbm</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_FAST_SBM_1"><a name='148'>
+   USE <A href='../../html_code/phys/module_mp_gsfcgce.F.html#MODULE_MP_GSFCGCE'>module_mp_gsfcgce</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_GSFCGCE_1"><a name='149'>
+   USE <A href='../../html_code/phys/module_mp_morr_two_moment.F.html#MODULE_MP_MORR_TWO_MOMENT'>module_mp_morr_two_moment</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_MORR_TWO_MOMENT_1"><a name='150'>
+   USE <A href='../../html_code/phys/module_mp_p3.F.html#MODULE_MP_P3'>module_mp_p3</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_P3_1"><a name='151'>
+   USE <A href='../../html_code/phys/module_mp_wdm5.F.html#MODULE_MP_WDM5'>module_mp_wdm5</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_WDM5_1"><a name='152'>
+   USE <A href='../../html_code/phys/module_mp_wdm6.F.html#MODULE_MP_WDM6'>module_mp_wdm6</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_WDM6_1"><a name='153'>
+   USE <A href='../../html_code/phys/module_mp_milbrandt2mom.F.html#MODULE_MP_MILBRANDT2MOM'>module_mp_milbrandt2mom</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_MILBRANDT2MOM_1"><a name='154'>
+# if (EM_CORE == 1)<a name='155'>
+   USE <A href='../../html_code/phys/module_mp_cammgmp_driver.F.html#MODULE_MP_CAMMGMP_DRIVER'>module_mp_cammgmp_driver</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_CAMMGMP_DRIVER_2">, ONLY: CAMMGMP <font color=#447700>! CAM5's microphysics driver<a name='156'></font>
+# endif<a name='157'>
+<font color=#447700>!  USE module_mp_milbrandt3mom<a name='158'></font>
+   USE <A href='../../html_code/phys/module_mp_nssl_2mom.F.html#MODULE_MP_NSSL_2MOM'>module_mp_nssl_2mom</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_NSSL_2MOM_1"><a name='159'>
+<a name='160'>
+   USE <A href='../../html_code/phys/module_mp_HWRF.F.html#MODULE_MP_HWRF'>module_mp_HWRF</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MP_HWRF_1"><a name='161'>
+   USE <A href='../../html_code/phys/module_mixactivate.F.html#MODULE_MIXACTIVATE'>module_mixactivate</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MIXACTIVATE_2">, only: prescribe_aerosol_mixactivate<a name='162'>
+<a name='163'>
+<font color=#447700>! For checking model timestep is history time (for radar reflectivity)<a name='164'></font>
+   USE module_utility, ONLY: WRFU_Clock, WRFU_Alarm<a name='165'>
+   USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_235">, ONLY : HISTORY_ALARM, Is_alarm_tstep<a name='166'>
+<a name='167'>
+<font color=#447700>!----------------------------------------------------------------------<a name='168'></font>
+   <font color=#447700>! This driver calls subroutines for the microphys.<a name='169'></font>
+   <font color=#447700>!<a name='170'></font>
+   <font color=#447700>! Schemes<a name='171'></font>
+   <font color=#447700>!<a name='172'></font>
+   <font color=#447700>! Kessler scheme<a name='173'></font>
+   <font color=#447700>! Lin et al. (1983), Rutledge and Hobbs (1984)<a name='174'></font>
+   <font color=#447700>! WRF Single-Moment 3-class, Hong, Dudhia and Chen (2004)<a name='175'></font>
+   <font color=#447700>! WRF Single-Moment 5-class, Hong, Dudhia and Chen (2004)<a name='176'></font>
+   <font color=#447700>! WRF Single-Moment 6-class, Lim and Hong (2003 WRF workshop)<a name='177'></font>
+   <font color=#447700>! Eta Grid-scale Cloud and Precipitation scheme (EGCP01, Ferrier)<a name='178'></font>
+   <font color=#447700>!   * etampnew - what's in the operational 4-km High-Resolution Window Runs<a name='179'></font>
+   <font color=#447700>! Milbrandt and Yau (2005)<a name='180'></font>
+<a name='181'>
+<font color=#447700>!----------------------------------------------------------------------<a name='182'></font>
+   IMPLICIT NONE<a name='183'>
+<font color=#447700>!======================================================================<a name='184'></font>
+<font color=#447700>! Grid structure in physics part of WRF<a name='185'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='186'></font>
+<font color=#447700>! The horizontal velocities used in the physics are unstaggered<a name='187'></font>
+<font color=#447700>! relative to temperature/moisture variables. All predicted<a name='188'></font>
+<font color=#447700>! variables are carried at half levels except w, which is at full<a name='189'></font>
+<font color=#447700>! levels. Some arrays with names (*8w) are at w (full) levels.<a name='190'></font>
+<font color=#447700>!<a name='191'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='192'></font>
+<font color=#447700>! In WRF, kms (smallest number) is the bottom level and kme (largest<a name='193'></font>
+<font color=#447700>! number) is the top level.  In your scheme, if 1 is at the top level,<a name='194'></font>
+<font color=#447700>! then you have to reverse the order in the k direction.<a name='195'></font>
+<font color=#447700>!<a name='196'></font>
+<font color=#447700>!         kme      -   half level (no data at this level)<a name='197'></font>
+<font color=#447700>!         kme    ----- full level<a name='198'></font>
+<font color=#447700>!         kme-1    -   half level<a name='199'></font>
+<font color=#447700>!         kme-1  ----- full level<a name='200'></font>
+<font color=#447700>!         .<a name='201'></font>
+<font color=#447700>!         .<a name='202'></font>
+<font color=#447700>!         .<a name='203'></font>
+<font color=#447700>!         kms+2    -   half level<a name='204'></font>
+<font color=#447700>!         kms+2  ----- full level<a name='205'></font>
+<font color=#447700>!         kms+1    -   half level<a name='206'></font>
+<font color=#447700>!         kms+1  ----- full level<a name='207'></font>
+<font color=#447700>!         kms      -   half level<a name='208'></font>
+<font color=#447700>!         kms    ----- full level<a name='209'></font>
+<font color=#447700>!<a name='210'></font>
+<font color=#447700>!======================================================================<a name='211'></font>
+<font color=#447700>! Definitions<a name='212'></font>
+<font color=#447700>!-----------<a name='213'></font>
+<font color=#447700>! Rho_d      dry density (kg/m^3)<a name='214'></font>
+<font color=#447700>! Theta_m    moist potential temperature (K)<a name='215'></font>
+<font color=#447700>! Qv         water vapor    mixing ratio (kg/kg)<a name='216'></font>
+<font color=#447700>! Qc         cloud water    mixing ratio (kg/kg)<a name='217'></font>
+<font color=#447700>! Qr         rain water     mixing ratio (kg/kg)<a name='218'></font>
+<font color=#447700>! Qi         cloud ice      mixing ratio (kg/kg)<a name='219'></font>
+<font color=#447700>! Qs         snow           mixing ratio (kg/kg)<a name='220'></font>
+<font color=#447700>! Qg         graupel        mixing ratio (kg/kg)<a name='221'></font>
+<font color=#447700>! Qh         hail           mixing ratio (kg/kg)<a name='222'></font>
+<font color=#447700>! Qndrop     droplet number mixing ratio (#/kg)<a name='223'></font>
+<font color=#447700>! Qni        cloud ice number concentration (#/kg)<a name='224'></font>
+<font color=#447700>! Qns        snow      number concentration (#/kg)<a name='225'></font>
+<font color=#447700>! Qnr        rain      number concentration (#/kg)<a name='226'></font>
+<font color=#447700>! Qng        graupel   number concentration (#/kg)<a name='227'></font>
+<font color=#447700>! Qnh        hail      number concentration (#/kg)<a name='228'></font>
+<a name='229'>
+<font color=#447700>! Qzr        rain             reflectivity (m6/kg)<a name='230'></font>
+<font color=#447700>! Qzi        ice              reflectivity (m6/kg)<a name='231'></font>
+<font color=#447700>! Qzs        snow             reflectivity (m6/kg)<a name='232'></font>
+<font color=#447700>! Qzg        graupel          reflectivity (m6/kg)<a name='233'></font>
+<font color=#447700>! Qzh        hail             reflectivity (m6/kg)<a name='234'></font>
+<a name='235'>
+<font color=#447700>! Qvolg        graupel   particle volume (m3/kg)<a name='236'></font>
+<a name='237'>
+<font color=#447700>!<a name='238'></font>
+<font color=#447700>!----------------------------------------------------------------------<a name='239'></font>
+<font color=#447700>!-- th        potential temperature    (K)<a name='240'></font>
+<font color=#447700>!-- moist_new     updated moisture array   (kg/kg)<a name='241'></font>
+<font color=#447700>!-- moist_old     Old moisture array       (kg/kg)<a name='242'></font>
+<font color=#447700>!-- rho           density of air           (kg/m^3)<a name='243'></font>
+<font color=#447700>!-- pi_phy        exner function           (dimensionless)<a name='244'></font>
+<font color=#447700>!-- p             pressure                 (Pa)<a name='245'></font>
+<font color=#447700>!-- RAINNC        grid scale precipitation (mm)<a name='246'></font>
+<font color=#447700>!-- RAINNCV       one time step grid scale precipitation (mm/step)<a name='247'></font>
+<font color=#447700>!-- SNOWNC        grid scale snow and ice (mm)<a name='248'></font>
+<font color=#447700>!-- SNOWNCV       one time step grid scale snow and ice (mm/step)<a name='249'></font>
+<font color=#447700>!-- GRAUPELNC     grid scale graupel (mm)<a name='250'></font>
+<font color=#447700>!-- GRAUPELNCV    one time step grid scale graupel (mm/step)<a name='251'></font>
+<font color=#447700>!-- HAILNC        grid scale hail (mm)<a name='252'></font>
+<font color=#447700>!-- HAILNCV       one time step grid scale hail (mm/step)<a name='253'></font>
+<font color=#447700>!-- SR            one time step mass ratio of snow to total precip<a name='254'></font>
+<font color=#447700>!-- z             Height above sea level   (m)<a name='255'></font>
+<font color=#447700>!-- dt            Time step              (s)<a name='256'></font>
+<font color=#447700>!-- G             acceleration due to gravity  (m/s^2)<a name='257'></font>
+<font color=#447700>!-- CP            heat capacity at constant pressure for dry air (J/kg/K)<a name='258'></font>
+<font color=#447700>!-- R_d           gas constant for dry air (J/kg/K)<a name='259'></font>
+<font color=#447700>!-- R_v           gas constant for water vapor (J/kg/K)<a name='260'></font>
+<font color=#447700>!-- XLS           latent heat of sublimation   (J/kg)<a name='261'></font>
+<font color=#447700>!-- XLV           latent heat of vaporization  (J/kg)<a name='262'></font>
+<font color=#447700>!-- XLF           latent heat of melting       (J/kg)<a name='263'></font>
+<font color=#447700>!-- rhowater      water density                      (kg/m^3)<a name='264'></font>
+<font color=#447700>!-- rhosnow       snow density               (kg/m^3)<a name='265'></font>
+<font color=#447700>!-- F_ICE_PHY     Fraction of ice.<a name='266'></font>
+<font color=#447700>!-- F_RAIN_PHY    Fraction of rain.<a name='267'></font>
+<font color=#447700>!-- F_RIMEF_PHY   Mass ratio of rimed ice (rime factor)<a name='268'></font>
+<font color=#447700>!-- t8w           temperature at layer interfaces<a name='269'></font>
+<font color=#447700>!-- cldfra, cldfra_old, current, previous cloud fraction<a name='270'></font>
+<font color=#447700>!-- exch_h        vertical diffusivity (m2/s)<a name='271'></font>
+<font color=#447700>!-- qlsink        Fractional cloud water sink (/s)<a name='272'></font>
+<font color=#447700>!-- precr         rain precipitation rate at all levels (kg/m2/s)<a name='273'></font>
+<font color=#447700>!-- preci         ice precipitation rate at all levels (kg/m2/s)<a name='274'></font>
+<font color=#447700>!-- precs         snow precipitation rate at all levels (kg/m2/s)<a name='275'></font>
+<font color=#447700>!-- precg         graupel precipitation rate at all levels (kg/m2/s)                             &amp;<a name='276'></font>
+<font color=#447700>!-- P_QV          species index for water vapor<a name='277'></font>
+<font color=#447700>!-- P_QC          species index for cloud water<a name='278'></font>
+<font color=#447700>!-- P_QR          species index for rain water<a name='279'></font>
+<font color=#447700>!-- P_QI          species index for cloud ice<a name='280'></font>
+<font color=#447700>!-- P_QS          species index for snow<a name='281'></font>
+<font color=#447700>!-- P_QG          species index for graupel<a name='282'></font>
+<font color=#447700>!-- P_QH          species index for hail<a name='283'></font>
+<font color=#447700>!-- P_QNDROP      species index for cloud drop mixing ratio<a name='284'></font>
+<font color=#447700>!-- P_QNR         species index for rain number concentration,<a name='285'></font>
+<font color=#447700>!-- P_QNI         species index for cloud ice number concentration<a name='286'></font>
+<font color=#447700>!-- P_QNS         species index for snow number concentration,<a name='287'></font>
+<font color=#447700>!-- P_QNG         species index for graupel number concentration,<a name='288'></font>
+<font color=#447700>!-- P_QNH         species index for hail number concentration,<a name='289'></font>
+<font color=#447700>!-- P_QZR         species index for rain    reflectivity<a name='290'></font>
+<font color=#447700>!-- P_QZI         species index for ice     reflectivity<a name='291'></font>
+<font color=#447700>!-- P_QZS         species index for snow    reflectivity<a name='292'></font>
+<font color=#447700>!-- P_QZG         species index for graupel reflectivity<a name='293'></font>
+<font color=#447700>!-- P_QZH         species index for hail    reflectivity<a name='294'></font>
+<font color=#447700>!-- P_QVOLG       species index for graupel particle volume,<a name='295'></font>
+<font color=#447700>!-- id            grid id number<a name='296'></font>
+<font color=#447700>!-- ids           start index for i in domain<a name='297'></font>
+<font color=#447700>!-- ide           end index for i in domain<a name='298'></font>
+<font color=#447700>!-- jds           start index for j in domain<a name='299'></font>
+<font color=#447700>!-- jde           end index for j in domain<a name='300'></font>
+<font color=#447700>!-- kds           start index for k in domain<a name='301'></font>
+<font color=#447700>!-- kde           end index for k in domain<a name='302'></font>
+<font color=#447700>!-- ims           start index for i in memory<a name='303'></font>
+<font color=#447700>!-- ime           end index for i in memory<a name='304'></font>
+<font color=#447700>!-- jms           start index for j in memory<a name='305'></font>
+<font color=#447700>!-- jme           end index for j in memory<a name='306'></font>
+<font color=#447700>!-- kms           start index for k in memory<a name='307'></font>
+<font color=#447700>!-- kme           end index for k in memory<a name='308'></font>
+<font color=#447700>!-- i_start       start indices for i in tile<a name='309'></font>
+<font color=#447700>!-- i_end         end indices for i in tile<a name='310'></font>
+<font color=#447700>!-- j_start       start indices for j in tile<a name='311'></font>
+<font color=#447700>!-- j_end         end indices for j in tile<a name='312'></font>
+<font color=#447700>!-- its           start index for i in tile<a name='313'></font>
+<font color=#447700>!-- ite           end index for i in tile<a name='314'></font>
+<font color=#447700>!-- jts           start index for j in tile<a name='315'></font>
+<font color=#447700>!-- jte           end index for j in tile<a name='316'></font>
+<font color=#447700>!-- kts           start index for k in tile<a name='317'></font>
+<font color=#447700>!-- kte           end index for k in tile<a name='318'></font>
+<font color=#447700>!-- num_tiles     number of tiles<a name='319'></font>
+<font color=#447700>!-- diagflag      Logical to tell us when to produce diagnostics for history or restart<a name='320'></font>
+<font color=#447700>!<a name='321'></font>
+<font color=#447700>!======================================================================<a name='322'></font>
+  INTEGER,parameter :: iunit=6<a name='323'>
+  INTEGER :: mpi_error_code=1<a name='324'>
+<a name='325'>
+   TYPE(grid_config_rec_type),  INTENT(IN   ) , OPTIONAL   :: config_flags<a name='326'>
+   INTEGER,    INTENT(IN   )    :: mp_physics<a name='327'>
+   LOGICAL,    INTENT(IN   )    :: specified<a name='328'>
+   INTEGER, OPTIONAL, INTENT(IN   )    :: chem_opt, progn<a name='329'>
+   INTEGER, OPTIONAL, INTENT(IN   )    :: hail, ice2 <font color=#447700>!, ccntype<a name='330'></font>
+<font color=#447700>!<a name='331'></font>
+   INTEGER,      INTENT(IN   )    ::       ids,ide, jds,jde, kds,kde<a name='332'>
+   INTEGER,      INTENT(IN   )    ::       ims,ime, jms,jme, kms,kme,num_scalar<a name='333'>
+   INTEGER, OPTIONAL, INTENT(IN   )    ::       ips,ipe, jps,jpe, kps,kpe<a name='334'>
+   INTEGER,      INTENT(IN   )    ::                         kts,kte<a name='335'>
+   INTEGER,      INTENT(IN   )    ::     itimestep,num_tiles,spec_zone<a name='336'>
+   INTEGER, DIMENSION(num_tiles), INTENT(IN) ::                       &amp;<a name='337'>
+     &amp;           i_start,i_end,j_start,j_end<a name='338'>
+<a name='339'>
+   LOGICAL,      INTENT(IN   )    ::   warm_rain<a name='340'>
+<font color=#447700>!<a name='341'></font>
+   REAL, DIMENSION( ims:ime , kms:kme , jms:jme ),                    &amp;<a name='342'>
+         INTENT(INOUT) ::                                         th<a name='343'>
+<font color=#447700>!<a name='344'></font>
+<a name='345'>
+<font color=#447700>!<a name='346'></font>
+   REAL, DIMENSION( ims:ime , kms:kme , jms:jme ),                    &amp;<a name='347'>
+         INTENT(IN   ) ::                                             &amp;<a name='348'>
+                                                                 rho, &amp;<a name='349'>
+                                                                dz8w, &amp;<a name='350'>
+                                                                 p8w, &amp;<a name='351'>
+                                                              pi_phy, &amp;<a name='352'>
+                                                                   p<a name='353'>
+    REAL, DIMENSION( ims:ime , kms:kme , jms:jme ),INTENT(INOUT), OPTIONAL :: th_old,qv_old<a name='354'>
+    REAL,DIMENSION(ims:ime,kms:kme,jms:jme,num_scalar),INTENT(INOUT), OPTIONAL   :: scalar<a name='355'>
+    INTEGER, DIMENSION( ims:ime , jms:jme ), INTENT(IN), OPTIONAL::   IVGTYP<a name='356'>
+    REAL, DIMENSION( ims:ime, jms:jme ), INTENT(IN), OPTIONAL    :: XLAT, XLONG<a name='357'>
+<a name='358'>
+<font color=#447700>!=================<a name='359'></font>
+<font color=#447700>!Data for CAMMGMP scheme<a name='360'></font>
+   REAL,INTENT(IN), OPTIONAL ::accum_mode,aitken_mode,coarse_mode  <a name='361'>
+<font color=#447700>!1D variables required for CAMMGMP scheme<a name='362'></font>
+   REAL , DIMENSION( kms:kme ) ,                                      &amp;<a name='363'>
+        INTENT(IN   ) , OPTIONAL ::                                        fnm,  &amp; <font color=#447700>!Factors for interpolation at "w" grid (interfaces)<a name='364'></font>
+                                                                fnp     <a name='365'>
+<font color=#447700>!2D variables required for CAMMGMP scheme<a name='366'></font>
+   REAL, DIMENSION( ims:ime, jms:jme ),                               &amp;<a name='367'>
+        INTENT(IN), OPTIONAL ::                                                 &amp;<a name='368'>
+                                                                 qfx, &amp;    <font color=#447700>!Moisture flux at surface (kg m-2 s-1)<a name='369'></font>
+                                                                 rliq      <font color=#447700>!Vertically-integrated reserved cloud condensate(m/s)<a name='370'></font>
+ <a name='371'>
+ <font color=#447700>!3D variables required for CAMMGMP scheme<a name='372'></font>
+ REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &amp;<a name='373'>
+      INTENT(IN), OPTIONAL ::                                                   &amp;<a name='374'>
+                                                                 dlf, &amp;    <font color=#447700>!Detraining cloud water tendendcy<a name='375'></font>
+                                                                dlf2, &amp;    <font color=#447700>!dq/dt due to export of cloud water into environment by shallow convection(kg/kg/s)<a name='376'></font>
+                                                               t_phy, &amp;    <font color=#447700>!Temprature at the mid points (K)<a name='377'></font>
+                                                               p_hyd, &amp;    <font color=#447700>!Hydrostatic pressure(Pa)<a name='378'></font>
+                                                             p8w_hyd, &amp;    <font color=#447700>!Hydrostatic Pressure at level interface (Pa)<a name='379'></font>
+                                                              z_at_w, &amp;    <font color=#447700>!Height above sea level at layer interfaces (m) <a name='380'></font>
+                                                             tke_pbl, &amp;    <font color=#447700>!Turbulence kinetic energy<a name='381'></font>
+                                                          turbtype3d, &amp;    <font color=#447700>!Turbulent interface types [ no unit ]<a name='382'></font>
+                                                              smaw3d, &amp;    <font color=#447700>!Normalized Galperin instability function for momentum  ( 0&lt;= &lt;=4.964 and 1 at neutral ) [no units]<a name='383'></font>
+                                                                 alt, &amp;    <font color=#447700>!inverse density(m3/kg)<a name='384'></font>
+                                                           icwmrsh3d, &amp;    <font color=#447700>!Shallow cumulus in-cloud water mixing ratio (kg/m2)<a name='385'></font>
+                                                           icwmrdp3d, &amp;    <font color=#447700>!Deep Convection in-cloud water mixing ratio (kg/m2)<a name='386'></font>
+                                                             shfrc3d, &amp;    <font color=#447700>!Shallow cloud fraction<a name='387'></font>
+                                                             cmfmc3d, &amp;    <font color=#447700>!Deep + Shallow Convective mass flux [ kg /s/m^2 ]<a name='388'></font>
+                                                           cmfmc2_3d       <font color=#447700>!Shallow convective mass flux [ kg/s/m^2 ]<a name='389'></font>
+#if ( WRF_CHEM == 1 )<a name='390'>
+<font color=#447700>!4D variables required for CAMMGMP scheme<a name='391'></font>
+ REAL, OPTIONAL, DIMENSION( ims:ime, kms:kme, jms:jme,ntot_amode_cam_mam ),     &amp;<a name='392'>
+        INTENT(IN) ::                                                 &amp;<a name='393'>
+                                                             dgnum4D, &amp;<a name='394'>
+                                                          dgnumwet4D <a name='395'>
+#endif<a name='396'>
+<font color=#447700>!In-outs<a name='397'></font>
+ REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &amp;<a name='398'>
+      INTENT(INOUT) , OPTIONAL ::                                                &amp;<a name='399'>
+                                                       cldfra_old_mp, &amp;    <font color=#447700>!Old Cloud fraction for CAMMGMP microphysics only<a name='400'></font>
+                                                           rh_old_mp, &amp;    <font color=#447700>!Old RH<a name='401'></font>
+                                                          lcd_old_mp       <font color=#447700>!Old liquid cloud fraction<a name='402'></font>
+<font color=#447700>!In-outs -optional<a name='403'></font>
+#if ( WRF_CHEM == 1 )<a name='404'>
+ REAL, OPTIONAL, DIMENSION( ims:ime, kms:kme, jms:jme, num_chem),     &amp;<a name='405'>
+      INTENT(INOUT) ::                                                &amp;<a name='406'>
+                                                                 chem      <font color=#447700>!Chem array for CAMMGMP scheme Prognostic aerosols      <a name='407'></font>
+#endif<a name='408'>
+<font color=#447700>!outs<a name='409'></font>
+REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &amp;<a name='410'>
+      INTENT(INOUT) , OPTIONAL::                                                 &amp;<a name='411'>
+                                                            wsedl3d, &amp;    <font color=#447700>!Sedimentation velocity of stratiform liquid cloud droplet (m/s) <a name='412'></font>
+                                                          cldfra_mp, &amp;    <font color=#447700>!Old Cloud fraction for CAMMGMP microphysics only<a name='413'></font>
+                                                      cldfra_mp_all, &amp;    <font color=#447700>!Old Cloud fraction for CAMMGMP microphysics only<a name='414'></font>
+                                                            cldfrai, &amp;    <font color=#447700>!Old Cloud fraction for CAMMGMP microphysics only<a name='415'></font>
+                                                            cldfral, &amp;    <font color=#447700>!Old Cloud fraction for CAMMGMP microphysics only<a name='416'></font>
+                                                            lradius, &amp;    <font color=#447700>!Old Cloud fraction for CAMMGMP microphysics only<a name='417'></font>
+                                                            iradius, &amp;    <font color=#447700>!Old Cloud fraction for CAMMGMP microphysics only                                                            <a name='418'></font>
+                                                        cldfra_conv <a name='419'>
+#if ( WRF_CHEM == 1 )<a name='420'>
+REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                        &amp;<a name='421'>
+      INTENT(INOUT), OPTIONAL ::                                                 &amp;<a name='422'>
+                                                              qme3d, &amp;     <font color=#447700>!Net condensation rate (kg/kg/s)<a name='423'></font>
+                                                            prain3d, &amp;     <font color=#447700>!Rate of conversion of condensate to precipitation (kg/kg/s)<a name='424'></font>
+                                                           nevapr3d, &amp;     <font color=#447700>!Evaporation rate of rain + snow (kg/kg/s)<a name='425'></font>
+                                                rate1ord_cw2pr_st3d        <font color=#447700>!1st order rate for direct conversion of strat. cloud water to precip (1/s)<a name='426'></font>
+#endif<a name='427'>
+<a name='428'>
+   REAL, INTENT(INOUT),  DIMENSION(ims:ime, kms:kme, jms:jme ) ::     &amp;<a name='429'>
+                                     F_ICE_PHY,F_RAIN_PHY,F_RIMEF_PHY<a name='430'>
+<font color=#447700>!!$#if ( WRF_CHEM == 1 )<a name='431'></font>
+<font color=#447700>!  REAL, INTENT(OUT), DIMENSION(ims:ime, kms:kme, jms:jme ) ::     &amp;<a name='432'></font>
+   REAL, OPTIONAL, INTENT(OUT), DIMENSION(ims:ime, kms:kme, jms:jme ) ::     &amp;<a name='433'>
+<font color=#447700>!!$#else<a name='434'></font>
+<font color=#447700>!!$  REAL, DIMENSION(ims:ime, kms:kme, jms:jme ) ::     &amp;<a name='435'></font>
+<font color=#447700>!!$#endif<a name='436'></font>
+         qlsink, &amp; <font color=#447700>! cloud water sink (/s)<a name='437'></font>
+         precr, &amp; <font color=#447700>! rain precipitation rate at all levels (kg/m2/s)<a name='438'></font>
+         preci, &amp; <font color=#447700>! ice precipitation rate at all levels (kg/m2/s)<a name='439'></font>
+         precs, &amp; <font color=#447700>! snow precipitation rate at all levels (kg/m2/s)<a name='440'></font>
+         precg    <font color=#447700>! graupel precipitation rate at all levels (kg/m2/s)<a name='441'></font>
+<a name='442'>
+<font color=#447700>!<a name='443'></font>
+<a name='444'>
+   REAL , DIMENSION( ims:ime , jms:jme ) , INTENT(IN)   :: XLAND<a name='445'>
+   REAL , DIMENSION( ims:ime , jms:jme ) , INTENT(IN), OPTIONAL   :: SNOWH<a name='446'>
+<a name='447'>
+   REAL , DIMENSION( ims:ime , jms:jme ) , INTENT(OUT)   :: SR<a name='448'>
+<a name='449'>
+   REAL, INTENT(IN   ) :: dt,dx,dy<a name='450'>
+<a name='451'>
+   INTEGER, DIMENSION( ims:ime , jms:jme ), INTENT(INOUT) :: LOWLYR<a name='452'>
+<a name='453'>
+<font color=#447700>!<a name='454'></font>
+<font color=#447700>! Optional<a name='455'></font>
+<font color=#447700>!<a name='456'></font>
+   REAL, OPTIONAL, DIMENSION( ims:ime , kms:kme, jms:jme ) , INTENT(OUT) :: refl_10cm<a name='457'>
+   REAL, OPTIONAL, DIMENSION( ims:ime , kms:kme, jms:jme ) , INTENT(OUT) :: vmi3d,di3d,rhopo3d <font color=#447700>! for P3<a name='458'></font>
+<a name='459'>
+   LOGICAL,  OPTIONAL,   INTENT(IN   )    :: channel_switch<a name='460'>
+   REAL, OPTIONAL,  INTENT(INOUT   ) :: naer  <font color=#447700>! aerosol number concentration (/kg)<a name='461'></font>
+   REAL, DIMENSION( ims:ime, jms:jme ), INTENT(IN) , OPTIONAL :: qnwfa2d      <font color=#447700>! Added by G. Thompson<a name='462'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                  &amp;<a name='463'>
+         OPTIONAL,                                                &amp;<a name='464'>
+         INTENT(INOUT ) ::                                        &amp;<a name='465'>
+                  u,v,w, z, t8w                                       &amp;<a name='466'>
+                 ,cldfra, cldfra_old, exch_h                      &amp;<a name='467'>
+                 ,qv_curr,qc_curr,qr_curr,qi_curr,qs_curr,qg_curr &amp;<a name='468'>
+                 ,qt_curr,qndrop_curr,qni_curr,qh_curr,qnh_curr   &amp;<a name='469'>
+                 ,qns_curr,qnr_curr,qng_curr,qnn_curr,qnc_curr    &amp;<a name='470'>
+                 ,qic_curr,qip_curr,qid_curr &amp;<a name='471'>
+                 ,qnic_curr,qnip_curr,qnid_curr &amp;<a name='472'>
+                 ,qzr_curr,qzi_curr,qzs_curr,qzg_curr,qzh_curr    &amp;<a name='473'>
+                 ,qir_curr,qib_curr                               &amp; <font color=#447700>! for P3<a name='474'></font>
+                 ,effr_curr,ice_effr_curr,tot_effr_curr           &amp;<a name='475'>
+                 ,qic_effr_curr,qip_effr_curr,qid_effr_curr           &amp;<a name='476'>
+                  ,kext_ql,kext_qs,kext_qg          &amp;<a name='477'>
+                 ,kext_qh,kext_qa                       &amp;<a name='478'>
+                 ,kext_qic,kext_qip,kext_qid,tempc,height      &amp;<a name='479'>
+                 ,kext_ft_qic,kext_ft_qip,kext_ft_qid &amp;<a name='480'>
+                 ,kext_ft_qs,kext_ft_qg                           &amp;<a name='481'>
+                 ,qnwfa_curr,qnifa_curr                           &amp; <font color=#447700>! Added by G. Thompson<a name='482'></font>
+                 ,qvolg_curr,qvolh_curr, qrimef_curr<a name='483'>
+<a name='484'>
+<a name='485'>
+<a name='486'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                  &amp;<a name='487'>
+         OPTIONAL,                                                &amp;<a name='488'>
+         INTENT(IN) :: qrcuten, qscuten, qicuten, qccuten<a name='489'>
+   INTEGER, INTENT(IN), optional ::     cu_used<a name='490'>
+#if ( WRF_CHEM == 1 )<a name='491'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                  &amp;<a name='492'>
+         INTENT(INOUT) :: rainprod, evapprod<a name='493'>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                  &amp;<a name='494'>
+         INTENT(INOUT) :: qv_b4mp, qc_b4mp, qi_b4mp, qs_b4mp<a name='495'>
+#endif<a name='496'>
+<font color=#447700>! YLIN<a name='497'></font>
+<font color=#447700>! Added RI_CURR similar to microphysics fields above<a name='498'></font>
+   REAL, DIMENSION( ims:ime, kms:kme, jms:jme ),                  &amp;<a name='499'>
+         OPTIONAL,                                                &amp;<a name='500'>
+         INTENT(INOUT) :: ri_curr<a name='501'>
+<a name='502'>
+<a name='503'>
+   REAL, DIMENSION(ims:ime, kms:kme, jms:jme ),                   &amp;<a name='504'>
+         OPTIONAL,                                                &amp;<a name='505'>
+         INTENT(OUT ) ::                                          &amp;<a name='506'>
+                  nsource<a name='507'>
+<a name='508'>
+<font color=#447700>!<a name='509'></font>
+   REAL, DIMENSION( ims:ime , jms:jme ),                          &amp;<a name='510'>
+         INTENT(INOUT),                                           &amp;<a name='511'>
+         OPTIONAL   ::                                            &amp;<a name='512'>
+                                                           RAINNC &amp;<a name='513'>
+                                                         ,RAINNCV &amp;<a name='514'>
+                                                          ,SNOWNC &amp;<a name='515'>
+                                                         ,SNOWNCV &amp;<a name='516'>
+                                                       ,GRAUPELNC &amp;<a name='517'>
+                                                      ,GRAUPELNCV &amp;<a name='518'>
+                                                          ,HAILNC &amp;<a name='519'>
+                                                         ,HAILNCV<a name='520'>
+   INTEGER,OPTIONAL,INTENT(IN   )    ::                        id<a name='521'>
+<a name='522'>
+   REAL , DIMENSION( ims:ime , jms:jme ) , OPTIONAL ,             &amp;<a name='523'>
+         INTENT(IN)   ::                                       ht<a name='524'>
+<a name='525'>
+   REAL, DIMENSION (:), OPTIONAL, INTENT(INOUT) :: mp_restart_state &amp;<a name='526'>
+                                         ,tbpvs_state,tbpvs0_state<a name='527'>
+<font color=#447700>!<a name='528'></font>
+<a name='529'>
+   LOGICAL, OPTIONAL :: f_qv,f_qc,f_qr,f_qi,f_qs,f_qg,f_qndrop,f_qni,f_qt    &amp;<a name='530'>
+                       ,f_qns,f_qnr,f_qng,f_qnn,f_qnc,f_qh,f_qnh,f_qzr       &amp;<a name='531'>
+                      ,f_effr,f_ice_effr,f_tot_effr &amp;<a name='532'>
+                       ,f_qic_effr,f_qip_effr,f_qid_effr &amp;<a name='533'>
+                      ,f_qic,f_qip,f_qid &amp;<a name='534'>
+                      ,f_qnic,f_qnip,f_qnid                                  &amp;<a name='535'>
+                       ,f_qzi,f_qzs,f_qzg,f_qzh,f_qvolg,f_qvolh              &amp;<a name='536'>
+                       ,f_qrimef                                             &amp;<a name='537'>
+                       ,f_qir,f_qib                                          &amp; <font color=#447700>! for P3<a name='538'></font>
+                       ,f_qnwfa, f_qnifa                         <font color=#447700>! Added by G. Thompson<a name='539'></font>
+<a name='540'>
+<a name='541'>
+   LOGICAL, OPTIONAL, INTENT(IN) :: diagflag<a name='542'>
+   REAL, INTENT(IN) :: ccn_conc <font color=#447700>! RAS<a name='543'></font>
+   INTEGER, OPTIONAL, INTENT(IN) :: do_radar_ref<a name='544'>
+   REAL, DIMENSION(ims:ime,kms:kme,jms:jme), INTENT(INOUT) ::  &amp; <font color=#447700>! G. Thompson<a name='545'></font>
+                 re_cloud, re_ice, re_snow<a name='546'>
+   INTEGER, INTENT(IN):: has_reqc, has_reqi, has_reqs<a name='547'>
+<font color=#447700>!  REAL , DIMENSION( ims:ime , jms:jme ), OPTIONAL, INTENT(INOUT) :: lwp<a name='548'></font>
+<a name='549'>
+<font color=#447700>! LOCAL  VAR<a name='550'></font>
+<a name='551'>
+   INTEGER :: i,j,k,its,ite,jts,jte,ij,sz,n<a name='552'>
+   LOGICAL :: channel<a name='553'>
+   LOGICAL :: nssl_progn = .false.<a name='554'>
+   REAL    :: z0, z1, z2, w1, w2<a name='555'>
+<a name='556'>
+   integer, parameter :: ntot = 50<a name='557'>
+   real :: wmin, wmax<a name='558'>
+   integer :: ierr<a name='559'>
+<a name='560'>
+<font color=#447700>!---------------------------------------------------------------------<a name='561'></font>
+<font color=#447700>!  check for microphysics type.  We need a clean way to<a name='562'></font>
+<font color=#447700>!  specify these things!<a name='563'></font>
+<font color=#447700>!---------------------------------------------------------------------<a name='564'></font>
+<a name='565'>
+   channel = .FALSE.<a name='566'>
+   IF ( PRESENT ( channel_switch ) ) channel = channel_switch<a name='567'>
+<a name='568'>
+   if (mp_physics .eq. 0) return<a name='569'>
+   IF( specified ) THEN<a name='570'>
+     sz = spec_zone<a name='571'>
+   ELSE<a name='572'>
+     sz = 0<a name='573'>
+   ENDIF<a name='574'>
+<a name='575'>
+<font color=#447700>! set this to true to print out the global max/min for W on each time step.<a name='576'></font>
+   IF ( .false. ) THEN<a name='577'>
+      wmax = maxval( w(ips:ipe,kps:kpe,jps:jpe) )<a name='578'>
+      wmin = minval( w(ips:ipe,kps:kpe,jps:jpe) )<a name='579'>
+#if ( defined(DM_PARALLEL)  &amp;&amp;   <font color=#447700>! defined(STUBMPI) )<a name='580'></font>
+      wmax = wrf_dm_max_real ( wmax )<a name='581'>
+      wmin = wrf_dm_min_real ( wmin )<a name='582'>
+#endif<a name='583'>
+      WRITE( wrf_err_message , * ) 'microphysics_driver: GLOBAL w max/min = ', wmax, wmin<a name='584'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_800"> ( wrf_err_message )<a name='585'>
+   ENDIF<a name='586'>
+<a name='587'>
+#ifdef XEON_OPTIMIZED_WSM5<a name='588'>
+   <font color=#447700>! the OpenMP loops are inside the scheme when running on MIC<a name='589'></font>
+   IF ( mp_physics .EQ. WSM5SCHEME ) THEN<a name='590'>
+       IF (channel) THEN<a name='591'>
+         its = max(ips,ids)<a name='592'>
+         ite = min(ipe,ide-1)<a name='593'>
+       ELSE<a name='594'>
+         its = max(ips,ids+sz)<a name='595'>
+         ite = min(ipe,ide-1-sz)<a name='596'>
+       ENDIF<a name='597'>
+       jts = max(jps,jds+sz)<a name='598'>
+       jte = min(jpe,jde-1-sz)<a name='599'>
+<a name='600'>
+       CALL <A href='../../html_code/phys/module_mp_wsm5_accel.F.html#WSM5'>wsm5</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WSM5_1">(                                              &amp;<a name='601'>
+             TH=th                                             &amp;<a name='602'>
+            ,Q=qv_curr                                         &amp;<a name='603'>
+            ,QC=qc_curr                                        &amp;<a name='604'>
+            ,QR=qr_curr                                        &amp;<a name='605'>
+            ,QI=qi_curr                                        &amp;<a name='606'>
+            ,QS=qs_curr                                        &amp;<a name='607'>
+            ,DEN=rho,PII=pi_phy,P=p,DELZ=dz8w                  &amp;<a name='608'>
+            ,DELT=dt,G=g,CPD=cp,CPV=cpv                        &amp;<a name='609'>
+            ,RD=r_d,RV=r_v,T0C=svpt0                           &amp;<a name='610'>
+            ,EP1=ep_1, EP2=ep_2, QMIN=epsilon                  &amp;<a name='611'>
+            ,XLS=xls, XLV0=xlv, XLF0=xlf                       &amp;<a name='612'>
+            ,DEN0=rhoair0, DENR=rhowater                       &amp;<a name='613'>
+            ,CLIQ=cliq,CICE=cice,PSAT=psat                     &amp;<a name='614'>
+            ,RAIN=rainnc ,RAINNCV=rainncv                      &amp;<a name='615'>
+            ,SNOW=snownc ,SNOWNCV=snowncv                      &amp;<a name='616'>
+            ,SR=sr                                             &amp;<a name='617'>
+            ,REFL_10CM=refl_10cm                               &amp;<a name='618'>
+            ,diagflag=diagflag                                 &amp;<a name='619'>
+            ,do_radar_ref=do_radar_ref                         &amp;<a name='620'>
+            ,has_reqc=has_reqc                                 &amp;  <font color=#447700>! for radiation +<a name='621'></font>
+            ,has_reqi=has_reqi                                 &amp;<a name='622'>
+            ,has_reqs=has_reqs                                 &amp;<a name='623'>
+            ,re_cloud=re_cloud                                 &amp;<a name='624'>
+            ,re_ice=re_ice                                     &amp;<a name='625'>
+            ,re_snow=re_snow                                   &amp;  <font color=#447700>! for radiation -  <a name='626'></font>
+            ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='627'>
+            ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='628'>
+            ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='629'>
+            )<a name='630'>
+<a name='631'>
+   ELSE<a name='632'>
+#endif<a name='633'>
+<a name='634'>
+   <font color=#447700>!$OMP PARALLEL DO   &amp;<a name='635'></font>
+   <font color=#447700>!$OMP PRIVATE ( ij, its, ite, jts, jte, i,j,k,n )<a name='636'></font>
+<a name='637'>
+   DO ij = 1 , num_tiles<a name='638'>
+       IF (channel) THEN<a name='639'>
+         its = max(i_start(ij),ids)<a name='640'>
+         ite = min(i_end(ij),ide-1)<a name='641'>
+       ELSE<a name='642'>
+         its = max(i_start(ij),ids+sz)<a name='643'>
+         ite = min(i_end(ij),ide-1-sz)<a name='644'>
+       ENDIF<a name='645'>
+       jts = max(j_start(ij),jds+sz)<a name='646'>
+       jte = min(j_end(ij),jde-1-sz)<a name='647'>
+<a name='648'>
+<font color=#447700>! 2009-06009 rce - zero all these for safety<a name='649'></font>
+       IF( PRESENT(qlsink) ) qlsink(its:ite,kts:kte,jts:jte) = 0.<a name='650'>
+       IF( PRESENT(precr ) ) precr(its:ite,kts:kte,jts:jte)  = 0.<a name='651'>
+       IF( PRESENT(preci ) ) preci(its:ite,kts:kte,jts:jte)  = 0.<a name='652'>
+       IF( PRESENT(precs ) ) precs(its:ite,kts:kte,jts:jte)  = 0.<a name='653'>
+       IF( PRESENT(precg ) ) precg(its:ite,kts:kte,jts:jte)  = 0.<a name='654'>
+<a name='655'>
+<font color=#447700>!-----------<a name='656'></font>
+       IF( PRESENT(chem_opt) .AND. PRESENT(progn) ) THEN<a name='657'>
+       <a name='658'>
+       <font color=#447700>! ERM: check whether to use built-in droplet nucleation or use qndrop from CHEM<a name='659'></font>
+       IF ( mp_physics==NSSL_2MOMCCN .or. mp_physics==NSSL_2MOM .or. mp_physics==NSSL_2MOMG ) THEN<a name='660'>
+         IF ( progn &gt; 0 ) THEN<a name='661'>
+          IF ( .not. (chem_opt == 0 .or. chem_opt == 401) ) nssl_progn = .true.<a name='662'>
+         ELSE<a name='663'>
+           nssl_progn = .false. <font color=#447700>! use NUCOND for droplet nucleation<a name='664'></font>
+         ENDIF<a name='665'>
+       ENDIF<a name='666'>
+       <a name='667'>
+       <font color=#447700>!Add pass for dust-only wrf-chem option - RAS<a name='668'></font>
+       IF( (chem_opt==0 .OR. chem_opt==401) .AND. progn==1 .AND. (mp_physics==LINSCHEME  .OR. mp_physics==MORR_TWO_MOMENT)) THEN<a name='669'>
+          IF( PRESENT( QNDROP_CURR ) ) THEN<a name='670'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling prescribe_aerosol_mixactivate' )<a name='671'>
+<font color=#447700>! 06-nov-2005 rce - id  &amp; itimestep added to arg list<a name='672'></font>
+             call <A href='../../html_code/phys/module_mixactivate.F.html#PRESCRIBE_AEROSOL_MIXACTIVATE'>prescribe_aerosol_mixactivate</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRESCRIBE_AEROSOL_MIXACTIVATE_1"> (               &amp;<a name='673'>
+                  id, itimestep, dt, naer,                      &amp;<a name='674'>
+                  ccn_conc, chem_opt,                           &amp; <font color=#447700>!RAS13.1<a name='675'></font>
+                  rho, th, pi_phy, w, cldfra, cldfra_old,       &amp;<a name='676'>
+                  z, dz8w, p8w, t8w, exch_h,                    &amp;<a name='677'>
+                  qv_curr, qc_curr, qi_curr, qndrop_curr,       &amp;<a name='678'>
+                  nsource,                                      &amp;<a name='679'>
+                  ids,ide, jds,jde, kds,kde,                    &amp;<a name='680'>
+                  ims,ime, jms,jme, kms,kme,                    &amp;<a name='681'>
+                  its,ite, jts,jte, kts,kte,                    &amp;<a name='682'>
+                  F_QC=f_qc, F_QI=f_qi                          )<a name='683'>
+          END IF<a name='684'>
+       ELSEIF ( (chem_opt==0 .OR. chem_opt==401) .AND. progn==1 .AND. (mp_physics==NSSL_2MOMCCN .or.      &amp;<a name='685'>
+                 mp_physics==NSSL_2MOM .or. mp_physics==NSSL_2MOMG)) THEN<a name='686'>
+<font color=#447700>!          Do nothing here for the moment. Use activation of CCN within the NSSL_2MOM scheme instead, based on nssl_cccn namelist value.<a name='687'></font>
+       ELSEIF ( progn==1 .AND. mp_physics/=LINSCHEME .AND. mp_physics/=MORR_TWO_MOMENT &amp;<a name='688'>
+                .AND. mp_physics/=NSSL_2MOM .AND. mp_physics/=NSSL_2MOMCCN .AND. mp_physics/=NSSL_2MOMG ) THEN<a name='689'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_707">( &amp;<a name='690'>
+             "SETTINGS ERROR: Prognostic cloud droplet number can only be used with the mp_physics=LINSCHEME or MORRISON or NSSL_2MOM.")<a name='691'>
+       END IF<a name='692'>
+       END IF<a name='693'>
+<a name='694'>
+     micro_select: SELECT CASE(mp_physics)<a name='695'>
+<a name='696'>
+        CASE (KESSLERSCHEME)<a name='697'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling kessler' )<a name='698'>
+             IF ( PRESENT( QV_CURR ) .AND. PRESENT( QC_CURR ) .AND.  &amp;<a name='699'>
+                                           PRESENT( QR_CURR ) .AND.  &amp;<a name='700'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV ) .AND.  &amp;<a name='701'>
+                                           PRESENT( Z       ))  THEN<a name='702'>
+               CALL <A href='../../html_code/phys/module_mp_kessler.F.html#KESSLER'>kessler</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="KESSLER_1">(                                        &amp;<a name='703'>
+                  T=th                                              &amp;<a name='704'>
+                 ,QV=qv_curr                                        &amp;<a name='705'>
+                 ,QC=qc_curr                                        &amp;<a name='706'>
+                 ,QR=qr_curr                                        &amp;<a name='707'>
+                 ,RHO=rho, PII=pi_phy,DT_IN=dt, Z=z, XLV=xlv, CP=cp &amp;<a name='708'>
+                 ,EP2=ep_2,SVP1=svp1,SVP2=svp2                      &amp;<a name='709'>
+                 ,SVP3=svp3,SVPT0=svpt0,RHOWATER=rhowater           &amp;<a name='710'>
+                 ,DZ8W=dz8w                                         &amp;<a name='711'>
+                 ,RAINNC=rainnc,RAINNCV=rainncv                     &amp;<a name='712'>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='713'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='714'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='715'>
+                                                                    )<a name='716'>
+             ELSE<a name='717'>
+                CALL wrf_error_fatal ( 'arguments not present for calling kessler' )<a name='718'>
+             ENDIF<a name='719'>
+<a name='720'>
+<font color=#447700>!<a name='721'></font>
+        CASE (THOMPSONAERO)<a name='722'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling thompson' )<a name='723'>
+             IF ( PRESENT( QV_CURR ) .AND. PRESENT ( QC_CURR )   .AND.  &amp;<a name='724'>
+                  PRESENT( QR_CURR ) .AND. PRESENT ( QI_CURR )   .AND.  &amp;<a name='725'>
+                  PRESENT( QS_CURR ) .AND. PRESENT ( QG_CURR )   .AND.  &amp;<a name='726'>
+                  PRESENT( QNR_CURR) .AND. PRESENT ( QNI_CURR)   .AND.  &amp;<a name='727'>
+                  PRESENT( QNC_CURR) .AND. PRESENT ( QNWFA_CURR) .AND.  &amp;<a name='728'>
+                  PRESENT( QNIFA_CURR).AND.PRESENT ( QNWFA2D)    .AND.  &amp;<a name='729'>
+                  PRESENT( SNOWNC)   .AND. PRESENT ( SNOWNCV)    .AND.  &amp;<a name='730'>
+                  PRESENT( GRAUPELNC).AND. PRESENT ( GRAUPELNCV) .AND.  &amp;<a name='731'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV ) ) THEN<a name='732'>
+#if ( WRF_CHEM == 1 )<a name='733'>
+                 qv_b4mp(its:ite,kts:kte,jts:jte) = qv_curr(its:ite,kts:kte,jts:jte)<a name='734'>
+                 qc_b4mp(its:ite,kts:kte,jts:jte) = qc_curr(its:ite,kts:kte,jts:jte)<a name='735'>
+                 qi_b4mp(its:ite,kts:kte,jts:jte) = qi_curr(its:ite,kts:kte,jts:jte)<a name='736'>
+                 qs_b4mp(its:ite,kts:kte,jts:jte) = qs_curr(its:ite,kts:kte,jts:jte)<a name='737'>
+#endif<a name='738'>
+             CALL <A href='../../html_code/phys/module_mp_thompson.F.html#MP_GT_DRIVER'>mp_gt_driver</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MP_GT_DRIVER_1">(                          &amp;<a name='739'>
+                     QV=qv_curr,                         &amp;<a name='740'>
+                     QC=qc_curr,                         &amp;<a name='741'>
+                     QR=qr_curr,                         &amp;<a name='742'>
+                     QI=qi_curr,                         &amp;<a name='743'>
+                     QS=qs_curr,                         &amp;<a name='744'>
+                     QG=qg_curr,                         &amp;<a name='745'>
+                     NI=qni_curr,                        &amp;<a name='746'>
+                     NR=qnr_curr,                        &amp;<a name='747'>
+                     NC=qnc_curr,                        &amp;<a name='748'>
+                     NWFA=qnwfa_curr,                    &amp;<a name='749'>
+                     NIFA=qnifa_curr,                    &amp;<a name='750'>
+                     NWFA2D=qnwfa2d,                     &amp;<a name='751'>
+                     TH=th,                              &amp;<a name='752'>
+                     PII=pi_phy,                         &amp;<a name='753'>
+                     P=p,                                &amp;<a name='754'>
+                     W=w,                                &amp;<a name='755'>
+                     DZ=dz8w,                            &amp;<a name='756'>
+                     DT_IN=dt,                           &amp;<a name='757'>
+                     ITIMESTEP=itimestep,                &amp;<a name='758'>
+                     RAINNC=RAINNC,                      &amp;<a name='759'>
+                     RAINNCV=RAINNCV,                    &amp;<a name='760'>
+                     SNOWNC=SNOWNC,                      &amp;<a name='761'>
+                     SNOWNCV=SNOWNCV,                    &amp;<a name='762'>
+                     GRAUPELNC=GRAUPELNC,                &amp;<a name='763'>
+                     GRAUPELNCV=GRAUPELNCV,              &amp;<a name='764'>
+                     SR=SR,                              &amp;<a name='765'>
+#if ( WRF_CHEM == 1 )<a name='766'>
+                     RAINPROD=rainprod,                  &amp;<a name='767'>
+                     EVAPPROD=evapprod,                  &amp;<a name='768'>
+#endif<a name='769'>
+                     REFL_10CM=refl_10cm,                &amp;<a name='770'>
+                     diagflag=diagflag,                  &amp;<a name='771'>
+                     do_radar_ref=do_radar_ref,          &amp;<a name='772'>
+                     re_cloud=re_cloud,                  &amp;<a name='773'>
+                     re_ice=re_ice,                      &amp;<a name='774'>
+                     re_snow=re_snow,                    &amp;<a name='775'>
+                     has_reqc=has_reqc,                  &amp; <font color=#447700>! G. Thompson<a name='776'></font>
+                     has_reqi=has_reqi,                  &amp; <font color=#447700>! G. Thompson<a name='777'></font>
+                     has_reqs=has_reqs,                  &amp; <font color=#447700>! G. Thompson<a name='778'></font>
+                 IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde, &amp;<a name='779'>
+                 IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme, &amp;<a name='780'>
+                 ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte)<a name='781'>
+             ELSE<a name='782'>
+                CALL wrf_error_fatal ( 'arguments not present for calling thompson_et_al' )<a name='783'>
+             ENDIF<a name='784'>
+<font color=#447700>!<a name='785'></font>
+        CASE (THOMPSON)<a name='786'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling thompson' )<a name='787'>
+             IF ( PRESENT( QV_CURR ) .AND. PRESENT ( QC_CURR ) .AND.  &amp;<a name='788'>
+                  PRESENT( QR_CURR ) .AND. PRESENT ( QI_CURR ) .AND.  &amp;<a name='789'>
+                  PRESENT( QS_CURR ) .AND. PRESENT ( QG_CURR ) .AND.  &amp;<a name='790'>
+                  PRESENT( QNR_CURR) .AND. PRESENT ( QNI_CURR) .AND.  &amp;<a name='791'>
+<font color=#447700>!                  PRESENT( SNOWNC) .AND. PRESENT ( SNOWNCV) .AND.        &amp;<a name='792'></font>
+<font color=#447700>!                  PRESENT( GRAUPELNC) .AND. PRESENT ( GRAUPELNCV) .AND.  &amp;<a name='793'></font>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV ) ) THEN<a name='794'>
+#if ( WRF_CHEM == 1 )<a name='795'>
+                 qv_b4mp(its:ite,kts:kte,jts:jte) = qv_curr(its:ite,kts:kte,jts:jte)<a name='796'>
+                 qc_b4mp(its:ite,kts:kte,jts:jte) = qc_curr(its:ite,kts:kte,jts:jte)<a name='797'>
+                 qi_b4mp(its:ite,kts:kte,jts:jte) = qi_curr(its:ite,kts:kte,jts:jte)<a name='798'>
+                 qs_b4mp(its:ite,kts:kte,jts:jte) = qs_curr(its:ite,kts:kte,jts:jte)<a name='799'>
+#endif<a name='800'>
+             CALL <A href='../../html_code/phys/module_mp_thompson.F.html#MP_GT_DRIVER'>mp_gt_driver</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MP_GT_DRIVER_2">(                          &amp;<a name='801'>
+                     QV=qv_curr,                         &amp;<a name='802'>
+                     QC=qc_curr,                         &amp;<a name='803'>
+                     QR=qr_curr,                         &amp;<a name='804'>
+                     QI=qi_curr,                         &amp;<a name='805'>
+                     QS=qs_curr,                         &amp;<a name='806'>
+                     QG=qg_curr,                         &amp;<a name='807'>
+                     NI=qni_curr,                        &amp;<a name='808'>
+                     NR=qnr_curr,                        &amp;<a name='809'>
+                     TH=th,                              &amp;<a name='810'>
+                     PII=pi_phy,                         &amp;<a name='811'>
+                     P=p,                                &amp;<a name='812'>
+                     W=w,                                &amp;<a name='813'>
+                     DZ=dz8w,                            &amp;<a name='814'>
+                     DT_IN=dt,                           &amp;<a name='815'>
+                     ITIMESTEP=itimestep,                &amp;<a name='816'>
+                     RAINNC=RAINNC,                      &amp;<a name='817'>
+                     RAINNCV=RAINNCV,                    &amp;<a name='818'>
+                     SNOWNC=SNOWNC,                      &amp;<a name='819'>
+                     SNOWNCV=SNOWNCV,                    &amp;<a name='820'>
+                     GRAUPELNC=GRAUPELNC,                &amp;<a name='821'>
+                     GRAUPELNCV=GRAUPELNCV,              &amp;<a name='822'>
+                     SR=SR,                              &amp;<a name='823'>
+#if ( WRF_CHEM == 1 )<a name='824'>
+                     RAINPROD=rainprod,                  &amp;<a name='825'>
+                     EVAPPROD=evapprod,                  &amp;<a name='826'>
+#endif<a name='827'>
+                     REFL_10CM=refl_10cm,                &amp;<a name='828'>
+                     diagflag=diagflag,                  &amp;<a name='829'>
+                     do_radar_ref=do_radar_ref,          &amp;<a name='830'>
+                     re_cloud=re_cloud,                  &amp; <font color=#447700>! G. Thompson<a name='831'></font>
+                     re_ice=re_ice,                      &amp; <font color=#447700>! G. Thompson<a name='832'></font>
+                     re_snow=re_snow,                    &amp; <font color=#447700>! G. Thompson<a name='833'></font>
+                     has_reqc=has_reqc,                  &amp; <font color=#447700>! G. Thompson<a name='834'></font>
+                     has_reqi=has_reqi,                  &amp; <font color=#447700>! G. Thompson<a name='835'></font>
+                     has_reqs=has_reqs,                  &amp; <font color=#447700>! G. Thompson<a name='836'></font>
+                 IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde, &amp;<a name='837'>
+                 IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme, &amp;<a name='838'>
+                 ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte)<a name='839'>
+             ELSE<a name='840'>
+                CALL wrf_error_fatal ( 'arguments not present for calling thompson_et_al' )<a name='841'>
+             ENDIF<a name='842'>
+#if (EM_CORE==1)<a name='843'>
+       CASE (FAST_KHAIN_LYNN)<a name='844'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling sbm' )<a name='845'>
+               CALL <A href='../../html_code/phys/module_mp_fast_sbm.F.html#FAST_SBM'>fast_sbm</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FAST_SBM_1">(W=w,U=u,V=v,TH_OLD=th_old          &amp;<a name='846'>
+                 ,CHEM_new=scalar,N_CHEM=num_scalar                     &amp;<a name='847'>
+                 ,ITIMESTEP=itimestep,DT=dt,DX=dx,DY=dy             &amp;<a name='848'>
+                 ,DZ8W=dz8w,RHO_PHY=rho,P_PHY=p,PI_PHY=pi_phy,TH_PHY=th &amp;<a name='849'>
+                 ,xland=xland                                       &amp;<a name='850'>
+                 ,ivgtyp=ivgtyp                                      &amp;<a name='851'>
+                 ,xlat=xlat                                        &amp;<a name='852'>
+                 ,xlong=xlong                                        &amp;<a name='853'>
+                 ,QV=qv_curr                                        &amp;<a name='854'>
+                 ,QC=qc_curr                                        &amp;<a name='855'>
+                 ,QR=qr_curr                                        &amp;<a name='856'>
+                 ,QI=qi_curr                                        &amp;<a name='857'>
+                 ,QS=qs_curr                                        &amp;<a name='858'>
+                 ,QG=qg_curr                                        &amp;<a name='859'>
+                 ,QV_OLD=qv_old                                     &amp;<a name='860'>
+                 ,QNC=qnc_curr                                      &amp;<a name='861'>
+                 ,QNR=qnr_curr                                      &amp;<a name='862'>
+                 ,QNS=qns_curr                                      &amp;<a name='863'>
+                 ,QNG=qng_curr                                      &amp;<a name='864'>
+                 ,QNA=qnn_curr                                      &amp;<a name='865'>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='866'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='867'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='868'>
+                 ,REFL_10CM=refl_10cm                 &amp;  <font color=#447700>! added for radar reflectivity<a name='869'></font>
+                 ,diagflag=diagflag                   &amp;  <font color=#447700>! added for radar reflectivity<a name='870'></font>
+                 ,do_radar_ref=do_radar_ref           &amp;  <font color=#447700>! added for radar reflectivity<a name='871'></font>
+                 ,RAINNC=rainnc                       &amp;<a name='872'>
+                 ,RAINNCV=rainncv                     &amp;<a name='873'>
+                 ,SNOWNC=snownc                       &amp;<a name='874'>
+                 ,SNOWNCV=snowncv                     &amp;<a name='875'>
+                 ,GRAUPELNC=graupelnc                 &amp;<a name='876'>
+                 ,GRAUPELNCV=graupelncv               &amp;<a name='877'>
+                 ,SR=sr                               &amp;<a name='878'>
+                                         )<a name='879'>
+<a name='880'>
+<font color=#447700>!<a name='881'></font>
+       CASE (FULL_KHAIN_LYNN)<a name='882'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling sbm' )<a name='883'>
+               CALL <A href='../../html_code/phys/module_mp_full_sbm.F.html#SBM'>sbm</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SBM_1">(W=w,U=u,V=v,TH_OLD=th_old          &amp;<a name='884'>
+                 ,CHEM_new=scalar,N_CHEM=num_scalar                     &amp;<a name='885'>
+                 ,ITIMESTEP=itimestep,DT=dt,DX=dx,DY=dy             &amp;<a name='886'>
+                 ,DZ8W=dz8w,RHO_PHY=rho,P_PHY=p,PI_PHY=pi_phy,TH_PHY=th &amp;<a name='887'>
+                 ,xland=xland                                       &amp;<a name='888'>
+                 ,ivgtyp=ivgtyp                                      &amp;<a name='889'>
+                 ,xlat=xlat                                        &amp;<a name='890'>
+                 ,xlong=xlong                                        &amp;<a name='891'>
+                 ,QV=qv_curr                                        &amp;<a name='892'>
+                 ,QC=qc_curr                                        &amp;<a name='893'>
+                 ,QR=qr_curr                                        &amp;<a name='894'>
+                 ,QIP=qip_curr                                        &amp;<a name='895'>
+                 ,QIC=qic_curr                                        &amp;<a name='896'>
+                 ,QID=qid_curr                                        &amp;<a name='897'>
+                 ,QS=qs_curr                                        &amp;<a name='898'>
+                 ,QG=qg_curr                                        &amp;<a name='899'>
+                 ,QH=qh_curr                                        &amp;<a name='900'>
+                 ,QV_OLD=qv_old                                     &amp;<a name='901'>
+                 ,QNC=qnc_curr                                      &amp;<a name='902'>
+                 ,QNR=qnr_curr                                      &amp;<a name='903'>
+                 ,QNIP=qnip_curr                                      &amp;<a name='904'>
+                 ,QNIC=qnic_curr                                      &amp;<a name='905'>
+                 ,QNID=qnid_curr                                      &amp;<a name='906'>
+                 ,QNS=qns_curr                                      &amp;<a name='907'>
+                 ,QNG=qng_curr                                      &amp;<a name='908'>
+                 ,QNH=qng_curr                                      &amp;<a name='909'>
+                 ,QNA=qnn_curr                                      &amp;<a name='910'>
+                 ,EFFR=effr_curr                                  &amp;<a name='911'>
+                 ,ICE_EFFR=ice_effr_curr                                  &amp;<a name='912'>
+                 ,TOT_EFFR=tot_effr_curr                                  &amp;<a name='913'>
+                 ,QIC_EFFR=qic_effr_curr                                  &amp;<a name='914'>
+                 ,QIP_EFFR=qip_effr_curr                                  &amp;<a name='915'>
+                 ,QID_EFFR=qid_effr_curr                                  &amp;<a name='916'>
+                 ,height=height                                        &amp;<a name='917'>
+                 ,tempc=tempc                                         &amp;<a name='918'>
+                 ,kext_ql=kext_ql                                       &amp;<a name='919'>
+                 ,kext_qs=kext_qs                                       &amp;<a name='920'>
+                 ,kext_qg=kext_qg                                       &amp;<a name='921'>
+                 ,kext_qh=kext_qh                                       &amp;<a name='922'>
+                 ,kext_qa=kext_qa                                       &amp;<a name='923'>
+                 ,kext_qic=kext_qic                                       &amp;<a name='924'>
+                 ,kext_qip=kext_qip                                       &amp;<a name='925'>
+                 ,kext_qid=kext_qid                                       &amp;<a name='926'>
+                 ,kext_ft_qic=kext_ft_qic                                       &amp;<a name='927'>
+                 ,kext_ft_qip=kext_ft_qip                                       &amp;<a name='928'>
+                 ,kext_ft_qid=kext_ft_qid                                       &amp;<a name='929'>
+                 ,kext_ft_qs=kext_ft_qs                                       &amp;<a name='930'>
+                 ,kext_ft_qg=kext_ft_qg                                       &amp;<a name='931'>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='932'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='933'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='934'>
+                 ,REFL_10CM=refl_10cm                 &amp;  <font color=#447700>! added for radar reflectivity<a name='935'></font>
+                 ,diagflag=diagflag                   &amp;  <font color=#447700>! added for radar reflectivity<a name='936'></font>
+                 ,do_radar_ref=do_radar_ref           &amp;  <font color=#447700>! added for radar reflectivity<a name='937'></font>
+                 ,RAINNC=rainnc                       &amp;<a name='938'>
+                 ,RAINNCV=rainncv                     &amp;<a name='939'>
+                 ,SNOWNC=snownc                       &amp;<a name='940'>
+                 ,SNOWNCV=snowncv                     &amp;<a name='941'>
+                 ,GRAUPELNC=graupelnc                 &amp;<a name='942'>
+                 ,GRAUPELNCV=graupelncv               &amp;<a name='943'>
+                 ,HAILNC=hailnc                       &amp;<a name='944'>
+                 ,HAILNCV=hailncv                     &amp;<a name='945'>
+                 ,SR=sr                               &amp;<a name='946'>
+                                                      )<a name='947'>
+#endif<a name='948'>
+<a name='949'>
+<font color=#447700>!<a name='950'></font>
+<a name='951'>
+    CASE (MORR_TWO_MOMENT)<a name='952'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_632">(100, 'microphysics_driver: calling morrison two moment')<a name='953'>
+         IF (PRESENT (QV_CURR) .AND. PRESENT (QC_CURR) .AND. &amp;<a name='954'>
+             PRESENT (QR_CURR) .AND. PRESENT (QI_CURR) .AND. &amp;<a name='955'>
+         PRESENT (QS_CURR) .AND. PRESENT (QG_CURR) .AND. &amp;<a name='956'>
+         PRESENT (QR_CURR) .AND. PRESENT (QI_CURR) .AND. &amp;<a name='957'>
+         PRESENT (QNS_CURR) .AND. PRESENT (QNI_CURR).AND. &amp;<a name='958'>
+         PRESENT (QNR_CURR) .AND. PRESENT (QNG_CURR).AND. &amp;<a name='959'>
+         PRESENT (QSCUTEN).AND. &amp;<a name='960'>
+         PRESENT (QRCUTEN) .AND. PRESENT (QICUTEN).AND. &amp;<a name='961'>
+         PRESENT (RAINNC ) .AND. PRESENT (RAINNCV) .AND. &amp;<a name='962'>
+         PRESENT ( W      )  ) THEN<a name='963'>
+         CALL <A href='../../html_code/phys/module_mp_morr_two_moment.F.html#MP_MORR_TWO_MOMENT'>mp_morr_two_moment</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MP_MORR_TWO_MOMENT_1">(                            &amp;<a name='964'>
+                     ITIMESTEP=itimestep,                &amp;  <font color=#447700>!*<a name='965'></font>
+                     TH=th,                              &amp;  <font color=#447700>!*<a name='966'></font>
+                     QV=qv_curr,                         &amp;  <font color=#447700>!*<a name='967'></font>
+                     QC=qc_curr,                         &amp;  <font color=#447700>!*<a name='968'></font>
+                     QR=qr_curr,                         &amp;  <font color=#447700>!*<a name='969'></font>
+                     QI=qi_curr,                         &amp;  <font color=#447700>!*<a name='970'></font>
+                     QS=qs_curr,                         &amp;  <font color=#447700>!*<a name='971'></font>
+                     QG=qg_curr,                         &amp;  <font color=#447700>!*<a name='972'></font>
+                     NI=qni_curr,                        &amp;  <font color=#447700>!*<a name='973'></font>
+                     NS=qns_curr,                        &amp;  <font color=#447700>!* ! VVT<a name='974'></font>
+                     NR=qnr_curr,                        &amp;  <font color=#447700>!* ! VVT<a name='975'></font>
+                     NG=qng_curr,                        &amp;  <font color=#447700>!* ! VVT<a name='976'></font>
+                     RHO=rho,                            &amp;  <font color=#447700>!*<a name='977'></font>
+                     PII=pi_phy,                         &amp;  <font color=#447700>!*<a name='978'></font>
+                     P=p,                                &amp;  <font color=#447700>!*<a name='979'></font>
+                     DT_IN=dt,                           &amp;  <font color=#447700>!*<a name='980'></font>
+                     DZ=dz8w,                            &amp;  <font color=#447700>!* !hm<a name='981'></font>
+                     HT=ht,                              &amp;  <font color=#447700>!*<a name='982'></font>
+                     W=w                                 &amp;  <font color=#447700>!*<a name='983'></font>
+                    ,RAINNC=RAINNC                       &amp;  <font color=#447700>!*<a name='984'></font>
+                    ,RAINNCV=RAINNCV                     &amp;  <font color=#447700>!*<a name='985'></font>
+                    ,SNOWNC=SNOWNC                       &amp;  <font color=#447700>!*<a name='986'></font>
+                    ,SNOWNCV=SNOWNCV                     &amp;  <font color=#447700>!*<a name='987'></font>
+                    ,GRAUPELNC=GRAUPELNC                 &amp;  <font color=#447700>!*<a name='988'></font>
+                    ,GRAUPELNCV=GRAUPELNCV               &amp;  <font color=#447700>!*<a name='989'></font>
+                    ,SR=SR                               &amp;  <font color=#447700>!* !hm<a name='990'></font>
+                    ,REFL_10CM=refl_10cm                 &amp;  <font color=#447700>! added for radar reflectivity<a name='991'></font>
+                    ,diagflag=diagflag                   &amp;  <font color=#447700>! added for radar reflectivity<a name='992'></font>
+                    ,do_radar_ref=do_radar_ref           &amp;  <font color=#447700>! added for radar reflectivity<a name='993'></font>
+                    ,qrcuten=qrcuten                     &amp;  <font color=#447700>! hm<a name='994'></font>
+                    ,qscuten=qscuten                     &amp;  <font color=#447700>! hm<a name='995'></font>
+                    ,qicuten=qicuten                     &amp;  <font color=#447700>! hm<a name='996'></font>
+                    ,F_QNDROP=f_qndrop                   &amp;  <font color=#447700>! hm for wrf-chem<a name='997'></font>
+                 ,QNDROP=qndrop_curr                     &amp;  <font color=#447700>! hm for wrf-chem<a name='998'></font>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='999'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1000'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1001'>
+                 ,QLSINK=qlsink                                     &amp; <font color=#447700>! jdf for wrf-chem<a name='1002'></font>
+#if ( WRF_CHEM == 1 )<a name='1003'>
+                 ,EVAPPROD=evapprod,RAINPROD=rainprod               &amp;<a name='1004'>
+#endif<a name='1005'>
+                 ,PRECR=precr,PRECI=preci,PRECS=precs,PRECG=precg   &amp; <font color=#447700>! jdf for wrf-chem<a name='1006'></font>
+                                                                    )<a name='1007'>
+        ELSE<a name='1008'>
+           Call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_708">( 'arguments not present for calling morrison two moment')<a name='1009'>
+        ENDIF<a name='1010'>
+<a name='1011'>
+#if (EM_CORE==1)<a name='1012'>
+    CASE (P3_1CATEGORY)<a name='1013'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_633">(100, 'microphysics_driver: calling p3 one category')<a name='1014'>
+<font color=#447700>!         IF (PRESENT (QV_CURR) .AND. PRESENT (QC_CURR) .AND. &amp;<a name='1015'></font>
+<font color=#447700>!             PRESENT (QR_CURR) .AND. PRESENT (QI_CURR) .AND. &amp;<a name='1016'></font>
+<font color=#447700>!         PRESENT (QNG_CURR) .AND. &amp;<a name='1017'></font>
+<font color=#447700>!         PRESENT (QNC_CURR) .AND. PRESENT (QNI_CURR).AND. &amp;<a name='1018'></font>
+<font color=#447700>!         PRESENT (QNR_CURR) .AND. &amp;<a name='1019'></font>
+<font color=#447700>!         PRESENT (QSCUTEN).AND. &amp;<a name='1020'></font>
+<font color=#447700>!         PRESENT (QRCUTEN) .AND. PRESENT (QICUTEN).AND. &amp;<a name='1021'></font>
+<font color=#447700>!         PRESENT (RAINNC ) .AND. PRESENT (RAINNCV) .AND. &amp;<a name='1022'></font>
+<font color=#447700>!         PRESENT (Z      ) .AND.PRESENT ( W      )  ) THEN<a name='1023'></font>
+<a name='1024'>
+         CALL <A href='../../html_code/phys/module_mp_p3.F.html#MP_P3_WRAPPER_WRF'>mp_p3_wrapper_wrf</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MP_P3_WRAPPER_WRF_1">(                         &amp;<a name='1025'>
+                     ITIMESTEP=itimestep,                &amp;<a name='1026'>
+                     TH_3d=th,                            &amp;<a name='1027'>
+                     QV_3d=qv_curr,                       &amp;<a name='1028'>
+                     QC_3d=qc_curr,                       &amp;<a name='1029'>
+                     QR_3d=qr_curr,                       &amp;<a name='1030'>
+                     QNR_3d=qnr_curr,                     &amp;<a name='1031'>
+                     QI1_3d=qi_curr,                     &amp;<a name='1032'>
+                     QIR1_3d=qir_curr,                    &amp;<a name='1033'>
+                     QNI1_3d=qni_curr,                   &amp;<a name='1034'>
+                     QIB1_3d=qib_curr,                 &amp;<a name='1035'>
+                     th_old_3d=th_old,                 &amp;<a name='1036'>
+                     qv_old_3d=qv_old,                 &amp;<a name='1037'>
+                     PII=pi_phy,                         &amp;<a name='1038'>
+                     P=p,                                &amp;<a name='1039'>
+                     DT=dt,                           &amp;<a name='1040'>
+                     DZ=dz8w,                            &amp;<a name='1041'>
+                     W=w                                 &amp;<a name='1042'>
+                    ,RAINNC=RAINNC                       &amp;<a name='1043'>
+                    ,RAINNCV=RAINNCV                     &amp;<a name='1044'>
+                    ,SR=SR                               &amp;<a name='1045'>
+                    ,SNOWNC=SNOWNC                       &amp;<a name='1046'>
+                    ,SNOWNCV=SNOWNCV                     &amp;<a name='1047'>
+                    ,N_ICECAT=1                     &amp;<a name='1048'>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1049'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1050'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1051'>
+                 ,diag_zdbz_3d=refl_10cm,                                 &amp;<a name='1052'>
+                     diag_effc_3d=re_cloud,                    &amp;<a name='1053'>
+                     diag_effi_3d=re_ice                       &amp;<a name='1054'>
+                 ,diag_vmi_3d=vmi3d                                       &amp;<a name='1055'>
+                 ,diag_di_3d=di3d                                         &amp;<a name='1056'>
+                 ,diag_rhopo_3d=rhopo3d                                   &amp;<a name='1057'>
+                                                                    )<a name='1058'>
+<font color=#447700>!        ELSE<a name='1059'></font>
+<font color=#447700>!           Call wrf_error_fatal( 'arguments not present for calling p3 one category')<a name='1060'></font>
+<font color=#447700>!        ENDIF<a name='1061'></font>
+<a name='1062'>
+    CASE (P3_1CATEGORY_NC)<a name='1063'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_634">(100, 'microphysics_driver: calling p3 one category')<a name='1064'>
+<font color=#447700>!         IF (PRESENT (QV_CURR) .AND. PRESENT (QC_CURR) .AND. &amp;<a name='1065'></font>
+<font color=#447700>!             PRESENT (QR_CURR) .AND. PRESENT (QI_CURR) .AND. &amp;<a name='1066'></font>
+<font color=#447700>!         PRESENT (QNG_CURR) .AND. &amp;<a name='1067'></font>
+<font color=#447700>!         PRESENT (QNC_CURR) .AND. PRESENT (QNI_CURR).AND. &amp;<a name='1068'></font>
+<font color=#447700>!         PRESENT (QNR_CURR) .AND. &amp;<a name='1069'></font>
+<font color=#447700>!         PRESENT (QSCUTEN).AND. &amp;<a name='1070'></font>
+<font color=#447700>!         PRESENT (QRCUTEN) .AND. PRESENT (QICUTEN).AND. &amp;<a name='1071'></font>
+<font color=#447700>!         PRESENT (RAINNC ) .AND. PRESENT (RAINNCV) .AND. &amp;<a name='1072'></font>
+<font color=#447700>!         PRESENT (Z      ) .AND.PRESENT ( W      )  ) THEN<a name='1073'></font>
+<a name='1074'>
+         CALL <A href='../../html_code/phys/module_mp_p3.F.html#MP_P3_WRAPPER_WRF'>mp_p3_wrapper_wrf</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MP_P3_WRAPPER_WRF_2">(                         &amp;<a name='1075'>
+                     ITIMESTEP=itimestep,                &amp;<a name='1076'>
+                     TH_3d=th,                            &amp;<a name='1077'>
+                     QV_3d=qv_curr,                       &amp;<a name='1078'>
+                     QC_3d=qc_curr,                       &amp;<a name='1079'>
+                     QR_3d=qr_curr,                       &amp;<a name='1080'>
+                     QNR_3d=qnr_curr,                     &amp;<a name='1081'>
+                     QI1_3d=qi_curr,                     &amp;<a name='1082'>
+                     QIR1_3d=qir_curr,                    &amp;<a name='1083'>
+                     QNI1_3d=qni_curr,                   &amp;<a name='1084'>
+                     QIB1_3d=qib_curr,                 &amp;<a name='1085'>
+                     th_old_3d=th_old,                 &amp;<a name='1086'>
+                     qv_old_3d=qv_old,                 &amp;<a name='1087'>
+                     nc_3d=qnc_curr,                   &amp;<a name='1088'>
+                     PII=pi_phy,                         &amp;<a name='1089'>
+                     P=p,                                &amp;<a name='1090'>
+                     DT=dt,                           &amp;<a name='1091'>
+                     DZ=dz8w,                            &amp;<a name='1092'>
+                     W=w                                 &amp;<a name='1093'>
+                    ,RAINNC=RAINNC                       &amp;<a name='1094'>
+                    ,RAINNCV=RAINNCV                     &amp;<a name='1095'>
+                    ,SR=SR                               &amp;<a name='1096'>
+                    ,SNOWNC=SNOWNC                       &amp;<a name='1097'>
+                    ,SNOWNCV=SNOWNCV                     &amp;<a name='1098'>
+                    ,N_ICECAT=1                     &amp;<a name='1099'>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1100'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1101'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1102'>
+                 ,diag_zdbz_3d=refl_10cm,                                 &amp;<a name='1103'>
+                     diag_effc_3d=re_cloud,                    &amp;<a name='1104'>
+                     diag_effi_3d=re_ice                       &amp;<a name='1105'>
+                 ,diag_vmi_3d=vmi3d                                       &amp;<a name='1106'>
+                 ,diag_di_3d=di3d                                         &amp;<a name='1107'>
+                 ,diag_rhopo_3d=rhopo3d                                   &amp;<a name='1108'>
+                                                                    )<a name='1109'>
+#endif<a name='1110'>
+<a name='1111'>
+    CASE (MILBRANDT2MOM)<a name='1112'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_635">(100, 'microphysics_driver: calling milbrandt2mom')<a name='1113'>
+         IF (PRESENT (QV_CURR) .AND.                           &amp;<a name='1114'>
+             PRESENT (QC_CURR) .AND. PRESENT (QNC_CURR)  .AND. &amp;<a name='1115'>
+             PRESENT (QR_CURR) .AND. PRESENT (QNR_CURR)  .AND. &amp;<a name='1116'>
+             PRESENT (QI_CURR) .AND. PRESENT (QNI_CURR)  .AND. &amp;<a name='1117'>
+             PRESENT (QS_CURR) .AND. PRESENT (QNS_CURR)  .AND. &amp;<a name='1118'>
+             PRESENT (QG_CURR) .AND. PRESENT (QNG_CURR)  .AND. &amp;<a name='1119'>
+             PRESENT (QH_CURR) .AND. PRESENT (QNH_CURR)  .AND. &amp;<a name='1120'>
+             PRESENT (RAINNC ) .AND. PRESENT (RAINNCV)   .AND. &amp;<a name='1121'>
+             PRESENT (SNOWNC ) .AND. PRESENT (SNOWNCV)   .AND. &amp;<a name='1122'>
+             PRESENT (HAILNC ) .AND. PRESENT (HAILNCV)   .AND. &amp;<a name='1123'>
+             PRESENT (GRAUPELNC).AND.PRESENT (GRAUPELNCV).AND. &amp;<a name='1124'>
+             PRESENT ( W      )  ) THEN<a name='1125'>
+<font color=#447700>!            PRESENT (ccntype)                                 &amp;<a name='1126'></font>
+<a name='1127'>
+         CALL <A href='../../html_code/phys/module_mp_milbrandt2mom.F.html#MP_MILBRANDT2MOM_DRIVER'>mp_milbrandt2mom_driver</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MP_MILBRANDT2MOM_DRIVER_1">(                   &amp;<a name='1128'>
+                     ITIMESTEP=itimestep,                &amp;<a name='1129'>
+                     p8w=p8w,                              &amp;<a name='1130'>
+                     TH=th,                              &amp;<a name='1131'>
+                     QV=qv_curr,                         &amp;<a name='1132'>
+                     QC=qc_curr,                         &amp;<a name='1133'>
+                     QR=qr_curr,                         &amp;<a name='1134'>
+                     QI=qi_curr,                         &amp;<a name='1135'>
+                     QS=qs_curr,                         &amp;<a name='1136'>
+                     QG=qg_curr,                         &amp;<a name='1137'>
+                     QH=qh_curr,                         &amp;<a name='1138'>
+                     NC=qnc_curr,                        &amp;<a name='1139'>
+                     NR=qnr_curr,                        &amp;<a name='1140'>
+                     NI=qni_curr,                        &amp;<a name='1141'>
+                     NS=qns_curr,                        &amp;<a name='1142'>
+                     NG=qng_curr,                        &amp;<a name='1143'>
+                     NH=qnh_curr,                        &amp;<a name='1144'>
+                     PII=pi_phy,                         &amp;<a name='1145'>
+                     P=p,                                &amp;<a name='1146'>
+                     DT_IN=dt,                           &amp;<a name='1147'>
+                     DZ=dz8w,                            &amp;<a name='1148'>
+                     W=w,                                &amp;<a name='1149'>
+                     RAINNC   = RAINNC,                  &amp;<a name='1150'>
+                     RAINNCV  = RAINNCV,                 &amp;<a name='1151'>
+                     SNOWNC   = SNOWNC,                  &amp;<a name='1152'>
+                     SNOWNCV  = SNOWNCV,                 &amp;<a name='1153'>
+                     HAILNC   = HAILNC,                  &amp;<a name='1154'>
+                     HAILNCV  = HAILNCV,                 &amp;<a name='1155'>
+                     GRPLNC   = GRAUPELNC,               &amp;<a name='1156'>
+                     GRPLNCV  = GRAUPELNCV,              &amp;<a name='1157'>
+                     SR=SR,                              &amp;<a name='1158'>
+<font color=#447700>!                    ccntype  = ccntype,                 &amp;<a name='1159'></font>
+                     Zet      = refl_10cm,               &amp; <font color=#447700>! HM, 9/22/09 for refl<a name='1160'></font>
+                  IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde, &amp;<a name='1161'>
+                  IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme, &amp;<a name='1162'>
+                  ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte  &amp;<a name='1163'>
+                                                                    )<a name='1164'>
+        ELSE<a name='1165'>
+           Call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_709">( 'arguments not present for calling milbrandt2mom')<a name='1166'>
+        ENDIF<a name='1167'>
+<a name='1168'>
+<a name='1169'>
+<font color=#447700>!     CASE (MILBRANDT3MOM)<a name='1170'></font>
+<font color=#447700>!          CALL wrf_debug(100, 'microphysics_driver: calling milbrandt3mom')<a name='1171'></font>
+<font color=#447700>!          IF (PRESENT (QV_CURR) .AND.                          &amp;<a name='1172'></font>
+<font color=#447700>!              PRESENT (QC_CURR) .AND. PRESENT (QNC_CURR) .AND. &amp;<a name='1173'></font>
+<font color=#447700>!              PRESENT (QR_CURR) .AND. PRESENT (QNR_CURR) .AND. PRESENT (QZR_CURR) .AND.  &amp;<a name='1174'></font>
+<font color=#447700>!              PRESENT (QI_CURR) .AND. PRESENT (QNI_CURR) .AND. PRESENT (QZI_CURR) .AND.  &amp;<a name='1175'></font>
+<font color=#447700>!              PRESENT (QS_CURR) .AND. PRESENT (QNS_CURR) .AND. PRESENT (QZS_CURR) .AND.  &amp;<a name='1176'></font>
+<font color=#447700>!              PRESENT (QG_CURR) .AND. PRESENT (QNG_CURR) .AND. PRESENT (QZG_CURR) .AND.  &amp;<a name='1177'></font>
+<font color=#447700>!              PRESENT (QH_CURR) .AND. PRESENT (QNH_CURR) .AND. PRESENT (QZH_CURR) .AND.  &amp;<a name='1178'></font>
+<font color=#447700>!              PRESENT (RAINNC ) .AND. PRESENT (RAINNCV)  .AND. &amp;<a name='1179'></font>
+<font color=#447700>!              PRESENT ( W      )  ) THEN<a name='1180'></font>
+<font color=#447700>!          CALL mp_milbrandt3mom_driver(                   &amp;<a name='1181'></font>
+<font color=#447700>!                      ITIMESTEP=itimestep,                &amp;  !*<a name='1182'></font>
+<font color=#447700>!                      TH=th,                              &amp;  !*<a name='1183'></font>
+<font color=#447700>!                      QV=qv_curr,                         &amp;  !*<a name='1184'></font>
+<font color=#447700>!                      QC=qc_curr,                         &amp;  !*<a name='1185'></font>
+<font color=#447700>!                      QR=qr_curr,                         &amp;  !*<a name='1186'></font>
+<font color=#447700>!                      QI=qi_curr,                         &amp;  !*<a name='1187'></font>
+<font color=#447700>!                      QS=qs_curr,                         &amp;  !*<a name='1188'></font>
+<font color=#447700>!                      QG=qg_curr,                         &amp;  !*<a name='1189'></font>
+<font color=#447700>!                      QH=qh_curr,                         &amp;  !*<a name='1190'></font>
+<font color=#447700>!                      NC=qnc_curr,                        &amp;  !*<a name='1191'></font>
+<font color=#447700>!                      NR=qnr_curr,                        &amp;  !*<a name='1192'></font>
+<font color=#447700>!                      NI=qni_curr,                        &amp;  !*<a name='1193'></font>
+<font color=#447700>!                      NS=qns_curr,                        &amp;  !*<a name='1194'></font>
+<font color=#447700>!                      NG=qng_curr,                        &amp;  !*<a name='1195'></font>
+<font color=#447700>!                      NH=qnh_curr,                        &amp;  !*<a name='1196'></font>
+<font color=#447700>!                      ZR=qzr_curr,                        &amp;  !*<a name='1197'></font>
+<font color=#447700>!                      ZI=qzi_curr,                        &amp;  !*<a name='1198'></font>
+<font color=#447700>!                      ZS=qzs_curr,                        &amp;  !*<a name='1199'></font>
+<font color=#447700>!                      ZG=qzg_curr,                        &amp;  !*<a name='1200'></font>
+<font color=#447700>!                      ZH=qzh_curr,                        &amp;  !*<a name='1201'></font>
+<font color=#447700>!                      PII=pi_phy,                         &amp;  !*<a name='1202'></font>
+<font color=#447700>!                      P=p,                                &amp;  !*<a name='1203'></font>
+<font color=#447700>!                      DT_IN=dt,                           &amp;  !*<a name='1204'></font>
+<font color=#447700>!                      DZ=dz8w,                            &amp;  !* ! h<a name='1205'></font>
+<font color=#447700>!                      W=w                                 &amp;  !*<a name='1206'></font>
+<font color=#447700>!                     ,RAINNC=RAINNC                       &amp;  !*<a name='1207'></font>
+<font color=#447700>!                     ,RAINNCV=RAINNCV                     &amp;  !*<a name='1208'></font>
+<font color=#447700>!                     ,SR=SR                               &amp;  !* !hm<a name='1209'></font>
+<font color=#447700>!                  ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1210'></font>
+<font color=#447700>!                  ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1211'></font>
+<font color=#447700>!                  ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1212'></font>
+<font color=#447700>!                                                                     )<a name='1213'></font>
+<font color=#447700>!         ELSE<a name='1214'></font>
+<font color=#447700>!            Call wrf_error_fatal( 'arguments not present for calling milbrandt3mom')<a name='1215'></font>
+<font color=#447700>!         ENDIF<a name='1216'></font>
+<a name='1217'>
+    CASE (NSSL_1MOM)<a name='1218'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_636">(100, 'microphysics_driver: calling nssl1mom')<a name='1219'>
+         IF (PRESENT (QV_CURR) .AND.                           &amp;<a name='1220'>
+             PRESENT (QC_CURR) .AND.  &amp;<a name='1221'>
+             PRESENT (QR_CURR) .AND.  &amp;<a name='1222'>
+             PRESENT (QI_CURR) .AND.  &amp;<a name='1223'>
+             PRESENT (QS_CURR) .AND.  &amp;<a name='1224'>
+             PRESENT (QG_CURR) .AND.  &amp;<a name='1225'>
+             PRESENT (QH_CURR) .AND.  &amp;<a name='1226'>
+             PRESENT (RAINNC ) .AND. PRESENT (RAINNCV)   .AND. &amp;<a name='1227'>
+#if (EM_CORE==1)<a name='1228'>
+             PRESENT (SNOWNC ) .AND. PRESENT (SNOWNCV)   .AND. &amp;<a name='1229'>
+             PRESENT (HAILNC ) .AND. PRESENT (HAILNCV)   .AND. &amp;<a name='1230'>
+             PRESENT (GRAUPELNC).AND.PRESENT (GRAUPELNCV).AND. &amp;<a name='1231'>
+#endif<a name='1232'>
+             PRESENT ( W      )  .AND. &amp;<a name='1233'>
+             PRESENT (QVOLG_CURR) ) THEN<a name='1234'>
+             <a name='1235'>
+<a name='1236'>
+         CALL <A href='../../html_code/phys/module_mp_nssl_2mom.F.html#NSSL_2MOM_DRIVER'>nssl_2mom_driver</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NSSL_2MOM_DRIVER_1">(                          &amp;<a name='1237'>
+                     ITIMESTEP=itimestep,                &amp;<a name='1238'>
+                     TH=th,                              &amp;<a name='1239'>
+                     QV=qv_curr,                         &amp;<a name='1240'>
+                     QC=qc_curr,                         &amp;<a name='1241'>
+                     QR=qr_curr,                         &amp;<a name='1242'>
+                     QI=qi_curr,                         &amp;<a name='1243'>
+                     QS=qs_curr,                         &amp;<a name='1244'>
+                     QH=qg_curr,                         &amp;<a name='1245'>
+                     QHL=qh_curr,                        &amp;<a name='1246'>
+<font color=#447700>!                     CCW=qnc_curr,                       &amp;<a name='1247'></font>
+<font color=#447700>!                     CRW=qnr_curr,                       &amp;<a name='1248'></font>
+<font color=#447700>!                     CCI=qni_curr,                       &amp;<a name='1249'></font>
+<font color=#447700>!                     CSW=qns_curr,                       &amp;<a name='1250'></font>
+<font color=#447700>!                     CHW=qng_curr,                       &amp;<a name='1251'></font>
+<font color=#447700>!                     CHL=qnh_curr,                       &amp;<a name='1252'></font>
+                     VHW=qvolg_curr,                     &amp;<a name='1253'>
+                     PII=pi_phy,                         &amp;<a name='1254'>
+                     P=p,                                &amp;<a name='1255'>
+                     W=w,                                &amp;<a name='1256'>
+                     DZ=dz8w,                            &amp;<a name='1257'>
+                     DTP=dt,                             &amp;<a name='1258'>
+                     DN=rho,                             &amp;<a name='1259'>
+                     RAINNC   = RAINNC,                  &amp;<a name='1260'>
+                     RAINNCV  = RAINNCV,                 &amp;<a name='1261'>
+                     SNOWNC   = SNOWNC,                  &amp;<a name='1262'>
+                     SNOWNCV  = SNOWNCV,                 &amp;<a name='1263'>
+                     HAILNC   = HAILNC,                  &amp;<a name='1264'>
+                     HAILNCV  = HAILNCV,                 &amp;<a name='1265'>
+                     GRPLNC   = GRAUPELNC,               &amp;<a name='1266'>
+                     GRPLNCV  = GRAUPELNCV,              &amp;<a name='1267'>
+                     SR=SR,                              &amp;<a name='1268'>
+                     dbz      = refl_10cm,               &amp;<a name='1269'>
+                     diagflag = diagflag,                &amp;<a name='1270'>
+                  IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde, &amp;<a name='1271'>
+                  IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme, &amp;<a name='1272'>
+                  ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte  &amp;<a name='1273'>
+                                                                    )<a name='1274'>
+        ELSE<a name='1275'>
+           Call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_710">( 'arguments not present for calling nssl_1mom')<a name='1276'>
+        ENDIF<a name='1277'>
+<a name='1278'>
+<a name='1279'>
+    CASE (NSSL_1MOMLFO)<a name='1280'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_637">(100, 'microphysics_driver: calling nssl1mom')<a name='1281'>
+         IF (PRESENT (QV_CURR) .AND.                           &amp;<a name='1282'>
+             PRESENT (QC_CURR) .AND.  &amp;<a name='1283'>
+             PRESENT (QR_CURR) .AND.  &amp;<a name='1284'>
+             PRESENT (QI_CURR) .AND.  &amp;<a name='1285'>
+             PRESENT (QS_CURR) .AND.  &amp;<a name='1286'>
+             PRESENT (QG_CURR) .AND.  &amp;<a name='1287'>
+             PRESENT (RAINNC ) .AND. PRESENT (RAINNCV)   .AND. &amp;<a name='1288'>
+#if (EM_CORE==1)<a name='1289'>
+             PRESENT (SNOWNC ) .AND. PRESENT (SNOWNCV)   .AND. &amp;<a name='1290'>
+             PRESENT (GRAUPELNC).AND.PRESENT (GRAUPELNCV).AND. &amp;<a name='1291'>
+#endif<a name='1292'>
+             PRESENT ( W      )  ) THEN<a name='1293'>
+             <a name='1294'>
+<a name='1295'>
+         CALL <A href='../../html_code/phys/module_mp_nssl_2mom.F.html#NSSL_2MOM_DRIVER'>nssl_2mom_driver</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NSSL_2MOM_DRIVER_2">(                          &amp;<a name='1296'>
+                     ITIMESTEP=itimestep,                &amp;<a name='1297'>
+                     TH=th,                              &amp;<a name='1298'>
+                     QV=qv_curr,                         &amp;<a name='1299'>
+                     QC=qc_curr,                         &amp;<a name='1300'>
+                     QR=qr_curr,                         &amp;<a name='1301'>
+                     QI=qi_curr,                         &amp;<a name='1302'>
+                     QS=qs_curr,                         &amp;<a name='1303'>
+                     QH=qg_curr,                         &amp;<a name='1304'>
+                     PII=pi_phy,                         &amp;<a name='1305'>
+                     P=p,                                &amp;<a name='1306'>
+                     W=w,                                &amp;<a name='1307'>
+                     DZ=dz8w,                            &amp;<a name='1308'>
+                     DTP=dt,                             &amp;<a name='1309'>
+                     DN=rho,                             &amp;<a name='1310'>
+                     RAINNC   = RAINNC,                  &amp;<a name='1311'>
+                     RAINNCV  = RAINNCV,                 &amp;<a name='1312'>
+                     SNOWNC   = SNOWNC,                  &amp;<a name='1313'>
+                     SNOWNCV  = SNOWNCV,                 &amp;<a name='1314'>
+                     GRPLNC   = GRAUPELNC,               &amp;<a name='1315'>
+                     GRPLNCV  = GRAUPELNCV,              &amp;<a name='1316'>
+                     SR=SR,                              &amp;<a name='1317'>
+                     dbz      = refl_10cm,               &amp;<a name='1318'>
+                     diagflag = diagflag,                &amp;<a name='1319'>
+                  IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde, &amp;<a name='1320'>
+                  IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme, &amp;<a name='1321'>
+                  ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte  &amp;<a name='1322'>
+                                                                    )<a name='1323'>
+        ELSE<a name='1324'>
+           Call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_711">( 'arguments not present for calling nssl_1momlfo')<a name='1325'>
+        ENDIF<a name='1326'>
+<a name='1327'>
+    CASE (NSSL_2MOM)<a name='1328'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_638">(100, 'microphysics_driver: calling nssl2mom')<a name='1329'>
+         IF (PRESENT (QV_CURR) .AND.                           &amp;<a name='1330'>
+             PRESENT (QC_CURR) .AND. PRESENT (QNdrop_CURR)  .AND. &amp;<a name='1331'>
+             PRESENT (QR_CURR) .AND. PRESENT (QNR_CURR)  .AND. &amp;<a name='1332'>
+             PRESENT (QI_CURR) .AND. PRESENT (QNI_CURR)  .AND. &amp;<a name='1333'>
+             PRESENT (QS_CURR) .AND. PRESENT (QNS_CURR)  .AND. &amp;<a name='1334'>
+             PRESENT (QG_CURR) .AND. PRESENT (QNG_CURR)  .AND. &amp;<a name='1335'>
+             PRESENT (QH_CURR) .AND. PRESENT (QNH_CURR)  .AND. &amp;<a name='1336'>
+             PRESENT (RAINNC ) .AND. PRESENT (RAINNCV)   .AND. &amp;<a name='1337'>
+#if (EM_CORE==1)<a name='1338'>
+             PRESENT (SNOWNC ) .AND. PRESENT (SNOWNCV)   .AND. &amp;<a name='1339'>
+             PRESENT (HAILNC ) .AND. PRESENT (HAILNCV)   .AND. &amp;<a name='1340'>
+             PRESENT (GRAUPELNC).AND.PRESENT (GRAUPELNCV).AND. &amp;<a name='1341'>
+#endif<a name='1342'>
+             PRESENT ( W      )  .AND. &amp;<a name='1343'>
+             PRESENT (QVOLG_CURR) .AND. F_QVOLG  .AND.         &amp;<a name='1344'>
+             PRESENT (QVOLH_CURR) .AND. F_QVOLH ) THEN<a name='1345'>
+             <a name='1346'>
+<a name='1347'>
+         CALL <A href='../../html_code/phys/module_mp_nssl_2mom.F.html#NSSL_2MOM_DRIVER'>nssl_2mom_driver</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NSSL_2MOM_DRIVER_3">(                          &amp;<a name='1348'>
+                     ITIMESTEP=itimestep,                &amp;<a name='1349'>
+                     TH=th,                              &amp;<a name='1350'>
+                     QV=qv_curr,                         &amp;<a name='1351'>
+                     QC=qc_curr,                         &amp;<a name='1352'>
+                     QR=qr_curr,                         &amp;<a name='1353'>
+                     QI=qi_curr,                         &amp;<a name='1354'>
+                     QS=qs_curr,                         &amp;<a name='1355'>
+                     QH=qg_curr,                         &amp;<a name='1356'>
+                     QHL=qh_curr,                        &amp;<a name='1357'>
+ <font color=#447700>!                    CCW=qnc_curr,                       &amp;<a name='1358'></font>
+                     CCW=qndrop_curr,                    &amp;<a name='1359'>
+                     CRW=qnr_curr,                       &amp;<a name='1360'>
+                     CCI=qni_curr,                       &amp;<a name='1361'>
+                     CSW=qns_curr,                       &amp;<a name='1362'>
+                     CHW=qng_curr,                       &amp;<a name='1363'>
+                     CHL=qnh_curr,                       &amp;<a name='1364'>
+                     VHW=qvolg_curr,                     &amp;<a name='1365'>
+                     VHL=qvolh_curr,                     &amp;<a name='1366'>
+                     PII=pi_phy,                         &amp;<a name='1367'>
+                     P=p,                                &amp;<a name='1368'>
+                     W=w,                                &amp;<a name='1369'>
+                     DZ=dz8w,                            &amp;<a name='1370'>
+                     DTP=dt,                             &amp;<a name='1371'>
+                     DN=rho,                             &amp;<a name='1372'>
+                     RAINNC   = RAINNC,                  &amp;<a name='1373'>
+                     RAINNCV  = RAINNCV,                 &amp;<a name='1374'>
+                     SNOWNC   = SNOWNC,                  &amp;<a name='1375'>
+                     SNOWNCV  = SNOWNCV,                 &amp;<a name='1376'>
+                     HAILNC   = HAILNC,                  &amp;<a name='1377'>
+                     HAILNCV  = HAILNCV,                 &amp;<a name='1378'>
+                     GRPLNC   = GRAUPELNC,               &amp;<a name='1379'>
+                     GRPLNCV  = GRAUPELNCV,              &amp;<a name='1380'>
+                     SR=SR,                              &amp;<a name='1381'>
+                     dbz      = refl_10cm,               &amp;<a name='1382'>
+#if ( WRF_CHEM == 1 )<a name='1383'>
+                    EVAPPROD=evapprod,RAINPROD=rainprod, &amp;<a name='1384'>
+#endif<a name='1385'>
+                     nssl_progn=nssl_progn,              &amp;<a name='1386'>
+                     diagflag = diagflag,                &amp;<a name='1387'>
+                     cu_used=cu_used,                    &amp;<a name='1388'>
+                     qrcuten=qrcuten,                    &amp;  <font color=#447700>! hm<a name='1389'></font>
+                     qscuten=qscuten,                    &amp;  <font color=#447700>! hm<a name='1390'></font>
+                     qicuten=qicuten,                    &amp;  <font color=#447700>! hm<a name='1391'></font>
+                     qccuten=qccuten,                    &amp;  <font color=#447700>! hm<a name='1392'></font>
+                     re_cloud=re_cloud,                  &amp;<a name='1393'>
+                     re_ice=re_ice,                      &amp;<a name='1394'>
+                     re_snow=re_snow,                    &amp;<a name='1395'>
+                     has_reqc=has_reqc,                  &amp; <font color=#447700>! ala G. Thompson<a name='1396'></font>
+                     has_reqi=has_reqi,                  &amp; <font color=#447700>! ala G. Thompson<a name='1397'></font>
+                     has_reqs=has_reqs,                  &amp; <font color=#447700>! ala G. Thompson<a name='1398'></font>
+                  IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde, &amp;<a name='1399'>
+                  IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme, &amp;<a name='1400'>
+                  ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte  &amp;<a name='1401'>
+                                                                    )<a name='1402'>
+<a name='1403'>
+        ELSE<a name='1404'>
+           Call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_712">( 'arguments not present for calling nssl_2mom')<a name='1405'>
+        ENDIF<a name='1406'>
+<a name='1407'>
+    CASE (NSSL_2MOMG)<a name='1408'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_639">(100, 'microphysics_driver: calling nssl2mom')<a name='1409'>
+         IF (PRESENT (QV_CURR) .AND.                           &amp;<a name='1410'>
+             PRESENT (QC_CURR) .AND. PRESENT (QNdrop_CURR)  .AND. &amp;<a name='1411'>
+             PRESENT (QR_CURR) .AND. PRESENT (QNR_CURR)  .AND. &amp;<a name='1412'>
+             PRESENT (QI_CURR) .AND. PRESENT (QNI_CURR)  .AND. &amp;<a name='1413'>
+             PRESENT (QS_CURR) .AND. PRESENT (QNS_CURR)  .AND. &amp;<a name='1414'>
+             PRESENT (QG_CURR) .AND. PRESENT (QNG_CURR)  .AND. &amp;<a name='1415'>
+             PRESENT (RAINNC ) .AND. PRESENT (RAINNCV)   .AND. &amp;<a name='1416'>
+#if (EM_CORE==1)<a name='1417'>
+             PRESENT (SNOWNC ) .AND. PRESENT (SNOWNCV)   .AND. &amp;<a name='1418'>
+             PRESENT (HAILNC ) .AND. PRESENT (HAILNCV)   .AND. &amp;<a name='1419'>
+             PRESENT (GRAUPELNC).AND.PRESENT (GRAUPELNCV).AND. &amp;<a name='1420'>
+#endif<a name='1421'>
+             PRESENT ( W      )  .AND. &amp;<a name='1422'>
+             PRESENT (QVOLG_CURR) .AND. F_QVOLG  ) THEN<a name='1423'>
+             <a name='1424'>
+<a name='1425'>
+         CALL <A href='../../html_code/phys/module_mp_nssl_2mom.F.html#NSSL_2MOM_DRIVER'>nssl_2mom_driver</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NSSL_2MOM_DRIVER_4">(                          &amp;<a name='1426'>
+                     ITIMESTEP=itimestep,                &amp;<a name='1427'>
+                     TH=th,                              &amp;<a name='1428'>
+                     QV=qv_curr,                         &amp;<a name='1429'>
+                     QC=qc_curr,                         &amp;<a name='1430'>
+                     QR=qr_curr,                         &amp;<a name='1431'>
+                     QI=qi_curr,                         &amp;<a name='1432'>
+                     QS=qs_curr,                         &amp;<a name='1433'>
+                     QH=qg_curr,                         &amp;<a name='1434'>
+ <font color=#447700>!                    CCW=qnc_curr,                       &amp;<a name='1435'></font>
+                     CCW=qndrop_curr,                    &amp;<a name='1436'>
+                     CRW=qnr_curr,                       &amp;<a name='1437'>
+                     CCI=qni_curr,                       &amp;<a name='1438'>
+                     CSW=qns_curr,                       &amp;<a name='1439'>
+                     CHW=qng_curr,                       &amp;<a name='1440'>
+                     VHW=qvolg_curr,                     &amp;<a name='1441'>
+                     PII=pi_phy,                         &amp;<a name='1442'>
+                     P=p,                                &amp;<a name='1443'>
+                     W=w,                                &amp;<a name='1444'>
+                     DZ=dz8w,                            &amp;<a name='1445'>
+                     DTP=dt,                             &amp;<a name='1446'>
+                     DN=rho,                             &amp;<a name='1447'>
+                     RAINNC   = RAINNC,                  &amp;<a name='1448'>
+                     RAINNCV  = RAINNCV,                 &amp;<a name='1449'>
+                     SNOWNC   = SNOWNC,                  &amp;<a name='1450'>
+                     SNOWNCV  = SNOWNCV,                 &amp;<a name='1451'>
+                     HAILNC   = HAILNC,                  &amp;<a name='1452'>
+                     HAILNCV  = HAILNCV,                 &amp;<a name='1453'>
+                     GRPLNC   = GRAUPELNC,               &amp;<a name='1454'>
+                     GRPLNCV  = GRAUPELNCV,              &amp;<a name='1455'>
+                     SR=SR,                              &amp;<a name='1456'>
+                     dbz      = refl_10cm,               &amp;<a name='1457'>
+#if ( WRF_CHEM == 1 )<a name='1458'>
+                    EVAPPROD=evapprod,RAINPROD=rainprod, &amp;<a name='1459'>
+#endif<a name='1460'>
+                     nssl_progn=nssl_progn,              &amp;<a name='1461'>
+                      diagflag = diagflag,               &amp;<a name='1462'>
+                     cu_used=cu_used,                    &amp;<a name='1463'>
+                     qrcuten=qrcuten,                    &amp;  <font color=#447700>! hm<a name='1464'></font>
+                     qscuten=qscuten,                    &amp;  <font color=#447700>! hm<a name='1465'></font>
+                     qicuten=qicuten,                    &amp;  <font color=#447700>! hm<a name='1466'></font>
+                     qccuten=qccuten,                    &amp;  <font color=#447700>! hm<a name='1467'></font>
+                     re_cloud=re_cloud,                  &amp;<a name='1468'>
+                     re_ice=re_ice,                      &amp;<a name='1469'>
+                     re_snow=re_snow,                    &amp;<a name='1470'>
+                     has_reqc=has_reqc,                  &amp; <font color=#447700>! ala G. Thompson<a name='1471'></font>
+                     has_reqi=has_reqi,                  &amp; <font color=#447700>! ala G. Thompson<a name='1472'></font>
+                     has_reqs=has_reqs,                  &amp; <font color=#447700>! ala G. Thompson<a name='1473'></font>
+                  IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde, &amp;<a name='1474'>
+                  IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme, &amp;<a name='1475'>
+                  ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte  &amp;<a name='1476'>
+                                                                    )<a name='1477'>
+<a name='1478'>
+        ELSE<a name='1479'>
+           Call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_713">( 'arguments not present for calling nssl_2momg')<a name='1480'>
+        ENDIF<a name='1481'>
+<a name='1482'>
+    CASE (NSSL_2MOMCCN)<a name='1483'>
+         CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_640">(100, 'microphysics_driver: calling nssl_2momccn')<a name='1484'>
+         IF (PRESENT (QV_CURR) .AND.                           &amp;<a name='1485'>
+             PRESENT (QC_CURR) .AND. PRESENT (QNDROP_CURR)  .AND. &amp;<a name='1486'>
+             PRESENT (QR_CURR) .AND. PRESENT (QNR_CURR)  .AND. &amp;<a name='1487'>
+             PRESENT (QI_CURR) .AND. PRESENT (QNI_CURR)  .AND. &amp;<a name='1488'>
+             PRESENT (QS_CURR) .AND. PRESENT (QNS_CURR)  .AND. &amp;<a name='1489'>
+             PRESENT (QG_CURR) .AND. PRESENT (QNG_CURR)  .AND. &amp;<a name='1490'>
+             PRESENT (QH_CURR) .AND. PRESENT (QNH_CURR)  .AND. &amp;<a name='1491'>
+             PRESENT (RAINNC ) .AND. PRESENT (RAINNCV)   .AND. &amp;<a name='1492'>
+#if (EM_CORE==1)<a name='1493'>
+             PRESENT (SNOWNC ) .AND. PRESENT (SNOWNCV)   .AND. &amp;<a name='1494'>
+             PRESENT (HAILNC ) .AND. PRESENT (HAILNCV)   .AND. &amp;<a name='1495'>
+             PRESENT (GRAUPELNC).AND.PRESENT (GRAUPELNCV).AND. &amp;<a name='1496'>
+#endif<a name='1497'>
+             PRESENT ( W      )  .AND. &amp;<a name='1498'>
+             PRESENT (QVOLG_CURR) .AND. F_QVOLG  .AND.         &amp;<a name='1499'>
+             PRESENT (QVOLH_CURR) .AND. F_QVOLH  .AND.         &amp;<a name='1500'>
+             PRESENT( QNN_CURR )                          ) THEN<a name='1501'>
+             <a name='1502'>
+<a name='1503'>
+         CALL <A href='../../html_code/phys/module_mp_nssl_2mom.F.html#NSSL_2MOM_DRIVER'>nssl_2mom_driver</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NSSL_2MOM_DRIVER_5">(                          &amp;<a name='1504'>
+                     ITIMESTEP=itimestep,                &amp;<a name='1505'>
+                     TH=th,                              &amp;<a name='1506'>
+                     QV=qv_curr,                         &amp;<a name='1507'>
+                     QC=qc_curr,                         &amp;<a name='1508'>
+                     QR=qr_curr,                         &amp;<a name='1509'>
+                     QI=qi_curr,                         &amp;<a name='1510'>
+                     QS=qs_curr,                         &amp;<a name='1511'>
+                     QH=qg_curr,                         &amp;<a name='1512'>
+                     QHL=qh_curr,                        &amp;<a name='1513'>
+<font color=#447700>!                     CCW=qnc_curr,                       &amp;<a name='1514'></font>
+                     CCW=qndrop_curr,                    &amp;<a name='1515'>
+                     CRW=qnr_curr,                       &amp;<a name='1516'>
+                     CCI=qni_curr,                       &amp;<a name='1517'>
+                     CSW=qns_curr,                       &amp;<a name='1518'>
+                     CHW=qng_curr,                       &amp;<a name='1519'>
+                     CHL=qnh_curr,                       &amp;<a name='1520'>
+                     VHW=qvolg_curr,                     &amp;<a name='1521'>
+                     VHL=qvolh_curr,                     &amp;<a name='1522'>
+                     cn=qnn_curr,                        &amp;<a name='1523'>
+                     PII=pi_phy,                         &amp;<a name='1524'>
+                     P=p,                                &amp;<a name='1525'>
+                     W=w,                                &amp;<a name='1526'>
+                     DZ=dz8w,                            &amp;<a name='1527'>
+                     DTP=dt,                             &amp;<a name='1528'>
+                     DN=rho,                             &amp;<a name='1529'>
+                     RAINNC   = RAINNC,                  &amp;<a name='1530'>
+                     RAINNCV  = RAINNCV,                 &amp;<a name='1531'>
+                     SNOWNC   = SNOWNC,                  &amp;<a name='1532'>
+                     SNOWNCV  = SNOWNCV,                 &amp;<a name='1533'>
+                     HAILNC   = HAILNC,                  &amp;<a name='1534'>
+                     HAILNCV  = HAILNCV,                 &amp;<a name='1535'>
+                     GRPLNC   = GRAUPELNC,               &amp;<a name='1536'>
+                     GRPLNCV  = GRAUPELNCV,              &amp;<a name='1537'>
+                     SR=SR,                              &amp;<a name='1538'>
+                     dbz      = refl_10cm,               &amp;<a name='1539'>
+#if ( WRF_CHEM == 1 )<a name='1540'>
+                     EVAPPROD=evapprod,RAINPROD=rainprod,&amp;<a name='1541'>
+#endif<a name='1542'>
+                     nssl_progn=nssl_progn,              &amp;<a name='1543'>
+                     diagflag = diagflag,                &amp;<a name='1544'>
+                     cu_used=cu_used,                    &amp;<a name='1545'>
+                     qrcuten=qrcuten,                    &amp;  <font color=#447700>! hm<a name='1546'></font>
+                     qscuten=qscuten,                    &amp;  <font color=#447700>! hm<a name='1547'></font>
+                     qicuten=qicuten,                    &amp;  <font color=#447700>! hm<a name='1548'></font>
+                     qccuten=qccuten,                    &amp;  <font color=#447700>! hm<a name='1549'></font>
+                     re_cloud=re_cloud,                  &amp;<a name='1550'>
+                     re_ice=re_ice,                      &amp;<a name='1551'>
+                     re_snow=re_snow,                    &amp;<a name='1552'>
+                     has_reqc=has_reqc,                  &amp; <font color=#447700>! ala G. Thompson<a name='1553'></font>
+                     has_reqi=has_reqi,                  &amp; <font color=#447700>! ala G. Thompson<a name='1554'></font>
+                     has_reqs=has_reqs,                  &amp; <font color=#447700>! ala G. Thompson<a name='1555'></font>
+                  IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde, &amp;<a name='1556'>
+                  IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme, &amp;<a name='1557'>
+                  ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte  &amp;<a name='1558'>
+                                                                    )<a name='1559'>
+        ELSE<a name='1560'>
+           Call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_714">( 'arguments not present for calling nssl_2momccn')<a name='1561'>
+        ENDIF<a name='1562'>
+<font color=#447700>!<a name='1563'></font>
+        CASE (GSFCGCESCHEME)<a name='1564'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling GSFCGCE' )<a name='1565'>
+             IF ( PRESENT( QV_CURR ) .AND. PRESENT ( QC_CURR ) .AND.  &amp;<a name='1566'>
+                  PRESENT( QR_CURR ) .AND. PRESENT ( QI_CURR ) .AND.  &amp;<a name='1567'>
+                  PRESENT( QS_CURR )                           .AND.  &amp;<a name='1568'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV ) .AND.  &amp;<a name='1569'>
+                  PRESENT( HAIL    ) .AND. PRESENT ( ICE2    ) .AND.  &amp;<a name='1570'>
+                  PRESENT( Z       ) .AND. PRESENT ( W       )  ) THEN<a name='1571'>
+               CALL <A href='../../html_code/phys/module_mp_gsfcgce.F.html#GSFCGCE'>gsfcgce</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GSFCGCE_1">(                                        &amp;<a name='1572'>
+                  TH=th                                             &amp;<a name='1573'>
+                 ,QV=qv_curr                                        &amp;<a name='1574'>
+                 ,QL=qc_curr                                        &amp;<a name='1575'>
+                 ,QR=qr_curr                                        &amp;<a name='1576'>
+                 ,QI=qi_curr                                        &amp;<a name='1577'>
+                 ,QS=qs_curr                                        &amp;<a name='1578'>
+                 ,RHO=rho, PII=pi_phy, P=p, DT_IN=dt, Z=z           &amp;<a name='1579'>
+                 ,HT=ht, DZ8W=dz8w, GRAV=G                          &amp;<a name='1580'>
+                 ,RHOWATER=rhowater, RHOSNOW=rhosnow                &amp;<a name='1581'>
+                 ,ITIMESTEP=itimestep                               &amp;<a name='1582'>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1583'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1584'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1585'>
+                 ,RAINNC=rainnc, RAINNCV=rainncv                    &amp;<a name='1586'>
+                 ,SNOWNC=snownc, SNOWNCV=snowncv ,SR=sr             &amp;<a name='1587'>
+                 ,GRAUPELNC=graupelnc ,GRAUPELNCV=graupelncv        &amp;<a name='1588'>
+                 ,REFL_10CM=refl_10cm                               &amp;  <font color=#447700>! added for radar reflectivity<a name='1589'></font>
+                 ,diagflag=diagflag                                 &amp;  <font color=#447700>! added for radar reflectivity<a name='1590'></font>
+                 ,do_radar_ref=do_radar_ref                         &amp;  <font color=#447700>! added for radar reflectivity<a name='1591'></font>
+                 ,F_QG=f_qg                                         &amp;<a name='1592'>
+                 ,QG=qg_curr                                        &amp;<a name='1593'>
+                 ,IHAIL=hail, ICE2=ice2                             &amp;<a name='1594'>
+                                                                    )<a name='1595'>
+<font color=#447700>! HAIL = 1,  run gsfcgce with hail option<a name='1596'></font>
+<font color=#447700>!        0,  run gsfcgce with graupel option   &lt;---- default<a name='1597'></font>
+<font color=#447700>!        note: no effect if ice2 = 1<a name='1598'></font>
+<font color=#447700>! ICE2 = 1,  run gsfcgce with only snow, ice<a name='1599'></font>
+<font color=#447700>!        2,  run gsfcgce with only graupel, ice<a name='1600'></font>
+<font color=#447700>!        0,  run gsfcgce with snow, ice and hail/graupel   &lt;---- default<a name='1601'></font>
+<a name='1602'>
+             ELSE<a name='1603'>
+                CALL wrf_error_fatal ( 'arguments not present for calling GSFCGCE' )<a name='1604'>
+             ENDIF<a name='1605'>
+<a name='1606'>
+        CASE (LINSCHEME)<a name='1607'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling lin_et_al' )<a name='1608'>
+             IF ( PRESENT( QV_CURR ) .AND. PRESENT ( QC_CURR ) .AND.  &amp;<a name='1609'>
+                  PRESENT( QR_CURR ) .AND. PRESENT ( QI_CURR ) .AND.  &amp;<a name='1610'>
+                  PRESENT( QS_CURR )                           .AND.  &amp;<a name='1611'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV ) .AND.  &amp;<a name='1612'>
+                  PRESENT( Z       ) ) THEN<a name='1613'>
+               CALL <A href='../../html_code/phys/module_mp_lin.F.html#LIN_ET_AL'>lin_et_al</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LIN_ET_AL_1">(                                      &amp;<a name='1614'>
+                  TH=th                                             &amp;<a name='1615'>
+                 ,QV=qv_curr                                        &amp;<a name='1616'>
+                 ,QL=qc_curr                                        &amp;<a name='1617'>
+                 ,QR=qr_curr                                        &amp;<a name='1618'>
+                 ,QI=qi_curr                                        &amp;<a name='1619'>
+                 ,QS=qs_curr                                        &amp;<a name='1620'>
+                 ,QLSINK=qlsink                                     &amp;<a name='1621'>
+                 ,RHO=rho, PII=pi_phy, P=p, DT_IN=dt, Z=z           &amp;<a name='1622'>
+                 ,HT=ht, DZ8W=dz8w, GRAV=G,  CP=cp                  &amp;<a name='1623'>
+                 ,RAIR=r_d, RVAPOR=R_v                              &amp;<a name='1624'>
+                 ,XLS=xls, XLV=xlv, XLF=xlf                         &amp;<a name='1625'>
+                 ,RHOWATER=rhowater, RHOSNOW=rhosnow                &amp;<a name='1626'>
+                 ,EP2=ep_2,SVP1=svp1,SVP2=svp2                      &amp;<a name='1627'>
+                 ,SVP3=svp3,SVPT0=svpt0                             &amp;<a name='1628'>
+                 ,RAINNC=rainnc, RAINNCV=rainncv                    &amp;<a name='1629'>
+                 ,SNOWNC=snownc, SNOWNCV=snowncv                    &amp;<a name='1630'>
+                 ,GRAUPELNC=graupelnc, GRAUPELNCV=graupelncv, SR=sr &amp;<a name='1631'>
+                 ,REFL_10CM=refl_10cm                               &amp;  <font color=#447700>! added for radar reflectivity<a name='1632'></font>
+                 ,diagflag=diagflag                                 &amp;  <font color=#447700>! added for radar reflectivity<a name='1633'></font>
+                 ,do_radar_ref=do_radar_ref                         &amp;  <font color=#447700>! added for radar reflectivity<a name='1634'></font>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1635'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1636'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1637'>
+                 ,PRECR=precr,PRECI=preci,PRECS=precs,PRECG=precg   &amp;<a name='1638'>
+                 ,F_QG=f_qg, F_QNDROP=f_qndrop                      &amp;<a name='1639'>
+                 ,QG=qg_curr                                        &amp;<a name='1640'>
+                 ,QNDROP=qndrop_curr                                &amp;<a name='1641'>
+                                                                    )<a name='1642'>
+             ELSE<a name='1643'>
+                CALL wrf_error_fatal ( 'arguments not present for calling lin_et_al' )<a name='1644'>
+             ENDIF<a name='1645'>
+<a name='1646'>
+       CASE (SBU_YLINSCHEME)<a name='1647'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling sbu_ylin' )<a name='1648'>
+             IF ( PRESENT( QV_CURR ) .AND. PRESENT ( QC_CURR ) .AND.  &amp;<a name='1649'>
+                  PRESENT( QR_CURR ) .AND. PRESENT ( QI_CURR ) .AND.  &amp;<a name='1650'>
+                  PRESENT( QS_CURR )                           .AND.  &amp;<a name='1651'>
+                  PRESENT( RI_CURR )                           .AND.  &amp;<a name='1652'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV ) .AND.  &amp;<a name='1653'>
+                  PRESENT( Z       ) ) THEN<a name='1654'>
+               CALL <A href='../../html_code/phys/module_mp_sbu_ylin.F.html#SBU_YLIN'>sbu_ylin</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SBU_YLIN_1">(                                       &amp;<a name='1655'>
+                  TH=th                                             &amp;<a name='1656'>
+                 ,QV=qv_curr                                        &amp;<a name='1657'>
+                 ,QL=qc_curr                                        &amp;<a name='1658'>
+                 ,QR=qr_curr                                        &amp;<a name='1659'>
+                 ,QI=qi_curr                                        &amp;<a name='1660'>
+                 ,QS=qs_curr                                        &amp;<a name='1661'>
+                 ,RI3D=ri_curr                                      &amp;<a name='1662'>
+<font color=#447700>!                 ,QLSINK=qlsink                                     &amp;<a name='1663'></font>
+                 ,RHO=rho, PII=pi_phy, P=p, DT_IN=dt, Z=z           &amp;<a name='1664'>
+                 ,HT=ht, DZ8W=dz8w                                  &amp;<a name='1665'>
+<font color=#447700>!                 , GRAV=G,  CP=cp                  &amp;<a name='1666'></font>
+<font color=#447700>!                 ,RAIR=r_d, RVAPOR=R_v                              &amp;<a name='1667'></font>
+<font color=#447700>!                 ,XLS=xls, XLV=xlv, XLF=xlf                         &amp;<a name='1668'></font>
+<font color=#447700>!                 ,RHOWATER=rhowater, RHOSNOW=rhosnow                &amp;<a name='1669'></font>
+<font color=#447700>!                 ,EP2=ep_2,SVP1=svp1,SVP2=svp2                      &amp;<a name='1670'></font>
+<font color=#447700>!                 ,SVP3=svp3,SVPT0=svpt0                             &amp;<a name='1671'></font>
+                 ,RAINNC=rainnc, RAINNCV=rainncv                    &amp;<a name='1672'>
+<font color=#447700>!                 ,SNOWNC=snownc, SNOWNCV=snowncv                    &amp;<a name='1673'></font>
+<font color=#447700>!                 ,GRAUPELNC=graupelnc, GRAUPELNCV=graupelncv, SR=sr &amp;<a name='1674'></font>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1675'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1676'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1677'>
+<font color=#447700>!                 ,PRECR=precr,PRECI=preci,PRECS=precs,PRECG=precg   &amp;<a name='1678'></font>
+<font color=#447700>!                 ,F_QG=f_qg                                         &amp;<a name='1679'></font>
+<font color=#447700>!                 ,F_QNDROP=f_qndrop                      &amp;<a name='1680'></font>
+<font color=#447700>!                 ,QG=qg_curr                                        &amp;<a name='1681'></font>
+<font color=#447700>!                 ,QNDROP=qndrop_curr                                &amp;<a name='1682'></font>
+                                                                     )<a name='1683'>
+             ELSE<a name='1684'>
+                CALL wrf_error_fatal ( 'arguments not present for calling sbu_ylin' )<a name='1685'>
+             ENDIF<a name='1686'>
+<a name='1687'>
+<a name='1688'>
+        CASE (WSM3SCHEME)<a name='1689'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling wsm3' )<a name='1690'>
+             IF ( PRESENT( QV_CURR ) .AND. PRESENT ( QC_CURR ) .AND.  &amp;<a name='1691'>
+                  PRESENT( QR_CURR ) .AND.                            &amp;<a name='1692'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV ) .AND.  &amp;<a name='1693'>
+                  PRESENT( W       )                            ) THEN<a name='1694'>
+             CALL <A href='../../html_code/phys/module_mp_wsm3_accel.F.html#WSM3'>wsm3</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WSM3_1">(                                             &amp;<a name='1695'>
+                  TH=th                                             &amp;<a name='1696'>
+                 ,Q=qv_curr                                         &amp;<a name='1697'>
+                 ,QCI=qc_curr                                       &amp;<a name='1698'>
+                 ,QRS=qr_curr                                       &amp;<a name='1699'>
+                 ,W=w,DEN=rho,PII=pi_phy,P=p,DELZ=dz8w              &amp;<a name='1700'>
+                 ,DELT=dt,G=g,CPD=cp,CPV=cpv                        &amp;<a name='1701'>
+                 ,RD=r_d,RV=r_v,T0C=svpt0                           &amp;<a name='1702'>
+                 ,EP1=ep_1, EP2=ep_2, QMIN=epsilon                  &amp;<a name='1703'>
+                 ,XLS=xls, XLV0=xlv, XLF0=xlf                       &amp;<a name='1704'>
+                 ,DEN0=rhoair0, DENR=rhowater                       &amp;<a name='1705'>
+                 ,CLIQ=cliq,CICE=cice,PSAT=psat                     &amp;<a name='1706'>
+                 ,RAIN=rainnc ,RAINNCV=rainncv                      &amp;<a name='1707'>
+                 ,SNOW=snownc ,SNOWNCV=snowncv                      &amp;<a name='1708'>
+                 ,SR=sr                                             &amp;<a name='1709'>
+# ifndef _ACCEL<a name='1710'>
+                 ,has_reqc=has_reqc                                 &amp;  <font color=#447700>! for radiation +<a name='1711'></font>
+                 ,has_reqi=has_reqi                                 &amp;<a name='1712'>
+                 ,has_reqs=has_reqs                                 &amp;<a name='1713'>
+                 ,re_cloud=re_cloud                                 &amp;<a name='1714'>
+                 ,re_ice=re_ice                                     &amp;<a name='1715'>
+                 ,re_snow=re_snow                                   &amp;  <font color=#447700>! for radiation -  <a name='1716'></font>
+# endif<a name='1717'>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1718'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1719'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1720'>
+                                                                    )<a name='1721'>
+             ELSE<a name='1722'>
+                CALL wrf_error_fatal ( 'arguments not present for calling wsm3' )<a name='1723'>
+             ENDIF<a name='1724'>
+<a name='1725'>
+#ifndef XEON_OPTIMIZED_WSM5<a name='1726'>
+        CASE (WSM5SCHEME)<a name='1727'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling wsm5' )<a name='1728'>
+             IF ( PRESENT( QV_CURR ) .AND. PRESENT ( QC_CURR ) .AND.  &amp;<a name='1729'>
+                  PRESENT( QR_CURR ) .AND. PRESENT ( QI_CURR ) .AND.  &amp;<a name='1730'>
+                  PRESENT( QS_CURR ) .AND.                            &amp;<a name='1731'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV )  ) THEN<a name='1732'>
+             CALL <A href='../../html_code/phys/module_mp_wsm5_accel.F.html#WSM5'>wsm5</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WSM5_2">(                                             &amp;<a name='1733'>
+                  TH=th                                             &amp;<a name='1734'>
+                 ,Q=qv_curr                                         &amp;<a name='1735'>
+                 ,QC=qc_curr                                        &amp;<a name='1736'>
+                 ,QR=qr_curr                                        &amp;<a name='1737'>
+                 ,QI=qi_curr                                        &amp;<a name='1738'>
+                 ,QS=qs_curr                                        &amp;<a name='1739'>
+                 ,DEN=rho,PII=pi_phy,P=p,DELZ=dz8w                  &amp;<a name='1740'>
+                 ,DELT=dt,G=g,CPD=cp,CPV=cpv                        &amp;<a name='1741'>
+                 ,RD=r_d,RV=r_v,T0C=svpt0                           &amp;<a name='1742'>
+                 ,EP1=ep_1, EP2=ep_2, QMIN=epsilon                  &amp;<a name='1743'>
+                 ,XLS=xls, XLV0=xlv, XLF0=xlf                       &amp;<a name='1744'>
+                 ,DEN0=rhoair0, DENR=rhowater                       &amp;<a name='1745'>
+                 ,CLIQ=cliq,CICE=cice,PSAT=psat                     &amp;<a name='1746'>
+                 ,RAIN=rainnc ,RAINNCV=rainncv                      &amp;<a name='1747'>
+                 ,SNOW=snownc ,SNOWNCV=snowncv                      &amp;<a name='1748'>
+                 ,SR=sr                                             &amp;<a name='1749'>
+# ifndef _ACCEL<a name='1750'>
+                 ,REFL_10CM=refl_10cm                               &amp;  <font color=#447700>! added for radar reflectivity<a name='1751'></font>
+                 ,diagflag=diagflag                                 &amp;  <font color=#447700>! added for radar reflectivity<a name='1752'></font>
+                 ,do_radar_ref=do_radar_ref                         &amp;  <font color=#447700>! added for radar reflectivity<a name='1753'></font>
+                 ,has_reqc=has_reqc                                 &amp;  <font color=#447700>! for radiation +<a name='1754'></font>
+                 ,has_reqi=has_reqi                                 &amp;<a name='1755'>
+                 ,has_reqs=has_reqs                                 &amp;<a name='1756'>
+                 ,re_cloud=re_cloud                                 &amp;<a name='1757'>
+                 ,re_ice=re_ice                                     &amp;<a name='1758'>
+                 ,re_snow=re_snow                                   &amp;  <font color=#447700>! for radiation -  <a name='1759'></font>
+# endif<a name='1760'>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1761'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1762'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1763'>
+                                                                    )<a name='1764'>
+             ELSE<a name='1765'>
+                CALL wrf_error_fatal ( 'arguments not present for calling wsm5' )<a name='1766'>
+             ENDIF<a name='1767'>
+#endif<a name='1768'>
+<a name='1769'>
+        CASE (WSM6SCHEME)<a name='1770'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling wsm6' )<a name='1771'>
+             IF ( PRESENT( QV_CURR ) .AND. PRESENT ( QC_CURR ) .AND.  &amp;<a name='1772'>
+                  PRESENT( QR_CURR ) .AND. PRESENT ( QI_CURR ) .AND.  &amp;<a name='1773'>
+                  PRESENT( QS_CURR ) .AND. PRESENT ( QG_CURR ) .AND.  &amp;<a name='1774'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV )  ) THEN<a name='1775'>
+             CALL <A href='../../html_code/phys/module_mp_wsm6.F.html#WSM6'>wsm6</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WSM6_1">(                                             &amp;<a name='1776'>
+                  TH=th                                             &amp;<a name='1777'>
+                 ,Q=qv_curr                                         &amp;<a name='1778'>
+                 ,QC=qc_curr                                        &amp;<a name='1779'>
+                 ,QR=qr_curr                                        &amp;<a name='1780'>
+                 ,QI=qi_curr                                        &amp;<a name='1781'>
+                 ,QS=qs_curr                                        &amp;<a name='1782'>
+                 ,QG=qg_curr                                        &amp;<a name='1783'>
+                 ,DEN=rho,PII=pi_phy,P=p,DELZ=dz8w                  &amp;<a name='1784'>
+                 ,DELT=dt,G=g,CPD=cp,CPV=cpv                        &amp;<a name='1785'>
+                 ,RD=r_d,RV=r_v,T0C=svpt0                           &amp;<a name='1786'>
+                 ,EP1=ep_1, EP2=ep_2, QMIN=epsilon                  &amp;<a name='1787'>
+                 ,XLS=xls, XLV0=xlv, XLF0=xlf                       &amp;<a name='1788'>
+                 ,DEN0=rhoair0, DENR=rhowater                       &amp;<a name='1789'>
+                 ,CLIQ=cliq,CICE=cice,PSAT=psat                     &amp;<a name='1790'>
+                 ,RAIN=rainnc ,RAINNCV=rainncv                      &amp;<a name='1791'>
+                 ,SNOW=snownc ,SNOWNCV=snowncv                      &amp;<a name='1792'>
+                 ,SR=sr                                             &amp;<a name='1793'>
+                 ,REFL_10CM=refl_10cm                               &amp;  <font color=#447700>! added for radar reflectivity<a name='1794'></font>
+                 ,diagflag=diagflag                                 &amp;  <font color=#447700>! added for radar reflectivity<a name='1795'></font>
+                 ,do_radar_ref=do_radar_ref                         &amp;  <font color=#447700>! added for radar reflectivity<a name='1796'></font>
+                 ,GRAUPEL=graupelnc ,GRAUPELNCV=graupelncv          &amp;<a name='1797'>
+                 ,has_reqc=has_reqc                                 &amp;  <font color=#447700>! for radiation +<a name='1798'></font>
+                 ,has_reqi=has_reqi                                 &amp;<a name='1799'>
+                 ,has_reqs=has_reqs                                 &amp;<a name='1800'>
+                 ,re_cloud=re_cloud                                 &amp;<a name='1801'>
+                 ,re_ice=re_ice                                     &amp;<a name='1802'>
+                 ,re_snow=re_snow                                   &amp;  <font color=#447700>! for radiation -  <a name='1803'></font>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1804'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1805'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1806'>
+#ifdef WRF_CHEM<a name='1807'>
+                 ,EVAPPROD=evapprod,RAINPROD=rainprod               &amp;<a name='1808'>
+#endif<a name='1809'>
+                                                                    )<a name='1810'>
+             ELSE<a name='1811'>
+                CALL wrf_error_fatal ( 'arguments not present for calling wsm6' )<a name='1812'>
+             ENDIF<a name='1813'>
+<a name='1814'>
+        CASE (WDM5SCHEME)<a name='1815'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling wdm5' )<a name='1816'>
+             IF ( PRESENT( QV_CURR ) .AND. PRESENT ( QC_CURR ) .AND.  &amp;<a name='1817'>
+                  PRESENT( QR_CURR ) .AND. PRESENT ( QI_CURR ) .AND.  &amp;<a name='1818'>
+                  PRESENT( QS_CURR ) .AND. PRESENT( QNN_CURR ) .AND.  &amp;<a name='1819'>
+                  PRESENT ( QNC_CURR ) .AND. PRESENT( QNR_CURR ).AND.  &amp;<a name='1820'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV )  ) THEN<a name='1821'>
+             CALL <A href='../../html_code/phys/module_mp_wdm5.F.html#WDM5'>wdm5</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WDM5_1">(                                             &amp;<a name='1822'>
+                  TH=th                                             &amp;<a name='1823'>
+                 ,Q=qv_curr                                         &amp;<a name='1824'>
+                 ,QC=qc_curr                                        &amp;<a name='1825'>
+                 ,QR=qr_curr                                        &amp;<a name='1826'>
+                 ,QI=qi_curr                                        &amp;<a name='1827'>
+                 ,QS=qs_curr                                        &amp;<a name='1828'>
+                 ,NN=qnn_curr                                       &amp;<a name='1829'>
+                 ,NC=qnc_curr                                       &amp;<a name='1830'>
+                 ,NR=qnr_curr                                       &amp;<a name='1831'>
+                 ,DEN=rho,PII=pi_phy,P=p,DELZ=dz8w                  &amp;<a name='1832'>
+                 ,DELT=dt,G=g,CPD=cp,CPV=cpv,CCN0=ccn_conc          &amp; <font color=#447700>! RAS<a name='1833'></font>
+                 ,RD=r_d,RV=r_v,T0C=svpt0                           &amp;<a name='1834'>
+                 ,EP1=ep_1, EP2=ep_2, QMIN=epsilon                  &amp;<a name='1835'>
+                 ,XLS=xls, XLV0=xlv, XLF0=xlf                       &amp;<a name='1836'>
+                 ,DEN0=rhoair0, DENR=rhowater                       &amp;<a name='1837'>
+                 ,CLIQ=cliq,CICE=cice,PSAT=psat                     &amp;<a name='1838'>
+                 ,RAIN=rainnc ,RAINNCV=rainncv                      &amp;<a name='1839'>
+                 ,SNOW=snownc ,SNOWNCV=snowncv                      &amp;<a name='1840'>
+                 ,SR=sr                                             &amp;<a name='1841'>
+                 ,REFL_10CM=refl_10cm                               &amp;  <font color=#447700>! added for radar reflectivity<a name='1842'></font>
+                 ,diagflag=diagflag                                 &amp;  <font color=#447700>! added for radar reflectivity<a name='1843'></font>
+                 ,do_radar_ref=do_radar_ref                         &amp;  <font color=#447700>! added for radar reflectivity<a name='1844'></font>
+                 ,has_reqc=has_reqc                                 &amp;  <font color=#447700>! for radiation +<a name='1845'></font>
+                 ,has_reqi=has_reqi                                 &amp;<a name='1846'>
+                 ,has_reqs=has_reqs                                 &amp;<a name='1847'>
+                 ,re_cloud=re_cloud                                 &amp;<a name='1848'>
+                 ,re_ice=re_ice                                     &amp;<a name='1849'>
+                 ,re_snow=re_snow                                   &amp;  <font color=#447700>! for radiation -       <a name='1850'></font>
+                 ,ITIMESTEP=itimestep                               &amp; <a name='1851'>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1852'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1853'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1854'>
+                                                                    )<a name='1855'>
+             ELSE<a name='1856'>
+                CALL wrf_error_fatal ( 'arguments not present for calling wdm5')<a name='1857'>
+             ENDIF<a name='1858'>
+<a name='1859'>
+       CASE (WDM6SCHEME)<a name='1860'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling wdm6' )<a name='1861'>
+             IF ( PRESENT( QV_CURR ) .AND. PRESENT ( QC_CURR ) .AND.  &amp;<a name='1862'>
+                  PRESENT( QR_CURR ) .AND. PRESENT ( QI_CURR ) .AND.  &amp;<a name='1863'>
+                  PRESENT( QS_CURR ) .AND. PRESENT ( QG_CURR ) .AND.  &amp;<a name='1864'>
+                  PRESENT( QNN_CURR ) .AND. PRESENT ( QNC_CURR ) .AND. &amp;<a name='1865'>
+                  PRESENT( QNR_CURR ).AND.                            &amp;<a name='1866'>
+                 PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV )  ) THEN<a name='1867'>
+             CALL <A href='../../html_code/phys/module_mp_wdm6.F.html#WDM6'>wdm6</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WDM6_1">(                                             &amp;<a name='1868'>
+                  TH=th                                             &amp;<a name='1869'>
+                 ,Q=qv_curr                                         &amp;<a name='1870'>
+                 ,QC=qc_curr                                        &amp;<a name='1871'>
+                 ,QR=qr_curr                                        &amp;<a name='1872'>
+                 ,QI=qi_curr                                        &amp;<a name='1873'>
+                 ,QS=qs_curr                                        &amp;<a name='1874'>
+                 ,QG=qg_curr                                        &amp;<a name='1875'>
+                 ,NN=qnn_curr                                       &amp;<a name='1876'>
+                 ,NC=qnc_curr                                       &amp;<a name='1877'>
+                 ,NR=qnr_curr                                       &amp;<a name='1878'>
+                 ,DEN=rho,PII=pi_phy,P=p,DELZ=dz8w                  &amp;<a name='1879'>
+                 ,DELT=dt,G=g,CPD=cp,CPV=cpv,CCN0=ccn_conc          &amp; <font color=#447700>! RAS<a name='1880'></font>
+                 ,RD=r_d,RV=r_v,T0C=svpt0                           &amp;<a name='1881'>
+                 ,EP1=ep_1, EP2=ep_2, QMIN=epsilon                  &amp;<a name='1882'>
+                 ,XLS=xls, XLV0=xlv, XLF0=xlf                       &amp;<a name='1883'>
+                 ,DEN0=rhoair0, DENR=rhowater                       &amp;<a name='1884'>
+                 ,CLIQ=cliq,CICE=cice,PSAT=psat                     &amp;<a name='1885'>
+                 ,RAIN=rainnc ,RAINNCV=rainncv                      &amp;<a name='1886'>
+                 ,SNOW=snownc ,SNOWNCV=snowncv                      &amp;<a name='1887'>
+                 ,SR=sr                                             &amp;<a name='1888'>
+                 ,REFL_10CM=refl_10cm                               &amp;  <font color=#447700>! added for radar reflectivity<a name='1889'></font>
+                 ,diagflag=diagflag                                 &amp;  <font color=#447700>! added for radar reflectivity<a name='1890'></font>
+                 ,do_radar_ref=do_radar_ref                         &amp;  <font color=#447700>! added for radar reflectivity<a name='1891'></font>
+                 ,GRAUPEL=graupelnc ,GRAUPELNCV=graupelncv          &amp;<a name='1892'>
+                 ,ITIMESTEP=itimestep                               &amp; <a name='1893'>
+                 ,has_reqc=has_reqc                                 &amp;  <font color=#447700>! for radiation +<a name='1894'></font>
+                 ,has_reqi=has_reqi                                 &amp;<a name='1895'>
+                 ,has_reqs=has_reqs                                 &amp;<a name='1896'>
+                 ,re_cloud=re_cloud                                 &amp;<a name='1897'>
+                 ,re_ice=re_ice                                     &amp; <a name='1898'>
+                 ,re_snow=re_snow                                   &amp;  <font color=#447700>! for radiation -  <a name='1899'></font>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1900'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1901'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1902'>
+                                                                    )<a name='1903'>
+             ELSE<a name='1904'>
+               CALL wrf_error_fatal ( 'arguments not present for calling wdm6')<a name='1905'>
+             ENDIF<a name='1906'>
+#if(NMM_CORE==1)<a name='1907'>
+        CASE (ETAMP_HWRF)<a name='1908'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling etampnew_HWRF')<a name='1909'>
+<a name='1910'>
+             IF ( PRESENT( qv_curr ) .AND. PRESENT( qt_curr ) .AND. &amp;<a name='1911'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV ) .AND.  &amp;<a name='1912'>
+                  PRESENT( mp_restart_state )                  .AND. &amp;<a name='1913'>
+                  PRESENT( tbpvs_state )                      .AND. &amp;<a name='1914'>
+                  PRESENT( tbpvs0_state )                       ) THEN<a name='1915'>
+<a name='1916'>
+               CALL <A href='../../html_code/phys/module_mp_HWRF.F.html#ETAMP_NEW_HWRF'>ETAMP_NEW_HWRF</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ETAMP_NEW_HWRF_1">(                                      &amp;<a name='1917'>
+                  ITIMESTEP=itimestep,DT=dt,DX=dx,DY=dy, GID=id &amp;<a name='1918'>
+                 ,RAINNC=rainnc,RAINNCV=rainncv                     &amp;<a name='1919'>
+                 ,DZ8W=dz8w,RHO_PHY=rho,P_PHY=p,PI_PHY=pi_phy,TH_PHY=th &amp;<a name='1920'>
+                 ,QV=qv_curr                                        &amp;<a name='1921'>
+                 ,QT=qt_curr                                        &amp;<a name='1922'>
+                 ,LOWLYR=LOWLYR,SR=SR                               &amp;<a name='1923'>
+                 ,F_ICE_PHY=F_ICE_PHY,F_RAIN_PHY=F_RAIN_PHY         &amp;<a name='1924'>
+                 ,F_RIMEF_PHY=F_RIMEF_PHY                           &amp;<a name='1925'>
+                 ,QC=qc_curr,QR=Qr_curr,QI=Qi_curr                  &amp;<a name='1926'>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1927'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1928'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1929'>
+                                                                    )<a name='1930'>
+             ELSE<a name='1931'>
+                CALL wrf_error_fatal ( 'arguments not present for calling etampnew' )<a name='1932'>
+             ENDIF<a name='1933'>
+#endif<a name='1934'>
+        CASE (ETAMPNEW)    <font color=#447700>!-- Operational 4-km High-Resolution Window (HRW) version<a name='1935'></font>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling etampnew')<a name='1936'>
+<a name='1937'>
+             IF ( PRESENT( qv_curr ) .AND. PRESENT( qt_curr ) .AND. &amp;<a name='1938'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV ) .AND.  &amp;<a name='1939'>
+                  PRESENT( mp_restart_state )                  .AND. &amp;<a name='1940'>
+                  PRESENT( tbpvs_state )                      .AND. &amp;<a name='1941'>
+                  PRESENT( tbpvs0_state )                       ) THEN<a name='1942'>
+               CALL <A href='../../html_code/phys/module_mp_etanew.F.html#ETAMP_NEW'>ETAMP_NEW</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ETAMP_NEW_1">(                                      &amp;<a name='1943'>
+                  ITIMESTEP=itimestep,DT=dt,DX=dx,DY=dy             &amp;<a name='1944'>
+                 ,DZ8W=dz8w,RHO_PHY=rho,P_PHY=p,PI_PHY=pi_phy,TH_PHY=th &amp;<a name='1945'>
+                 ,QV=qv_curr                                        &amp;<a name='1946'>
+                 ,QC=qc_curr                                        &amp;<a name='1947'>
+                 ,QS=qs_curr                                        &amp;<a name='1948'>
+                 ,QR=qr_curr                                        &amp;<a name='1949'>
+                 ,QT=qt_curr                                        &amp;<a name='1950'>
+                 ,LOWLYR=LOWLYR,SR=SR                               &amp;<a name='1951'>
+                 ,F_ICE_PHY=F_ICE_PHY,F_RAIN_PHY=F_RAIN_PHY         &amp;<a name='1952'>
+                 ,F_RIMEF_PHY=F_RIMEF_PHY                           &amp;<a name='1953'>
+                 ,RAINNC=rainnc,RAINNCV=rainncv                     &amp;<a name='1954'>
+                 ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1955'>
+                 ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1956'>
+                 ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1957'>
+                 ,MP_RESTART_STATE=mp_restart_state                 &amp;<a name='1958'>
+                 ,TBPVS_STATE=tbpvs_state,TBPVS0_STATE=tbpvs0_state &amp;<a name='1959'>
+                                                                    )<a name='1960'>
+             ELSE<a name='1961'>
+                CALL wrf_error_fatal ( 'arguments not present for calling etampnew' )<a name='1962'>
+             ENDIF<a name='1963'>
+        CASE (FER_MP_HIRES)    <font color=#447700>!-- Operational Ferrier-Aligo High-Resolution Window(HRW) version<a name='1964'></font>
+                            <font color=#447700>!   (2014/2 version) added by Weiguo Wang on<a name='1965'></font>
+                            <font color=#447700>!   2014-11-19<a name='1966'></font>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling etampnew')<a name='1967'>
+<a name='1968'>
+             IF ( PRESENT( qv_curr ) .AND. PRESENT( qt_curr ) .AND. &amp;<a name='1969'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV ) .AND.  &amp;<a name='1970'>
+                  PRESENT( mp_restart_state )                  .AND. &amp;<a name='1971'>
+                  PRESENT( tbpvs_state )                      .AND. &amp;<a name='1972'>
+                  PRESENT( tbpvs0_state )                       ) THEN<a name='1973'>
+<a name='1974'>
+             <font color=#447700>!  write(0,*)',f_qv,f_qc,f_qr,f_qi,f_qs,f_qg',f_qv,f_qc,f_qr,f_qi,f_qs,f_qg<a name='1975'></font>
+             <font color=#447700>!  write(0,*)'max qi=',maxval(qi_curr(its:ite,kts:kte,jts:jte))<a name='1976'></font>
+             <font color=#447700>!  write(0,*)'max qs=',maxval(qs_curr(its:ite,kts:kte,jts:jte))<a name='1977'></font>
+<a name='1978'>
+                CALL <A href='../../html_code/phys/module_mp_fer_hires.F.html#FER_HIRES'>FER_HIRES</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FER_HIRES_1">(                                      &amp;<a name='1979'>
+                   ITIMESTEP=itimestep,DT=dt,DX=dx,DY=dy, GID=id &amp;<a name='1980'>
+                  ,RAINNC=rainnc,RAINNCV=rainncv                     &amp;<a name='1981'>
+                  ,DZ8W=dz8w,RHO_PHY=rho,P_PHY=p,PI_PHY=pi_phy,TH_PHY=th &amp;<a name='1982'>
+                  ,QV=qv_curr                                        &amp;<a name='1983'>
+                  ,QT=qt_curr                                        &amp;<a name='1984'>
+                  ,LOWLYR=LOWLYR,SR=SR                               &amp;<a name='1985'>
+                  ,F_ICE_PHY=F_ICE_PHY,F_RAIN_PHY=F_RAIN_PHY         &amp;<a name='1986'>
+                  ,F_RIMEF_PHY=F_RIMEF_PHY                           &amp;<a name='1987'>
+                  ,QC=qc_curr,QR=Qr_curr,QI=Qi_curr                  &amp;<a name='1988'>
+                  ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='1989'>
+                  ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='1990'>
+                  ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='1991'>
+                                                                     )<a name='1992'>
+             ELSE<a name='1993'>
+                CALL wrf_error_fatal ( 'arguments not present for calling fer_hires' )<a name='1994'>
+             ENDIF<a name='1995'>
+<a name='1996'>
+        CASE (FER_MP_HIRES_ADVECT)    <font color=#447700>!-- Operational Ferrier-Aligo High-Resolution Window(HRW) version<a name='1997'></font>
+                            <font color=#447700>!   (2014/2 version) added by Weiguo Wang on<a name='1998'></font>
+                            <font color=#447700>!   2014-11-19<a name='1999'></font>
+                            <font color=#447700>!   Modified for advection, Sam Trahan, August 2015<a name='2000'></font>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling etampnew')<a name='2001'>
+<a name='2002'>
+             IF ( PRESENT( qv_curr ) .AND. PRESENT( qi_curr ) .AND. &amp;<a name='2003'>
+                  PRESENT( qc_curr ) .and. PRESENT(qrimef_curr) .AND.  &amp;<a name='2004'>
+                  PRESENT( RAINNC  ) .AND. PRESENT ( RAINNCV ) .AND.  &amp;<a name='2005'>
+                  PRESENT( mp_restart_state )                  .AND. &amp;<a name='2006'>
+                  PRESENT( tbpvs_state )                      .AND. &amp;<a name='2007'>
+                  PRESENT( tbpvs0_state )                       ) THEN<a name='2008'>
+<a name='2009'>
+             <font color=#447700>!  write(0,*)',f_qv,f_qc,f_qr,f_qi,f_qs,f_qg',f_qv,f_qc,f_qr,f_qi,f_qs,f_qg<a name='2010'></font>
+             <font color=#447700>!  write(0,*)'max qi=',maxval(qi_curr(its:ite,kts:kte,jts:jte))<a name='2011'></font>
+             <font color=#447700>!  write(0,*)'max qs=',maxval(qs_curr(its:ite,kts:kte,jts:jte))<a name='2012'></font>
+<a name='2013'>
+                CALL <A href='../../html_code/phys/module_mp_fer_hires.F.html#FER_HIRES_ADVECT'>FER_HIRES_ADVECT</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FER_HIRES_ADVECT_1">(                               &amp;<a name='2014'>
+                   ITIMESTEP=itimestep,DT=dt,DX=dx,DY=dy, GID=id &amp;<a name='2015'>
+                  ,RAINNC=rainnc,RAINNCV=rainncv                     &amp;<a name='2016'>
+                  ,DZ8W=dz8w,RHO_PHY=rho,P_PHY=p,PI_PHY=pi_phy,TH_PHY=th &amp;<a name='2017'>
+                  ,QV=qv_curr                                        &amp;<a name='2018'>
+                  ,LOWLYR=LOWLYR,SR=SR                               &amp;<a name='2019'>
+                  ,QC=qc_curr,QR=Qr_curr,QI=Qi_curr,QRIMEF=qrimef_curr    &amp;<a name='2020'>
+                  ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde &amp;<a name='2021'>
+                  ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme &amp;<a name='2022'>
+                  ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte &amp;<a name='2023'>
+                                                                     )<a name='2024'>
+             ELSE<a name='2025'>
+                CALL wrf_error_fatal ( 'arguments not present for calling fer_hires' )<a name='2026'>
+             ENDIF<a name='2027'>
+<a name='2028'>
+#if(EM_CORE==1)<a name='2029'>
+          CASE (CAMMGMPSCHEME)<a name='2030'>
+             CALL wrf_debug ( 100 , 'microphysics_driver: calling CAMMGMPSCHEME')<a name='2031'>
+             IF ( PRESENT( z          ) .AND. PRESENT( ht          ) .AND. &amp;<a name='2032'>
+                  PRESENT( qs_curr    ) .AND.                              &amp;<a name='2033'>
+                  PRESENT( qv_curr    ) .AND. PRESENT( qc_curr     ) .AND. &amp;<a name='2034'>
+                  PRESENT( qi_curr    ) .AND. PRESENT( f_qc        ) .AND. &amp;<a name='2035'>
+                  PRESENT( qr_curr    ) .AND. PRESENT( qndrop_curr ) .AND. &amp;                  <a name='2036'>
+                  PRESENT( f_qi       ) .AND. PRESENT( qnc_curr    ) .AND. &amp;<a name='2037'>
+                  PRESENT( RAINNCV    ) .AND. PRESENT( SNOWNCV     ) .AND. &amp;<a name='2038'>
+                  PRESENT( qns_curr   ) .AND. PRESENT( qnr_curr    ) .AND. &amp;<a name='2039'>
+#if ( WRF_CHEM == 1 )<a name='2040'>
+                  PRESENT( chem       ) .AND. PRESENT(dgnum4D      )  .AND. &amp;<a name='2041'>
+                  PRESENT( dgnumwet4D ) .AND.                           &amp;<a name='2042'>
+#endif<a name='2043'>
+                  PRESENT( qni_curr   ) .AND. PRESENT( RAINNC      ) ) THEN<a name='2044'>
+#if ( WRF_CHEM == 1 )<a name='2045'>
+                qv_b4mp(its:ite,kts:kte,jts:jte) = qv_curr(its:ite,kts:kte,jts:jte)<a name='2046'>
+                qc_b4mp(its:ite,kts:kte,jts:jte) = qc_curr(its:ite,kts:kte,jts:jte)<a name='2047'>
+                qi_b4mp(its:ite,kts:kte,jts:jte) = qi_curr(its:ite,kts:kte,jts:jte)<a name='2048'>
+                qs_b4mp(its:ite,kts:kte,jts:jte) = qs_curr(its:ite,kts:kte,jts:jte)<a name='2049'>
+#endif<a name='2050'>
+                  <a name='2051'>
+                CALL <A href='../../html_code/phys/module_mp_cammgmp_driver.F.html#CAMMGMP'>CAMMGMP</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CAMMGMP_1">(ITIMESTEP=itimestep,DT=dt,P8W=p8w_hyd,P_HYD=p_hyd    &amp;<a name='2052'>
+                     ,T_PHY=t_phy,PI_PHY=pi_phy,Z_AT_W=z_at_w,QFX=qfx             &amp;<a name='2053'>
+                     ,TKE_PBL=tke_pbl,TURBTYPE3D=turbtype3d,SMAW3D=smaw3d     &amp;<a name='2054'>
+                     ,DLF3D=dlf,DLF2_3D=dlf2,RLIQ2D=rliq,Z_SEA_LEVEL=z            &amp;<a name='2055'>
+                     ,KVH3D=exch_h,HT=ht,ALT=alt,ACCUM_MODE=accum_mode            &amp;<a name='2056'>
+                     ,AITKEN_MODE=aitken_mode,COARSE_MODE=coarse_mode             &amp;<a name='2057'>
+                     ,ICWMRSH3D=icwmrsh3d,ICWMRDP3D=icwmrdp3d,SHFRC3D=shfrc3d     &amp;<a name='2058'>
+                     ,CMFMC3D=cmfmc3d,CMFMC2_3D=cmfmc2_3d                         &amp;<a name='2059'>
+                     ,CONFIG_FLAGS=config_flags,F_ICE_PHY=f_ice_phy               &amp;<a name='2060'>
+                     ,F_RAIN_PHY=f_rain_phy                                       &amp;<a name='2061'>
+#if ( WRF_CHEM == 1 )<a name='2062'>
+                     ,DGNUM4D=dgnum4D,DGNUMWET4D=dgnumwet4D                       &amp;<a name='2063'>
+#endif<a name='2064'>
+                     ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde           &amp;<a name='2065'>
+                     ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme           &amp;<a name='2066'>
+                     ,ITS=its,ITE=ite, JTS=jts,JTE=jte, KTS=kts,KTE=kte           &amp;<a name='2067'>
+<font color=#447700>!Output variables from CAMMGMP<a name='2068'></font>
+                     ,TH=th,CLDFRA_OLD_MP=cldfra_old_mp,CLDFRA_MP=cldfra_mp       &amp;<a name='2069'>
+                     ,CLDFRA_MP_ALL=cldfra_mp_all,lradius=lradius,iradius=iradius &amp;<a name='2070'>
+                     ,CLDFRAI=cldfrai,CLDFRAL=cldfral                             &amp;<a name='2071'>
+                     ,CLDFRA_CONV=cldfra_conv,WSEDL3D=wsedl3d                     &amp;<a name='2072'>
+                     ,RAINNC=rainnc,RAINNCV=rainncv,SNOWNC=snownc,SNOWNCV=snowncv &amp;<a name='2073'>
+                     ,SR=sr,QV_CURR=qv_curr,QC_CURR=qc_curr,QI_CURR=qi_curr       &amp;<a name='2074'>
+                     ,QS_CURR=qs_curr,QR_CURR=qr_curr,NC3D=qnc_curr               &amp;<a name='2075'>
+                     ,NI3D=qni_curr,NS3D=qns_curr,NR3D=qnr_curr,QNDROP=qndrop_curr&amp;<a name='2076'>
+                     ,RH_OLD_MP=rh_old_mp,LCD_OLD_MP=lcd_old_mp                   &amp;<a name='2077'>
+#if ( WRF_CHEM == 1 )<a name='2078'>
+                     ,CHEM=chem                                                   &amp;<a name='2079'>
+                     ,QME3D=qme3d,PRAIN3D=prain3d,NEVAPR3D=nevapr3d               &amp;<a name='2080'>
+                     ,RATE1ORD_CW2PR_ST3D=rate1ord_cw2pr_st3d                     &amp;<a name='2081'>
+#endif<a name='2082'>
+                     ,XLAND=XLAND,SNOWH=SNOWH                                     &amp;<a name='2083'>
+                     )<a name='2084'>
+             ELSE<a name='2085'>
+                CALL wrf_error_fatal ( 'arguments not present for calling CAMMGMP SCHEME' )<a name='2086'>
+             ENDIF<a name='2087'>
+#endif<a name='2088'>
+<a name='2089'>
+      CASE DEFAULT<a name='2090'>
+<a name='2091'>
+         WRITE( wrf_err_message , * ) 'The microphysics option does not exist: mp_physics = ', mp_physics<a name='2092'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_715"> ( wrf_err_message )<a name='2093'>
+<a name='2094'>
+      END SELECT micro_select<a name='2095'>
+<a name='2096'>
+   ENDDO<a name='2097'>
+   <font color=#447700>!$OMP END PARALLEL DO<a name='2098'></font>
+<a name='2099'>
+#ifdef XEON_OPTIMIZED_WSM5<a name='2100'>
+   ENDIF<a name='2101'>
+#endif<a name='2102'>
+<a name='2103'>
+<font color=#447700>! by ZCX<a name='2104'></font>
+<font color=#447700>! IF ( PRESENT (LWP) ) THEN<a name='2105'></font>
+<font color=#447700>!   DO ij = 1 , num_tiles<a name='2106'></font>
+<font color=#447700>!      its = i_start(ij)<a name='2107'></font>
+<font color=#447700>!      ite = i_end(ij)<a name='2108'></font>
+<font color=#447700>!      jts = j_start(ij)<a name='2109'></font>
+<font color=#447700>!      jte = j_end(ij)<a name='2110'></font>
+<font color=#447700>!      DO j=jts,jte<a name='2111'></font>
+<font color=#447700>!      DO i=its,ite<a name='2112'></font>
+<font color=#447700>!         lwp(i,j) = 0.0<a name='2113'></font>
+<font color=#447700>!         do k=kts,kte<a name='2114'></font>
+<font color=#447700>!           lwp(i,j)=lwp(i,j)+qc_curr(i,k,j)*rho(i,k,j)*dz8w(i,k,j)<a name='2115'></font>
+<font color=#447700>!         end do<a name='2116'></font>
+<font color=#447700>!      ENDDO<a name='2117'></font>
+<font color=#447700>!      ENDDO<a name='2118'></font>
+<font color=#447700>!   ENDDO<a name='2119'></font>
+<font color=#447700>! ENDIF<a name='2120'></font>
+<font color=#447700>! ZCX<a name='2121'></font>
+<a name='2122'>
+   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_microphysics_driver.F.html#MICROPHYSICS_DRIVER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_641"> ( 200 , 'microphysics_driver: returning from' )<a name='2123'>
+<a name='2124'>
+   RETURN<a name='2125'>
+<a name='2126'>
+   END SUBROUTINE microphysics_driver<a name='2127'>
+<a name='2128'>
+END MODULE module_microphysics_driver<a name='2129'>
+</pre></body></html>

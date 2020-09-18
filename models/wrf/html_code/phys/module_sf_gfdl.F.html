@@ -1,0 +1,1843 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!-- XLV         latent heat of vaporization for water (J/kg)<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<A NAME='MODULE_SF_GFDL'><A href='../../html_code/phys/module_sf_gfdl.F.html#MODULE_SF_GFDL' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='4'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_sf_gfdl</font> <A href='../../call_to/MODULE_SF_GFDL.html' TARGET='index'>2</A><a name='5'>
+<a name='6'>
+<font color=#447700>!real, dimension(-100:2000,-100:2000), save :: z00<a name='7'></font>
+<a name='8'>
+CONTAINS<a name='9'>
+<a name='10'>
+<font color=#447700>!-------------------------------------------------------------------<a name='11'></font>
+<A NAME='SF_GFDL'><A href='../../html_code/phys/module_sf_gfdl.F.html#SF_GFDL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='12'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>SF_GFDL</font>(U3D,V3D,T3D,QV3D,P3D,                     &amp; <A href='../../call_to/SF_GFDL.html' TARGET='index'>1</A>,<A href='../../call_from/SF_GFDL.html' TARGET='index'>9</A><a name='13'>
+                     CP,ROVCP,R,XLV,PSFC,CHS,CHS2,CQS2, CPM,    &amp;<a name='14'>
+                     DT, SMOIS,num_soil_layers,ISLTYP,ZNT,      &amp;<a name='15'>
+#if (HWRF==1)<a name='16'>
+                     MZNT,                                      &amp; <a name='17'>
+#endif<a name='18'>
+                     UST,PSIM,PSIH,                             &amp;   <a name='19'>
+                     XLAND,HFX,QFX,TAUX,TAUY,LH,GSW,GLW,TSK,FLHC,FLQC,    &amp; <font color=#447700>! gopal's doing for Ocean coupling<a name='20'></font>
+                     QGH,QSFC,U10,V10,                          &amp;<a name='21'>
+                     ICOEF_SF,IWAVECPL,LCURR_SF,CHARN,MSANG,SCURX, SCURY,&amp;<a name='22'>
+                     pert_Cd, ens_random_seed, ens_Cdamp,       &amp;<a name='23'>
+                     GZ1OZ0,WSPD,BR,ZKMAX, ISFFLX,              &amp;<a name='24'>
+                     EP1,EP2,KARMAN,NTSFLG,SFENTH,              &amp;<a name='25'>
+                     Cd_out,Ch_out,                             &amp;<a name='26'>
+                     ids,ide, jds,jde, kds,kde,                 &amp;<a name='27'>
+                     ims,ime, jms,jme, kms,kme,                 &amp;<a name='28'>
+                     its,ite, jts,jte, kts,kte                  )<a name='29'>
+<font color=#447700>!-------------------------------------------------------------------<a name='30'></font>
+      USE <A href='../../html_code/phys/module_gfs_machine.F.html#MODULE_GFS_MACHINE'>MODULE_GFS_MACHINE</A><A href='../../html_code/phys/module_sf_gfdl.F.html#SF_GFDL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_GFS_MACHINE_31">, ONLY : kind_phys<a name='31'>
+      USE <A href='../../html_code/phys/module_gfs_funcphys.F.html#MODULE_GFS_FUNCPHYS'>MODULE_GFS_FUNCPHYS</A><A href='../../html_code/phys/module_sf_gfdl.F.html#SF_GFDL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_GFS_FUNCPHYS_12"> , ONLY : gfuncphys,fpvs<a name='32'>
+      USE <A href='../../html_code/phys/module_gfs_physcons.F.html#MODULE_GFS_PHYSCONS'>MODULE_GFS_PHYSCONS</A><A href='../../html_code/phys/module_sf_gfdl.F.html#SF_GFDL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_GFS_PHYSCONS_19">, grav =&gt; con_g<a name='33'>
+<font color=#447700>!-------------------------------------------------------------------<a name='34'></font>
+      IMPLICIT NONE<a name='35'>
+<font color=#447700>!-------------------------------------------------------------------<a name='36'></font>
+<font color=#447700>!-- U3D    	3D u-velocity interpolated to theta points (m/s)<a name='37'></font>
+<font color=#447700>!-- V3D    	3D v-velocity interpolated to theta points (m/s)<a name='38'></font>
+<font color=#447700>!-- T3D     	temperature (K)<a name='39'></font>
+<font color=#447700>!-- QV3D        3D water vapor mixing ratio (Kg/Kg)<a name='40'></font>
+<font color=#447700>!-- P3D         3D pressure (Pa)<a name='41'></font>
+<font color=#447700>!-- DT          time step (second)<a name='42'></font>
+<font color=#447700>!-- CP		heat capacity at constant pressure for dry air (J/kg/K)<a name='43'></font>
+<font color=#447700>!-- ROVCP       R/CP<a name='44'></font>
+<font color=#447700>!-- R           gas constant for dry air (J/kg/K)<a name='45'></font>
+<font color=#447700>!-- XLV         latent heat of vaporization for water (J/kg)<a name='46'></font>
+<font color=#447700>!-- PSFC	surface pressure (Pa)<a name='47'></font>
+<font color=#447700>!-- ZNT		thermal roughness length (m)<a name='48'></font>
+<font color=#447700>!-- MZNT        momentum roughness length (m)<a name='49'></font>
+<font color=#447700>!-- MAVAIL        surface moisture availability (between 0 and 1)<a name='50'></font>
+<font color=#447700>!-- UST		u* in similarity theory (m/s)<a name='51'></font>
+<font color=#447700>!-- PSIM        similarity stability function for momentum<a name='52'></font>
+<font color=#447700>!-- PSIH        similarity stability function for heat<a name='53'></font>
+<font color=#447700>!-- XLAND	land mask (1 for land, 2 for water)<a name='54'></font>
+<font color=#447700>!-- HFX		upward heat flux at the surface (W/m^2)<a name='55'></font>
+<font color=#447700>!-- QFX   	upward moisture flux at the surface (kg/m^2/s)<a name='56'></font>
+<font color=#447700>!-- TAUX        RHO*U**2 (Kg/m/s^2)  ! gopal's doing for Ocean coupling<a name='57'></font>
+<font color=#447700>!-- TAUY        RHO*U**2 (Kg/m/s^2)  ! gopal's doing for Ocean coupling<a name='58'></font>
+<font color=#447700>!-- LH          net upward latent heat flux at surface (W/m^2)<a name='59'></font>
+<font color=#447700>!-- GSW         downward short wave flux at ground surface (W/m^2)<a name='60'></font>
+<font color=#447700>!-- GLW         downward long wave flux at ground surface (W/m^2)<a name='61'></font>
+<font color=#447700>!-- TSK		surface temperature (K)<a name='62'></font>
+<font color=#447700>!-- FLHC        exchange coefficient for heat (m/s)<a name='63'></font>
+<font color=#447700>!-- FLQC        exchange coefficient for moisture (m/s)<a name='64'></font>
+<font color=#447700>!-- QGH         lowest-level saturated mixing ratio<a name='65'></font>
+<font color=#447700>!-- U10         diagnostic 10m u wind<a name='66'></font>
+<font color=#447700>!-- V10         diagnostic 10m v wind<a name='67'></font>
+<font color=#447700>!-- GZ1OZ0      log(z/z0) where z0 is roughness length<a name='68'></font>
+<font color=#447700>!-- WSPD        wind speed at lowest model level (m/s)<a name='69'></font>
+<font color=#447700>!-- BR          bulk Richardson number in surface layer<a name='70'></font>
+<font color=#447700>!-- ISFFLX      isfflx=1 for surface heat and moisture fluxes<a name='71'></font>
+<font color=#447700>!-- EP1         constant for virtual temperature (R_v/R_d - 1) (dimensionless)<a name='72'></font>
+<font color=#447700>!-- KARMAN      Von Karman constant<a name='73'></font>
+<font color=#447700>!-- SFENTH      enthalpy flux factor 0 zot via charnock ..&gt;0 zot enhanced&gt;15m/s<a name='74'></font>
+<font color=#447700>!-- ids         start index for i in domain<a name='75'></font>
+<font color=#447700>!-- ide         end index for i in domain<a name='76'></font>
+<font color=#447700>!-- jds         start index for j in domain<a name='77'></font>
+<font color=#447700>!-- jde         end index for j in domain<a name='78'></font>
+<font color=#447700>!-- kds         start index for k in domain<a name='79'></font>
+<font color=#447700>!-- kde         end index for k in domain<a name='80'></font>
+<font color=#447700>!-- ims         start index for i in memory<a name='81'></font>
+<font color=#447700>!-- ime         end index for i in memory<a name='82'></font>
+<font color=#447700>!-- jms         start index for j in memory<a name='83'></font>
+<font color=#447700>!-- jme         end index for j in memory<a name='84'></font>
+<font color=#447700>!-- kms         start index for k in memory<a name='85'></font>
+<font color=#447700>!-- kme         end index for k in memory<a name='86'></font>
+<font color=#447700>!-- its         start index for i in tile<a name='87'></font>
+<font color=#447700>!-- ite         end index for i in tile<a name='88'></font>
+<font color=#447700>!-- jts         start index for j in tile<a name='89'></font>
+<font color=#447700>!-- jte         end index for j in tile<a name='90'></font>
+<font color=#447700>!-- kts         start index for k in tile<a name='91'></font>
+<font color=#447700>!-- kte         end index for k in tile<a name='92'></font>
+<font color=#447700>!-------------------------------------------------------------------<a name='93'></font>
+      character*255 :: message<a name='94'>
+      INTEGER, INTENT(IN) ::            ids,ide, jds,jde, kds,kde,      &amp;<a name='95'>
+                                        ims,ime, jms,jme, kms,kme,      &amp;<a name='96'>
+                                        its,ite, jts,jte, kts,kte,      &amp;<a name='97'>
+                                        ISFFLX,NUM_SOIL_LAYERS,NTSFLG<a name='98'>
+      INTEGER, INTENT(IN) ::            ICOEF_SF<a name='99'>
+      INTEGER, INTENT(IN) ::            IWAVECPL<a name='100'>
+      LOGICAL, INTENT(IN) ::            LCURR_SF<a name='101'>
+      logical,intent(in)  :: pert_Cd <a name='102'>
+      integer,intent(in)  :: ens_random_seed<a name='103'>
+      real,intent(in)     :: ens_Cdamp<a name='104'>
+<a name='105'>
+      REAL,    INTENT(IN) ::                                            &amp;<a name='106'>
+                                        CP,                             &amp;<a name='107'>
+                                        EP1,                            &amp;<a name='108'>
+                                        EP2,                            &amp;<a name='109'>
+                                        KARMAN,                         &amp;<a name='110'>
+                                        R,                              &amp; <a name='111'>
+                                        ROVCP,                          &amp;<a name='112'>
+                                        DT,                             &amp;<a name='113'>
+                                        SFENTH,                         &amp;<a name='114'>
+                                        XLV <a name='115'>
+<a name='116'>
+      REAL,    DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN) ::      &amp; <a name='117'>
+                                        P3D,                            &amp;<a name='118'>
+                                        QV3D,                           &amp;<a name='119'>
+                                        T3D,                            &amp;<a name='120'>
+                                        U3D,                            &amp;<a name='121'>
+                                        V3D<a name='122'>
+      INTEGER, DIMENSION( ims:ime , jms:jme ), INTENT(IN )::   ISLTYP<a name='123'>
+      REAL, DIMENSION( ims:ime , 1:num_soil_layers, jms:jme ), INTENT(INOUT)::   SMOIS<a name='124'>
+<a name='125'>
+      REAL,    DIMENSION(ims:ime, jms:jme), INTENT(IN) ::               &amp;<a name='126'>
+                                        PSFC,                           &amp;<a name='127'>
+                                        GLW,                            &amp;<a name='128'>
+                                        GSW,                            &amp;<a name='129'>
+                                        XLAND                           <a name='130'>
+      REAL,    DIMENSION(ims:ime, jms:jme), INTENT(IN) ::               &amp;<a name='131'>
+                                        CHARN,                          &amp;<a name='132'>
+                                        MSANG,                          &amp;<a name='133'>
+                                        SCURX,                          &amp;<a name='134'>
+                                        SCURY<a name='135'>
+      REAL,    DIMENSION(ims:ime, jms:jme), INTENT(INOUT) ::            &amp; <a name='136'>
+                                        TSK,                            &amp;<a name='137'>
+                                        BR,                             &amp;<a name='138'>
+                                        ZKMAX,                          &amp;<a name='139'>
+                                        CHS,                            &amp;<a name='140'>
+                                        Cd_out,                         &amp;<a name='141'>
+                                        Ch_out,                         &amp;<a name='142'>
+                                        CHS2,                           &amp;<a name='143'>
+                                        CPM,                            &amp;<a name='144'>
+                                        CQS2,                           &amp;<a name='145'>
+                                        FLHC,                           &amp;<a name='146'>
+                                        FLQC,                           &amp;<a name='147'>
+                                        GZ1OZ0,                         &amp;<a name='148'>
+                                        HFX,                            &amp;<a name='149'>
+                                        LH,                             &amp;<a name='150'>
+                                        PSIM,                           &amp;<a name='151'>
+                                        PSIH,                           &amp;<a name='152'>
+                                        QFX,                            &amp;<a name='153'>
+                                        QGH,                            &amp;<a name='154'>
+                                        QSFC,                           &amp;<a name='155'>
+                                        UST,                            &amp;<a name='156'>
+                                        ZNT,                            &amp;<a name='157'>
+#if (HWRF==1)<a name='158'>
+                                        MZNT,                           &amp;   <font color=#447700>!KWON momentum zo<a name='159'></font>
+#endif<a name='160'>
+                                        WSPD,                           &amp;<a name='161'>
+                                        TAUX,                           &amp; <font color=#447700>! gopal's doing for Ocean coupling<a name='162'></font>
+                                        TAUY<a name='163'>
+<a name='164'>
+      REAL, DIMENSION(ims:ime, jms:jme), INTENT(OUT) ::                 &amp;<a name='165'>
+                                        U10,                            &amp;<a name='166'>
+                                        V10                            <a name='167'>
+<a name='168'>
+<font color=#447700>!--------------------------- LOCAL VARS ------------------------------<a name='169'></font>
+<a name='170'>
+      REAL ::                           ESAT,                           &amp;<a name='171'>
+                                        cpcgs,                          &amp;<a name='172'>
+                                        smc,                            &amp;<a name='173'>
+                                        smcdry,                         &amp;<a name='174'>
+                                        smcmax<a name='175'>
+<a name='176'>
+      REAL     (kind=kind_phys) ::                                      &amp;<a name='177'>
+                                        RHOX<a name='178'>
+      REAL, DIMENSION(1:30)    ::       MAXSMC, &amp;<a name='179'>
+                                        DRYSMC<a name='180'>
+      REAL     (kind=kind_phys), DIMENSION(its:ite) ::                  &amp;<a name='181'>
+                                        CH,                             &amp;<a name='182'>
+                                        CM,                             &amp;<a name='183'>
+                                        DDVEL,                          &amp;<a name='184'>
+                                        DRAIN,                          &amp;<a name='185'>
+                                        EP,                             &amp;<a name='186'>
+                                        EVAP,                           &amp;<a name='187'>
+                                        FH,                             &amp;<a name='188'>
+                                        FH2,                            &amp;<a name='189'>
+                                        FM,                             &amp;<a name='190'>
+                                        HFLX,                           &amp;<a name='191'>
+                                        PH,                             &amp;<a name='192'>
+                                        PM,                             &amp;<a name='193'>
+                                        PRSL1,                          &amp;<a name='194'>
+                                        PRSLKI,                         &amp;<a name='195'>
+                                        PS,                             &amp;<a name='196'>
+                                        Q1,                             &amp;<a name='197'>
+                                        Q2M,                            &amp;<a name='198'>
+                                        QSS,                            &amp;<a name='199'>
+                                        QSURF,                          &amp;<a name='200'>
+                                        RB,                             &amp;<a name='201'>
+                                        RCL,                            &amp;<a name='202'>
+                                        RHO1,                           &amp;<a name='203'>
+                                        SLIMSK,                         &amp;<a name='204'>
+                                        STRESS,                         &amp;<a name='205'>
+                                        T1,                             &amp;<a name='206'>
+                                        T2M,                            &amp;<a name='207'>
+                                        THGB,                           &amp;<a name='208'>
+                                        THX,                            &amp;<a name='209'>
+                                        TSKIN,                          &amp;<a name='210'>
+                                        SHELEG,                         &amp;<a name='211'>
+                                        U1,                             &amp;<a name='212'>
+                                        U10M,                           &amp;<a name='213'>
+                                        USTAR,                          &amp;<a name='214'>
+                                        V1,                             &amp;<a name='215'>
+                                        V10M,                           &amp; <a name='216'>
+                                        WIND,                           &amp;<a name='217'>
+                                        Z0RL,                           &amp;<a name='218'>
+                                        Z1                              <a name='219'>
+<a name='220'>
+      REAL,    DIMENSION(kms:kme, ims:ime) ::                           &amp;<a name='221'>
+                                        rpc,                            &amp;<a name='222'>
+                                        tpc,                            &amp;<a name='223'>
+                                        upc,                            &amp;<a name='224'>
+                                        vpc<a name='225'>
+    <a name='226'>
+     REAL,    DIMENSION(ims:ime) ::                                     &amp;<a name='227'>
+                                        pspc,                           &amp;<a name='228'>
+                                        pkmax,                          &amp;<a name='229'>
+                                        tstrc,                          &amp;<a name='230'>
+                                        zoc,                            &amp;<a name='231'>
+                                        mzoc,                           &amp;  <font color=#447700>!ADDED BY KWON FOR momentum Zo<a name='232'></font>
+                                        tzot,                           &amp;  <font color=#447700>!Wang<a name='233'></font>
+                                        wetc,                           &amp;<a name='234'>
+                                        slwdc,                          &amp;<a name='235'>
+                                        rib,                            &amp;<a name='236'>
+<font color=#447700>!!!                                        zkmax,                          &amp;<a name='237'></font>
+                                        tkmax,                          &amp;<a name='238'>
+                                        fxmx,                           &amp;<a name='239'>
+                                        fxmy,                           &amp;<a name='240'>
+                                        cdm,                            &amp;<a name='241'>
+                                        fxh,                            &amp;<a name='242'>
+                                        fxe,                            &amp;<a name='243'>
+                                        xxfh,                           &amp;<a name='244'>
+                                        xxfh2,                          &amp;<a name='245'>
+                                        wind10,                         &amp;<a name='246'>
+                                        tjloc,                          &amp;<a name='247'>
+                                        alpha,                          &amp;<a name='248'>
+                                        gamma,                          &amp;<a name='249'>
+                                        xcur,                           &amp;<a name='250'>
+                                        ycur<a name='251'>
+<a name='252'>
+      INTEGER ::                                                        &amp;<a name='253'>
+                                        I,                              &amp;<a name='254'>
+                                        II,                             &amp;<a name='255'>
+                                        IGPVS,                          &amp;<a name='256'>
+                                        IM,                             &amp;<a name='257'>
+                                        J,                              &amp;<a name='258'>
+                                        K,                              &amp;<a name='259'>
+                                        KM<a name='260'>
+<a name='261'>
+      real :: tmp9,zhalf  <font color=#447700>! wang, height of the first half level<a name='262'></font>
+<a name='263'>
+        DATA MAXSMC/0.339, 0.421, 0.434, 0.476, 0.476, 0.439,  &amp;<a name='264'>
+                    0.404, 0.464, 0.465, 0.406, 0.468, 0.468,  &amp;<a name='265'>
+                    0.439, 1.000, 0.200, 0.421, 0.000, 0.000,  &amp;<a name='266'>
+                    0.000, 0.000, 0.000, 0.000, 0.000, 0.000,  &amp;<a name='267'>
+                    0.000, 0.000, 0.000, 0.000, 0.000, 0.000/<a name='268'>
+<a name='269'>
+        DATA DRYSMC/0.010, 0.028, 0.047, 0.084, 0.084, 0.066,     &amp;<a name='270'>
+                    0.067, 0.120, 0.103, 0.100, 0.126, 0.138,     &amp;<a name='271'>
+                    0.066, 0.000, 0.006, 0.028, 0.000, 0.000,     &amp;<a name='272'>
+                    0.000, 0.000, 0.000, 0.000, 0.000, 0.000,     &amp;<a name='273'>
+                    0.000, 0.000, 0.000, 0.000, 0.000, 0.000/<a name='274'>
+      DATA IGPVS/0/<a name='275'>
+      save igpvs<a name='276'>
+<a name='277'>
+<a name='278'>
+   if(igpvs.eq.0) then<a name='279'>
+<font color=#447700>!     call readzo(glat,glon,6,ims,ime,jms,jme,its,ite,jts,jte,z00)<a name='280'></font>
+   endif<a name='281'>
+   igpvs=1<a name='282'>
+<a name='283'>
+   IM=ITE-ITS+1<a name='284'>
+   KM=KTE-KTS+1<a name='285'>
+<a name='286'>
+   WRITE(message,*)'WITHIN THE GFDL SCHEME, NTSFLG=1 FOR GFDL SLAB  2010 UPGRADS',NTSFLG<a name='287'>
+   call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_sf_gfdl.F.html#SF_GFDL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_827">(2,message)<a name='288'>
+<a name='289'>
+<font color=#447700>!!     write(0,*)'icoef_sf,lcurr_sf=',icoef_sf,lcurr_sf<a name='290'></font>
+<a name='291'>
+   DO J=jts,jte<a name='292'>
+<a name='293'>
+      DO i=its,ite<a name='294'>
+        DDVEL(I)=0.<a name='295'>
+        RCL(i)=1.<a name='296'>
+        PRSL1(i)=P3D(i,kts,j)*.001<a name='297'>
+         wetc(i)=1.0<a name='298'>
+         if(xland(i,j).lt.1.99) then<a name='299'>
+         smc=smois(i,1,j)<a name='300'>
+         smcdry=drysmc(isltyp(i,j))<a name='301'>
+         smcmax=maxsmc(isltyp(i,j))<a name='302'>
+         wetc(i)=(smc-smcdry)/(smcmax-smcdry)<a name='303'>
+         wetc(i)=amin1(1.,amax1(wetc(i),0.))<a name='304'>
+         endif  <a name='305'>
+<font color=#447700>!       convert from Pa to cgs...<a name='306'></font>
+        pspc(i)=PSFC(i,j)*10.   <a name='307'>
+        pkmax(i)=P3D(i,kts,j)*10.<a name='308'>
+        PS(i)=PSFC(i,j)*.001<a name='309'>
+        Q1(I) = QV3D(i,kts,j)<a name='310'>
+        rpc(kts,i)=QV3D(i,kts,j)<a name='311'>
+<font color=#447700>!        QSURF(I)=QSFC(I,J)<a name='312'></font>
+        QSURF(I)=0.<a name='313'>
+        SHELEG(I)=0.<a name='314'>
+        SLIMSK(i)=ABS(XLAND(i,j)-2.)<a name='315'>
+        TSKIN(i)=TSK(i,j)<a name='316'>
+        tstrc(i)=TSK(i,j)<a name='317'>
+        T1(I) = T3D(i,kts,j)<a name='318'>
+        tpc(kts,i)=T3D(i,kts,j)<a name='319'>
+        U1(I) = U3D(i,kts,j)<a name='320'>
+        upc(kts,i)=U3D(i,kts,j) * 100.<a name='321'>
+        USTAR(I) = UST(i,j)<a name='322'>
+        V1(I) = V3D(i,kts,j)<a name='323'>
+        vpc(kts,i)=v3D(i,kts,j) * 100.<a name='324'>
+        Z0RL(I) = ZNT(i,j)*100.<a name='325'>
+        zoc(i)=ZNT(i,j)*100.<a name='326'>
+        cdm(i) = Cd_out(i,j)<a name='327'>
+         if(XLAND(i,j).gt.1.99)  zoc(i)=- zoc(i)<a name='328'>
+<font color=#447700>!        Z0RL(I) = z00(i,j)*100.<a name='329'></font>
+<font color=#447700>!       slwdc... GFDL downward net flux in units of cal/(cm**2/min)<a name='330'></font>
+<font color=#447700>!       also divide by 10**4 to convert from /m**2 to /cm**2<a name='331'></font>
+        slwdc(i)=gsw(i,j)+glw(i,j)<a name='332'>
+        slwdc(i)=0.239*60.*slwdc(i)*1.e-4<a name='333'>
+         tjloc(i)=float(j)<a name='334'>
+        alpha(i) = charn(i,j)<a name='335'>
+        gamma(i) = msang(i,j)<a name='336'>
+        xcur(i) = scurx(i,j)<a name='337'>
+        ycur(i) = scury(i,j)<a name='338'>
+<a name='339'>
+<a name='340'>
+ <font color=#447700>!Wang, calulate height of the first half level<a name='341'></font>
+ <font color=#447700>!      use previous u10 v10 to compute wind10, input to MFLUX to compute z0<a name='342'></font>
+          wind10(i)=sqrt(u10(i,j)*u10(i,j)+v10(i,j)*v10(i,j))<a name='343'>
+        <font color=#447700>!first time step, u10 and v10 may be zero<a name='344'></font>
+           zhalf=0.0<a name='345'>
+          if (wind10(i) &lt;= 1.0e-10 .or. wind10(i) &gt; 150.0) then<a name='346'>
+<font color=#447700>!           write(0,*)'maybe first timestep'<a name='347'></font>
+           zhalf = -R*tpc(kts,i)*alog(pkmax(i)/pspc(i))/grav<a name='348'>
+           wind10(i)=sqrt(u1(i)*u1(i)+v1(i)*v1(i))*alog(10.0/znt(i,j))/alog(zhalf/znt(i,j))<a name='349'>
+          endif<a name='350'>
+           wind10(i)=wind10(i)*100.0   <font color=#447700>!! m/s to cm/s<a name='351'></font>
+           zhalf = -R*tpc(kts,i)*alog(pkmax(i)/pspc(i))/grav<a name='352'>
+<font color=#447700>!         if (i == (its+ite)/2 .and. j == (jts+jte)/2 ) then<a name='353'></font>
+<font color=#447700>!         write(0,*)'before call mflux,zh,w10,u10,v10,WIND1,znt'<a name='354'></font>
+<font color=#447700>!         write(0,*)zhalf,wind10(i),u10(i,j),v10(i,j),sqrt(u1(i)**2+v1(i)**2),znt(i,j)<a name='355'></font>
+<font color=#447700>!         write(0,*)'uselog', sqrt(u1(i)*u1(i)+v1(i)*v1(i))*alog(10.0/znt(i,j))/alog(zhalf/znt(i,j))<a name='356'></font>
+<font color=#447700>!         endif<a name='357'></font>
+        <font color=#447700>!<a name='358'></font>
+<a name='359'>
+      ENDDO<a name='360'>
+<a name='361'>
+      DO i=its,ite<a name='362'>
+         PRSLKI(i)=(PS(I)/PRSL1(I))**ROVCP<a name='363'>
+         THGB(I)=TSKIN(i)*(100./PS(I))**ROVCP<a name='364'>
+         THX(I)=T1(i)*(100./PRSL1(I))**ROVCP<a name='365'>
+         RHO1(I)=PRSL1(I)*1000./(R*T1(I)*(1.+EP1*Q1(I)))<a name='366'>
+         Q1(I)=Q1(I)/(1.+Q1(I))<a name='367'>
+      ENDDO<a name='368'>
+<a name='369'>
+<font color=#447700>!     if(j==2)then<a name='370'></font>
+<font color=#447700>!       write(0,*)'--------------------------------------------'<a name='371'></font>
+<font color=#447700>!       write(0,*) 'u, v, t, r, pkmax, pspc,wetc, tjloc,zoc,tstr'<a name='372'></font>
+<font color=#447700>!       write(0,*)'--------------------------------------------'<a name='373'></font>
+<font color=#447700>!     endif<a name='374'></font>
+<a name='375'>
+<font color=#447700>!     do i = its,ite<a name='376'></font>
+<font color=#447700>!       WRITE(0,1010)i,j,upc(kts,i),vpc(kts,i),tpc(kts,i),rpc(kts,i),     &amp;<a name='377'></font>
+<font color=#447700>!                    pkmax(i),pspc(i),wetc(i),tjloc(i),zoc(i),tstrc(i)<a name='378'></font>
+<font color=#447700>!     enddo<a name='379'></font>
+<a name='380'>
+     CALL <A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2'>MFLUX2</A><A href='../../html_code/phys/module_sf_gfdl.F.html#SF_GFDL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MFLUX2_1">(  fxh,fxe,fxmx,fxmy,cdm,rib,xxfh,zoc,mzoc,tstrc,   &amp;    <font color=#447700>!mzoc for momentum Zo KWON<a name='381'></font>
+                   pspc,pkmax,wetc,slwdc,tjloc,                &amp;<a name='382'>
+                   icoef_sf,iwavecpl,lcurr_sf,alpha,gamma,xcur,ycur,           &amp;<a name='383'>
+                   pert_Cd, ens_random_seed, ens_Cdamp,        &amp;<a name='384'>
+                   upc,vpc,tpc,rpc,dt,J,wind10,xxfh2,ntsflg,SFENTH,   &amp;<a name='385'>
+                   tzot,   &amp;  <font color=#447700>! tzot , zot for thermal z0 Wang<a name='386'></font>
+                   ids,ide, jds,jde, kds,kde,                  &amp;<a name='387'>
+                   ims,ime, jms,jme, kms,kme,                  &amp;<a name='388'>
+                   its,ite, jts,jte, kts,kte                   )<a name='389'>
+<font color=#447700>!!!        if(j == (jts+jte)/2)   write(0,*)'after call mflux,w10',wind10( (its+ite)/2  )<a name='390'></font>
+<font color=#447700>!     if(j==2)then<a name='391'></font>
+<font color=#447700>!       write(0,*)'--------------------------------------------'<a name='392'></font>
+<font color=#447700>!       write(0,*) 'fxh, fxe, fxmx, fxmy, cdm, xxfh zoc,tstrc'<a name='393'></font>
+<font color=#447700>!       write(0,*)'--------------------------------------------'<a name='394'></font>
+<font color=#447700>!     endif<a name='395'></font>
+<a name='396'>
+<font color=#447700>!     do i = its,ite<a name='397'></font>
+<font color=#447700>!       WRITE(0,1010)i,j,fxh(i),fxe(i),fxmx(i),fxmy(i),cdm(i),rib(i),xxfh(i),zoc(i),tstrc(i)<a name='398'></font>
+<font color=#447700>!     enddo<a name='399'></font>
+<a name='400'>
+1010  format(2I4,9F11.6)<a name='401'>
+<a name='402'>
+<a name='403'>
+<a name='404'>
+<font color=#447700>!GFDL     CALL PROGTM(IM,KM,PS,U1,V1,T1,Q1,                                 &amp;<a name='405'></font>
+<font color=#447700>!GFDL             SHELEG,TSKIN,QSURF,                                   &amp;<a name='406'></font>
+<font color=#447700>!WRF              SMC,STC,DM,SOILTYP,SIGMAF,VEGTYPE,CANOPY,DLWFLX,      &amp;<a name='407'></font>
+<font color=#447700>!WRF              SLRAD,SNOWMT,DELT,                                    &amp;<a name='408'></font>
+<font color=#447700>!GFDL             Z0RL,                                                 &amp;<a name='409'></font>
+<font color=#447700>!WRF              TG3,GFLUX,F10M,                                       &amp;<a name='410'></font>
+<font color=#447700>!GFDL             U10M,V10M,T2M,Q2M,                                    &amp;<a name='411'></font>
+<font color=#447700>!WRF              ZSOIL,                                                &amp;<a name='412'></font>
+<font color=#447700>!GFDL             CM,CH,RB,                                             &amp;<a name='413'></font>
+<font color=#447700>!WRF              RHSCNPY,RHSMC,AIM,BIM,CIM,                            &amp;<a name='414'></font>
+<font color=#447700>!GFDL             RCL,PRSL1,PRSLKI,SLIMSK,                              &amp;<a name='415'></font>
+<font color=#447700>!GFDL             DRAIN,EVAP,HFLX,STRESS,EP,                            &amp;<a name='416'></font>
+<font color=#447700>!GFDL             FM,FH,USTAR,WIND,DDVEL,                               &amp;<a name='417'></font>
+<font color=#447700>!GFDL             PM,PH,FH2,QSS,Z1                                      )<a name='418'></font>
+<a name='419'>
+<a name='420'>
+      DO i=its,ite<a name='421'>
+<font color=#447700>!       update skin temp only when using GFDL slab...<a name='422'></font>
+<a name='423'>
+        IF(NTSFLG==1)    then<a name='424'>
+        tsk(i,j) = tstrc(i)      <font color=#447700>! gopal's doing <a name='425'></font>
+<font color=#447700>!bugfix 4<a name='426'></font>
+<font color=#447700>!       bob's doing patch tsk with neigboring values... are grid boundaries<a name='427'></font>
+        if(j.eq.jde) then<a name='428'>
+         tsk(i,j) = tsk(i,j-1)<a name='429'>
+         endif<a name='430'>
+<a name='431'>
+        if(j.eq.jds) then<a name='432'>
+         tsk(i,j) = tsk(i,j+1)<a name='433'>
+         endif<a name='434'>
+   <a name='435'>
+        if(i.eq.ide) tsk(i,j) = tsk(i-1,j)<a name='436'>
+        if(i.eq.ids) tsk(i,j) = tsk(i+1,j)<a name='437'>
+        endif<a name='438'>
+<a name='439'>
+<a name='440'>
+        znt(i,j)= 0.01*abs(zoc(i))<a name='441'>
+#if (HWRF==1)<a name='442'>
+        mznt(i,j)= 0.01*abs(mzoc(i))<a name='443'>
+#endif<a name='444'>
+        wspd(i,j) = SQRT(upc(kts,i)*upc(kts,i) + vpc(kts,i)*vpc(kts,i))<a name='445'>
+        wspd(i,j) = amax1(wspd(i,j)    ,100.)/100.<a name='446'>
+        u10m(i) = u1(i)*(wind10(i)/wspd(i,j))/100.<a name='447'>
+        v10m(i) = v1(i)*(wind10(i)/wspd(i,j))/100.<a name='448'>
+<font color=#447700>!       br     =0.0001*zfull(i,kmax)*dthv/<a name='449'></font>
+<font color=#447700>!    &amp;          (gmks*theta(i,kmax)*wspd     *wspd     )<a name='450'></font>
+<font color=#447700>!       zkmax    = rgas*tpc(kmax,i)*qqlog(kmax)*og<a name='451'></font>
+        zkmax(i,j) = -R*tpc(kts,i)*alog(pkmax(i)/pspc(i))/grav<a name='452'>
+<font color=#447700>!------------------------------------------------------------------------<a name='453'></font>
+<a name='454'>
+        gz1oz0(i,j)=alog(zkmax(i,j)/znt(i,j))<a name='455'>
+        ustar   (i)= 0.01*sqrt(cdm(i)*   &amp;<a name='456'>
+                   (upc(kts,i)*upc(kts,i) + vpc(kts,i)*vpc(kts,i)))<a name='457'>
+<font color=#447700>!       convert from g/(cm*cm*sec) to kg/(m*m*sec)<a name='458'></font>
+        qfx   (i,j)=-10.*fxe(i)            <font color=#447700>! BOB: qfx   (i,1)=-10.*fxe(i)<a name='459'></font>
+<font color=#447700>!       cpcgs  = 1.00464e7<a name='460'></font>
+<font color=#447700>!       convert from ergs/gram/K to J/kg/K  cpmks=1004<a name='461'></font>
+<font color=#447700>!       hfx   (i,1)=-0.001*cpcgs*fxh(i)<a name='462'></font>
+        hfx   (i,j)=       -10.*CP*fxh(i)  <font color=#447700>! Bob: hfx   (i,1)=       -10.*CP*fxh(i)<a name='463'></font>
+        taux  (i,j)= fxmx(i)/10.    <font color=#447700>! gopal's doing for Ocean coupling<a name='464'></font>
+        tauy  (i,j)= fxmy(i)/10.    <font color=#447700>! gopal's doing for Ocean coupling<a name='465'></font>
+        fm(i)         = karman/sqrt(cdm(i))<a name='466'>
+        fh(i)         = karman*xxfh(i)            <a name='467'>
+        PSIM(i,j)=GZ1OZ0(i,j)-FM(i)<a name='468'>
+        PSIH(i,j)=GZ1OZ0(i,j)-FH(i)<a name='469'>
+        fh2(i)         = karman*xxfh2(i)            <a name='470'>
+        ch(i)      = karman*karman/(fm(i) * fh(i))<a name='471'>
+        cm(i)      = cdm(i)<a name='472'>
+        Cd_out(i,j) = cm(i)<a name='473'>
+        Ch_out(i,j) = ch(i)<a name='474'>
+<a name='475'>
+<font color=#447700>!!! convert cd, ch to values at 10m, for output<a name='476'></font>
+         if ( wind10(i) .ge. 0.1 ) then<a name='477'>
+           cd_out(i,j)=cm(i)* (wspd(i,j)/(0.01*wind10(i)) )**2<a name='478'>
+           tmp9=0.01*abs(tzot(i))<a name='479'>
+           ch_out(i,j)=ch(i)*(wspd(i,j)/(0.01*wind10(i)) ) * &amp;<a name='480'>
+                     (alog(zkmax(i,j)/tmp9)/alog(10.0/tmp9))<a name='481'>
+<font color=#447700>!           if(j == (jts+jte)/2 .and. i == (its+ite)/2 ) then<a name='482'></font>
+<font color=#447700>!            write(0,*)'cm,cd10=',cm(i),cd_out(i,j)<a name='483'></font>
+<font color=#447700>!            write(0,*)'ch,ch10=',ch(i),ch_out(i,j)<a name='484'></font>
+<font color=#447700>!            write(0,*)'w/w10,zkmax(i),tzot=',wspd(i,j)/(0.01*wind10(i)),zkmax(i,j),tmp9<a name='485'></font>
+<font color=#447700>!           endif<a name='486'></font>
+         endif<a name='487'>
+<font color=#447700>!!!<a name='488'></font>
+        U10(i,j)=U10M(i)<a name='489'>
+        V10(i,j)=V10M(i)<a name='490'>
+        BR(i,j)=rib(i)<a name='491'>
+        CHS(I,J)=CH(I)*wspd (i,j)<a name='492'>
+        CHS2(I,J)=USTAR(I)*KARMAN/FH2(I)<a name='493'>
+<a name='494'>
+<font color=#447700>!!!2014-0922  cap CHS over land points<a name='495'></font>
+          if (xland(i,j) .lt. 1.9) then<a name='496'>
+            CHS(I,J)=amin1(CHS(I,J), 0.05)<a name='497'>
+            CHS2(I,J)=amin1(CHS2(I,J), 0.05)<a name='498'>
+            if (chs2(i,j) &lt; 0) chs2(i,j)=1.0e-6<a name='499'>
+          endif<a name='500'>
+<font color=#447700>!!!<a name='501'></font>
+<a name='502'>
+<a name='503'>
+        CPM(I,J)=CP*(1.+0.8*QV3D(i,kts,j))<a name='504'>
+        esat = <A href='../../html_code/phys/module_mp_wsm6.F.html#FPVS'>fpvs</A><A href='../../html_code/phys/module_sf_gfdl.F.html#SF_GFDL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPVS_4">(t1(i))<a name='505'>
+        QGH(I,J)=ep2*esat/(1000.*ps(i)-esat)<a name='506'>
+        esat = <A href='../../html_code/phys/module_mp_wsm6.F.html#FPVS'>fpvs</A><A href='../../html_code/phys/module_sf_gfdl.F.html#SF_GFDL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FPVS_5">(tskin(i))<a name='507'>
+        qss(i) = ep2*esat/(1000.*ps(i)-esat)<a name='508'>
+        QSFC(I,J)=qss(i)<a name='509'>
+<font color=#447700>!       PSIH(i,j)=PH(i)<a name='510'></font>
+<font color=#447700>!       PSIM(i,j)=PM(i)<a name='511'></font>
+        UST(i,j)=ustar(i)<a name='512'>
+<font color=#447700>!       wspd (i,j) = SQRT(upc(kts,i)*upc(kts,i) + vpc(kts,i)*vpc(kts,i))<a name='513'></font>
+<font color=#447700>!       wspd (i,j) = amax1(wspd (i,j)        ,100.)/100.<a name='514'></font>
+<font color=#447700>!       WSPD(i,j)=WIND(i)<a name='515'></font>
+<font color=#447700>!       ZNT(i,j)=Z0RL(i)*.01<a name='516'></font>
+      ENDDO<a name='517'>
+<a name='518'>
+<font color=#447700>!       write(0,*)'fm,fh,cm,ch(125)', fm(125),fh(125),cm(125),ch(125)<a name='519'></font>
+<a name='520'>
+      DO i=its,ite<a name='521'>
+        FLHC(i,j)=CPM(I,J)*RHO1(I)*CHS(I,J)<a name='522'>
+        FLQC(i,j)=RHO1(I)*CHS(I,J)<a name='523'>
+<font color=#447700>!       GZ1OZ0(i,j)=LOG(Z1(I)/(Z0RL(I)*.01))<a name='524'></font>
+        CQS2(i,j)=CHS2(I,J)<a name='525'>
+      ENDDO<a name='526'>
+<a name='527'>
+      IF (ISFFLX.EQ.0) THEN<a name='528'>
+        DO i=its,ite<a name='529'>
+          HFX(i,j)=0.<a name='530'>
+          LH(i,j)=0.<a name='531'>
+          QFX(i,j)=0.<a name='532'>
+        ENDDO<a name='533'>
+      ELSE<a name='534'>
+        DO i=its,ite<a name='535'>
+          IF(XLAND(I,J)-1.5.GT.0.)THEN<a name='536'>
+<font color=#447700>!           HFX(I,J)=FLHC(I,J)*(THGB(I)-THX(I))<a name='537'></font>
+<font color=#447700>!           cpcgs  = 1.00464e7<a name='538'></font>
+<font color=#447700>!       convert from ergs/gram/K to J/kg/K  cpmks=1004<a name='539'></font>
+<font color=#447700>!           hfx   (i,j)=-0.001*cpcgs*fxh(i)<a name='540'></font>
+            hfx   (i,j)=       -10.*CP*fxh(i)    <font color=#447700>!  Bob: hfx   (i,1)= -10.*CP*fxh(i)<a name='541'></font>
+          ELSEIF(XLAND(I,J)-1.5.LT.0.)THEN<a name='542'>
+<font color=#447700>!           HFX(I,J)=FLHC(I,J)*(THGB(I)-THX(I))<a name='543'></font>
+<font color=#447700>!           cpcgs  = 1.00464e7<a name='544'></font>
+<font color=#447700>!       convert from ergs/gram/K to J/kg/K  cpmks=1004<a name='545'></font>
+<font color=#447700>!           hfx   (i,j)=-0.001*cpcgs*fxh(i)<a name='546'></font>
+            hfx   (i,j)=       -10.*CP*fxh(i)    <font color=#447700>! Bob: hfx   (i,j)=  -10.*CP*fxh(i) <a name='547'></font>
+            HFX(I,J)=AMAX1(HFX(I,J),-250.)<a name='548'>
+          ENDIF<a name='549'>
+<font color=#447700>!         QFX(I,J)=FLQC(I,J)*(QSFC(I,J)-Q1(I))<a name='550'></font>
+<font color=#447700>!       convert from g/(cm*cm*sec) to kg/(m*m*sec)<a name='551'></font>
+          qfx(i,j)=-10.*fxe(i)<a name='552'>
+          QFX(I,J)=AMAX1(QFX(I,J),0.)<a name='553'>
+          LH(I,J)=XLV*QFX(I,J)<a name='554'>
+        ENDDO<a name='555'>
+      ENDIF<a name='556'>
+<font color=#447700>!       if(j.eq.2) write(0,*) 'u3d ,ustar,cdm at end of gfdlsfcmod'<a name='557'></font>
+<font color=#447700>!       write(0,*) j,(u3d(ii,1,j),ii=70,90)<a name='558'></font>
+<font color=#447700>!       write(0,*) j,(ustar(ii),ii=70,90)<a name='559'></font>
+<font color=#447700>!       write(0,*) j,(cdm(ii),ii=70,90)<a name='560'></font>
+    if(j.eq.jds.or.j.eq.jde) then<a name='561'>
+<a name='562'>
+    write(message,*) "TSFC in gfdl sf mod,dt, its,ite,jts,jts", dt,its,ite,jts,jte,ids,ide,jds,jde<a name='563'>
+    call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_sf_gfdl.F.html#SF_GFDL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_828">(1,message)<a name='564'>
+    write(message,*) "TSFC",  (TSK(i,j),i=its,ite)<a name='565'>
+    call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_sf_gfdl.F.html#SF_GFDL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_829">(1,message)<a name='566'>
+    endif<a name='567'>
+<a name='568'>
+   ENDDO            <font color=#447700>! FOR THE J LOOP I PRESUME<a name='569'></font>
+<font color=#447700>!      if(100.ge.its.and.100.le.ite.and.100.ge.jts.and.100.le.jte) then <a name='570'></font>
+<font color=#447700>!       write(0,*) 'output vars of sf_gfdl at i,j=100'<a name='571'></font>
+<font color=#447700>!       write(0,*) 'TSK',TSK(100,100)                  <a name='572'></font>
+<font color=#447700>!       write(0,*) 'PSFC',PSFC(100,100)<a name='573'></font>
+<font color=#447700>!       write(0,*) 'GLW',GLW(100,100)<a name='574'></font>
+<font color=#447700>!       write(0,*) 'GSW',GSW(100,100)<a name='575'></font>
+<font color=#447700>!       write(0,*) 'XLAND',XLAND(100,100)<a name='576'></font>
+<font color=#447700>!       write(0,*) 'BR',BR(100,100)<a name='577'></font>
+<font color=#447700>!       write(0,*) 'CHS',CHS(100,100)<a name='578'></font>
+<font color=#447700>!       write(0,*) 'CHS2',CHS2(100,100)<a name='579'></font>
+<font color=#447700>!       write(0,*) 'CPM',CPM(100,100)<a name='580'></font>
+<font color=#447700>!       write(0,*) 'FLHC',FLHC(100,100)<a name='581'></font>
+<font color=#447700>!       write(0,*) 'FLQC',FLQC(100,100)<a name='582'></font>
+<font color=#447700>!       write(0,*) 'GZ1OZ0',GZ1OZ0(100,100)<a name='583'></font>
+<font color=#447700>!       write(0,*) 'HFX',HFX(100,100)<a name='584'></font>
+<font color=#447700>!       write(0,*) 'LH',LH(100,100)<a name='585'></font>
+<font color=#447700>!       write(0,*) 'PSIM',PSIM(100,100)<a name='586'></font>
+<font color=#447700>!       write(0,*) 'PSIH',PSIH(100,100)<a name='587'></font>
+<font color=#447700>!       write(0,*) 'QFX',QFX(100,100)<a name='588'></font>
+<font color=#447700>!       write(0,*) 'QGH',QGH(100,100)<a name='589'></font>
+<font color=#447700>!       write(0,*) 'QSFC',QSFC(100,100)<a name='590'></font>
+<font color=#447700>!       write(0,*) 'UST',UST(100,100)<a name='591'></font>
+<font color=#447700>!       write(0,*) 'ZNT',ZNT(100,100)<a name='592'></font>
+<font color=#447700>!       write(0,*) 'wet',wet(100)<a name='593'></font>
+<font color=#447700>!       write(0,*) 'smois',smois(100,1,100)<a name='594'></font>
+<font color=#447700>!       write(0,*) 'WSPD',WSPD(100,100)<a name='595'></font>
+<font color=#447700>!       write(0,*) 'U10',U10(100,100)<a name='596'></font>
+<font color=#447700>!       write(0,*) 'V10',V10(100,100)<a name='597'></font>
+<font color=#447700>!      endif <a name='598'></font>
+<a name='599'>
+<a name='600'>
+   END SUBROUTINE SF_GFDL<a name='601'>
+<a name='602'>
+<font color=#447700>!-------------------------------------------------------------------<a name='603'></font>
+<A NAME='MFLUX2'><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='604'>
+       <font color=#993300>SUBROUTINE </font><font color=#cc0000>MFLUX2</font>( fxh,fxe,fxmx,fxmy,cdm,rib,xxfh,zoc,mzoc,tstrc,       &amp;    <font color=#447700>!mzoc KWON <A href='../../call_to/MFLUX2.html' TARGET='index'>1</A>,<A href='../../call_from/MFLUX2.html' TARGET='index'>15</A><a name='605'></font>
+                          pspc,pkmax,wetc,slwdc,tjloc,                    &amp;<a name='606'>
+                          icoef_sf,iwavecpl,lcurr_sf,alpha,gamma,xcur,ycur,                &amp;<a name='607'>
+                          pert_Cd, ens_random_seed, ens_Cdamp,            &amp;<a name='608'>
+                          upc,vpc,tpc,rpc,dt,jfix,wind10,xxfh2,ntsflg,sfenth,    &amp;<a name='609'>
+                           tzot, &amp;<a name='610'>
+                          ids,ide, jds,jde, kds,kde,                      &amp;<a name='611'>
+                          ims,ime, jms,jme, kms,kme,                      &amp;<a name='612'>
+                          its,ite, jts,jte, kts,kte                       )<a name='613'>
+  <a name='614'>
+<font color=#447700>!------------------------------------------------------------------------<a name='615'></font>
+<font color=#447700>!<a name='616'></font>
+<font color=#447700>!     MFLUX2 computes surface fluxes of momentum, heat,and moisture <a name='617'></font>
+<font color=#447700>!     using monin-obukhov. the roughness length "z0" is prescribed <a name='618'></font>
+<font color=#447700>!     over land and over ocean "z0" is computed using charnocks formula.<a name='619'></font>
+<font color=#447700>!     the universal functions (from similarity theory approach) are <a name='620'></font>
+<font color=#447700>!     those of hicks. This is Bob's doing.<a name='621'></font>
+<font color=#447700>!<a name='622'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='623'></font>
+<a name='624'>
+      USE <A href='../../html_code/phys/module_sf_exchcoef.F.html#MODULE_SF_EXCHCOEF'>module_sf_exchcoef</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_SF_EXCHCOEF_2"><a name='625'>
+      IMPLICIT NONE<a name='626'>
+<font color=#447700>!     use allocate_mod<a name='627'></font>
+<font color=#447700>!     use module_TLDATA , ONLY : tab,table,cp,g,rgas,og <a name='628'></font>
+<a name='629'>
+<font color=#447700>!     include 'RESOLUTION.h'<a name='630'></font>
+<font color=#447700>!     include 'PARAMETERS.h'<a name='631'></font>
+<font color=#447700>!     include 'STDUNITS.h'     stdout<a name='632'></font>
+<a name='633'>
+<font color=#447700>!     include 'FLAGS.h'<a name='634'></font>
+<font color=#447700>!     include 'BKINFO.h'        nstep<a name='635'></font>
+<font color=#447700>!     include 'CONSLEV.h'<a name='636'></font>
+<font color=#447700>!     include 'CONMLEV.h'<a name='637'></font>
+<font color=#447700>!     include 'ESTAB.h'<a name='638'></font>
+<font color=#447700>!     include 'FILEC.h'<a name='639'></font>
+<font color=#447700>!     include 'FILEPC.h'<a name='640'></font>
+<font color=#447700>!     include 'GDINFO.h'        ngd<a name='641'></font>
+<font color=#447700>!     include 'LIMIT.h'<a name='642'></font>
+<font color=#447700>!     include 'QLOGS.h'<a name='643'></font>
+<font color=#447700>!     include 'TIME.h'          dt(nnst)<a name='644'></font>
+<font color=#447700>!     include 'WINDD.h'<a name='645'></font>
+<font color=#447700>!     include 'ZLDATA.h'        old MOBFLX?<a name='646'></font>
+<a name='647'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='648'></font>
+<font color=#447700>!     user interface variables<a name='649'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='650'></font>
+      integer,intent(in)  :: ids,ide, jds,jde, kds,kde<a name='651'>
+      integer,intent(in)  :: ims,ime, jms,jme, kms,kme<a name='652'>
+      integer,intent(in)  :: its,ite, jts,jte, kts,kte<a name='653'>
+      integer,intent(in)  :: jfix,ntsflg<a name='654'>
+      integer,intent(in)  :: icoef_sf<a name='655'>
+      integer,intent(in)  :: iwavecpl<a name='656'>
+      logical,intent(in)  :: lcurr_sf<a name='657'>
+      logical,intent(in)  :: pert_Cd <a name='658'>
+      integer,intent(in)  :: ens_random_seed<a name='659'>
+      real,intent(in)     :: ens_Cdamp<a name='660'>
+<a name='661'>
+      real, intent (out), dimension (ims :ime ) :: fxh<a name='662'>
+      real, intent (out), dimension (ims :ime ) :: fxe<a name='663'>
+      real, intent (out), dimension (ims :ime ) :: fxmx<a name='664'>
+      real, intent (out), dimension (ims :ime ) :: fxmy<a name='665'>
+      real, intent (inout), dimension (ims :ime ) :: cdm<a name='666'>
+<font color=#447700>!      real, intent (out), dimension (ims :ime ) :: cdm2<a name='667'></font>
+      real, intent (out), dimension (ims :ime ) :: rib<a name='668'>
+      real, intent (out), dimension (ims :ime ) :: xxfh<a name='669'>
+      real, intent (out), dimension (ims :ime ) :: xxfh2<a name='670'>
+      real, intent (out), dimension (ims :ime ) :: wind10<a name='671'>
+<a name='672'>
+      real, intent ( inout), dimension (ims :ime ) :: zoc,mzoc    <font color=#447700>!KWON<a name='673'></font>
+      real, intent ( inout), dimension (ims :ime ) :: tzot        <font color=#447700>!WANG<a name='674'></font>
+      real, intent ( inout), dimension (ims :ime ) :: tstrc<a name='675'>
+<a name='676'>
+      real, intent ( in)                        :: dt<a name='677'>
+      real, intent ( in)                        :: sfenth<a name='678'>
+      real, intent ( in), dimension (ims :ime ) :: pspc<a name='679'>
+      real, intent ( in), dimension (ims :ime ) :: pkmax<a name='680'>
+      real, intent ( in), dimension (ims :ime ) :: wetc<a name='681'>
+      real, intent ( in), dimension (ims :ime ) :: slwdc<a name='682'>
+      real, intent ( in), dimension (ims :ime ) :: tjloc<a name='683'>
+      real, intent ( in), dimension (ims :ime ) :: alpha, gamma<a name='684'>
+      real, intent ( in), dimension (ims :ime ) :: xcur, ycur<a name='685'>
+<a name='686'>
+      real, intent ( in), dimension (kms:kme, ims :ime ) :: upc<a name='687'>
+      real, intent ( in), dimension (kms:kme, ims :ime ) :: vpc<a name='688'>
+      real, intent ( in), dimension (kms:kme, ims :ime ) :: tpc<a name='689'>
+      real, intent ( in), dimension (kms:kme, ims :ime ) :: rpc<a name='690'>
+<a name='691'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='692'></font>
+<font color=#447700>!     internal variables<a name='693'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='694'></font>
+<a name='695'>
+      integer, parameter :: icntx = 30<a name='696'>
+<a name='697'>
+      integer, dimension(1   :ime) :: ifz<a name='698'>
+      integer, dimension(1   :ime) :: indx<a name='699'>
+      integer, dimension(1   :ime) :: istb<a name='700'>
+      integer, dimension(1   :ime) :: it<a name='701'>
+      integer, dimension(1   :ime) :: iutb<a name='702'>
+<a name='703'>
+      real, dimension(1   :ime) :: aap<a name='704'>
+      real, dimension(1   :ime) :: bq1<a name='705'>
+      real, dimension(1   :ime) :: bq1p<a name='706'>
+      real, dimension(1   :ime) :: delsrad<a name='707'>
+      real, dimension(1   :ime) :: ecof<a name='708'>
+      real, dimension(1   :ime) :: ecofp<a name='709'>
+      real, dimension(1   :ime) :: estso<a name='710'>
+      real, dimension(1   :ime) :: estsop<a name='711'>
+      real, dimension(1   :ime) :: fmz1<a name='712'>
+      real, dimension(1   :ime) :: fmz10<a name='713'>
+      real, dimension(1   :ime) :: fmz2 <a name='714'>
+      real, dimension(1   :ime) :: fmzo1<a name='715'>
+      real, dimension(1   :ime) :: foft<a name='716'>
+      real, dimension(1   :ime) :: foftm<a name='717'>
+      real, dimension(1   :ime) :: frac<a name='718'>
+      real, dimension(1   :ime) :: land<a name='719'>
+      real, dimension(1   :ime) :: pssp<a name='720'>
+      real, dimension(1   :ime) :: qf<a name='721'>
+      real, dimension(1   :ime) :: rdiff<a name='722'>
+      real, dimension(1   :ime) :: rho<a name='723'>
+      real, dimension(1   :ime) :: rkmaxp<a name='724'>
+      real, dimension(1   :ime) :: rstso<a name='725'>
+      real, dimension(1   :ime) :: rstsop<a name='726'>
+      real, dimension(1   :ime) :: sf10<a name='727'>
+      real, dimension(1   :ime) :: sf2 <a name='728'>
+      real, dimension(1   :ime) :: sfm<a name='729'>
+      real, dimension(1   :ime) :: sfzo<a name='730'>
+      real, dimension(1   :ime) :: sgzm<a name='731'>
+      real, dimension(1   :ime) :: slwa<a name='732'>
+      real, dimension(1   :ime) :: szeta<a name='733'>
+      real, dimension(1   :ime) :: szetam<a name='734'>
+      real, dimension(1   :ime) :: t1<a name='735'>
+      real, dimension(1   :ime) :: t2<a name='736'>
+      real, dimension(1   :ime) :: tab1<a name='737'>
+      real, dimension(1   :ime) :: tab2<a name='738'>
+      real, dimension(1   :ime) :: tempa1<a name='739'>
+      real, dimension(1   :ime) :: tempa2<a name='740'>
+      real, dimension(1   :ime) :: theta<a name='741'>
+      real, dimension(1   :ime) :: thetap<a name='742'>
+      real, dimension(1   :ime) :: tsg<a name='743'>
+      real, dimension(1   :ime) :: tsm<a name='744'>
+      real, dimension(1   :ime) :: tsp<a name='745'>
+      real, dimension(1   :ime) :: tss<a name='746'>
+      real, dimension(1   :ime) :: ucom<a name='747'>
+      real, dimension(1   :ime) :: uf10<a name='748'>
+      real, dimension(1   :ime) :: uf2 <a name='749'>
+      real, dimension(1   :ime) :: ufh<a name='750'>
+      real, dimension(1   :ime) :: ufm<a name='751'>
+      real, dimension(1   :ime) :: ufzo<a name='752'>
+      real, dimension(1   :ime) :: ugzm<a name='753'>
+      real, dimension(1   :ime) :: uzeta<a name='754'>
+      real, dimension(1   :ime) :: uzetam<a name='755'>
+      real, dimension(1   :ime) :: vcom<a name='756'>
+      real, dimension(1   :ime) :: vrtkx<a name='757'>
+      real, dimension(1   :ime) :: vrts<a name='758'>
+      real, dimension(1   :ime) :: wind<a name='759'>
+      real, dimension(1   :ime) :: windp<a name='760'>
+      real, dimension(1   :ime) :: wind10p  <font color=#447700>!WANG, 10m wind previous step<a name='761'></font>
+      real, dimension(1   :ime) :: uvs1<a name='762'>
+<font color=#447700>!     real, dimension(1   :ime) :: xxfh<a name='763'></font>
+      real, dimension(1   :ime) :: xxfm<a name='764'>
+      real, dimension(1   :ime) :: xxsh<a name='765'>
+      real, dimension(1   :ime) :: z10<a name='766'>
+      real, dimension(1   :ime) :: z2 <a name='767'>
+      real, dimension(1   :ime) :: zeta<a name='768'>
+      real, dimension(1   :ime) :: zkmax<a name='769'>
+<a name='770'>
+      real, dimension(1   :ime) :: pss<a name='771'>
+      real, dimension(1   :ime) :: tstar<a name='772'>
+      real, dimension(1   :ime) :: ukmax<a name='773'>
+      real, dimension(1   :ime) :: vkmax<a name='774'>
+      real, dimension(1   :ime) :: tkmax<a name='775'>
+      real, dimension(1   :ime) :: rkmax<a name='776'>
+      real, dimension(1   :ime) :: zot<a name='777'>
+      real, dimension(1   :ime) :: fhzo1<a name='778'>
+      real, dimension(1   :ime) :: sfh<a name='779'>
+<a name='780'>
+      real :: ux13, yo, y,xo,x,ux21,ugzzo,ux11,ux12,uzetao,xnum,alll<a name='781'>
+      real :: ux1,ugz,x10,uzo,uq,ux2,ux3,xtan,xden,y10,uzet1o,ugz10<a name='782'>
+      real :: szet2, zal2,ugz2 <a name='783'>
+      real :: rovcp,boycon,cmo2,psps1,zog,enrca,rca,cmo1,amask,en,ca,a,c<a name='784'>
+      real :: sgz,zal10,szet10,fmz,szo,sq,fmzo,rzeta1,zal1g,szetao,rzeta2,zal2g<a name='785'>
+      real :: hcap,xks,pith,teps,diffot,delten,alevp,psps2,alfus,nstep<a name='786'>
+      real :: shfx,sigt4,reflect<a name='787'>
+      real :: cor1,cor2,szetho,zal2gh,cons_p000001,cons_7,vis,ustar,restar,rat<a name='788'>
+      real :: wndm,ckg<a name='789'>
+      real :: windmks,znott,znotm<a name='790'>
+      real :: ubot, vbot<a name='791'>
+      integer:: i,j,ii,iq,nnest,icnt,ngd,ip<a name='792'>
+<a name='793'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='794'></font>
+<font color=#447700>!     internal variables<a name='795'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='796'></font>
+ <a name='797'>
+      real, dimension (223) :: tab <a name='798'>
+      real, dimension (223) :: table<a name='799'>
+      real, dimension (101) :: tab11<a name='800'>
+      real, dimension (41) :: table4<a name='801'>
+      real, dimension (42) :: tab3<a name='802'>
+      real, dimension (54) :: table2<a name='803'>
+      real, dimension (54) :: table3<a name='804'>
+      real, dimension (74) :: table1<a name='805'>
+      real, dimension (80) :: tab22<a name='806'>
+<a name='807'>
+      character(len=255) :: message<a name='808'>
+<a name='809'>
+      equivalence (tab(1),tab11(1))<a name='810'>
+      equivalence (tab(102),tab22(1))<a name='811'>
+      equivalence (tab(182),tab3(1))<a name='812'>
+      equivalence (table(1),table1(1))<a name='813'>
+      equivalence (table(75),table2(1))<a name='814'>
+      equivalence (table(129),table3(1))<a name='815'>
+      equivalence (table(183),table4(1))<a name='816'>
+<a name='817'>
+      data amask/ -98.0/<a name='818'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='819'></font>
+<font color=#447700>!     tables used to obtain the vapor pressures or saturated vapor <a name='820'></font>
+<font color=#447700>!     pressure<a name='821'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='822'></font>
+<a name='823'>
+      data tab11/21*0.01403,0.01719,0.02101,0.02561,0.03117,0.03784,      &amp;<a name='824'>
+     &amp;.04584,.05542,.06685,.08049,.09672,.1160,.1388,.1658,.1977,.2353,   &amp;<a name='825'>
+     &amp;.2796,.3316,.3925,.4638,.5472,.6444,.7577,.8894,1.042,1.220,1.425,  &amp;<a name='826'>
+     &amp;1.662,1.936,2.252,2.615,3.032,3.511,4.060,4.688,5.406,6.225,7.159,  &amp;<a name='827'>
+     &amp;8.223,9.432,10.80,12.36,14.13,16.12,18.38,20.92,23.80,27.03,30.67,  &amp;<a name='828'>
+     &amp;34.76,39.35,44.49,50.26,56.71,63.93,71.98,80.97,90.98,102.1,114.5,  &amp;<a name='829'>
+     &amp;128.3,143.6,160.6,179.4,200.2,223.3,248.8,276.9,307.9,342.1,379.8,  &amp;<a name='830'>
+     &amp;421.3,466.9,517.0,572.0,632.3,698.5,770.9,850.2,937.0,1032./<a name='831'>
+<a name='832'>
+      data tab22/1146.6,1272.0,1408.1,1556.7,1716.9,1890.3,2077.6,2279.6  &amp;<a name='833'>
+     &amp;,2496.7,2729.8,2980.0,3247.8,3534.1,3839.8,4164.8,4510.5,4876.9,    &amp;<a name='834'>
+     &amp;5265.1,5675.2,6107.8,6566.2,7054.7,7575.3,8129.4,8719.2,9346.5,     &amp;<a name='835'>
+     &amp;10013.,10722.,11474.,12272.,13119.,14017.,14969.,15977.,17044.,     &amp;<a name='836'>
+     &amp;18173.,19367.,20630.,21964.,23373.,24861.,26430.,28086.,29831.,     &amp;<a name='837'>
+     &amp;31671.,33608.,35649.,37796.,40055.,42430.,44927.,47551.,50307.,     &amp;<a name='838'>
+     &amp;53200.,56236.,59422.,62762.,66264.,69934.,73777.,77802.,82015.,     &amp;<a name='839'>
+     &amp;86423.,91034.,95855.,100890.,106160.,111660.,117400.,123400.,       &amp;<a name='840'>
+     &amp;129650.,136170.,142980.,150070.,157460.,165160.,173180.,181530.,    &amp;<a name='841'>
+     &amp;190220.,199260./<a name='842'>
+<a name='843'>
+      data tab3/208670.,218450.,228610.,239180.,250160.,261560.,273400.,  &amp;<a name='844'>
+     &amp;285700.,298450.,311690.,325420.,339650.,354410.,369710.,385560.,    &amp;<a name='845'>
+     &amp;401980.,418980.,436590.,454810.,473670.,493170.,513350.,534220.,    &amp;<a name='846'>
+     &amp;555800.,578090.,601130.,624940.,649530.,674920.,701130.,728190.,    &amp;<a name='847'>
+     &amp;756110.,784920.,814630.,845280.,876880.,909450.,943020.,977610.,    &amp;<a name='848'>
+     &amp;1013250.,1049940.,1087740./<a name='849'>
+<a name='850'>
+      data table1/20*0.0,.3160e-02,.3820e-02,.4600e-02,.5560e-02,.6670e-02, &amp;<a name='851'>
+     &amp; .8000e-02,.9580e-02,.1143e-01,.1364e-01,.1623e-01,.1928e-01,       &amp;<a name='852'>
+     &amp;.2280e-01,.2700e-01,.3190e-01,.3760e-01,.4430e-01,.5200e-01,          &amp;<a name='853'>
+     &amp;.6090e-01,.7130e-01,.8340e-01,.9720e-01,.1133e+00,.1317e-00,          &amp;<a name='854'>
+     &amp;.1526e-00,.1780e-00,.2050e-00,.2370e-00,.2740e-00,.3160e-00,          &amp;<a name='855'>
+     &amp;.3630e-00,.4170e-00,.4790e-00,.5490e-00,.6280e-00,.7180e-00,          &amp;<a name='856'>
+     &amp;.8190e-00,.9340e-00,.1064e+01,.1209e+01,.1368e+01,.1560e+01,          &amp;<a name='857'>
+     &amp;.1770e+01,.1990e+01,.2260e+01,.2540e+01,.2880e+01,.3230e+01,          &amp;<a name='858'>
+     &amp;.3640e+01,.4090e+01,.4590e+01,.5140e+01,.5770e+01,.6450e+01,          &amp;<a name='859'>
+     &amp;.7220e+01/<a name='860'>
+<a name='861'>
+      data table2/.8050e+01,.8990e+01,.1001e+02,.1112e+02,.1240e+02,      &amp;<a name='862'>
+     &amp;.1380e+02,.1530e+02,.1700e+02,.1880e+02,.2080e+02,.2310e+02,        &amp;<a name='863'>
+     &amp;.2550e+02,.2810e+02,.3100e+02,.3420e+02,.3770e+02,.4150e+02,        &amp;<a name='864'>
+     &amp;.4560e+02,.5010e+02,.5500e+02,.6030e+02,.6620e+02,.7240e+02,        &amp;<a name='865'>
+     &amp;.7930e+02,.8680e+02,.9500e+02,.1146e+03,.1254e+03,.1361e+03,        &amp;<a name='866'>
+     &amp;.1486e+03,.1602e+03,.1734e+03,.1873e+03,.2020e+03,.2171e+03,        &amp;<a name='867'>
+     &amp;.2331e+03,.2502e+03,.2678e+03,.2863e+03,.3057e+03,.3250e+03,        &amp;<a name='868'>
+     &amp;.3457e+03,.3664e+03,.3882e+03,.4101e+03,.4326e+03,.4584e+03,        &amp;<a name='869'>
+     &amp;.4885e+03,.5206e+03,.5541e+03,.5898e+03,.6273e+03,.6665e+03,        &amp;<a name='870'>
+     &amp;.7090e+03/<a name='871'>
+<a name='872'>
+      data table3/.7520e+03,.7980e+03,.8470e+03,.8980e+03,.9520e+03,      &amp;<a name='873'>
+     &amp;.1008e+04,.1067e+04,.1129e+04,.1194e+04,.1263e+04,.1334e+04,        &amp;<a name='874'>
+     &amp;.1409e+04,.1488e+04,.1569e+04,.1656e+04,.1745e+04,.1840e+04,        &amp;<a name='875'>
+     &amp;.1937e+04,.2041e+04,.2147e+04,.2259e+04,.2375e+04,.2497e+04,        &amp; <a name='876'>
+     &amp;.2624e+04,.2756e+04,.2893e+04,.3036e+04,.3186e+04,.3340e+04,        &amp;<a name='877'>
+     &amp;.3502e+04,.3670e+04,.3843e+04,.4025e+04,.4213e+04,.4408e+04,        &amp;<a name='878'>
+     &amp;.4611e+04,.4821e+04,.5035e+04,.5270e+04,.5500e+04,.5740e+04,        &amp;<a name='879'>
+     &amp;.6000e+04,.6250e+04,.6520e+04,.6810e+04,.7090e+04,.7390e+04,        &amp;<a name='880'>
+     &amp;.7700e+04,.8020e+04,.8350e+04,.8690e+04,.9040e+04,.9410e+04,        &amp;<a name='881'>
+     &amp;.9780e+04/<a name='882'>
+<a name='883'>
+      data table4/.1016e+05,.1057e+05,.1098e+05,.1140e+05,.1184e+05,      &amp;<a name='884'>
+     &amp;.1230e+05,.1275e+05,.1324e+05,.1373e+05,.1423e+05,.1476e+05,        &amp;<a name='885'>
+     &amp;.1530e+05,.1585e+05,.1642e+05,.1700e+05,.1761e+05,.1822e+05,        &amp;<a name='886'>
+     &amp;.1886e+05,.1950e+05,.2018e+05,.2087e+05,.2158e+05,.2229e+05,        &amp;<a name='887'>
+     &amp;.2304e+05,.2381e+05,.2459e+05,.2539e+05,.2621e+05,.2706e+05,        &amp;<a name='888'>
+     &amp;.2792e+05,.2881e+05,.2971e+05,.3065e+05,.3160e+05,.3257e+05,        &amp;<a name='889'>
+     &amp;.3357e+05,.3459e+05,.3564e+05,.3669e+05,.3780e+05,.0000e+00/<a name='890'>
+<font color=#447700>!<a name='891'></font>
+<font color=#447700>! spcify constants needed by MFLUX2<a name='892'></font>
+<font color=#447700>!<a name='893'></font>
+      real,parameter :: cp    = 1.00464e7<a name='894'>
+      real,parameter :: g     = 980.6<a name='895'>
+      real,parameter :: rgas  = 2.87e6<a name='896'>
+      real,parameter :: og    = 1./g<a name='897'>
+      integer :: ntstep = 0<a name='898'>
+<font color=#447700>!<a name='899'></font>
+#if HWRF==1<a name='900'>
+      real*8 :: gasdev,ran1          <font color=#447700>!zhang<a name='901'></font>
+      real :: rr                     <font color=#447700>!zhang<a name='902'></font>
+      logical,save :: pert_Cd_local            <font color=#447700>!zhang<a name='903'></font>
+      integer,save :: ens_random_seed_local         <font color=#447700>!zhang<a name='904'></font>
+      real,save :: ens_Cdamp_local         <font color=#447700>!zhang<a name='905'></font>
+      data ens_random_seed_local/0/<a name='906'>
+      if ( ens_random_seed_local .eq. 0 ) then<a name='907'>
+<font color=#447700>!        CALL nl_get_pert_Cd(1,pert_Cd)<a name='908'></font>
+<font color=#447700>!        CALL nl_get_ens_random_seed(1,ens_random_seed)<a name='909'></font>
+<font color=#447700>!        CALL nl_get_ens_Cdamp(1,ens_Cdamp)<a name='910'></font>
+         ens_random_seed_local=ens_random_seed<a name='911'>
+         pert_Cd_local=pert_Cd<a name='912'>
+         ens_Cdamp_local=ens_Cdamp<a name='913'>
+      endif<a name='914'>
+#endif<a name='915'>
+<a name='916'>
+<font color=#447700>!     character*10 routine<a name='917'></font>
+<font color=#447700>!     routine = 'mflux2'<a name='918'></font>
+<font color=#447700>!<a name='919'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='920'></font>
+<font color=#447700>!     set water availability constant "ecof" and land mask "land".  <a name='921'></font>
+<font color=#447700>!     limit minimum wind speed to 100 cm/s<a name='922'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='923'></font>
+      j = IFIX(tjloc(its))<a name='924'>
+<font color=#447700>!  constants for 10 m winds  (correction for knots<a name='925'></font>
+<font color=#447700>!<a name='926'></font>
+       cor1 = .120<a name='927'>
+       cor2 = 720.<a name='928'>
+<font color=#447700>! KWON : remove the artificial increase of 10m wind speed over 60kts<a name='929'></font>
+<font color=#447700>!        which comes from GFDL hurricane model<a name='930'></font>
+        cor1 = 0.<a name='931'>
+        cor2 = 0.<a name='932'>
+<font color=#447700>!<a name='933'></font>
+<a name='934'>
+      do i = its,ite<a name='935'>
+        z10(i) = 1000.<a name='936'>
+        z2 (i) =  200.<a name='937'>
+        pss(i) = pspc(i)<a name='938'>
+        tstar(i) = tstrc(i)<a name='939'>
+<a name='940'>
+        if ( lcurr_sf .and. zoc(i) .le. 0.0 ) then<a name='941'>
+          ubot = upc(1,i)  - xcur(i) * 100.0<a name='942'>
+          vbot = vpc(1,i)  - ycur(i) * 100.0<a name='943'>
+<font color=#447700>!          ubot = upc(1,i)<a name='944'></font>
+<font color=#447700>!          vbot = vpc(1,i)<a name='945'></font>
+        else<a name='946'>
+          ubot = upc(1,i)<a name='947'>
+          vbot = vpc(1,i)<a name='948'>
+        endif<a name='949'>
+        uvs1(i)= amax1( SQRT(ubot*ubot +    &amp;<a name='950'>
+                             vbot*vbot), 100.0)<a name='951'>
+        if ( iwavecpl .eq. 1 .and. zoc(i) .le. 0.0 ) then<a name='952'>
+          ukmax(i) = ( ubot * cos(gamma(i))  -          &amp;<a name='953'>
+                      vbot * sin(gamma(i)) )            &amp;<a name='954'>
+                                  * cos(gamma(i))<a name='955'>
+          vkmax(i) = ( vbot * cos(gamma(i))  -          &amp;<a name='956'>
+                      ubot * sin(gamma(i)) )            &amp;<a name='957'>
+                                  * cos(gamma(i))<a name='958'>
+<a name='959'>
+        else<a name='960'>
+          ukmax(i) = ubot<a name='961'>
+          vkmax(i) = vbot<a name='962'>
+        endif<a name='963'>
+<a name='964'>
+<font color=#447700>!       ukmax(i) = upc(1,i)<a name='965'></font>
+<font color=#447700>!        vkmax(i) = vpc(1,i)<a name='966'></font>
+        tkmax(i) = tpc(1,i)<a name='967'>
+        rkmax(i) = rpc(1,i)<a name='968'>
+      enddo<a name='969'>
+<a name='970'>
+<font color=#447700>!      write(0,*)'z10,pss,tstar,u...rkmax(ite)',          &amp;<a name='971'></font>
+<font color=#447700>!          z10(ite), pss(ite),tstar(ite),ukmax(ite),        &amp;<a name='972'></font>
+<font color=#447700>!          vkmax(ite),tkmax(ite),rkmax(ite)<a name='973'></font>
+<a name='974'>
+      do i = its,ite<a name='975'>
+        windp(i) = SQRT(ukmax(i)*ukmax(i) + vkmax(i)*vkmax(i))<a name='976'>
+        wind (i) = amax1(windp(i),100.)<a name='977'>
+<a name='978'>
+<font color=#447700>!! use wind10 previous step<a name='979'></font>
+         wind10p(i) = wind10(i)  <font color=#447700>!! cm/s<a name='980'></font>
+        wind10p(i) = amax1(wind10p(i),100.)<a name='981'>
+<font color=#447700>!!<a name='982'></font>
+<a name='983'>
+<font color=#447700>!        if (zoc(i) .LT. amask) zoc(i) = -0.0185*0.001*wind(i)*wind(i)*og<a name='984'></font>
+        if (zoc(i) .LT. amask) zoc(i) = -0.0185*0.001*wind10p(i)*wind10p(i)*og<a name='985'>
+        if (zoc(i) .GT. 0.0) then<a name='986'>
+          ecof(i) = wetc(i)<a name='987'>
+          land(i) = 1.0<a name='988'>
+          zot (i) = zoc(i)<a name='989'>
+        else<a name='990'>
+          ecof(i) = wetc(i)<a name='991'>
+          land(i) = 0.0<a name='992'>
+          <font color=#447700>!windmks=wind(i)*.01<a name='993'></font>
+          windmks=wind10p(i)*.01<a name='994'>
+          if ( iwavecpl .eq. 1 ) then<a name='995'>
+            if (  ntstep == 0 ) then<a name='996'>
+              call  <A href='../../html_code/phys/module_sf_exchcoef.F.html#ZNOT_M_V1'>znot_m_v1</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ZNOT_M_V1_6">(windmks,znotm)<a name='997'>
+              zoc(i)  = -100.*znotm<a name='998'>
+            endif<a name='999'>
+            call  <A href='../../html_code/phys/module_sf_exchcoef.F.html#ZNOT_T_V2'>znot_t_v2</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ZNOT_T_V2_5">(windmks,znott)<a name='1000'>
+            zot(i) =  -100* znott<a name='1001'>
+          else<a name='1002'>
+<font color=#447700>!            if ( icoef_sf .EQ. 1) then<a name='1003'></font>
+<font color=#447700>!              call  znot_m_v1(windmks,znotm)<a name='1004'></font>
+<font color=#447700>!              call  znot_t_v1(windmks,znott)<a name='1005'></font>
+<font color=#447700>!            else if ( icoef_sf .EQ. 0 ) then<a name='1006'></font>
+<font color=#447700>!              call  znot_m_v0(windmks,znotm)<a name='1007'></font>
+<font color=#447700>!              call  znot_t_v0(windmks,znott)<a name='1008'></font>
+<font color=#447700>!            else<a name='1009'></font>
+<font color=#447700>!              call  znot_m_v1(windmks,znotm)<a name='1010'></font>
+<font color=#447700>!              call  znot_t_v2(windmks,znott)<a name='1011'></font>
+<font color=#447700>!            endif<a name='1012'></font>
+            call <A href='../../html_code/phys/module_sf_exchcoef.F.html#ZNOT_WIND10M'>znot_wind10m</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ZNOT_WIND10M_2">(windmks,znott,znotm,icoef_sf)<a name='1013'>
+<a name='1014'>
+            zoc(i)  = -100.*znotm<a name='1015'>
+            zot(i) =  -100* znott<a name='1016'>
+          endif<a name='1017'>
+        endif<a name='1018'>
+<a name='1019'>
+<font color=#447700>!          if(i == (its+ite)/2 .and. j == (jts+jte)/2) then<a name='1020'></font>
+<font color=#447700>!            write(0,*)'wind10p(i),windp(i),windmks,zoc(i),zot, land'<a name='1021'></font>
+<font color=#447700>!            write(0,*)wind10p(i),windp(i),windmks,zoc(i),zot(i),land(i)<a name='1022'></font>
+<font color=#447700>!          endif<a name='1023'></font>
+<a name='1024'>
+<a name='1025'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1026'></font>
+<font color=#447700>!     where necessary modify zo values over ocean.<a name='1027'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1028'></font>
+<font color=#447700>!<a name='1029'></font>
+      mzoc(i) = zoc(i)                <font color=#447700>!FOR SAVE MOMENTUM Zo<a name='1030'></font>
+      tzot(i) = zot(i)                 <font color=#447700>!output wang<a name='1031'></font>
+      enddo<a name='1032'>
+<a name='1033'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1034'></font>
+<font color=#447700>!     define constants: <a name='1035'></font>
+<font color=#447700>!     a and c = constants used in evaluating universal function for <a name='1036'></font>
+<font color=#447700>!               stable case <a name='1037'></font>
+<font color=#447700>!     ca      = karmen constant <a name='1038'></font>
+<font color=#447700>!     cm01    = constant part of vertical integral of universal <a name='1039'></font>
+<font color=#447700>!               function; stable case ( 0.5 &lt; zeta &lt; or = 10.0) <a name='1040'></font>
+<font color=#447700>!     cm02    = constant part of vertical integral of universal <a name='1041'></font>
+<font color=#447700>!               function; stable case ( zeta &gt; 10.0)<a name='1042'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1043'></font>
+<a name='1044'>
+      en     = 2.<a name='1045'>
+      c      = .76<a name='1046'>
+      a      = 5.<a name='1047'>
+      ca     = .4<a name='1048'>
+      cmo1   = .5*a - 1.648<a name='1049'>
+      cmo2   = 17.193 + .5*a - 10.*c<a name='1050'>
+      boycon = .61<a name='1051'>
+        rovcp=rgas/cp<a name='1052'>
+<font color=#447700>!       write(0,*)'rgas,cp,rovcp ', rgas,cp,rovcp<a name='1053'></font>
+<a name='1054'>
+<font color=#447700>!     write(0,*)'--------------------------------------------------'<a name='1055'></font>
+<font color=#447700>!     write(0,*)'pkmax,    pspc,    theta,    zkmax,        zoc'<a name='1056'></font>
+<font color=#447700>!     write(0,*)'--------------------------------------------------'<a name='1057'></font>
+<a name='1058'>
+      do i = its,ite<a name='1059'>
+<font color=#447700>!       theta(i) = tkmax(i)*rqc9<a name='1060'></font>
+        theta(i) = tkmax(i)/((pkmax(i)/pspc(i))**rovcp)<a name='1061'>
+        vrtkx(i) = 1.0 + boycon*rkmax(i)<a name='1062'>
+<font color=#447700>!       zkmax(i) = rgas*tkmax(i)*qqlog(kmax)*og<a name='1063'></font>
+        zkmax(i) = -rgas*tkmax(i)*alog(pkmax(i)/pspc(i))*og<a name='1064'>
+<font color=#447700>!       IF(I==78)write(0,*)I,JFIX,pkmax(i),pspc(i),theta(i),zkmax(i),zoc(i)<a name='1065'></font>
+      enddo<a name='1066'>
+<a name='1067'>
+<font color=#447700>!        write(0,*)'pkmax,pspc ',   pkmax,pspc<a name='1068'></font>
+<font color=#447700>!        write(0,*)'theta, zkmax, zoc ', theta, zkmax, zoc<a name='1069'></font>
+<a name='1070'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1071'></font>
+<font color=#447700>!     get saturation mixing ratios at surface<a name='1072'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1073'></font>
+<a name='1074'>
+      do i = its,ite<a name='1075'>
+        tsg  (i) = tstar(i)<a name='1076'>
+        tab1 (i) = tstar(i) - 153.16<a name='1077'>
+        it   (i) = IFIX(tab1(i))<a name='1078'>
+        tab2 (i) = tab1(i) - FLOAT(it(i))<a name='1079'>
+        t1   (i) = tab(min(223,max(1,it(i) + 1)))<a name='1080'>
+        t2   (i) = table(min(223,max(1,it(i) + 1)))<a name='1081'>
+        estso(i) = t1(i) + tab2(i)*t2(i)<a name='1082'>
+         psps1 = (pss(i) - estso(i))<a name='1083'>
+          if(psps1 .EQ. 0.0)then<a name='1084'>
+           psps1 = .1<a name='1085'>
+          endif<a name='1086'>
+        rstso(i) = 0.622*estso(i)/psps1                       <a name='1087'>
+        vrts (i) = 1. + boycon*ecof(i)*rstso(i)<a name='1088'>
+      enddo<a name='1089'>
+<a name='1090'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1091'></font>
+<font color=#447700>!     check if consideration of virtual temperature changes stability.<a name='1092'></font>
+<font color=#447700>!     if so, set "dthetav" to near neutral value (1.0e-4). also check <a name='1093'></font>
+<font color=#447700>!     for very small lapse rates; if ABS(tempa1) &lt;1.0e-4 then <a name='1094'></font>
+<font color=#447700>!     tempa1=1.0e-4<a name='1095'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1096'></font>
+<a name='1097'>
+      do i = its,ite<a name='1098'>
+        tempa1(i) = <A href='../../html_code/phys/module_diag_afwa.F.html#THETA'>theta</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="THETA_25">(i)*vrtkx(i) - tstar(i)*vrts(i)<a name='1099'>
+        tempa2(i) = tempa1(i)*(theta(i) - tstar(i))<a name='1100'>
+        if (tempa2(i) .LT. 0.) tempa1(i) = 1.0e-4<a name='1101'>
+        tab1(i) = ABS(tempa1(i))<a name='1102'>
+        if (tab1(i) .LT. 1.0e-4) tempa1(i) = 1.0e-4<a name='1103'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1104'></font>
+<font color=#447700>!     compute bulk richardson number "rib" at each point. if "rib"<a name='1105'></font>
+<font color=#447700>!     exceeds 95% of critical richardson number "tab1" then "rib = tab1"<a name='1106'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1107'></font>
+<a name='1108'>
+        rib (i) = g*zkmax(i)*tempa1(i)/                             &amp;<a name='1109'>
+                                    (tkmax(i)*vrtkx(i)*wind(i)*wind(i))<a name='1110'>
+        tab2(i) = ABS(zoc(i))<a name='1111'>
+        tab1(i) = 0.95/(c*(1. - tab2(i)/zkmax(i)))<a name='1112'>
+        if (rib(i) .GT. tab1(i)) rib(i) = tab1(i)<a name='1113'>
+      enddo<a name='1114'>
+<a name='1115'>
+      do i = its,ite<a name='1116'>
+        zeta(i) = ca*rib(i)/0.03<a name='1117'>
+      enddo<a name='1118'>
+<a name='1119'>
+<font color=#447700>!       write(0,*)'rib,zeta,vrtkx,vrts(ite) ',  rib(ite),zeta(ite),  &amp;<a name='1120'></font>
+<font color=#447700>!                     vrtkx(ite),vrts(ite)<a name='1121'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1122'></font>
+<font color=#447700>!     begin looping through points on line, solving wegsteins iteration <a name='1123'></font>
+<font color=#447700>!     for zeta at each point, and using hicks functions<a name='1124'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1125'></font>
+<a name='1126'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1127'></font>
+<font color=#447700>!     set initial guess of zeta=non - dimensional height "szeta" for <a name='1128'></font>
+<font color=#447700>!     stable points <a name='1129'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1130'></font>
+<a name='1131'>
+      rca   = 1./ca<a name='1132'>
+      enrca = en*rca<a name='1133'>
+<font color=#447700>!     turn off interfacial layer by zeroing out enrca<a name='1134'></font>
+      enrca = 0.0<a name='1135'>
+      zog   = .0185*og<a name='1136'>
+<a name='1137'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1138'></font>
+<font color=#447700>!     stable points<a name='1139'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1140'></font>
+<a name='1141'>
+      ip    = 0<a name='1142'>
+      do i = its,ite<a name='1143'>
+        if (zeta(i) .GE. 0.0) then<a name='1144'>
+          ip = ip + 1<a name='1145'>
+          istb(ip) = i<a name='1146'>
+        endif<a name='1147'>
+      enddo<a name='1148'>
+<a name='1149'>
+      if (ip .EQ. 0) go to 170<a name='1150'>
+      do i = 1,ip<a name='1151'>
+        szetam(i) = 1.0e+30<a name='1152'>
+        sgzm(i)   = 0.0e+00<a name='1153'>
+        szeta(i)  = zeta(istb(i))<a name='1154'>
+        ifz(i)    = 1<a name='1155'>
+      enddo<a name='1156'>
+<a name='1157'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1158'></font>
+<font color=#447700>!     begin wegstein iteration for "zeta" at stable points using<a name='1159'></font>
+<font color=#447700>!     hicks(1976)<a name='1160'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1161'></font>
+<a name='1162'>
+      do icnt = 1,icntx<a name='1163'>
+        do i = 1,ip<a name='1164'>
+          if (ifz(i) .EQ. 0) go to 80<a name='1165'>
+          zal1g = ALOG(szeta(i))<a name='1166'>
+          if (szeta(i) .LE. 0.5) then<a name='1167'>
+            fmz1(i) = (zal1g + a*szeta(i))*rca<a name='1168'>
+          else if (szeta(i) .GT. 0.5 .AND. szeta(i) .LE. 10.) then<a name='1169'>
+            rzeta1  = 1./szeta(i)<a name='1170'>
+            fmz1(i) = (8.*zal1g + 4.25*rzeta1 - &amp;<a name='1171'>
+                                          0.5*rzeta1*rzeta1 + cmo1)*rca<a name='1172'>
+          else if (szeta(i) .GT. 10.) then<a name='1173'>
+            fmz1(i) = (c*szeta(i) + cmo2)*rca<a name='1174'>
+          endif<a name='1175'>
+          szetao = ABS(zoc(istb(i)))/zkmax(istb(i))*szeta(i)<a name='1176'>
+          zal2g  = ALOG(szetao)<a name='1177'>
+          if (szetao .LE. 0.5) then<a name='1178'>
+            fmzo1(i) = (zal2g + a*szetao)*rca<a name='1179'>
+            sfzo (i) = 1. + a*szetao<a name='1180'>
+          else if (szetao .GT. 0.5 .AND. szetao .LE. 10.) then<a name='1181'>
+            rzeta2   = 1./szetao<a name='1182'>
+            fmzo1(i) = (8.*zal2g + 4.25*rzeta2 - &amp;<a name='1183'>
+                                          0.5*rzeta2*rzeta2 + cmo1)*rca<a name='1184'>
+            sfzo (i) = 8.0 - 4.25*rzeta2 + rzeta2*rzeta2<a name='1185'>
+          else if (szetao .GT. 10.) then<a name='1186'>
+            fmzo1(i) = (c*szetao + cmo2)*rca<a name='1187'>
+            sfzo (i) = c*szetao<a name='1188'>
+          endif<a name='1189'>
+<a name='1190'>
+<a name='1191'>
+<font color=#447700>!        compute heat &amp; moisture parts of zot.. for calculation of sfh<a name='1192'></font>
+<a name='1193'>
+          szetho = ABS(zot(istb(i)))/zkmax(istb(i))*szeta(i)<a name='1194'>
+          zal2gh = ALOG(szetho)<a name='1195'>
+          if (szetho .LE. 0.5) then<a name='1196'>
+            fhzo1(i) = (zal2gh + a*szetho)*rca<a name='1197'>
+            sfzo (i) = 1. + a*szetho<a name='1198'>
+          else if (szetho .GT. 0.5 .AND. szetho .LE. 10.) then<a name='1199'>
+            rzeta2   = 1./szetho<a name='1200'>
+            fhzo1(i) = (8.*zal2gh + 4.25*rzeta2 -   &amp;<a name='1201'>
+                                          0.5*rzeta2*rzeta2 + cmo1)*rca<a name='1202'>
+            sfzo (i) = 8.0 - 4.25*rzeta2 + rzeta2*rzeta2<a name='1203'>
+          else if (szetho .GT. 10.) then<a name='1204'>
+            fhzo1(i) = (c*szetho + cmo2)*rca<a name='1205'>
+            sfzo (i) = c*szetho<a name='1206'>
+          endif<a name='1207'>
+ <a name='1208'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1209'></font>
+<font color=#447700>!      compute universal function at 10 meters for diagnostic purposes<a name='1210'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1211'></font>
+<a name='1212'>
+<font color=#447700>!!!!      if (ngd .EQ. nNEST) then<a name='1213'></font>
+            szet10 = ABS(z10(istb(i)))/zkmax(istb(i))*szeta(i)<a name='1214'>
+            zal10  = ALOG(szet10)<a name='1215'>
+            if (szet10 .LE. 0.5) then<a name='1216'>
+              fmz10(i) = (zal10 + a*szet10)*rca<a name='1217'>
+            else if (szet10 .GT. 0.5 .AND. szet10 .LE. 10.) then<a name='1218'>
+              rzeta2   = 1./szet10<a name='1219'>
+              fmz10(i) = (8.*zal10 + 4.25*rzeta2 - &amp;<a name='1220'>
+                                          0.5*rzeta2*rzeta2 + cmo1)*rca<a name='1221'>
+            else if (szet10 .GT. 10.) then<a name='1222'>
+              fmz10(i) = (c*szet10 + cmo2)*rca<a name='1223'>
+            endif<a name='1224'>
+            sf10(i) = fmz10(i) - fmzo1(i)<a name='1225'>
+<font color=#447700>!          compute 2m values for diagnostics in HWRF<a name='1226'></font>
+            szet2  = ABS(z2 (istb(i)))/zkmax(istb(i))*szeta(i)<a name='1227'>
+            zal2   = ALOG(szet2 )<a name='1228'>
+            if (szet2  .LE. 0.5) then<a name='1229'>
+              fmz2 (i) = (zal2  + a*szet2 )*rca<a name='1230'>
+            else if (szet2  .GT. 0.5 .AND. szet2  .LE. 2.) then<a name='1231'>
+              rzeta2   = 1./szet2 <a name='1232'>
+              fmz2 (i) = (8.*zal2  + 4.25*rzeta2 - &amp;<a name='1233'>
+                                          0.5*rzeta2*rzeta2 + cmo1)*rca<a name='1234'>
+            else if (szet2  .GT. 2.) then<a name='1235'>
+              fmz2 (i) = (c*szet2  + cmo2)*rca<a name='1236'>
+            endif<a name='1237'>
+            sf2 (i) = fmz2 (i) - fmzo1(i)<a name='1238'>
+  <a name='1239'>
+<font color=#447700>!!!!      endif<a name='1240'></font>
+          sfm(i) = fmz1(i) - fmzo1(i)<a name='1241'>
+          sfh(i) = fmz1(i) - fhzo1(i)<a name='1242'>
+          sgz    = ca*rib(istb(i))*sfm(i)*sfm(i)/ &amp;<a name='1243'>
+                                               (sfh(i) + enrca*sfzo(i))<a name='1244'>
+          fmz    = (sgz - szeta(i))/szeta(i)<a name='1245'>
+          fmzo   = ABS(fmz)<a name='1246'>
+          if (fmzo .GE. 5.0e-5) then<a name='1247'>
+            sq        = (sgz - sgzm(i))/(szeta(i) - szetam(i))<a name='1248'>
+            if(sq .EQ. 1) then<a name='1249'>
+             write(message,*)'NCO ERROR DIVIDE BY ZERO IN MFLUX2 (STABLE CASE)'<a name='1250'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_891">(message)<a name='1251'>
+             write(message,*)'sq is 1 ',fmzo,sgz,sgzm(i),szeta(i),szetam(i)<a name='1252'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_892">(message)<a name='1253'>
+            endif<a name='1254'>
+            szetam(i) = szeta(i)<a name='1255'>
+            szeta (i) = (sgz - szeta(i)*sq)/(1.0 - sq)<a name='1256'>
+            sgzm  (i) = sgz<a name='1257'>
+          else<a name='1258'>
+            ifz(i) = 0<a name='1259'>
+          endif<a name='1260'>
+80        continue<a name='1261'>
+        enddo<a name='1262'>
+      enddo<a name='1263'>
+<a name='1264'>
+      do i = 1,ip<a name='1265'>
+        if (ifz(i) .GE. 1) go to 110<a name='1266'>
+      enddo<a name='1267'>
+<a name='1268'>
+      go to 130<a name='1269'>
+<a name='1270'>
+110   continue<a name='1271'>
+<a name='1272'>
+      write(6,120)<a name='1273'>
+120   format(2X, ' NON-CONVERGENCE FOR STABLE ZETA IN ROW ')<a name='1274'>
+<font color=#447700>!     call MPI_CLOSE(1,routine)<a name='1275'></font>
+<a name='1276'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1277'></font>
+<font color=#447700>!     update "zo" for ocean points.  "zo"cannot be updated within the<a name='1278'></font>
+<font color=#447700>!     wegsteins iteration as the scheme (for the near neutral case)<a name='1279'></font>
+<font color=#447700>!     can become unstable <a name='1280'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1281'></font>
+<a name='1282'>
+130   continue<a name='1283'>
+      do i = 1,ip<a name='1284'>
+        szo = zoc(istb(i))<a name='1285'>
+        if (szo .LT. 0.0)  then<a name='1286'>
+        wndm=wind(istb(i))*0.01<a name='1287'>
+          if(wndm.lt.15.0) then<a name='1288'>
+          ckg=0.0185*og<a name='1289'>
+          else<a name='1290'>
+<font color=#447700>!!         ckg=(0.000308*wndm+0.00925)*og<a name='1291'></font>
+<font color=#447700>!!         ckg=(0.000616*wndm)*og<a name='1292'></font>
+           ckg=(sfenth*(4*0.000308*wndm) + (1.-sfenth)*0.0185 )*og<a name='1293'>
+          endif<a name='1294'>
+<a name='1295'>
+       szo =  - ckg*wind(istb(i))*wind(istb(i))/  &amp;<a name='1296'>
+                             (sfm(i)*sfm(i))<a name='1297'>
+        cons_p000001    =    .000001<a name='1298'>
+        cons_7          =         7.<a name='1299'>
+        vis             =     1.4E-1<a name='1300'>
+ <a name='1301'>
+        ustar    = sqrt( -szo / zog)<a name='1302'>
+        restar = -ustar * szo    / vis<a name='1303'>
+        restar = max(restar,cons_p000001) <a name='1304'>
+<font color=#447700>!  Rat taken from Zeng,  Zhao and Dickinson 1997<a name='1305'></font>
+        rat    = 2.67 * restar ** .25 - 2.57<a name='1306'>
+        rat    = min(rat   ,cons_7)                      <font color=#447700>!constant<a name='1307'></font>
+	rat=0.<a name='1308'>
+        zot(istb(i)) = szo   * exp(-rat)<a name='1309'>
+         else<a name='1310'>
+         zot(istb(i)) = zoc(istb(i))<a name='1311'>
+        endif<a name='1312'>
+        <a name='1313'>
+<font color=#447700>!      in hwrf thermal znot is loaded back into the zoc array for next step<a name='1314'></font>
+             zoc(istb(i)) = szo<a name='1315'>
+      enddo<a name='1316'>
+<a name='1317'>
+      do i = 1,ip<a name='1318'>
+        xxfm(istb(i)) = sfm(i)<a name='1319'>
+        xxfh(istb(i)) = sfh(i)<a name='1320'>
+        xxfh2(istb(i)) = sf2 (i)<a name='1321'>
+        xxsh(istb(i)) = sfzo(i)<a name='1322'>
+      enddo<a name='1323'>
+<a name='1324'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1325'></font>
+<font color=#447700>!     obtain wind at 10 meters for diagnostic purposes<a name='1326'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1327'></font>
+<a name='1328'>
+<font color=#447700>!!!   if (ngd .EQ. nNEST) then<a name='1329'></font>
+        do i = 1,ip<a name='1330'>
+         wind10(istb(i)) = sf10(i)*uvs1(istb(i))/sfm(i)<a name='1331'>
+         wind10(istb(i)) = wind10(istb(i)) * 1.944<a name='1332'>
+           if(wind10(istb(i)) .GT. 6000.0) then<a name='1333'>
+       wind10(istb(i))=wind10(istb(i))+wind10(istb(i))*cor1 &amp;<a name='1334'>
+                        - cor2<a name='1335'>
+           endif<a name='1336'>
+<font color=#447700>!     the above correction done by GFDL in centi-kts!!!-change back<a name='1337'></font>
+         wind10(istb(i)) = wind10(istb(i)) / 1.944<a name='1338'>
+        enddo   <a name='1339'>
+<font color=#447700>!!!   endif<a name='1340'></font>
+<font color=#447700>!!!   if (ngd .EQ. nNEST-1 .AND. llwe .EQ. 1 ) then<a name='1341'></font>
+<font color=#447700>!!!     do i = 1,ip<a name='1342'></font>
+<font color=#447700>!!!       wind10c(istb(i),j) = sf10(i)*wind(istb(i))/sfm(i)<a name='1343'></font>
+<font color=#447700>!!!       wind10c(istb(i),j) = wind10c(istb(i),j) * 1.944<a name='1344'></font>
+<font color=#447700>!!!        if(wind10c(istb(i),j) .GT. 6000.0) then<a name='1345'></font>
+<font color=#447700>!!!    wind10c(istb(i),j)=wind10c(istb(i),j)+wind10c(istb(i),j)*cor1<a name='1346'></font>
+<font color=#447700>!!!  *                   - cor2<a name='1347'></font>
+<font color=#447700>!!!        endif<a name='1348'></font>
+<font color=#447700>!!!     enddo   <a name='1349'></font>
+<font color=#447700>!!!   endif<a name='1350'></font>
+<a name='1351'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1352'></font>
+<font color=#447700>!     unstable points<a name='1353'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1354'></font>
+<a name='1355'>
+170   continue<a name='1356'>
+<a name='1357'>
+      iq = 0<a name='1358'>
+      do i = its,ite<a name='1359'>
+        if (zeta(i) .LT. 0.0) then<a name='1360'>
+          iq       = iq + 1<a name='1361'>
+          iutb(iq) = i<a name='1362'>
+        endif<a name='1363'>
+      enddo<a name='1364'>
+<a name='1365'>
+      if (iq .EQ. 0) go to 290<a name='1366'>
+      do i = 1,iq<a name='1367'>
+        uzeta (i) = zeta(iutb(i))<a name='1368'>
+        ifz   (i) = 1<a name='1369'>
+        uzetam(i) = 1.0e+30<a name='1370'>
+        ugzm  (i) = 0.0e+00<a name='1371'>
+      enddo<a name='1372'>
+<a name='1373'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1374'></font>
+<font color=#447700>!     begin wegstein iteration for "zeta" at unstable points using<a name='1375'></font>
+<font color=#447700>!     hicks functions<a name='1376'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1377'></font>
+<a name='1378'>
+      do icnt = 1,icntx<a name='1379'>
+        do i = 1,iq<a name='1380'>
+          if (ifz(i) .EQ. 0) go to 200<a name='1381'>
+          ugzzo   = ALOG(zkmax(iutb(i))/ABS(zot(iutb(i))))<a name='1382'>
+          uzetao  = ABS(zot(iutb(i)))/zkmax(iutb(i))*uzeta(i)<a name='1383'>
+          ux11    = 1. - 16.*uzeta(i)<a name='1384'>
+          ux12    = 1. - 16.*uzetao<a name='1385'>
+          y       = SQRT(ux11)<a name='1386'>
+          yo      = SQRT(ux12)<a name='1387'>
+          ufzo(i) = 1./yo<a name='1388'>
+          ux13    = (1. + y)/(1. + yo)<a name='1389'>
+          ux21    = ALOG(ux13)<a name='1390'>
+          ufh(i)  = (ugzzo - 2.*ux21)*rca<a name='1391'>
+<font color=#447700>!         recompute scalers for ufm in terms of mom znot... zoc<a name='1392'></font>
+          ugzzo   = ALOG(zkmax(iutb(i))/ABS(zoc(iutb(i))))<a name='1393'>
+          uzetao  = ABS(zoc(iutb(i)))/zkmax(iutb(i))*uzeta(i)<a name='1394'>
+          ux11    = 1. - 16.*uzeta(i)<a name='1395'>
+          ux12    = 1. - 16.*uzetao<a name='1396'>
+          y       = SQRT(ux11)<a name='1397'>
+          yo      = SQRT(ux12)<a name='1398'>
+          ux13    = (1. + y)/(1. + yo)<a name='1399'>
+          ux21    = ALOG(ux13)<a name='1400'>
+<font color=#447700>!          ufzo(i) = 1./yo<a name='1401'></font>
+          x       = SQRT(y)<a name='1402'>
+          xo      = SQRT(yo)<a name='1403'>
+          xnum    = (x**2 + 1.)*((x + 1.)**2)<a name='1404'>
+          xden    = (xo**2 + 1.)*((xo + 1.)**2)<a name='1405'>
+          xtan    = ATAN(x) - ATAN(xo)<a name='1406'>
+          ux3     = ALOG(xnum/xden)<a name='1407'>
+          ufm(i)  = (ugzzo - ux3 + 2.*xtan)*rca<a name='1408'>
+<font color=#447700>!!!!      if (ngd .EQ. nNEST) then<a name='1409'></font>
+<a name='1410'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1411'></font>
+<font color=#447700>!     obtain ten meter winds for diagnostic purposes<a name='1412'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1413'></font>
+<a name='1414'>
+            ugz10   = ALOG(z10(iutb(i))/ABS(zoc(iutb(i))))<a name='1415'>
+            uzet1o  = ABS(z10(iutb(i)))/zkmax(iutb(i))*uzeta(i)<a name='1416'>
+            uzetao  = ABS(zoc(iutb(i)))/zkmax(iutb(i))*uzeta(i)<a name='1417'>
+            ux11    = 1. - 16.*uzet1o<a name='1418'>
+            ux12    = 1. - 16.*uzetao<a name='1419'>
+            y       = SQRT(ux11)<a name='1420'>
+            y10     = SQRT(ux12)<a name='1421'>
+            ux13    = (1. + y)/(1. + y10)<a name='1422'>
+            ux21    = ALOG(ux13)<a name='1423'>
+            x       = SQRT(y)<a name='1424'>
+            x10     = SQRT(y10)<a name='1425'>
+            xnum    = (x**2 + 1.)*((x + 1.)**2)<a name='1426'>
+            xden    = (x10**2 + 1.)*((x10 + 1.)**2)<a name='1427'>
+            xtan    = ATAN(x) - ATAN(x10)<a name='1428'>
+            ux3     = ALOG(xnum/xden)<a name='1429'>
+            uf10(i) = (ugz10 - ux3 + 2.*xtan)*rca<a name='1430'>
+<a name='1431'>
+<font color=#447700>!   obtain 2m values for diagnostics...<a name='1432'></font>
+<a name='1433'>
+<a name='1434'>
+          ugz2    = ALOG(z2   (iutb(i))/ABS(zoc(iutb(i))))<a name='1435'>
+          uzet1o  = ABS(z2 (iutb(i)))/zkmax(iutb(i))*uzeta(i)<a name='1436'>
+          uzetao  = ABS(zoc(iutb(i)))/zkmax(iutb(i))*uzeta(i)<a name='1437'>
+          ux11    = 1. - 16.*uzet1o   <a name='1438'>
+          ux12    = 1. - 16.*uzetao<a name='1439'>
+          y       = SQRT(ux11)<a name='1440'>
+          yo      = SQRT(ux12)<a name='1441'>
+          ux13    = (1. + y)/(1. + yo)<a name='1442'>
+          ux21    = ALOG(ux13)<a name='1443'>
+          uf2 (i)  = (ugzzo - 2.*ux21)*rca<a name='1444'>
+<a name='1445'>
+<a name='1446'>
+<font color=#447700>!!!       endif<a name='1447'></font>
+          ugz = ca*rib(iutb(i))*ufm(i)*ufm(i)/(ufh(i) + enrca*ufzo(i))<a name='1448'>
+          ux1 = (ugz - uzeta(i))/uzeta(i)<a name='1449'>
+          ux2 = ABS(ux1)<a name='1450'>
+          if (ux2 .GE. 5.0e-5) then<a name='1451'>
+            uq        = (ugz - ugzm(i))/(uzeta(i) - uzetam(i))<a name='1452'>
+            uzetam(i) = uzeta(i)<a name='1453'>
+            if(uq .EQ. 1) then<a name='1454'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_893">('NCO ERROR DIVIDE BY ZERO IN MFLUX2 (UNSTABLE CASE)')<a name='1455'>
+             write(message,*)'uq is 1 ',ux2,ugz,ugzm(i),uzeta(i),uzetam(i) <a name='1456'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_894">(message)<a name='1457'>
+            endif<a name='1458'>
+            uzeta (i) = (ugz - uzeta(i)*uq)/(1.0 - uq)<a name='1459'>
+            ugzm  (i) = ugz<a name='1460'>
+          else<a name='1461'>
+            ifz(i) = 0<a name='1462'>
+          endif<a name='1463'>
+200       continue<a name='1464'>
+        enddo<a name='1465'>
+      enddo<a name='1466'>
+<a name='1467'>
+<a name='1468'>
+      do i = 1,iq<a name='1469'>
+        if (ifz(i) .GE. 1) go to 230<a name='1470'>
+      enddo<a name='1471'>
+<a name='1472'>
+      go to 250<a name='1473'>
+<a name='1474'>
+230   continue<a name='1475'>
+      write(message,240)<a name='1476'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_895">(message)<a name='1477'>
+240   format(2X, ' NON-CONVERGENCE FOR UNSTABLE ZETA IN ROW ')<a name='1478'>
+<font color=#447700>!     call MPI_CLOSE(1,routine)<a name='1479'></font>
+<a name='1480'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1481'></font>
+<font color=#447700>!     gather unstable values<a name='1482'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1483'></font>
+<a name='1484'>
+250   continue<a name='1485'>
+<a name='1486'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1487'></font>
+<font color=#447700>!     update "zo" for ocean points.  zo cannot be updated within the<a name='1488'></font>
+<font color=#447700>!     wegsteins iteration as the scheme (for the near neutral case)<a name='1489'></font>
+<font color=#447700>!     can become unstable. <a name='1490'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1491'></font>
+<a name='1492'>
+      do i = 1,iq<a name='1493'>
+        uzo = zoc(iutb(i))<a name='1494'>
+        if (zoc(iutb(i)) .LT. 0.0)   then<a name='1495'>
+        wndm=wind(iutb(i))*0.01<a name='1496'>
+         if(wndm.lt.15.0) then<a name='1497'>
+         ckg=0.0185*og<a name='1498'>
+         else<a name='1499'>
+<font color=#447700>!!          ckg=(0.000308*wndm+0.00925)*og                      &lt;  <a name='1500'></font>
+<font color=#447700>!!          ckg=(0.000616*wndm)*og                              &lt;  <a name='1501'></font>
+            ckg=(4*0.000308*wndm)*og<a name='1502'>
+            ckg=(sfenth*(4*0.000308*wndm) + (1.-sfenth)*0.0185 )*og<a name='1503'>
+         endif<a name='1504'>
+        uzo         =-ckg*wind(iutb(i))*wind(iutb(i))/(ufm(i)*ufm(i))<a name='1505'>
+        cons_p000001    =    .000001<a name='1506'>
+        cons_7          =         7.<a name='1507'>
+        vis             =     1.4E-1<a name='1508'>
+<a name='1509'>
+        ustar    = sqrt( -uzo / zog)<a name='1510'>
+        restar = -ustar * uzo    / vis<a name='1511'>
+        restar = max(restar,cons_p000001)<a name='1512'>
+<font color=#447700>!  Rat taken from Zeng,  Zhao and Dickinson 1997<a name='1513'></font>
+        rat    = 2.67 * restar ** .25 - 2.57<a name='1514'>
+        rat    = min(rat   ,cons_7)                      <font color=#447700>!constant<a name='1515'></font>
+	rat=0.0<a name='1516'>
+        zot(iutb(i)) =  uzo   * exp(-rat)<a name='1517'>
+         else<a name='1518'>
+         zot(iutb(i)) = zoc(iutb(i))<a name='1519'>
+        endif<a name='1520'>
+<font color=#447700>!      in hwrf thermal znot is loaded back into the zoc array for next step<a name='1521'></font>
+            zoc(iutb(i)) = uzo<a name='1522'>
+      enddo<a name='1523'>
+<a name='1524'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1525'></font>
+<font color=#447700>!     obtain wind at ten meters for diagnostic purposes<a name='1526'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1527'></font>
+<a name='1528'>
+<font color=#447700>!!!   if (ngd .EQ. nNEST) then<a name='1529'></font>
+        do i = 1,iq<a name='1530'>
+          wind10(iutb(i)) = uf10(i)*uvs1(iutb(i))/ufm(i)<a name='1531'>
+          wind10(iutb(i)) = wind10(iutb(i)) * 1.944<a name='1532'>
+           if(wind10(iutb(i)) .GT. 6000.0) then<a name='1533'>
+         wind10(iutb(i))=wind10(iutb(i))+wind10(iutb(i))*cor1 &amp;<a name='1534'>
+                         - cor2<a name='1535'>
+           endif<a name='1536'>
+ <font color=#447700>!     the above correction done by GFDL in centi-kts!!!-change back<a name='1537'></font>
+          wind10(iutb(i)) = wind10(iutb(i)) / 1.944<a name='1538'>
+        enddo   <a name='1539'>
+<font color=#447700>!!!   endif <a name='1540'></font>
+<font color=#447700>!!!   if (ngd .EQ. nNEST-1) then<a name='1541'></font>
+<font color=#447700>!!!     do i = 1,iq            <a name='1542'></font>
+<font color=#447700>!!!       wind10c(iutb(i),j) = uf10(i)*wind(iutb(i))/ufm(i)<a name='1543'></font>
+<font color=#447700>!!!       wind10c(iutb(i),j) = wind10c(iutb(i),j) * 1.944<a name='1544'></font>
+<font color=#447700>!!!        if(wind10c(iutb(i),j) .GT. 6000.0) then<a name='1545'></font>
+<font color=#447700>!!!      wind10c(iutb(i),j)=wind10c(iutb(i),j)+wind10c(iutb(i),j)*cor1<a name='1546'></font>
+<font color=#447700>!!!  *                    - cor2<a name='1547'></font>
+<font color=#447700>!!!        endif<a name='1548'></font>
+<font color=#447700>!!!     enddo   <a name='1549'></font>
+<font color=#447700>!!!   endif <a name='1550'></font>
+<a name='1551'>
+      do i = 1,iq<a name='1552'>
+        xxfm(iutb(i)) = ufm(i)<a name='1553'>
+        xxfh(iutb(i)) = ufh(i)<a name='1554'>
+        xxfh2(iutb(i)) = uf2 (i)<a name='1555'>
+        xxsh(iutb(i)) = ufzo(i)<a name='1556'>
+      enddo<a name='1557'>
+<a name='1558'>
+290   continue<a name='1559'>
+<a name='1560'>
+      do i = its,ite<a name='1561'>
+        ucom(i) = ukmax(i)<a name='1562'>
+        vcom(i) = vkmax(i)<a name='1563'>
+        if (windp(i) .EQ. 0.0) then<a name='1564'>
+          windp(i) = 100.0<a name='1565'>
+          ucom (i) = 100.0/SQRT(2.0)<a name='1566'>
+          vcom (i) = 100.0/SQRT(2.0)<a name='1567'>
+        endif<a name='1568'>
+        rho(i) = pss(i)/(rgas*(tsg(i) + enrca*(theta(i) - &amp;<a name='1569'>
+                tsg(i))*xxsh(i)/(xxfh(i) + enrca*xxsh(i))))<a name='1570'>
+        bq1(i) = wind(i)*rho(i)/(xxfm(i)*(xxfh(i) + enrca*xxsh(i)))<a name='1571'>
+      enddo<a name='1572'>
+<a name='1573'>
+<font color=#447700>!     do land sfc temperature prediction if ntsflg=1<a name='1574'></font>
+<font color=#447700>!     ntsflg = 1                                    ! gopal's doing  <a name='1575'></font>
+<a name='1576'>
+      if (ntsflg .EQ. 0) go to 370<a name='1577'>
+      alll = 600.<a name='1578'>
+      xks   = 0.01<a name='1579'>
+      hcap  = .5/2.39e-8<a name='1580'>
+      pith  = SQRT(4.*ATAN(1.0))<a name='1581'>
+      alfus = alll/2.39e-8<a name='1582'>
+      teps  = 0.1<a name='1583'>
+<font color=#447700>!     slwdc... in units of cal/min ????<a name='1584'></font>
+<font color=#447700>!     slwa...  in units of ergs/sec/cm*2  <a name='1585'></font>
+<font color=#447700>!     1 erg=2.39e-8 cal<a name='1586'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1587'></font>
+<font color=#447700>!     pack land and sea ice points<a name='1588'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1589'></font>
+<a name='1590'>
+      ip    = 0<a name='1591'>
+      do i = its,ite<a name='1592'>
+        if (land(i) .EQ. 1) then<a name='1593'>
+          ip = ip + 1<a name='1594'>
+          indx   (ip) = i<a name='1595'>
+<font color=#447700>!         slwa is defined as positive down....<a name='1596'></font>
+          slwa   (ip) =    slwdc(i)/(2.39e-8*60.)<a name='1597'>
+          tss    (ip) = tstar(i)<a name='1598'>
+          thetap (ip) = <A href='../../html_code/phys/module_diag_afwa.F.html#THETA'>theta</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="THETA_26">(i)<a name='1599'>
+          rkmaxp (ip) = rkmax(i)<a name='1600'>
+          aap    (ip) = 5.673e-5<a name='1601'>
+          pssp   (ip) = pss(i)<a name='1602'>
+          ecofp  (ip) = ecof(i)<a name='1603'>
+          estsop (ip) = estso(i)<a name='1604'>
+          rstsop (ip) = rstso(i)<a name='1605'>
+          bq1p   (ip) = bq1(i)<a name='1606'>
+          bq1p   (ip) = amax1(bq1p(ip),0.1e-3)<a name='1607'>
+          delsrad(ip) = dt   *pith/(hcap*SQRT(3600.*24.*xks))<a name='1608'>
+        endif<a name='1609'>
+      enddo<a name='1610'>
+<a name='1611'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1612'></font>
+<font color=#447700>!     initialize variables for first pass of iteration<a name='1613'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1614'></font>
+<a name='1615'>
+      do i = 1,ip<a name='1616'>
+        ifz  (i) = 1<a name='1617'>
+        tsm  (i) = tss(i)<a name='1618'>
+        rdiff(i) = amin1(0.0,(rkmaxp(i) - rstsop(i)))<a name='1619'>
+<font color=#447700>!!!     if (nstep .EQ. -99 .AND. ngd .GT. 1 .OR. &amp;<a name='1620'></font>
+<font color=#447700>!!!        nstep .EQ. -99 .AND. ngd .EQ. 1) then<a name='1621'></font>
+<a name='1622'>
+<font color=#447700>!!!      if (j .EQ. 1 .AND. i .EQ. 1) write(6,300)<a name='1623'></font>
+300   format(2X, ' SURFACE EQUILIBRIUM CALCULATION ')<a name='1624'>
+<a name='1625'>
+<font color=#447700>!!        foftm(i) = thetap(i) + 1./(cp*bq1p(i))*(slwa(i) - aap(i)* &amp;<a name='1626'></font>
+<font color=#447700>!!                  tsm(i)**4 + ecofp(i)*alfus*bq1p(i)*rdiff(i))<a name='1627'></font>
+<font color=#447700>!!      else<a name='1628'></font>
+<a name='1629'>
+          foftm(i) = tss(i) + delsrad(i)*(slwa(i) - aap(i)*tsm(i)**4 - &amp;<a name='1630'>
+           cp*bq1p(i)*(tsm(i) - thetap(i)) + ecofp(i)*alfus*bq1p(i)* &amp;<a name='1631'>
+           rdiff(i))<a name='1632'>
+<font color=#447700>!!      endif<a name='1633'></font>
+        tsp(i) = foftm(i)<a name='1634'>
+      enddo<a name='1635'>
+<a name='1636'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1637'></font>
+<font color=#447700>!     do iteration to determine "tstar" at new time level<a name='1638'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1639'></font>
+<a name='1640'>
+      do icnt = 1,icntx<a name='1641'>
+        do i = 1,ip<a name='1642'>
+          if (ifz(i) .EQ. 0) go to 330<a name='1643'>
+          tab1  (i) = tsp(i) - 153.16<a name='1644'>
+          it    (i) = IFIX(tab1(i))<a name='1645'>
+          tab2  (i) = tab1(i) - FLOAT(it(i))<a name='1646'>
+          t1    (i) = tab(min(223,max(1,it(i) + 1)))<a name='1647'>
+          t2    (i) = table(min(223,max(1,it(i) + 1)))<a name='1648'>
+          estsop(i) = t1(i) + tab2(i)*t2(i)<a name='1649'>
+             psps2 = (pssp(i) - estsop(i))<a name='1650'>
+             if(psps2 .EQ. 0.0)then<a name='1651'>
+               psps2 = .1<a name='1652'>
+             endif<a name='1653'>
+          rstsop(i) = 0.622*estsop(i)/psps2                  <a name='1654'>
+          rdiff (i) = amin1(0.0,(rkmaxp(i) - rstsop(i)))<a name='1655'>
+<font color=#447700>!!!       if (nstep .EQ. -99 .AND. ngd .GT. 1 .OR. &amp;<a name='1656'></font>
+<font color=#447700>!!!          nstep .EQ. -99 .AND. ngd .EQ. 1) then<a name='1657'></font>
+<font color=#447700>!!!         foft(i) = thetap(i) + (1./(cp*bq1p(i)))*(slwa(i) - aap(i)* &amp;<a name='1658'></font>
+<font color=#447700>!!!                  tsp(i)**4 + ecofp(i)*alfus*bq1p(i)*rdiff(i))<a name='1659'></font>
+<font color=#447700>!!!       else<a name='1660'></font>
+            foft(i) = tss(i) + delsrad(i)*(slwa(i) - aap(i)*tsp(i)**4 - &amp;<a name='1661'>
+             cp*bq1p(i)*(tsp(i) - thetap(i)) + ecofp(i)*alfus*bq1p(i)* &amp;<a name='1662'>
+             rdiff(i))<a name='1663'>
+<font color=#447700>!!!       endif<a name='1664'></font>
+<font color=#447700>!!!       if (ngd .EQ. 1 .AND. j .EQ. 48 .AND. i .EQ. 19) then<a name='1665'></font>
+<font color=#447700>!!!         reflect = slwa(i)<a name='1666'></font>
+<font color=#447700>!!!         sigt4   = -aap(i)*tsp(i)**4<a name='1667'></font>
+<font color=#447700>!!!         shfx    = -cp*bq1p(i)*(tsp(i) - thetap(i))<a name='1668'></font>
+<font color=#447700>!!!         alevp   = ecofp(i)*alfus*bq1p(i)*rdiff(i)<a name='1669'></font>
+<font color=#447700>!!!         delten  = delsrad(i)<a name='1670'></font>
+<font color=#447700>!!!         diffot  = foft(i) - tss(i)<a name='1671'></font>
+<font color=#447700>!!!       endif<a name='1672'></font>
+          frac(i) = ABS((foft(i) - tsp(i))/tsp(i))<a name='1673'>
+<a name='1674'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1675'></font>
+<font color=#447700>!      check for convergence of all points use wegstein iteration     <a name='1676'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1677'></font>
+ <a name='1678'>
+          if (frac(i) .GE. teps) then<a name='1679'>
+            qf   (i) = (foft(i) - foftm(i))/(tsp(i) - tsm(i))<a name='1680'>
+            tsm  (i) = tsp(i)<a name='1681'>
+            tsp  (i) = (foft(i) - tsp(i)*qf(i))/(1. - qf(i))<a name='1682'>
+            foftm(i) = foft(i)<a name='1683'>
+          else<a name='1684'>
+            ifz(i) = 0<a name='1685'>
+          endif<a name='1686'>
+330       continue<a name='1687'>
+        enddo<a name='1688'>
+      enddo<a name='1689'>
+<a name='1690'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1691'></font>
+<font color=#447700>!     check for convergence of "t star" prediction<a name='1692'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1693'></font>
+<a name='1694'>
+      do i = 1,ip<a name='1695'>
+        if (ifz(i) .EQ. 1) then<a name='1696'>
+        write(message, 340) tsp(i), i, j<a name='1697'>
+340   format(2X, ' NON-CONVERGENCE OF T* PREDICTED (T*,I,J) = ', E14.8, &amp;<a name='1698'>
+            2I5)<a name='1699'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_896">(message)<a name='1700'>
+<a name='1701'>
+        write(message,345) indx(i), j, tstar(indx(i)), tsp(i), ip<a name='1702'>
+345   format(2X, ' I, J, OLD T*, NEW T*, NPTS ', 2I5, 2E14.8, I5)<a name='1703'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_897">(message)<a name='1704'>
+<a name='1705'>
+<font color=#447700>!       write(6,350) reflect, sigt4, shfx, alevp, delten, diffot<a name='1706'></font>
+350   format(2X, ' REFLECT, SIGT4, SHFX, ALEVP, DELTEN, DIFFOT ', &amp;<a name='1707'>
+            6E14.8)<a name='1708'>
+<a name='1709'>
+<font color=#447700>!         call MPI_CLOSE(1,routine)<a name='1710'></font>
+        endif<a name='1711'>
+      enddo<a name='1712'>
+<a name='1713'>
+      do i = 1,ip<a name='1714'>
+        ii        = indx(i)<a name='1715'>
+        tstrc(ii) = tsp (i)<a name='1716'>
+      enddo<a name='1717'>
+<a name='1718'>
+<font color=#447700>!------------------------------------------------------------------------<a name='1719'></font>
+<font color=#447700>!     compute fluxes  and momentum drag coef<a name='1720'></font>
+<font color=#447700>!------------------------------------------------------------------------<a name='1721'></font>
+<a name='1722'>
+370   continue<a name='1723'>
+      do i = its,ite<a name='1724'>
+<font color=#447700>!!!<a name='1725'></font>
+        if ( iwavecpl .eq. 1 .and. zoc(i) .le. 0.0 ) then<a name='1726'>
+          windmks = wind(i) * 0.01<a name='1727'>
+          ustar = windmks / xxfm(i)<a name='1728'>
+          <font color=#447700>!Check if Charnock parameter ratio is received in a proper range.<a name='1729'></font>
+          if ( alpha(i) .ge. 0.2 .and. alpha(i) .le. 5. ) then<a name='1730'>
+            call  <A href='../../html_code/phys/module_sf_exchcoef.F.html#ZNOT_M_V1'>znot_m_v1</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ZNOT_M_V1_7">(windmks,znotm)<a name='1731'>
+            znotm = znotm*alpha(i)<a name='1732'>
+          else<a name='1733'>
+            call  <A href='../../html_code/phys/module_sf_exchcoef.F.html#ZNOT_M_V1'>znot_m_v1</A><A href='../../html_code/phys/module_sf_gfdl.F.html#MFLUX2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ZNOT_M_V1_8">(windmks,znotm)<a name='1734'>
+          endif<a name='1735'>
+          zoc(i)  = -100.*znotm<a name='1736'>
+        endif<a name='1737'>
+<font color=#447700>!!!!<a name='1738'></font>
+        fxh(i) = bq1(i)*(theta(i) - tsg(i))<a name='1739'>
+        fxe(i) = ecof(i)*bq1(i)*(rkmax(i) - rstso(i))<a name='1740'>
+        if (fxe(i) .GT. 0.0) fxe(i) = 0.0<a name='1741'>
+        fxmx(i) = rho(i)/(xxfm(i)*xxfm(i))*wind(i)*wind(i)*ucom(i)/ &amp;<a name='1742'>
+                 windp(i)<a name='1743'>
+        fxmy(i) = rho(i)/(xxfm(i)*xxfm(i))*wind(i)*wind(i)*vcom(i)/ &amp;<a name='1744'>
+        windp(i)<a name='1745'>
+        cdm(i) = 1./(xxfm(i)*xxfm(i))<a name='1746'>
+<font color=#447700>!       print *, 'i,zot,zoc,cdm,cdm2,tsg,wind', &amp;<a name='1747'></font>
+<font color=#447700>!                i, zot(i),zoc(i), cdm(i),cdm2(i), tsg(i),wind(i)<a name='1748'></font>
+#if HWRF==1<a name='1749'>
+<font color=#447700>! randomly perturb the Cd<a name='1750'></font>
+        if( pert_Cd_local ) then<a name='1751'>
+        rr=2.0*ens_Cdamp_local*ran1(ens_random_seed_local)-ens_Cdamp_local<a name='1752'>
+        cdm(i) = cdm(i) *(1.0+rr)<a name='1753'>
+        endif<a name='1754'>
+#endif<a name='1755'>
+<a name='1756'>
+      enddo<a name='1757'>
+      ntstep = ntstep + 1<a name='1758'>
+      return<a name='1759'>
+      end subroutine MFLUX2<a name='1760'>
+<a name='1761'>
+<A NAME='HWRFSFCINIT'><A href='../../html_code/phys/module_sf_gfdl.F.html#HWRFSFCINIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1762'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>hwrfsfcinit</font>(isn,XICE,VEGFRA,SNOW,SNOWC,CANWAT,SMSTAV,       &amp; <A href='../../call_to/HWRFSFCINIT.html' TARGET='index'>1</A><a name='1763'>
+                        SMSTOT, SFCRUNOFF,UDRUNOFF,GRDFLX,ACSNOW,       &amp;<a name='1764'>
+                        ACSNOM,IVGTYP,ISLTYP,TSLB,SMOIS,DZS,SFCEVP,     &amp; <font color=#447700>!  STEMP<a name='1765'></font>
+                        TMN,                                            &amp;<a name='1766'>
+                        num_soil_layers,                                &amp;<a name='1767'>
+                        allowed_to_read,                                &amp;<a name='1768'>
+                        ids,ide, jds,jde, kds,kde,                      &amp;<a name='1769'>
+                        ims,ime, jms,jme, kms,kme,                      &amp;<a name='1770'>
+                        its,ite, jts,jte, kts,kte                     )<a name='1771'>
+<a name='1772'>
+   IMPLICIT NONE <a name='1773'>
+<a name='1774'>
+<font color=#447700>! Arguments<a name='1775'></font>
+   INTEGER,  INTENT(IN   )   ::     ids,ide, jds,jde, kds,kde,  &amp;<a name='1776'>
+                                    ims,ime, jms,jme, kms,kme,  &amp;<a name='1777'>
+                                    its,ite, jts,jte, kts,kte<a name='1778'>
+<a name='1779'>
+   INTEGER, INTENT(IN)       ::     num_soil_layers<a name='1780'>
+<a name='1781'>
+   REAL,    DIMENSION( num_soil_layers), INTENT(IN) :: DZS<a name='1782'>
+<a name='1783'>
+   REAL,    DIMENSION( ims:ime, num_soil_layers, jms:jme )    , &amp;<a name='1784'>
+            INTENT(INOUT)    ::                          SMOIS, &amp; <a name='1785'>
+                                                         TSLB      <font color=#447700>!STEMP<a name='1786'></font>
+<a name='1787'>
+   REAL,    DIMENSION( ims:ime, jms:jme )                     , &amp;<a name='1788'>
+            INTENT(INOUT)    ::                           SNOW, &amp; <a name='1789'>
+                                                         SNOWC, &amp; <a name='1790'>
+                                                        CANWAT, &amp;<a name='1791'>
+                                                        SMSTAV, &amp;<a name='1792'>
+                                                        SMSTOT, &amp;<a name='1793'>
+                                                     SFCRUNOFF, &amp;<a name='1794'>
+                                                      UDRUNOFF, &amp;<a name='1795'>
+                                                        SFCEVP, &amp;<a name='1796'>
+                                                        GRDFLX, &amp;<a name='1797'>
+                                                        ACSNOW, &amp;<a name='1798'>
+                                                          XICE, &amp;<a name='1799'>
+                                                        VEGFRA, &amp;<a name='1800'>
+                                                        TMN, &amp;<a name='1801'>
+                                                        ACSNOM<a name='1802'>
+<a name='1803'>
+   INTEGER, DIMENSION( ims:ime, jms:jme )                     , &amp;<a name='1804'>
+            INTENT(INOUT)    ::                         IVGTYP, &amp;<a name='1805'>
+                                                        ISLTYP<a name='1806'>
+<a name='1807'>
+<font color=#447700>!<a name='1808'></font>
+<a name='1809'>
+  INTEGER, INTENT(IN) :: isn<a name='1810'>
+  LOGICAL, INTENT(IN) :: allowed_to_read<a name='1811'>
+<font color=#447700>! Local<a name='1812'></font>
+  INTEGER             :: iseason<a name='1813'>
+  INTEGER :: icm,jcm,itf,jtf<a name='1814'>
+  INTEGER ::  I,J,L<a name='1815'>
+<a name='1816'>
+<a name='1817'>
+   itf=min0(ite,ide-1)<a name='1818'>
+   jtf=min0(jte,jde-1)<a name='1819'>
+<a name='1820'>
+   icm = ide/2<a name='1821'>
+   jcm = jde/2<a name='1822'>
+<a name='1823'>
+   iseason=isn<a name='1824'>
+<a name='1825'>
+   DO J=jts,jtf<a name='1826'>
+       DO I=its,itf<a name='1827'>
+<font color=#447700>!      SNOW(i,j)=0.<a name='1828'></font>
+       SNOWC(i,j)=0.<a name='1829'>
+<font color=#447700>!      SMSTAV(i,j)=<a name='1830'></font>
+<font color=#447700>!      SMSTOT(i,j)=<a name='1831'></font>
+<font color=#447700>!      SFCRUNOFF(i,j)=<a name='1832'></font>
+<font color=#447700>!      UDRUNOFF(i,j)=<a name='1833'></font>
+<font color=#447700>!      GRDFLX(i,j)=<a name='1834'></font>
+<font color=#447700>!      ACSNOW(i,j)=<a name='1835'></font>
+<font color=#447700>!      ACSNOM(i,j)=<a name='1836'></font>
+    ENDDO<a name='1837'>
+   ENDDO<a name='1838'>
+<a name='1839'>
+  END SUBROUTINE hwrfsfcinit<a name='1840'>
+<a name='1841'>
+END MODULE module_sf_gfdl<a name='1842'>
+</pre></body></html>

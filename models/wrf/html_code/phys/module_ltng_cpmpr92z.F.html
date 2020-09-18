@@ -1,0 +1,106 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>! WRF:MODEL_LAYER:PHYSICS<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<font color=#447700>! Lightning flash rate prediction based on cloud-top height. Implemented<a name='4'></font>
+<font color=#447700>! for models using convective parameterization. Assume use of sub-grid LNB.<a name='5'></font>
+<font color=#447700>!<a name='6'></font>
+<font color=#447700>! Price, C., and D. Rind (1992), A Simple Lightning Parameterization for Calculating<a name='7'></font>
+<font color=#447700>!   Global Lightning Distributions, J. Geophys. Res., 97(D9), 9919-9933, doi:10.1029/92JD00719.<a name='8'></font>
+<font color=#447700>!<a name='9'></font>
+<font color=#447700>! Wong, J., M. Barth, and D. Noone (2012), Evaluating a Lightning Parameterization<a name='10'></font>
+<font color=#447700>!   at Resolutions with Partially-Resolved Convection, GMDD, in preparation.<a name='11'></font>
+<font color=#447700>!<a name='12'></font>
+<font color=#447700>! Contact: J. Wong &lt;johnwong@ucar.edu&gt;<a name='13'></font>
+<font color=#447700>!<a name='14'></font>
+<font color=#447700>!**********************************************************************<a name='15'></font>
+<a name='16'>
+<A NAME='MODULE_LTNG_CPMPR92Z'><A href='../../html_code/phys/module_ltng_cpmpr92z.F.html#MODULE_LTNG_CPMPR92Z' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='17'>
+ <font color=#993300>MODULE </font><font color=#cc0000>module_ltng_cpmpr92z</font> <A href='../../call_to/MODULE_LTNG_CPMPR92Z.html' TARGET='index'>1</A><a name='18'>
+ CONTAINS<a name='19'>
+<a name='20'>
+<A NAME='LTNG_CPMPR92Z'><A href='../../html_code/phys/module_ltng_cpmpr92z.F.html#LTNG_CPMPR92Z' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='21'>
+ <font color=#993300>SUBROUTINE </font><font color=#cc0000>ltng_cpmpr92z</font> ( &amp; <A href='../../call_to/LTNG_CPMPR92Z.html' TARGET='index'>1</A>,<A href='../../call_from/LTNG_CPMPR92Z.html' TARGET='index'>3</A><a name='22'>
+                          <font color=#447700>! Frequently used prognostics<a name='23'></font>
+                            dx, dy, xland, ht, z, t,              &amp;<a name='24'>
+                          <font color=#447700>! Scheme specific prognostics<a name='25'></font>
+                            kLNB,                                 &amp;<a name='26'>
+                          <font color=#447700>! Scheme specific namelist inputs<a name='27'></font>
+                            cldtop_adjustment,                    &amp;<a name='28'>
+                          <font color=#447700>! Order dependent args for domain, mem, and tile dims<a name='29'></font>
+                            ids, ide, jds, jde, kds, kde,         &amp;<a name='30'>
+                            ims, ime, jms, jme, kms, kme,         &amp;<a name='31'>
+                            ips, ipe, jps, jpe, kps, kpe,         &amp;<a name='32'>
+                          <font color=#447700>! Mandatory output for all quantitative schemes<a name='33'></font>
+                            total_flashrate                       &amp;<a name='34'>
+                          )<a name='35'>
+<font color=#447700>!-----------------------------------------------------------------<a name='36'></font>
+<font color=#447700>! Framework<a name='37'></font>
+ USE <A href='../../html_code/frame/module_state_description.F.html#MODULE_STATE_DESCRIPTION'>module_state_description</A><A href='../../html_code/phys/module_ltng_cpmpr92z.F.html#LTNG_CPMPR92Z' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STATE_DESCRIPTION_125"><a name='38'>
+<a name='39'>
+<font color=#447700>! Model layer<a name='40'></font>
+ USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_ltng_cpmpr92z.F.html#LTNG_CPMPR92Z' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_72"><a name='41'>
+ USE <A href='../../html_code/frame/module_wrf_error.F.html#MODULE_WRF_ERROR'>module_wrf_error</A><A href='../../html_code/phys/module_ltng_cpmpr92z.F.html#LTNG_CPMPR92Z' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_ERROR_54"><a name='42'>
+<a name='43'>
+ IMPLICIT NONE<a name='44'>
+<font color=#447700>!-----------------------------------------------------------------<a name='45'></font>
+<a name='46'>
+<font color=#447700>! Frequently used prognostics<a name='47'></font>
+ REAL,    INTENT(IN   )    ::       dx, dy<a name='48'>
+<a name='49'>
+ REAL,    DIMENSION( ims:ime,          jms:jme ), INTENT(IN   ) :: xland, ht<a name='50'>
+ REAL,    DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN   ) :: z, t<a name='51'>
+<a name='52'>
+<font color=#447700>! Scheme specific prognostics<a name='53'></font>
+ INTEGER, DIMENSION( ims:ime,          jms:jme ), INTENT(IN   ) :: kLNB     <font color=#447700>! model LNB from cu_physics<a name='54'></font>
+<a name='55'>
+<font color=#447700>! Scheme specific namelist inputs<a name='56'></font>
+ REAL,    INTENT(IN   )    ::       cldtop_adjustment<a name='57'>
+<a name='58'>
+<font color=#447700>! Order dependent args for domain, mem, and tile dims<a name='59'></font>
+ INTEGER, INTENT(IN   )    ::       ids,ide, jds,jde, kds,kde<a name='60'>
+ INTEGER, INTENT(IN   )    ::       ims,ime, jms,jme, kms,kme<a name='61'>
+ INTEGER, INTENT(IN   )    ::       ips,ipe, jps,jpe, kps,kpe<a name='62'>
+<a name='63'>
+<font color=#447700>! Mandatory outputs for all quantitative schemes<a name='64'></font>
+ REAL,    DIMENSION( ims:ime,          jms:jme ), INTENT(  OUT) :: total_flashrate<a name='65'>
+<a name='66'>
+<font color=#447700>! Local variables<a name='67'></font>
+ REAL :: dA              <font color=#447700>! grid area dx*dy in km2<a name='68'></font>
+ REAL :: zkm             <font color=#447700>! AGL z in km<a name='69'></font>
+<a name='70'>
+ REAL, PARAMETER:: baseArea=1296. <font color=#447700>! base-case area, dx = 36 km<a name='71'></font>
+<a name='72'>
+ INTEGER :: i,k,j<a name='73'>
+<a name='74'>
+ CHARACTER (LEN=250) :: message<a name='75'>
+<a name='76'>
+<font color=#447700>!-----------------------------------------------------------------<a name='77'></font>
+<a name='78'>
+ dA = dx*dy/1E6<a name='79'>
+<a name='80'>
+ total_flashrate( ips:ipe,jps:jpe ) = 0.<a name='81'>
+<a name='82'>
+<font color=#447700>! Compute AGL heights in km<a name='83'></font>
+ jloop: DO j=jps,jpe<a name='84'>
+    iloop: DO i=ips,ipe<a name='85'>
+        IF ( t(i,kLNB(i,j),j) .lt. 273.15 .and. &amp;<a name='86'>
+            kLNB(i,j) .ge. kps .and. kLNB(i,j) .le. kpe ) THEN              <font color=#447700>! Cloud top must freeze<a name='87'></font>
+            zkm = ( z(i,kLNB(i,j),j) - ht(i,j) )/1E3 + cldtop_adjustment    <font color=#447700>! Compute AGL height in km<a name='88'></font>
+            IF ( zkm .gt. 0. ) THEN                                         <font color=#447700>! Must be above ground<a name='89'></font>
+              IF ( xland(i,j) .lt. 1.5 ) THEN<a name='90'>
+                total_flashrate(i,j) = 3.44E-5 * (zkm**4.9) /60.            <font color=#447700>! Continental equation<a name='91'></font>
+              ELSE<a name='92'>
+                total_flashrate(i,j) = 6.57E-6 * (zkm**4.9) /60.            <font color=#447700>! Marine equation (Michalon 99)<a name='93'></font>
+              ENDIF<a name='94'>
+            ENDIF<a name='95'>
+        ENDIF<a name='96'>
+    ENDDO iloop<a name='97'>
+ ENDDO jloop<a name='98'>
+<a name='99'>
+<font color=#447700>! Scale by areal ratio<a name='100'></font>
+ total_flashrate(ips:ipe,jps:jpe) = total_flashrate(ips:ipe,jps:jpe) * dA/baseArea<a name='101'>
+<a name='102'>
+ END SUBROUTINE ltng_cpmpr92z<a name='103'>
+<a name='104'>
+ END MODULE module_ltng_cpmpr92z<a name='105'>
+</pre></body></html>

@@ -1,0 +1,262 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#define WRF_PORT<a name='2'>
+#define MODAL_AERO<a name='3'>
+<A NAME='QNEG3'><A href='../../html_code/phys/module_cam_mp_qneg3.F.html#QNEG3' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='4'>
+<font color=#993300>subroutine </font><font color=#cc0000>qneg3</font> (subnam  ,idx     ,ncol    ,ncold   ,lver    ,lconst_beg  , &amp; <A href='../../call_to/QNEG3.html' TARGET='index'>1</A>,<A href='../../call_from/QNEG3.html' TARGET='index'>3</A><a name='5'>
+                  lconst_end       ,qmin    ,q       )<a name='6'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='7'></font>
+<font color=#447700>! <a name='8'></font>
+<font color=#447700>! Purpose: <a name='9'></font>
+<font color=#447700>! Check moisture and tracers for minimum value, reset any below<a name='10'></font>
+<font color=#447700>! minimum value to minimum value and return information to allow<a name='11'></font>
+<font color=#447700>! warning message to be printed. The global average is NOT preserved.<a name='12'></font>
+<font color=#447700>! <a name='13'></font>
+<font color=#447700>! Method: <a name='14'></font>
+<font color=#447700>! &lt;Describe the algorithm(s) used in the routine.&gt; <a name='15'></font>
+<font color=#447700>! &lt;Also include any applicable external references.&gt; <a name='16'></font>
+<font color=#447700>! <a name='17'></font>
+<font color=#447700>! Author: J. Rosinski<a name='18'></font>
+<font color=#447700>! <a name='19'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='20'></font>
+   use <A href='../../html_code/phys/module_cam_shr_kind_mod.F.html#SHR_KIND_MOD'>shr_kind_mod</A><A href='../../html_code/phys/module_cam_mp_qneg3.F.html#QNEG3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_KIND_MOD_13">, only: r8 =&gt; shr_kind_r8<a name='21'>
+#ifndef WRF_PORT<a name='22'>
+   use cam_logfile,  only: iulog<a name='23'>
+#else<a name='24'>
+   use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_qneg3.F.html#QNEG3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_32">, only: iulog<a name='25'>
+#endif<a name='26'>
+   implicit none<a name='27'>
+<a name='28'>
+<font color=#447700>!------------------------------Arguments--------------------------------<a name='29'></font>
+<font color=#447700>!<a name='30'></font>
+<font color=#447700>! Input arguments<a name='31'></font>
+<font color=#447700>!<a name='32'></font>
+   character*(*), intent(in) :: subnam <font color=#447700>! name of calling routine<a name='33'></font>
+<a name='34'>
+   integer, intent(in) :: idx          <font color=#447700>! chunk/latitude index<a name='35'></font>
+   integer, intent(in) :: ncol         <font color=#447700>! number of atmospheric columns<a name='36'></font>
+   integer, intent(in) :: ncold        <font color=#447700>! declared number of atmospheric columns<a name='37'></font>
+   integer, intent(in) :: lver         <font color=#447700>! number of vertical levels in column<a name='38'></font>
+   integer, intent(in) :: lconst_beg   <font color=#447700>! beginning constituent<a name='39'></font>
+   integer, intent(in) :: lconst_end   <font color=#447700>! ending    constituent<a name='40'></font>
+<a name='41'>
+   real(r8), intent(in) :: qmin(lconst_beg:lconst_end)      <font color=#447700>! Global minimum constituent concentration<a name='42'></font>
+<a name='43'>
+<font color=#447700>!<a name='44'></font>
+<font color=#447700>! Input/Output arguments<a name='45'></font>
+<font color=#447700>!<a name='46'></font>
+   real(r8), intent(inout) :: q(ncold,lver,lconst_beg:lconst_end) <font color=#447700>! moisture/tracer field<a name='47'></font>
+<font color=#447700>!<a name='48'></font>
+<font color=#447700>!---------------------------Local workspace-----------------------------<a name='49'></font>
+<font color=#447700>!<a name='50'></font>
+   integer indx(ncol,lver)  <font color=#447700>! array of indices of points &lt; qmin<a name='51'></font>
+   integer nval(lver)       <font color=#447700>! number of points &lt; qmin for 1 level<a name='52'></font>
+   integer nvals            <font color=#447700>! number of values found &lt; qmin<a name='53'></font>
+   integer nn<a name='54'>
+   integer iwtmp<a name='55'>
+   integer i,ii,k           <font color=#447700>! longitude, level indices<a name='56'></font>
+   integer m                <font color=#447700>! constituent index<a name='57'></font>
+   integer iw,kw            <font color=#447700>! i,k indices of worst violator<a name='58'></font>
+<a name='59'>
+   logical found            <font color=#447700>! true =&gt; at least 1 minimum violator found<a name='60'></font>
+<a name='61'>
+   real(r8) worst           <font color=#447700>! biggest violator<a name='62'></font>
+<font color=#447700>!<a name='63'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='64'></font>
+<font color=#447700>!<a name='65'></font>
+<a name='66'>
+   do m=lconst_beg,lconst_end<a name='67'>
+      nvals = 0<a name='68'>
+      found = .false.<a name='69'>
+      worst = 1.e35_r8<a name='70'>
+      iw = -1<a name='71'>
+<font color=#447700>!<a name='72'></font>
+<font color=#447700>! Test all field values for being less than minimum value. Set q = qmin<a name='73'></font>
+<font color=#447700>! for all such points. Trace offenders and identify worst one.<a name='74'></font>
+<font color=#447700>!<a name='75'></font>
+<font color=#447700>!DIR$ preferstream<a name='76'></font>
+      do k=1,lver<a name='77'>
+         nval(k) = 0<a name='78'>
+<font color=#447700>!DIR$ prefervector<a name='79'></font>
+         nn = 0<a name='80'>
+         do i=1,ncol<a name='81'>
+            if (q(i,k,m) &lt; qmin(m)) then<a name='82'>
+               nn = nn + 1<a name='83'>
+               indx(nn,k) = i<a name='84'>
+            end if<a name='85'>
+         end do<a name='86'>
+         nval(k) = nn<a name='87'>
+      end do<a name='88'>
+<a name='89'>
+      do k=1,lver<a name='90'>
+         if (nval(k) &gt; 0) then<a name='91'>
+            found = .true.<a name='92'>
+            nvals = nvals + nval(k)<a name='93'>
+            iwtmp = -1<a name='94'>
+<font color=#447700>!cdir nodep,altcode=loopcnt<a name='95'></font>
+            do ii=1,nval(k)<a name='96'>
+               i = indx(ii,k)<a name='97'>
+               if (q(i,k,m) &lt; worst) then<a name='98'>
+                  worst = q(i,k,m)<a name='99'>
+                  iwtmp = ii<a name='100'>
+               end if<a name='101'>
+            end do<a name='102'>
+            if (iwtmp /= -1 ) kw = k<a name='103'>
+            if (iwtmp /= -1 ) iw = indx(iwtmp,k)<a name='104'>
+<font color=#447700>!cdir nodep,altcode=loopcnt<a name='105'></font>
+            do ii=1,nval(k)<a name='106'>
+               i = indx(ii,k)<a name='107'>
+               q(i,k,m) = qmin(m)<a name='108'>
+            end do<a name='109'>
+         end if<a name='110'>
+      end do<a name='111'>
+      if (found .and. abs(worst)&gt;1.e-12_r8) then<a name='112'>
+         write(iulog,9000)subnam,m,idx,nvals,qmin(m),worst,iw,kw<a name='113'>
+#ifdef WRF_PORT<a name='114'>
+         call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_cam_mp_qneg3.F.html#QNEG3' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_524">(400,iulog)<a name='115'>
+#endif<a name='116'>
+      end if<a name='117'>
+   end do<a name='118'>
+<font color=#447700>!<a name='119'></font>
+   return<a name='120'>
+9000 format(' QNEG3 from ',a,':m=',i3,' lat/lchnk=',i5, &amp;<a name='121'>
+            ' Min. mixing ratio violated at ',i4,' points.  Reset to ', &amp;<a name='122'>
+            1p,e8.1,' Worst =',e8.1,' at i,k=',i4,i3)<a name='123'>
+end subroutine qneg3<a name='124'>
+<a name='125'>
+<a name='126'>
+<a name='127'>
+#if ( defined MODAL_AERO )<a name='128'>
+<A NAME='QNEG3_MODALX1'><A href='../../html_code/phys/module_cam_mp_qneg3.F.html#QNEG3_MODALX1' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='129'>
+<font color=#993300>subroutine </font><font color=#cc0000>qneg3_modalx1</font> (subnam  ,idx     ,ncol    ,ncold   ,lver    ,lconst_beg  , &amp;,<A href='../../call_from/QNEG3_MODALX1.html' TARGET='index'>3</A><a name='130'>
+                          lconst_end       ,qmin    ,q       ,qneg3_worst_thresh )<a name='131'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='132'></font>
+<font color=#447700>! <a name='133'></font>
+<font color=#447700>! Purpose: <a name='134'></font>
+<font color=#447700>! Check moisture and tracers for minimum value, reset any below<a name='135'></font>
+<font color=#447700>! minimum value to minimum value and return information to allow<a name='136'></font>
+<font color=#447700>! warning message to be printed. The global average is NOT preserved.<a name='137'></font>
+<font color=#447700>! <a name='138'></font>
+<font color=#447700>! Method: <a name='139'></font>
+<font color=#447700>! &lt;Describe the algorithm(s) used in the routine.&gt; <a name='140'></font>
+<font color=#447700>! &lt;Also include any applicable external references.&gt; <a name='141'></font>
+<font color=#447700>! <a name='142'></font>
+<font color=#447700>! Author: J. Rosinski<a name='143'></font>
+<font color=#447700>! <a name='144'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='145'></font>
+   use <A href='../../html_code/phys/module_cam_shr_kind_mod.F.html#SHR_KIND_MOD'>shr_kind_mod</A><A href='../../html_code/phys/module_cam_mp_qneg3.F.html#QNEG3_MODALX1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_KIND_MOD_14">, only: r8 =&gt; shr_kind_r8<a name='146'>
+#ifndef WRF_PORT<a name='147'>
+   use cam_logfile,  only: iulog<a name='148'>
+#else<a name='149'>
+   use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_mp_qneg3.F.html#QNEG3_MODALX1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_33">, only: iulog<a name='150'>
+#endif<a name='151'>
+   implicit none<a name='152'>
+<a name='153'>
+<font color=#447700>!------------------------------Arguments--------------------------------<a name='154'></font>
+<font color=#447700>!<a name='155'></font>
+<font color=#447700>! Input arguments<a name='156'></font>
+<font color=#447700>!<a name='157'></font>
+   character*(*), intent(in) :: subnam <font color=#447700>! name of calling routine<a name='158'></font>
+<a name='159'>
+   integer, intent(in) :: idx          <font color=#447700>! chunk/latitude index<a name='160'></font>
+   integer, intent(in) :: ncol         <font color=#447700>! number of atmospheric columns<a name='161'></font>
+   integer, intent(in) :: ncold        <font color=#447700>! declared number of atmospheric columns<a name='162'></font>
+   integer, intent(in) :: lver         <font color=#447700>! number of vertical levels in column<a name='163'></font>
+   integer, intent(in) :: lconst_beg   <font color=#447700>! beginning constituent<a name='164'></font>
+   integer, intent(in) :: lconst_end   <font color=#447700>! ending    constituent<a name='165'></font>
+<a name='166'>
+   real(r8), intent(in) :: qmin(lconst_beg:lconst_end)      <font color=#447700>! Global minimum constituent concentration<a name='167'></font>
+   real(r8), intent(in) :: qneg3_worst_thresh(lconst_beg:lconst_end)<a name='168'>
+                           <font color=#447700>! thresholds for reporting violators<a name='169'></font>
+<a name='170'>
+<font color=#447700>!<a name='171'></font>
+<font color=#447700>! Input/Output arguments<a name='172'></font>
+<font color=#447700>!<a name='173'></font>
+   real(r8), intent(inout) :: q(ncold,lver,lconst_beg:lconst_end) <font color=#447700>! moisture/tracer field<a name='174'></font>
+<font color=#447700>!<a name='175'></font>
+<font color=#447700>!---------------------------Local workspace-----------------------------<a name='176'></font>
+<font color=#447700>!<a name='177'></font>
+   integer indx(ncol,lver)  <font color=#447700>! array of indices of points &lt; qmin<a name='178'></font>
+   integer nval(lver)       <font color=#447700>! number of points &lt; qmin for 1 level<a name='179'></font>
+   integer nvals            <font color=#447700>! number of values found &lt; qmin<a name='180'></font>
+   integer nn<a name='181'>
+   integer iwtmp<a name='182'>
+   integer i,ii,k           <font color=#447700>! longitude, level indices<a name='183'></font>
+   integer m                <font color=#447700>! constituent index<a name='184'></font>
+   integer iw,kw            <font color=#447700>! i,k indices of worst violator<a name='185'></font>
+<a name='186'>
+   logical found            <font color=#447700>! true =&gt; at least 1 minimum violator found<a name='187'></font>
+<a name='188'>
+   real(r8) worst           <font color=#447700>! biggest violator<a name='189'></font>
+   real(r8) tmp_worst_thresh<a name='190'>
+<font color=#447700>!<a name='191'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='192'></font>
+<font color=#447700>!<a name='193'></font>
+<a name='194'>
+   do m=lconst_beg,lconst_end<a name='195'>
+      nvals = 0<a name='196'>
+      found = .false.<a name='197'>
+      worst = 1.e35_r8<a name='198'>
+      iw = -1<a name='199'>
+<font color=#447700>!<a name='200'></font>
+<font color=#447700>! Test all field values for being less than minimum value. Set q = qmin<a name='201'></font>
+<font color=#447700>! for all such points. Trace offenders and identify worst one.<a name='202'></font>
+<font color=#447700>!<a name='203'></font>
+<font color=#447700>!DIR$ preferstream<a name='204'></font>
+      do k=1,lver<a name='205'>
+         nval(k) = 0<a name='206'>
+<font color=#447700>!DIR$ prefervector<a name='207'></font>
+         nn = 0<a name='208'>
+         do i=1,ncol<a name='209'>
+            if (q(i,k,m) &lt; qmin(m)) then<a name='210'>
+               nn = nn + 1<a name='211'>
+               indx(nn,k) = i<a name='212'>
+            end if<a name='213'>
+         end do<a name='214'>
+         nval(k) = nn<a name='215'>
+      end do<a name='216'>
+<a name='217'>
+      do k=1,lver<a name='218'>
+         if (nval(k) &gt; 0) then<a name='219'>
+            found = .true.<a name='220'>
+            nvals = nvals + nval(k)<a name='221'>
+            iwtmp = -1<a name='222'>
+<font color=#447700>!cdir nodep,altcode=loopcnt<a name='223'></font>
+            do ii=1,nval(k)<a name='224'>
+               i = indx(ii,k)<a name='225'>
+               if (q(i,k,m) &lt; worst) then<a name='226'>
+                  worst = q(i,k,m)<a name='227'>
+                  iwtmp = ii<a name='228'>
+               end if<a name='229'>
+            end do<a name='230'>
+            if (iwtmp /= -1 ) kw = k<a name='231'>
+            if (iwtmp /= -1 ) iw = indx(iwtmp,k)<a name='232'>
+<font color=#447700>!cdir nodep,altcode=loopcnt<a name='233'></font>
+            do ii=1,nval(k)<a name='234'>
+               i = indx(ii,k)<a name='235'>
+               q(i,k,m) = qmin(m)<a name='236'>
+            end do<a name='237'>
+         end if<a name='238'>
+      end do<a name='239'>
+<a name='240'>
+      tmp_worst_thresh = 1.0e-12_r8<a name='241'>
+      if (qneg3_worst_thresh(m) &gt; 0.0_r8) &amp;<a name='242'>
+         tmp_worst_thresh = qneg3_worst_thresh(m)<a name='243'>
+<a name='244'>
+      if (found .and. abs(worst)&gt;tmp_worst_thresh) then<a name='245'>
+         write(iulog,9000)subnam,m,idx,nvals,qmin(m),worst,iw,kw<a name='246'>
+#ifdef WRF_PORT<a name='247'>
+         call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/phys/module_cam_mp_qneg3.F.html#QNEG3_MODALX1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_525">(400,iulog)<a name='248'>
+#endif<a name='249'>
+      end if<a name='250'>
+   end do<a name='251'>
+<font color=#447700>!<a name='252'></font>
+   return<a name='253'>
+9000 format(' QNEG3 from ',a,':m=',i3,' lat/lchnk=',i5, &amp;<a name='254'>
+            ' Min. mixing ratio violated at ',i4,' points.  Reset to ', &amp;<a name='255'>
+            1p,e8.1,' Worst =',e8.1,' at i,k=',i4,i3)<a name='256'>
+end subroutine qneg3_modalx1<a name='257'>
+#endif<a name='258'>
+<a name='259'>
+<a name='260'>
+<a name='261'>
+</pre></body></html>

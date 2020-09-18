@@ -1,0 +1,185 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#if ( HYBRID_COORD==1 )<a name='2'>
+#  define mu(...) (c1h(k)*XXPCXX(__VA_ARGS__)+c2h(k))<a name='3'>
+#  define XXPCXX(...) mu(__VA_ARGS__)<a name='4'>
+#endif<a name='5'>
+<a name='6'>
+<font color=#447700>!WRF:MEDIATION_LAYER:FIRE_MODEL<a name='7'></font>
+<font color=#447700>! Routines dealing with the atmosphere<a name='8'></font>
+<a name='9'>
+<A NAME='MODULE_FR_FIRE_ATM'><A href='../../html_code/phys/module_fr_fire_atm.F.html#MODULE_FR_FIRE_ATM' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='10'>
+<font color=#993300>module </font><font color=#cc0000>module_fr_fire_atm</font> <A href='../../call_to/MODULE_FR_FIRE_ATM.html' TARGET='index'>1</A><a name='11'>
+<a name='12'>
+use <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_fr_fire_atm.F.html#module_fr_fire_atm.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_67">, only: cp,xlv<a name='13'>
+use <A href='../../html_code/phys/module_fr_fire_util.F.html#MODULE_FR_FIRE_UTIL'>module_fr_fire_util</A><A href='../../html_code/phys/module_fr_fire_atm.F.html#module_fr_fire_atm.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_FR_FIRE_UTIL_1"><a name='14'>
+<a name='15'>
+contains<a name='16'>
+<a name='17'>
+<A NAME='FIRE_TENDENCY'><A href='../../html_code/phys/module_fr_fire_atm.F.html#FIRE_TENDENCY' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='18'>
+<font color=#993300>SUBROUTINE </font><font color=#cc0000>fire_tendency</font>( &amp; <A href='../../call_to/FIRE_TENDENCY.html' TARGET='index'>1</A>,<A href='../../call_from/FIRE_TENDENCY.html' TARGET='index'>4</A><a name='19'>
+    ids,ide, kds,kde, jds,jde,   &amp; <font color=#447700>! dimensions<a name='20'></font>
+    ims,ime, kms,kme, jms,jme,   &amp;<a name='21'>
+    its,ite, kts,kte, jts,jte,   &amp;<a name='22'>
+    grnhfx,grnqfx,canhfx,canqfx, &amp; <font color=#447700>! heat fluxes summed up to  atm grid <a name='23'></font>
+    alfg,alfc,z1can,             &amp; <font color=#447700>! coeffients, properties, geometry <a name='24'></font>
+    zs,z_at_w,dz8w,mu,c1h,c2h,rho, &amp;<a name='25'>
+    rthfrten,rqvfrten)             <font color=#447700>! theta and Qv tendencies <a name='26'></font>
+<a name='27'>
+<font color=#447700>! This routine is atmospheric physics <a name='28'></font>
+<font color=#447700>! it does NOT go into module_fr_fire_phys because it is not related to fire physical processes<a name='29'></font>
+<a name='30'>
+<font color=#447700>! --- this routine takes fire generated heat and moisture fluxes and<a name='31'></font>
+<font color=#447700>!     calculates their influence on the theta and water vapor <a name='32'></font>
+<font color=#447700>! --- note that these tendencies are valid at the Arakawa-A location<a name='33'></font>
+<a name='34'>
+   IMPLICIT NONE<a name='35'>
+<a name='36'>
+<font color=#447700>! --- incoming variables<a name='37'></font>
+<a name='38'>
+   INTEGER , INTENT(in) :: ids,ide, kds,kde, jds,jde, &amp;<a name='39'>
+                           ims,ime, kms,kme, jms,jme, &amp;<a name='40'>
+                           its,ite, kts,kte, jts,jte<a name='41'>
+<a name='42'>
+   REAL, INTENT(in), DIMENSION( ims:ime,jms:jme ) :: grnhfx,grnqfx  <font color=#447700>! W/m^2<a name='43'></font>
+   REAL, INTENT(in), DIMENSION( ims:ime,jms:jme ) :: canhfx,canqfx  <font color=#447700>! W/m^2<a name='44'></font>
+   REAL, INTENT(in), DIMENSION( ims:ime,jms:jme ) :: zs  <font color=#447700>! topography (m abv sealvl)<a name='45'></font>
+   REAL, INTENT(in), DIMENSION( ims:ime,jms:jme ) :: mu  <font color=#447700>! dry air mass (Pa)<a name='46'></font>
+   REAL, INTENT(in), DIMENSION( kms:kme         ) :: c1h, c2h <font color=#447700>! Hybrid coordinate weights<a name='47'></font>
+<a name='48'>
+   REAL, INTENT(in), DIMENSION( ims:ime,kms:kme,jms:jme ) :: z_at_w <font color=#447700>! m abv sealvl<a name='49'></font>
+   REAL, INTENT(in), DIMENSION( ims:ime,kms:kme,jms:jme ) :: dz8w   <font color=#447700>! dz across w-lvl<a name='50'></font>
+   REAL, INTENT(in), DIMENSION( ims:ime,kms:kme,jms:jme ) :: rho    <font color=#447700>! density<a name='51'></font>
+<a name='52'>
+   REAL, INTENT(in) :: alfg <font color=#447700>! extinction depth surface fire heat (m)<a name='53'></font>
+   REAL, INTENT(in) :: alfc <font color=#447700>! extinction depth crown  fire heat (m)<a name='54'></font>
+   REAL, INTENT(in) :: z1can    <font color=#447700>! height of crown fire heat release (m)<a name='55'></font>
+<a name='56'>
+<font color=#447700>! --- outgoing variables<a name='57'></font>
+<a name='58'>
+   REAL, INTENT(out), DIMENSION( ims:ime,kms:kme,jms:jme ) ::   &amp;<a name='59'>
+       rthfrten, &amp; <font color=#447700>! theta tendency from fire (in mass units)<a name='60'></font>
+       rqvfrten    <font color=#447700>! Qv tendency from fire (in mass units)<a name='61'></font>
+<font color=#447700>! --- local variables<a name='62'></font>
+<a name='63'>
+   INTEGER :: i,j,k<a name='64'>
+   INTEGER :: i_st,i_en, j_st,j_en, k_st,k_en<a name='65'>
+<a name='66'>
+   REAL :: cp_i<a name='67'>
+   REAL :: rho_i<a name='68'>
+   REAL :: xlv_i<a name='69'>
+   REAL :: z_w<a name='70'>
+   REAL :: fact_g, fact_c<a name='71'>
+   REAL :: alfg_i, alfc_i<a name='72'>
+<a name='73'>
+   REAL, DIMENSION( its:ite,kts:kte,jts:jte ) :: hfx,qfx<a name='74'>
+   <a name='75'>
+<font color=#447700>!!   character(len=128)::msg<a name='76'></font>
+<a name='77'>
+        do j=jts,jte<a name='78'>
+            do k=kts,min(kte+1,kde)<a name='79'>
+               do i=its,ite<a name='80'>
+                   rthfrten(i,k,j)=0.<a name='81'>
+                   rqvfrten(i,k,j)=0.<a name='82'>
+               enddo<a name='83'>
+            enddo<a name='84'>
+        enddo<a name='85'>
+<a name='86'>
+<a name='87'>
+<font color=#447700>! --- set some local constants<a name='88'></font>
+   <a name='89'>
+<a name='90'>
+   cp_i = 1./cp     <font color=#447700>! inverse of specific heat<a name='91'></font>
+   xlv_i = 1./xlv   <font color=#447700>! inverse of latent heat<a name='92'></font>
+   alfg_i = 1./alfg<a name='93'>
+   alfc_i = 1./alfc<a name='94'>
+<a name='95'>
+<font color=#447700>!!write(msg,'(8e11.3)')cp,cp_i,xlv,xlv_i,alfg,alfc,z1can<a name='96'></font>
+<font color=#447700>!!call message(msg)<a name='97'></font>
+<a name='98'>
+   call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_atm.F.html#FIRE_TENDENCY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_1">(its,ite,jts,jte,ims,ime,jms,jme,grnhfx,'fire_tendency:grnhfx')<a name='99'>
+   call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_2D_STATS'>print_2d_stats</A><A href='../../html_code/phys/module_fr_fire_atm.F.html#FIRE_TENDENCY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_2D_STATS_2">(its,ite,jts,jte,ims,ime,jms,jme,grnqfx,'fire_tendency:grnqfx')<a name='100'>
+<a name='101'>
+<font color=#447700>! --- set loop indicies : note that <a name='102'></font>
+<a name='103'>
+   i_st = MAX(its,ids+1)<a name='104'>
+   i_en = MIN(ite,ide-1)<a name='105'>
+   k_st = kts<a name='106'>
+   k_en = MIN(kte,kde-1)<a name='107'>
+   j_st = MAX(jts,jds+1)<a name='108'>
+   j_en = MIN(jte,jde-1)<a name='109'>
+<a name='110'>
+<font color=#447700>! --- distribute fluxes<a name='111'></font>
+<a name='112'>
+   DO j = j_st,j_en<a name='113'>
+      DO k = k_st,k_en<a name='114'>
+         DO i = i_st,i_en<a name='115'>
+<a name='116'>
+            <font color=#447700>! --- set z (in meters above ground)<a name='117'></font>
+<a name='118'>
+            z_w = z_at_w(i,k,j) - zs(i,j) <font color=#447700>! should be zero when k=k_st<a name='119'></font>
+<a name='120'>
+            <font color=#447700>! --- heat flux<a name='121'></font>
+<a name='122'>
+            fact_g = cp_i * EXP( - alfg_i * z_w )<a name='123'>
+            IF ( z_w &lt; z1can ) THEN<a name='124'>
+               fact_c = cp_i<a name='125'>
+            ELSE<a name='126'>
+               fact_c = cp_i * EXP( - alfc_i * (z_w - z1can) )<a name='127'>
+            END IF<a name='128'>
+            hfx(i,k,j) = fact_g * grnhfx(i,j) + fact_c * canhfx(i,j) <a name='129'>
+<a name='130'>
+<font color=#447700>!!            write(msg,2)i,k,j,z_w,grnhfx(i,j),hfx(i,k,j)<a name='131'></font>
+<font color=#447700>!!2           format('hfx:',3i4,6e11.3)<a name='132'></font>
+<font color=#447700>!!            call message(msg)<a name='133'></font>
+<a name='134'>
+            <font color=#447700>! --- vapor flux<a name='135'></font>
+<a name='136'>
+            fact_g = xlv_i * EXP( - alfg_i * z_w )<a name='137'>
+            IF (z_w &lt; z1can) THEN<a name='138'>
+               fact_c = xlv_i<a name='139'>
+            ELSE<a name='140'>
+               fact_c = xlv_i * EXP( - alfc_i * (z_w - z1can) )<a name='141'>
+            END IF<a name='142'>
+            qfx(i,k,j) = fact_g * grnqfx(i,j) + fact_c * canqfx(i,j) <a name='143'>
+            <a name='144'>
+<font color=#447700>!!            if(hfx(i,k,j).ne.0. .or. qfx(i,k,j) .ne. 0.)then<a name='145'></font>
+<font color=#447700>!!                write(msg,1)i,k,j,hfx(i,k,j),qfx(i,k,j)<a name='146'></font>
+<font color=#447700>!!1               format('tend:',3i6,2e11.3)<a name='147'></font>
+<font color=#447700>!!                call message(msg)<a name='148'></font>
+<font color=#447700>!            endif<a name='149'></font>
+<a name='150'>
+         END DO<a name='151'>
+      END DO<a name='152'>
+   END DO<a name='153'>
+<a name='154'>
+<font color=#447700>! --- add flux divergence to tendencies<a name='155'></font>
+<font color=#447700>!<a name='156'></font>
+<font color=#447700>!   multiply by dry air mass (mu) to eliminate the need to <a name='157'></font>
+<font color=#447700>!   call sr. calculate_phy_tend (in dyn_em/module_em.F)<a name='158'></font>
+<a name='159'>
+   DO j = j_st,j_en<a name='160'>
+      DO k = k_st,k_en-1<a name='161'>
+         DO i = i_st,i_en<a name='162'>
+<a name='163'>
+            rho_i = 1./rho(i,k,j)<a name='164'>
+<a name='165'>
+            rthfrten(i,k,j) = - mu(i,j) * rho_i * (hfx(i,k+1,j)-hfx(i,k,j)) / dz8w(i,k,j)<a name='166'>
+            rqvfrten(i,k,j) = - mu(i,j) * rho_i * (qfx(i,k+1,j)-qfx(i,k,j)) / dz8w(i,k,j)<a name='167'>
+<a name='168'>
+         END DO<a name='169'>
+      END DO<a name='170'>
+   END DO<a name='171'>
+<a name='172'>
+   call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_3D_STATS'>print_3d_stats</A><A href='../../html_code/phys/module_fr_fire_atm.F.html#FIRE_TENDENCY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_3D_STATS_1">(its,ite,kts,kte,jts,jte,ims,ime,kms,kme,jms,jme,rthfrten,'fire_tendency:rthfrten')<a name='173'>
+   call <A href='../../html_code/phys/module_fr_fire_util.F.html#PRINT_3D_STATS'>print_3d_stats</A><A href='../../html_code/phys/module_fr_fire_atm.F.html#FIRE_TENDENCY' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PRINT_3D_STATS_2">(its,ite,kts,kte,jts,jte,ims,ime,kms,kme,jms,jme,rqvfrten,'fire_tendency:rqvfrten')<a name='174'>
+<a name='175'>
+   RETURN<a name='176'>
+<a name='177'>
+END SUBROUTINE fire_tendency<a name='178'>
+<a name='179'>
+<font color=#447700>!<a name='180'></font>
+<font color=#447700>!***<a name='181'></font>
+<font color=#447700>!<a name='182'></font>
+<a name='183'>
+end module module_fr_fire_atm<a name='184'>
+</pre></body></html>

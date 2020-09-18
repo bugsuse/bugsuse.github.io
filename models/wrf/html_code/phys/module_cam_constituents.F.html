@@ -1,0 +1,482 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+#define WRF_PORT<a name='2'>
+#define MODAL_AERO<a name='3'>
+<font color=#447700>! Updated to CESM1.0.3 (CAM5.1.01) by Balwinder.Singh@pnnl.gov<a name='4'></font>
+<A NAME='CONSTITUENTS'><A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='5'>
+<font color=#993300>module </font><font color=#cc0000>constituents</font> <A href='../../call_to/CONSTITUENTS.html' TARGET='index'>23</A>,<A href='../../call_from/CONSTITUENTS.html' TARGET='index'>3</A><a name='6'>
+<a name='7'>
+<font color=#447700>!----------------------------------------------------------------------------------------------<a name='8'></font>
+<font color=#447700>! <a name='9'></font>
+<font color=#447700>! Purpose: Contains data and functions for manipulating advected and non-advected constituents.<a name='10'></font>
+<font color=#447700>!<a name='11'></font>
+<font color=#447700>! Revision history:<a name='12'></font>
+<font color=#447700>!             B.A. Boville    Original version<a name='13'></font>
+<font color=#447700>! June 2003   P. Rasch        Add wet/dry m.r. specifier<a name='14'></font>
+<font color=#447700>! 2004-08-28  B. Eaton        Add query function to allow turning off the default CAM output of<a name='15'></font>
+<font color=#447700>!                             constituents so that chemistry module can make the outfld calls.<a name='16'></font>
+<font color=#447700>!                             Allow cnst_get_ind to return without aborting when constituent not<a name='17'></font>
+<font color=#447700>!                             found.<a name='18'></font>
+<font color=#447700>! 2006-10-31  B. Eaton        Remove 'non-advected' constituent functionality.<a name='19'></font>
+<font color=#447700>!----------------------------------------------------------------------------------------------<a name='20'></font>
+  use <A href='../../html_code/phys/module_cam_shr_kind_mod.F.html#SHR_KIND_MOD'>shr_kind_mod</A><A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SHR_KIND_MOD_3">, only: r8 =&gt; shr_kind_r8<a name='21'>
+  use <A href='../../html_code/phys/module_cam_physconst.F.html#PHYSCONST'>physconst</A><A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PHYSCONST_3">,    only: r_universal<a name='22'>
+<a name='23'>
+#ifndef WRF_PORT <a name='24'>
+  use spmd_utils,   only: masterproc<a name='25'>
+  use abortutils,   only: endrun<a name='26'>
+  use cam_logfile,  only: iulog<a name='27'>
+#else<a name='28'>
+  use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_constituents.F.html#CONSTITUENTS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_9">,   only: masterproc,endrun,iulog,pcnst =&gt;pcnst_runtime<a name='29'>
+#endif<a name='30'>
+  implicit none<a name='31'>
+  private<a name='32'>
+  save<a name='33'>
+<font color=#447700>!<a name='34'></font>
+<font color=#447700>! Public interfaces<a name='35'></font>
+<font color=#447700>!<a name='36'></font>
+  public cnst_add             <font color=#447700>! add a constituent to the list of advected constituents<a name='37'></font>
+  public cnst_num_avail       <font color=#447700>! returns the number of available slots in the constituent array<a name='38'></font>
+  public cnst_get_ind         <font color=#447700>! get the index of a constituent<a name='39'></font>
+  public cnst_get_type_byind  <font color=#447700>! get the type of a constituent<a name='40'></font>
+  public cnst_get_type_byname <font color=#447700>! get the type of a constituent<a name='41'></font>
+  public cnst_read_iv         <font color=#447700>! query whether constituent initial values are read from initial file<a name='42'></font>
+  public cnst_chk_dim         <font color=#447700>! check that number of constituents added equals dimensions (pcnst)<a name='43'></font>
+  public cnst_cam_outfld      <font color=#447700>! Returns true if default CAM output was specified in the cnst_add calls.<a name='44'></font>
+<a name='45'>
+<font color=#447700>! Public data<a name='46'></font>
+#ifndef WRF_PORT <a name='47'>
+  integer, parameter, public :: pcnst  = PCNST      <font color=#447700>! number of advected constituents (including water vapor)<a name='48'></font>
+<a name='49'>
+  character(len=16), public :: cnst_name(pcnst)     <font color=#447700>! constituent names<a name='50'></font>
+  character(len=128),public :: cnst_longname(pcnst) <font color=#447700>! long name of constituents<a name='51'></font>
+#else<a name='52'>
+  character(len=16),allocatable, public :: cnst_name(:)     <font color=#447700>! constituent names<a name='53'></font>
+  character(len=128),allocatable,public :: cnst_longname(:) <font color=#447700>! long name of constituents<a name='54'></font>
+#endif<a name='55'>
+<a name='56'>
+<font color=#447700>! Namelist variables<a name='57'></font>
+  logical, public :: readtrace = .true.             <font color=#447700>! true =&gt; obtain initial tracer data from IC file<a name='58'></font>
+<a name='59'>
+<font color=#447700>!<a name='60'></font>
+<font color=#447700>! Constants for each tracer<a name='61'></font>
+#ifndef WRF_PORT  <a name='62'>
+  real(r8),    public :: cnst_cp  (pcnst)          <font color=#447700>! specific heat at constant pressure (J/kg/K)<a name='63'></font>
+  real(r8),    public :: cnst_cv  (pcnst)          <font color=#447700>! specific heat at constant volume (J/kg/K)<a name='64'></font>
+  real(r8),    public :: cnst_mw  (pcnst)          <font color=#447700>! molecular weight (kg/kmole)<a name='65'></font>
+  character*3, public :: cnst_type(pcnst)          <font color=#447700>! wet or dry mixing ratio<a name='66'></font>
+  real(r8),    public :: cnst_rgas(pcnst)          <font color=#447700>! gas constant ()<a name='67'></font>
+  real(r8),    public :: qmin     (pcnst)          <font color=#447700>! minimum permitted constituent concentration (kg/kg)<a name='68'></font>
+  real(r8),    public :: qmincg   (pcnst)          <font color=#447700>! for backward compatibility only<a name='69'></font>
+  logical,     public :: cnst_fixed_ubc(pcnst) = .false.  <font color=#447700>! upper bndy condition = fixed ?<a name='70'></font>
+#else<a name='71'>
+real(r8),      allocatable, public :: cnst_cp  (:)          <font color=#447700>! specific heat at constant pressure (J/kg/K)<a name='72'></font>
+  real(r8),    allocatable, public :: cnst_cv  (:)          <font color=#447700>! specific heat at constant volume (J/kg/K)<a name='73'></font>
+  real(r8),    allocatable, public :: cnst_mw  (:)          <font color=#447700>! molecular weight (kg/kmole)<a name='74'></font>
+  character*3, allocatable, public :: cnst_type(:)          <font color=#447700>! wet or dry mixing ratio<a name='75'></font>
+  real(r8),    allocatable, public :: cnst_rgas(:)          <font color=#447700>! gas constant ()<a name='76'></font>
+  real(r8),    allocatable, public :: qmin     (:)          <font color=#447700>! minimum permitted constituent concentration (kg/kg)<a name='77'></font>
+  real(r8),    allocatable, public :: qmincg   (:)          <font color=#447700>! for backward compatibility only<a name='78'></font>
+  logical,     allocatable, public :: cnst_fixed_ubc(:)     <font color=#447700>! upper bndy condition = fixed ?<a name='79'></font>
+#endif<a name='80'>
+<a name='81'>
+<font color=#447700>!++bee - temporary... These names should be declared in the module that makes the addfld and outfld calls.<a name='82'></font>
+<font color=#447700>! Lists of tracer names and diagnostics<a name='83'></font>
+#ifndef WRF_PORT  <a name='84'>
+   character(len=16), public :: apcnst    (pcnst)   <font color=#447700>! constituents after physics  (FV core only)<a name='85'></font>
+   character(len=16), public :: bpcnst    (pcnst)   <font color=#447700>! constituents before physics (FV core only)<a name='86'></font>
+   character(len=16), public :: hadvnam   (pcnst)   <font color=#447700>! names of horizontal advection tendencies<a name='87'></font>
+   character(len=16), public :: vadvnam   (pcnst)   <font color=#447700>! names of vertical advection tendencies<a name='88'></font>
+   character(len=16), public :: dcconnam  (pcnst)   <font color=#447700>! names of convection tendencies<a name='89'></font>
+   character(len=16), public :: fixcnam   (pcnst)   <font color=#447700>! names of species slt fixer tendencies<a name='90'></font>
+   character(len=16), public :: tendnam   (pcnst)   <font color=#447700>! names of total tendencies of species<a name='91'></font>
+   character(len=16), public :: ptendnam  (pcnst)   <font color=#447700>! names of total physics tendencies of species<a name='92'></font>
+   character(len=16), public :: dmetendnam(pcnst)   <font color=#447700>! names of dme adjusted tracers (FV)<a name='93'></font>
+   character(len=16), public :: sflxnam   (pcnst)   <font color=#447700>! names of surface fluxes of species<a name='94'></font>
+   character(len=16), public :: tottnam   (pcnst)   <font color=#447700>! names for horz + vert + fixer tendencies<a name='95'></font>
+#else<a name='96'>
+   character(len=16), allocatable, public :: apcnst    (:)   <font color=#447700>! constituents after physics  (FV core only)<a name='97'></font>
+   character(len=16), allocatable, public :: bpcnst    (:)   <font color=#447700>! constituents before physics (FV core only)<a name='98'></font>
+   character(len=16), allocatable, public :: hadvnam   (:)   <font color=#447700>! names of horizontal advection tendencies<a name='99'></font>
+   character(len=16), allocatable, public :: vadvnam   (:)   <font color=#447700>! names of vertical advection tendencies<a name='100'></font>
+   character(len=16), allocatable, public :: dcconnam  (:)   <font color=#447700>! names of convection tendencies<a name='101'></font>
+   character(len=16), allocatable, public :: fixcnam   (:)   <font color=#447700>! names of species slt fixer tendencies<a name='102'></font>
+   character(len=16), allocatable, public :: tendnam   (:)   <font color=#447700>! names of total tendencies of species<a name='103'></font>
+   character(len=16), allocatable, public :: ptendnam  (:)   <font color=#447700>! names of total physics tendencies of species<a name='104'></font>
+   character(len=16), allocatable, public :: dmetendnam(:)   <font color=#447700>! names of dme adjusted tracers (FV)<a name='105'></font>
+   character(len=16), allocatable, public :: sflxnam   (:)   <font color=#447700>! names of surface fluxes of species<a name='106'></font>
+   character(len=16), allocatable, public :: tottnam   (:)   <font color=#447700>! names for horz + vert + fixer tendencies<a name='107'></font>
+#endif<a name='108'>
+<a name='109'>
+<font color=#447700>! Private data<a name='110'></font>
+<a name='111'>
+  integer :: padv = 0                      <font color=#447700>! index pointer to last advected tracer<a name='112'></font>
+#ifndef WRF_PORT<a name='113'>
+  logical :: read_init_vals(pcnst)         <font color=#447700>! true =&gt; read initial values from initial file<a name='114'></font>
+  logical :: cam_outfld_(pcnst)            <font color=#447700>! true  =&gt; default CAM output of constituents in kg/kg<a name='115'></font>
+                                           <font color=#447700>! false =&gt; chemistry is responsible for making outfld<a name='116'></font>
+                                           <font color=#447700>!          calls for constituents<a name='117'></font>
+#else<a name='118'>
+  logical, allocatable :: read_init_vals(:)         <font color=#447700>! true =&gt; read initial values from initial file<a name='119'></font>
+  logical, allocatable :: cam_outfld_(:)            <font color=#447700>! true  =&gt; default CAM output of constituents in kg/kg<a name='120'></font>
+                                           <font color=#447700>! false =&gt; chemistry is responsible for making outfld<a name='121'></font>
+                                           <font color=#447700>!          calls for constituents<a name='122'></font>
+#endif<a name='123'>
+<a name='124'>
+<font color=#447700>!==============================================================================================<a name='125'></font>
+CONTAINS<a name='126'>
+<font color=#447700>!==============================================================================================<a name='127'></font>
+<a name='128'>
+<A NAME='CNST_ADD'><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_ADD' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='129'>
+  <font color=#993300>subroutine </font><font color=#cc0000>cnst_add</font> (name, mwc, cpc, qminc, &amp; <A href='../../call_to/CNST_ADD.html' TARGET='index'>12</A>,<A href='../../call_from/CNST_ADD.html' TARGET='index'>2</A><a name='130'>
+                       ind, longname, readiv, mixtype, cam_outfld, fixed_ubc)<a name='131'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='132'></font>
+<font color=#447700>! <a name='133'></font>
+<font color=#447700>! Purpose: Register a constituent to be advected by the large scale winds and transported by<a name='134'></font>
+<font color=#447700>!          subgrid scale processes.<a name='135'></font>
+<font color=#447700>!<a name='136'></font>
+<font color=#447700>!---------------------------------------------------------------------------------<a name='137'></font>
+<font color=#447700>!<a name='138'></font>
+    character(len=*), intent(in) :: &amp;<a name='139'>
+       name      <font color=#447700>! constituent name used as variable name in history file output (8 char max)<a name='140'></font>
+    real(r8),intent(in)    :: mwc    <font color=#447700>! constituent molecular weight (kg/kmol)<a name='141'></font>
+    real(r8),intent(in)    :: cpc    <font color=#447700>! constituent specific heat at constant pressure (J/kg/K)<a name='142'></font>
+    real(r8),intent(in)    :: qminc  <font color=#447700>! minimum value of mass mixing ratio (kg/kg)<a name='143'></font>
+                                     <font color=#447700>! normally 0., except water 1.E-12, for radiation.<a name='144'></font>
+    integer, intent(out)   :: ind    <font color=#447700>! global constituent index (in q array)<a name='145'></font>
+<a name='146'>
+    character(len=*), intent(in), optional :: &amp;<a name='147'>
+       longname    <font color=#447700>! value for long_name attribute in netcdf output (128 char max, defaults to name)<a name='148'></font>
+    logical,          intent(in), optional :: &amp;<a name='149'>
+       readiv      <font color=#447700>! true =&gt; read initial values from initial file (default: true)<a name='150'></font>
+    character(len=*), intent(in), optional :: &amp;<a name='151'>
+       mixtype     <font color=#447700>! mixing ratio type (dry, wet)<a name='152'></font>
+    logical,          intent(in), optional :: &amp;<a name='153'>
+       cam_outfld  <font color=#447700>! true =&gt; default CAM output of constituent in kg/kg<a name='154'></font>
+    logical,          intent(in), optional :: &amp;<a name='155'>
+       fixed_ubc <font color=#447700>! true =&gt; const has a fixed upper bndy condition<a name='156'></font>
+<a name='157'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='158'></font>
+#ifdef WRF_PORT<a name='159'>
+    <font color=#447700>!Allocate local arrays    <a name='160'></font>
+    if(.NOT. allocated(read_init_vals)) allocate(read_init_vals(pcnst))<a name='161'>
+    if(.NOT. allocated(cam_outfld_)) allocate(cam_outfld_(pcnst))<a name='162'>
+#endif<a name='163'>
+<font color=#447700>! set tracer index and check validity, advected tracer<a name='164'></font>
+    padv = padv+1<a name='165'>
+    ind  = padv<a name='166'>
+    if (padv &gt; pcnst) then<a name='167'>
+       write(iulog,*) 'CNST_ADD: advected tracer index greater than pcnst = ', pcnst<a name='168'>
+#ifdef WRF_PORT<a name='169'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_ADD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_580">(iulog)<a name='170'>
+#endif<a name='171'>
+       call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_ADD' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_8"><a name='172'>
+    end if<a name='173'>
+<a name='174'>
+<font color=#447700>! set tracer name and constants<a name='175'></font>
+    cnst_name(ind) = name<a name='176'>
+    if ( present(longname) )then<a name='177'>
+       cnst_longname(ind) = longname<a name='178'>
+    else<a name='179'>
+       cnst_longname(ind) = name<a name='180'>
+    end if<a name='181'>
+<a name='182'>
+<font color=#447700>! set whether to read initial values from initial file<a name='183'></font>
+    if ( present(readiv) ) then<a name='184'>
+       read_init_vals(ind) = readiv<a name='185'>
+    else<a name='186'>
+       read_init_vals(ind) = readtrace<a name='187'>
+    end if<a name='188'>
+<a name='189'>
+<font color=#447700>! set constituent mixing ratio type<a name='190'></font>
+    if ( present(mixtype) )then<a name='191'>
+       cnst_type(ind) = mixtype<a name='192'>
+    else<a name='193'>
+       cnst_type(ind) = 'wet'<a name='194'>
+    end if<a name='195'>
+<a name='196'>
+<font color=#447700>! set outfld type <a name='197'></font>
+<font color=#447700>! (false: the module declaring the constituent is responsible for outfld calls)<a name='198'></font>
+    if ( present(cam_outfld) ) then<a name='199'>
+       cam_outfld_(ind) = cam_outfld<a name='200'>
+    else<a name='201'>
+       cam_outfld_(ind) = .true.<a name='202'>
+    end if<a name='203'>
+<a name='204'>
+<font color=#447700>! set upper boundary condition type<a name='205'></font>
+    if ( present(fixed_ubc) ) then<a name='206'>
+       cnst_fixed_ubc(ind) = fixed_ubc<a name='207'>
+    else<a name='208'>
+       cnst_fixed_ubc(ind) = .false.<a name='209'>
+    end if<a name='210'>
+<a name='211'>
+    cnst_cp  (ind) = cpc<a name='212'>
+    cnst_mw  (ind) = mwc<a name='213'>
+    qmin     (ind) = qminc<a name='214'>
+    qmincg   (ind) = qminc<a name='215'>
+    if (ind == 1) qmincg = 0._r8  <font color=#447700>! This crap is replicate what was there before ****<a name='216'></font>
+<a name='217'>
+    cnst_rgas(ind) = r_universal * mwc<a name='218'>
+    cnst_cv  (ind) = cpc - cnst_rgas(ind)<a name='219'>
+<a name='220'>
+    return<a name='221'>
+  end subroutine cnst_add<a name='222'>
+<a name='223'>
+<font color=#447700>!==============================================================================<a name='224'></font>
+<a name='225'>
+<A NAME='CNST_NUM_AVAIL'><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_NUM_AVAIL' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='226'>
+  <font color=#993300>function </font><font color=#cc0000>cnst_num_avail</font>()<a name='227'>
+<a name='228'>
+     <font color=#447700>! return number of available slots in the constituent array<a name='229'></font>
+<a name='230'>
+     integer cnst_num_avail<a name='231'>
+<a name='232'>
+     cnst_num_avail = pcnst - padv<a name='233'>
+<a name='234'>
+  end function cnst_num_avail<a name='235'>
+<a name='236'>
+<font color=#447700>!==============================================================================<a name='237'></font>
+<a name='238'>
+<A NAME='CNST_GET_IND'><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_IND' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='239'>
+  <font color=#993300>subroutine </font><font color=#cc0000>cnst_get_ind</font> (name, ind, abort) <A href='../../call_to/CNST_GET_IND.html' TARGET='index'>22</A>,<A href='../../call_from/CNST_GET_IND.html' TARGET='index'>5</A><a name='240'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='241'></font>
+<font color=#447700>! <a name='242'></font>
+<font color=#447700>! Purpose: Get the index of a constituent <a name='243'></font>
+<font color=#447700>! <a name='244'></font>
+<font color=#447700>! Author:  B.A. Boville<a name='245'></font>
+<font color=#447700>! <a name='246'></font>
+#ifdef WRF_PORT<a name='247'>
+    use <A href='../../html_code/phys/module_cam_support.F.html#MODULE_CAM_SUPPORT'>module_cam_support</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_IND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CAM_SUPPORT_10">, only: lower_case, pcnst_runtime<a name='248'>
+#endif<a name='249'>
+<font color=#447700>!-----------------------------Arguments---------------------------------<a name='250'></font>
+<font color=#447700>!<a name='251'></font>
+    character(len=*),  intent(in)  :: name  <font color=#447700>! constituent name<a name='252'></font>
+    integer,           intent(out) :: ind   <font color=#447700>! global constituent index (in q array)<a name='253'></font>
+    logical, optional, intent(in)  :: abort <font color=#447700>! optional flag controlling abort<a name='254'></font>
+<a name='255'>
+<font color=#447700>!---------------------------Local workspace-----------------------------<a name='256'></font>
+    integer :: m                                   <font color=#447700>! tracer index<a name='257'></font>
+    logical :: abort_on_error<a name='258'>
+#ifdef WRF_PORT<a name='259'>
+    character(len=32) :: name_in, name_in_lc, name_cnst_lc<a name='260'>
+    integer           :: idone<a name='261'>
+#endif<a name='262'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='263'></font>
+<a name='264'>
+<font color=#447700>! Find tracer name in list<a name='265'></font>
+#ifndef WRF_PORT<a name='266'>
+    do m = 1, pcnst<a name='267'>
+       if (name == cnst_name(m)) then<a name='268'>
+          ind  = m<a name='269'>
+          return<a name='270'>
+       end if<a name='271'>
+    end do<a name='272'>
+#else<a name='273'>
+    name_in = name<a name='274'>
+    call <A href='../../html_code/phys/module_cam_support.F.html#LOWER_CASE'>lower_case</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_IND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LOWER_CASE_9">( name_in, name_in_lc )<a name='275'>
+    idone = 0<a name='276'>
+    do while (idone &lt; 2)<a name='277'>
+       do m = 1, pcnst_runtime<a name='278'>
+          call <A href='../../html_code/phys/module_cam_support.F.html#LOWER_CASE'>lower_case</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_IND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LOWER_CASE_10">( cnst_name(m), name_cnst_lc )<a name='279'>
+          if (name_in_lc == name_cnst_lc) then<a name='280'>
+             ind = m<a name='281'>
+             return<a name='282'>
+          end if<a name='283'>
+       end do<a name='284'>
+       idone = idone + 1<a name='285'>
+       <font color=#447700>! if name='h2so4' and was not found, try name='sulf'<a name='286'></font>
+       if (name_in_lc == 'h2so4') then<a name='287'>
+          name_in_lc = 'sulf'<a name='288'>
+       else<a name='289'>
+          idone = 2<a name='290'>
+       end if<a name='291'>
+    end do <font color=#447700>! while (idone &lt; 2)<a name='292'></font>
+#endif<a name='293'>
+<font color=#447700>! Unrecognized name<a name='294'></font>
+    abort_on_error = .true.<a name='295'>
+    if ( present(abort) ) abort_on_error = abort<a name='296'>
+<a name='297'>
+    if ( abort_on_error ) then<a name='298'>
+       write(iulog,*) 'CNST_GET_IND, name:', name,  ' not found in list:', cnst_name(:)<a name='299'>
+#ifdef WRF_PORT<a name='300'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_IND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_581">(iulog)<a name='301'>
+#endif<a name='302'>
+       call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_IND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_9">('CNST_GET_IND: name not found')<a name='303'>
+    end if<a name='304'>
+<a name='305'>
+<font color=#447700>! error return<a name='306'></font>
+    ind = -1<a name='307'>
+<a name='308'>
+  end subroutine cnst_get_ind<a name='309'>
+<a name='310'>
+<font color=#447700>!==============================================================================================<a name='311'></font>
+<a name='312'>
+<A NAME='CNST_GET_TYPE_BYIND'><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_TYPE_BYIND' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='313'>
+  character*3 <font color=#993300>function </font><font color=#cc0000>cnst_get_type_byind</font> (ind),<A href='../../call_from/CNST_GET_TYPE_BYIND.html' TARGET='index'>2</A><a name='314'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='315'></font>
+<font color=#447700>! <a name='316'></font>
+<font color=#447700>! Purpose: Get the type of a constituent <a name='317'></font>
+<font color=#447700>! <a name='318'></font>
+<font color=#447700>! Method: <a name='319'></font>
+<font color=#447700>! &lt;Describe the algorithm(s) used in the routine.&gt; <a name='320'></font>
+<font color=#447700>! &lt;Also include any applicable external references.&gt; <a name='321'></font>
+<font color=#447700>! <a name='322'></font>
+<font color=#447700>! Author:  P. J. Rasch<a name='323'></font>
+<font color=#447700>! <a name='324'></font>
+<font color=#447700>!-----------------------------Arguments---------------------------------<a name='325'></font>
+<font color=#447700>!<a name='326'></font>
+    integer, intent(in)   :: ind    <font color=#447700>! global constituent index (in q array)<a name='327'></font>
+<a name='328'>
+<font color=#447700>!---------------------------Local workspace-----------------------------<a name='329'></font>
+    integer :: m                                   <font color=#447700>! tracer index<a name='330'></font>
+<a name='331'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='332'></font>
+<a name='333'>
+    if (ind.le.pcnst) then<a name='334'>
+       cnst_get_type_byind = cnst_type(ind)<a name='335'>
+    else<a name='336'>
+       <font color=#447700>! Unrecognized name<a name='337'></font>
+       write(iulog,*) 'CNST_GET_TYPE_BYIND, ind:', ind<a name='338'>
+#ifdef WRF_PORT<a name='339'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_TYPE_BYIND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_582">(iulog)<a name='340'>
+#endif<a name='341'>
+       call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_TYPE_BYIND' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_10"><a name='342'>
+    endif<a name='343'>
+<a name='344'>
+<a name='345'>
+  end function cnst_get_type_byind<a name='346'>
+<a name='347'>
+<font color=#447700>!==============================================================================================<a name='348'></font>
+<a name='349'>
+<A NAME='CNST_GET_TYPE_BYNAME'><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_TYPE_BYNAME' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='350'>
+  character*3 <font color=#993300>function </font><font color=#cc0000>cnst_get_type_byname</font> (name),<A href='../../call_from/CNST_GET_TYPE_BYNAME.html' TARGET='index'>2</A><a name='351'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='352'></font>
+<font color=#447700>! <a name='353'></font>
+<font color=#447700>! Purpose: Get the type of a constituent <a name='354'></font>
+<font color=#447700>! <a name='355'></font>
+<font color=#447700>! Method: <a name='356'></font>
+<font color=#447700>! &lt;Describe the algorithm(s) used in the routine.&gt; <a name='357'></font>
+<font color=#447700>! &lt;Also include any applicable external references.&gt; <a name='358'></font>
+<font color=#447700>! <a name='359'></font>
+<font color=#447700>! Author:  P. J. Rasch<a name='360'></font>
+<font color=#447700>! <a name='361'></font>
+<font color=#447700>!-----------------------------Arguments---------------------------------<a name='362'></font>
+<font color=#447700>!<a name='363'></font>
+    character(len=*), intent(in) :: name <font color=#447700>! constituent name<a name='364'></font>
+<a name='365'>
+<font color=#447700>!---------------------------Local workspace-----------------------------<a name='366'></font>
+    integer :: m                                   <font color=#447700>! tracer index<a name='367'></font>
+<a name='368'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='369'></font>
+<a name='370'>
+    do m = 1, pcnst<a name='371'>
+       if (name == cnst_name(m)) then<a name='372'>
+          cnst_get_type_byname = cnst_type(m)<a name='373'>
+          return<a name='374'>
+       end if<a name='375'>
+    end do<a name='376'>
+<a name='377'>
+<font color=#447700>! Unrecognized name<a name='378'></font>
+    write(iulog,*) 'CNST_GET_TYPE_BYNAME, name:', name,  ' not found in list:', cnst_name(:)<a name='379'>
+#ifdef WRF_PORT<a name='380'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_TYPE_BYNAME' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_583">(iulog)<a name='381'>
+#endif<a name='382'>
+    call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_GET_TYPE_BYNAME' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_11"><a name='383'>
+<a name='384'>
+  end function cnst_get_type_byname<a name='385'>
+<a name='386'>
+<font color=#447700>!==============================================================================<a name='387'></font>
+<A NAME='CNST_READ_IV'><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_READ_IV' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='388'>
+  <font color=#993300>function </font><font color=#cc0000>cnst_read_iv</font>(m)<a name='389'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='390'></font>
+<font color=#447700>! <a name='391'></font>
+<font color=#447700>! Purpose: Query whether constituent initial values are read from initial file.<a name='392'></font>
+<font color=#447700>! <a name='393'></font>
+<font color=#447700>! Author:  B. Eaton<a name='394'></font>
+<font color=#447700>! <a name='395'></font>
+<font color=#447700>!-----------------------------Arguments---------------------------------<a name='396'></font>
+<font color=#447700>!<a name='397'></font>
+    integer, intent(in) :: m    <font color=#447700>! constituent index<a name='398'></font>
+<a name='399'>
+    logical :: cnst_read_iv     <font color=#447700>! true =&gt; read initial values from inital file<a name='400'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='401'></font>
+<a name='402'>
+    cnst_read_iv = read_init_vals(m)<a name='403'>
+ end function cnst_read_iv<a name='404'>
+<a name='405'>
+<font color=#447700>!==============================================================================<a name='406'></font>
+<A NAME='CNST_CHK_DIM'><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_CHK_DIM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='407'>
+  <font color=#993300>subroutine </font><font color=#cc0000>cnst_chk_dim</font>,<A href='../../call_from/CNST_CHK_DIM.html' TARGET='index'>4</A><a name='408'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='409'></font>
+<font color=#447700>! <a name='410'></font>
+<font color=#447700>! Purpose: Check that the number of registered constituents of each type is the<a name='411'></font>
+<font color=#447700>!          same as the dimension<a name='412'></font>
+<font color=#447700>! <a name='413'></font>
+<font color=#447700>! Method: <a name='414'></font>
+<font color=#447700>! &lt;Describe the algorithm(s) used in the routine.&gt; <a name='415'></font>
+<font color=#447700>! &lt;Also include any applicable external references.&gt; <a name='416'></font>
+<font color=#447700>! <a name='417'></font>
+<font color=#447700>! Author:  B.A. Boville<a name='418'></font>
+<font color=#447700>! <a name='419'></font>
+    integer i,m<a name='420'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='421'></font>
+<font color=#447700>!<a name='422'></font>
+    if (padv /= pcnst) then<a name='423'>
+       write(iulog,*)'CNST_CHK_DIM: number of advected tracer ',padv, ' not equal to pcnst = ',pcnst<a name='424'>
+#ifdef WRF_PORT<a name='425'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_CHK_DIM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_584">(iulog)<a name='426'>
+#endif<a name='427'>
+       call <A href='../../html_code/phys/module_sf_clm.F.html#ENDRUN'>endrun</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_CHK_DIM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ENDRUN_12"> ()<a name='428'>
+    endif<a name='429'>
+<a name='430'>
+    if (masterproc) then<a name='431'>
+       write(iulog,*) 'Advected constituent list:'<a name='432'>
+#ifdef WRF_PORT<a name='433'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_CHK_DIM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_585">(iulog)<a name='434'>
+#endif<a name='435'>
+       do i = 1, pcnst<a name='436'>
+          write(iulog,'(i4,2x,a8,2x,a128,2x,a3)') i, cnst_name(i), cnst_longname(i), cnst_type(i)<a name='437'>
+#ifdef WRF_PORT<a name='438'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_CHK_DIM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_586">(iulog)<a name='439'>
+#endif<a name='440'>
+       end do<a name='441'>
+    end if<a name='442'>
+<a name='443'>
+    <font color=#447700>! Set names of advected tracer diagnostics<a name='444'></font>
+    do m=1,pcnst<a name='445'>
+       apcnst    (m)  = trim(cnst_name(m))//'AP'<a name='446'>
+       bpcnst    (m)  = trim(cnst_name(m))//'BP'<a name='447'>
+       hadvnam   (m)  = 'HA'//cnst_name(m)<a name='448'>
+       vadvnam   (m)  = 'VA'//cnst_name(m)<a name='449'>
+       fixcnam   (m)  = 'DF'//cnst_name(m)<a name='450'>
+       tendnam   (m)  = 'TE'//cnst_name(m)<a name='451'>
+       ptendnam  (m)  = 'PTE'//cnst_name(m)<a name='452'>
+       dmetendnam(m)  = 'DME'//cnst_name(m)<a name='453'>
+       tottnam   (m)  = 'TA'//cnst_name(m)<a name='454'>
+       sflxnam(m)     = 'SF'//cnst_name(m)<a name='455'>
+    end do<a name='456'>
+<a name='457'>
+<a name='458'>
+  end subroutine cnst_chk_dim<a name='459'>
+<a name='460'>
+<font color=#447700>!==============================================================================<a name='461'></font>
+<a name='462'>
+<A NAME='CNST_CAM_OUTFLD'><A href='../../html_code/phys/module_cam_constituents.F.html#CNST_CAM_OUTFLD' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='463'>
+<font color=#993300>function </font><font color=#cc0000>cnst_cam_outfld</font>(m)<a name='464'>
+<font color=#447700>!----------------------------------------------------------------------- <a name='465'></font>
+<font color=#447700>! <a name='466'></font>
+<font color=#447700>! Purpose:<a name='467'></font>
+<font color=#447700>! Query whether default CAM outfld calls should be made.<a name='468'></font>
+<font color=#447700>! <a name='469'></font>
+<font color=#447700>!----------------------------------------------------------------------- <a name='470'></font>
+   integer, intent(in) :: m                <font color=#447700>! constituent index<a name='471'></font>
+   logical             :: cnst_cam_outfld  <font color=#447700>! true =&gt; use default CAM outfld calls<a name='472'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='473'></font>
+<a name='474'>
+   cnst_cam_outfld = cam_outfld_(m)<a name='475'>
+<a name='476'>
+end function cnst_cam_outfld<a name='477'>
+<a name='478'>
+<font color=#447700>!==============================================================================<a name='479'></font>
+<a name='480'>
+end module constituents<a name='481'>
+</pre></body></html>

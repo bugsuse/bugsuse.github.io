@@ -1,0 +1,1985 @@
+<HTML> <BODY BGCOLOR=#eeeeee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:DRIVER_LAYER:MAIN<a name='2'></font>
+<font color=#447700>!<a name='3'></font>
+<a name='4'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='5'></font>
+<font color=#447700>! ESMF Application Wrapper for coupling WRF with a "dummy" component <a name='6'></font>
+<font color=#447700>! that simply reads SSTs from a file, sends to WRF, receives SST from <a name='7'></font>
+<font color=#447700>! WRF (two-way coupling). and checks that the SSTs match.  <a name='8'></font>
+<font color=#447700>!<a name='9'></font>
+<font color=#447700>! This file contains the main program and associated modules for the <a name='10'></font>
+<font color=#447700>! SST "dummy" component and a simple coupler.  It creates ESMF Gridded <a name='11'></font>
+<font color=#447700>! and Coupler Components.  <a name='12'></font>
+<font color=#447700>!<a name='13'></font>
+<font color=#447700>! This source file is only built when ESMF coupling is used.  <a name='14'></font>
+<font color=#447700>!<a name='15'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='16'></font>
+<a name='17'>
+<a name='18'>
+<a name='19'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='20'></font>
+<font color=#447700>! Modules module_sst_component_top and module_sst_setservices define the <a name='21'></font>
+<font color=#447700>! "SST" dummy component.  <a name='22'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='23'></font>
+<a name='24'>
+<A NAME='MODULE_SST_COMPONENT_TOP'><A href='../../html_code/main/wrf_SST_ESMF.F.html#MODULE_SST_COMPONENT_TOP' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='25'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_sst_component_top</font> <A href='../../call_to/MODULE_SST_COMPONENT_TOP.html' TARGET='index'>1</A><a name='26'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='27'></font>
+<font color=#447700>! This module defines sst_component_init1(), sst_component_init2(), <a name='28'></font>
+<font color=#447700>! sst_component_run1(), sst_component_run2(), and sst_component_finalize() <a name='29'></font>
+<font color=#447700>! routines that are called when SST is run as an ESMF component.  <a name='30'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='31'></font>
+<a name='32'>
+<font color=#447700>! Updated for ESMF 5.2.0r  -- see:<a name='33'></font>
+<font color=#447700>!  http://www.earthsystemmodeling.org/esmf_releases/public/ESMF_5_2_0r/InterfaceChanges520to520r.pdf<a name='34'></font>
+<font color=#447700>!   USE ESMF_Mod  <a name='35'></font>
+   USE ESMF<a name='36'>
+   USE module_esmf_extensions<a name='37'>
+   USE <A href='../../html_code/main/wrf_ESMFMod.F.html#MODULE_METADATAUTILS'>module_metadatautils</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#wrf_SST_ESMF.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_METADATAUTILS_2">, ONLY: AttachTimesToState<a name='38'>
+<a name='39'>
+<a name='40'>
+   IMPLICIT NONE<a name='41'>
+<a name='42'>
+   <font color=#447700>! everything is private by default<a name='43'></font>
+   PRIVATE<a name='44'>
+<a name='45'>
+   <font color=#447700>! Public entry points<a name='46'></font>
+   PUBLIC sst_component_init1<a name='47'>
+   PUBLIC sst_component_init2<a name='48'>
+   PUBLIC sst_component_run1<a name='49'>
+   PUBLIC sst_component_run2<a name='50'>
+   PUBLIC sst_component_finalize<a name='51'>
+<a name='52'>
+   <font color=#447700>! private stuff<a name='53'></font>
+   TYPE(ESMF_Grid), SAVE :: esmfgrid  <font color=#447700>! grid used in fields<a name='54'></font>
+   CHARACTER (4096) :: str<a name='55'>
+   INTEGER, SAVE :: fid               <font color=#447700>! file handle<a name='56'></font>
+   <font color=#447700>! decomposition information<a name='57'></font>
+   INTEGER, SAVE :: ids, ide, jds, jde, kds, kde<a name='58'>
+   INTEGER, SAVE :: ims, ime, jms, jme, kms, kme<a name='59'>
+   INTEGER, SAVE :: ips, ipe, jps, jpe, kps, kpe<a name='60'>
+   REAL(ESMF_KIND_R4), POINTER, SAVE :: tmp_data_out_sst(:,:)<a name='61'>
+   REAL(ESMF_KIND_R4), POINTER, SAVE :: tmp_data_out_landmask(:,:)<a name='62'>
+   REAL(ESMF_KIND_R4), POINTER, SAVE :: tmp_data_in_sst(:,:)<a name='63'>
+   REAL(ESMF_KIND_R4), POINTER, SAVE :: tmp_data_in_landmask(:,:)<a name='64'>
+   INTEGER, SAVE :: domdesc<a name='65'>
+   LOGICAL, SAVE :: bdy_mask(4)<a name='66'>
+   <font color=#447700>! MPI communicator, if needed<a name='67'></font>
+   INTEGER, SAVE :: mpicom<a name='68'>
+   <font color=#447700>! field data<a name='69'></font>
+   REAL, POINTER, SAVE :: file_landmask_data(:,:), file_sst_data(:,:)<a name='70'>
+   <font color=#447700>! input data file name<a name='71'></font>
+   CHARACTER ( ESMF_MAXSTR ), SAVE :: sstinfilename<a name='72'>
+   <font color=#447700>! field names<a name='73'></font>
+   INTEGER, PARAMETER :: datacount = 2<a name='74'>
+   INTEGER, PARAMETER :: SST_INDX = 1<a name='75'>
+   INTEGER, PARAMETER :: LANDMASK_INDX = 2<a name='76'>
+   CHARACTER(LEN=ESMF_MAXSTR), SAVE :: datanames(datacount)<a name='77'>
+   TYPE real2d<a name='78'>
+     REAL, POINTER :: r2d(:,:)<a name='79'>
+   END TYPE real2d<a name='80'>
+   TYPE(real2d) :: this_data(datacount)<a name='81'>
+<a name='82'>
+<a name='83'>
+CONTAINS<a name='84'>
+<a name='85'>
+<a name='86'>
+<a name='87'>
+   <font color=#447700>! First-phase "init" reads "SST" data file and returns "time" metadata in <a name='88'></font>
+   <font color=#447700>! exportState.  <a name='89'></font>
+<A NAME='SST_COMPONENT_INIT1'><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='90'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>sst_component_init1</font>( gcomp, importState, exportState, clock, rc ),<A href='../../call_from/SST_COMPONENT_INIT1.html' TARGET='index'>19</A><a name='91'>
+     USE <A href='../../html_code/frame/module_io.F.html#MODULE_IO'>module_io</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_IO_5"><a name='92'>
+     TYPE(ESMF_GridComp), TARGET, INTENT(INOUT) :: gcomp<a name='93'>
+     TYPE(ESMF_State),    TARGET, INTENT(INOUT) :: importState<a name='94'>
+     TYPE(ESMF_State),    TARGET, INTENT(INOUT) :: exportState<a name='95'>
+     TYPE(ESMF_Clock),    TARGET, INTENT(INOUT) :: clock<a name='96'>
+     INTEGER,                     INTENT(  OUT) :: rc<a name='97'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='98'></font>
+<font color=#447700>!     SST component init routine, phase 1.<a name='99'></font>
+<font color=#447700>!<a name='100'></font>
+<font color=#447700>!     The arguments are:<a name='101'></font>
+<font color=#447700>!       gcomp           Component<a name='102'></font>
+<font color=#447700>!       importState     Importstate<a name='103'></font>
+<font color=#447700>!       exportState     Exportstate<a name='104'></font>
+<font color=#447700>!       clock           External clock<a name='105'></font>
+<font color=#447700>!       rc              Return code; equals ESMF_SUCCESS if there are no errors,<a name='106'></font>
+<font color=#447700>!                       otherwise ESMF_FAILURE.<a name='107'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='108'></font>
+<a name='109'>
+#ifdef DM_PARALLEL<a name='110'>
+     INCLUDE 'mpif.h'<a name='111'>
+#endif<a name='112'>
+<a name='113'>
+     <font color=#447700>! Local variables<a name='114'></font>
+     CHARACTER (LEN=19) :: date_string<a name='115'>
+#ifdef DM_PARALLEL<a name='116'>
+     TYPE(ESMF_VM) :: vm<a name='117'>
+     INTEGER :: mpicomtmp<a name='118'>
+#endif<a name='119'>
+     TYPE(ESMF_Time) :: startTime, stopTime, currentTime, dataTime<a name='120'>
+     TYPE(ESMF_TimeInterval) :: timeStep<a name='121'>
+     INTEGER :: ierr, num_steps, time_loop_max<a name='122'>
+     INTEGER :: status_next_var<a name='123'>
+<a name='124'>
+<font color=#447700>!TODO:  For now, sstinfilename is hard-coded<a name='125'></font>
+<font color=#447700>!TODO:  Upgrade to use a variant of construct_filename() via startTime <a name='126'></font>
+<font color=#447700>!TODO:  extracted from clock.  <a name='127'></font>
+     sstinfilename = 'sstin_d01_000000'<a name='128'>
+<a name='129'>
+     <font color=#447700>! get MPI communicator out of current VM and duplicate (if needed)<a name='130'></font>
+#ifdef DM_PARALLEL<a name='131'>
+     CALL ESMF_VMGetCurrent(vm, rc=rc)<a name='132'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='133'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_487"> ( 'sst_component_init1:  ESMF_VMGetCurrent failed' )<a name='134'>
+     ENDIF<a name='135'>
+     CALL ESMF_VMGet(vm, mpiCommunicator=mpicomtmp, rc=rc)<a name='136'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='137'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_488"> ( 'sst_component_init1:  ESMF_VMGet failed' )<a name='138'>
+     ENDIF<a name='139'>
+     CALL MPI_Comm_dup( mpicomtmp, mpicom, ierr )<a name='140'>
+#else<a name='141'>
+     mpicom = 0<a name='142'>
+#endif<a name='143'>
+     <font color=#447700>!  Open the "SST" input data file for reading.<a name='144'></font>
+     write(str,'(A,A)') 'Subroutine sst_component_init1: Opening data file ', &amp;<a name='145'>
+       TRIM(sstinfilename)<a name='146'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_528"> ( TRIM(str) )<a name='147'>
+     CALL <A href='../../html_code/frame/module_io.F.html#WRF_OPEN_FOR_READ'>wrf_open_for_read</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_OPEN_FOR_READ_1"> ( TRIM(sstinfilename) , &amp;<a name='148'>
+                              mpicom ,              &amp;<a name='149'>
+                              mpicom ,              &amp;<a name='150'>
+                              "DATASET=INPUT" ,     &amp;<a name='151'>
+                              fid ,                 &amp;<a name='152'>
+                              ierr )<a name='153'>
+     IF ( ierr .NE. 0 ) THEN<a name='154'>
+        WRITE( str , FMT='(A,A,A,I8)' ) &amp;<a name='155'>
+          'subroutine sst_component_init1: error opening ', &amp;<a name='156'>
+          TRIM(sstinfilename),' for reading ierr=',ierr<a name='157'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_489"> ( TRIM(str) )<a name='158'>
+     ENDIF<a name='159'>
+     WRITE( str , FMT='(A,A,A,I8)' ) &amp;<a name='160'>
+       'subroutine sst_component_init1: opened file ', &amp;<a name='161'>
+       TRIM(sstinfilename),' for reading fid=',fid<a name='162'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_423"> ( 100, TRIM(str) )<a name='163'>
+<a name='164'>
+     <font color=#447700>! How many data time levels are in the SST input file?  <a name='165'></font>
+     num_steps = -1<a name='166'>
+     time_loop_max = 0<a name='167'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_424">    ( 100, 'subroutine sst_component_init1: find time_loop_max' )<a name='168'>
+     <font color=#447700>! compute SST start time, time step, and end time here<a name='169'></font>
+     get_the_right_time : DO<a name='170'>
+        CALL <A href='../../html_code/frame/module_io.F.html#WRF_GET_NEXT_TIME'>wrf_get_next_time</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_GET_NEXT_TIME_2"> ( fid, date_string, status_next_var )<a name='171'>
+        write(str,'(A,A)') 'Subroutine sst_component_init1: SST data startTime: ', &amp;<a name='172'>
+          date_string<a name='173'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_425"> ( 100 , TRIM(str) )<a name='174'>
+        IF ( status_next_var == 0 ) THEN<a name='175'>
+           IF ( time_loop_max == 0 ) THEN<a name='176'>
+             CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_6">( date_string, startTime )<a name='177'>
+           ELSEIF ( time_loop_max == 1 ) THEN<a name='178'>
+             <font color=#447700>! assumes fixed time step!<a name='179'></font>
+             CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_7">( date_string, dataTime )<a name='180'>
+             timeStep = dataTime - startTime<a name='181'>
+           ENDIF<a name='182'>
+           time_loop_max = time_loop_max + 1<a name='183'>
+           CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_8">( date_string, stopTime )<a name='184'>
+        ELSE<a name='185'>
+           EXIT get_the_right_time<a name='186'>
+        ENDIF<a name='187'>
+     END DO get_the_right_time<a name='188'>
+     CALL <A href='../../html_code/share/module_date_time.F.html#WRF_TIMETOA'>wrf_timetoa</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_TIMETOA_8"> ( stopTime, date_string )<a name='189'>
+     write(str,'(A,A)') 'Subroutine sst_component_init1: SST data stopTime: ', &amp;<a name='190'>
+       date_string<a name='191'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_426"> ( 100 , TRIM(str) )<a name='192'>
+     <font color=#447700>! attach times to exportState for use by driver<a name='193'></font>
+     CALL <A href='../../html_code/main/wrf_ESMFMod.F.html#ATTACHTIMESTOSTATE'>AttachTimesToState</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ATTACHTIMESTOSTATE_2">( exportState, startTime, stopTime, timeStep )<a name='194'>
+<a name='195'>
+     <font color=#447700>! There should be a more elegant way to get to the beginning of the <a name='196'></font>
+     <font color=#447700>! file, but this will do.<a name='197'></font>
+     CALL <A href='../../html_code/frame/module_io.F.html#WRF_IOCLOSE'>wrf_ioclose</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_IOCLOSE_1">( fid , ierr )<a name='198'>
+     IF ( ierr .NE. 0 ) THEN<a name='199'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_490"> ( 'sst_component_init1:  wrf_ioclose failed' )<a name='200'>
+     ENDIF<a name='201'>
+     WRITE( str , FMT='(A,I8)' ) &amp;<a name='202'>
+       'subroutine sst_component_init1: closed file fid=',fid<a name='203'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_427"> ( 100, TRIM(str) )<a name='204'>
+<a name='205'>
+     <font color=#447700>! set up field names<a name='206'></font>
+<font color=#447700>!TODO:  use CF conventions for "standard_name" once WRF Registry supports them<a name='207'></font>
+<font color=#447700>!TODO:      datanames(SST_INDX) = "sea_surface_temperature"<a name='208'></font>
+<font color=#447700>!TODO:      datanames(LANDMASK_INDX) = "land_binary_mask"<a name='209'></font>
+     datanames(SST_INDX) = "SST"<a name='210'>
+     datanames(LANDMASK_INDX) = "LANDMASK"<a name='211'>
+<a name='212'>
+     rc = ESMF_SUCCESS<a name='213'>
+<a name='214'>
+   END SUBROUTINE sst_component_init1<a name='215'>
+<a name='216'>
+<a name='217'>
+<a name='218'>
+<A NAME='READ_DATA'><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='219'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>read_data</font>( exportState, clock ) <A href='../../call_to/READ_DATA.html' TARGET='index'>1</A>,<A href='../../call_from/READ_DATA.html' TARGET='index'>18</A><a name='220'>
+     USE <A href='../../html_code/frame/module_io.F.html#MODULE_IO'>module_io</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_IO_6"><a name='221'>
+     TYPE(ESMF_State), INTENT(INOUT) :: exportState<a name='222'>
+     TYPE(ESMF_Clock), INTENT(IN   ) :: clock<a name='223'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='224'></font>
+<font color=#447700>!     Reads data from file and stores.  Then <a name='225'></font>
+<font color=#447700>!     stuffs the file data into the SST exportState.  <a name='226'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='227'></font>
+<a name='228'>
+#include "<A href='../../html_code/include/wrf_status_codes.h.html'>wrf_status_codes.h</A>"<A NAME="wrf_status_codes.h_1"><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='229'>
+#include "<A href='../../html_code/include/wrf_io_flags.h.html'>wrf_io_flags.h</A>"<A NAME="wrf_io_flags.h_2"><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='230'>
+<a name='231'>
+     <font color=#447700>! Local variables<a name='232'></font>
+     CHARACTER (LEN=19) :: date_string<a name='233'>
+     TYPE(ESMF_Time) :: currentTime, dataTime<a name='234'>
+     REAL(ESMF_KIND_R4), POINTER :: out_sst_ptr(:,:), out_landmask_ptr(:,:)<a name='235'>
+     TYPE(ESMF_Field) :: out_sst_field, out_landmask_field<a name='236'>
+     TYPE(ESMF_Field) :: in_sst_field, in_landmask_field<a name='237'>
+     INTEGER :: i, j<a name='238'>
+     CHARACTER(LEN=ESMF_MAXSTR) :: fieldname, debugmsg, errormsg, timestr<a name='239'>
+     INTEGER :: ierr<a name='240'>
+     INTEGER :: rc<a name='241'>
+<a name='242'>
+     <font color=#447700>! This call to wrf_get_next_time will position the dataset over the next <a name='243'></font>
+     <font color=#447700>! time-frame in the file and return the date_string, which is used as an <a name='244'></font>
+     <font color=#447700>! argument to the read_field routines in the blocks of code included <a name='245'></font>
+     <font color=#447700>! below.  <a name='246'></font>
+<a name='247'>
+     CALL <A href='../../html_code/frame/module_io.F.html#WRF_GET_NEXT_TIME'>wrf_get_next_time</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_GET_NEXT_TIME_3">( fid, date_string , ierr )<a name='248'>
+     WRITE(str,'(A,A)') 'Subroutine read_data: SST data time: ', &amp;<a name='249'>
+       date_string<a name='250'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_428"> ( 100 , TRIM(str) )<a name='251'>
+     IF ( ierr .NE. 0 .AND. ierr .NE. WRF_WARN_NOTSUPPORTED .AND.  &amp;<a name='252'>
+          ierr .NE. WRF_WARN_DRYRUN_READ ) THEN<a name='253'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_491"> ( "... May have run out of valid SST data ..." )<a name='254'>
+     ELSE IF ( ierr .NE. WRF_WARN_NOTSUPPORTED .AND. &amp;<a name='255'>
+               ierr .NE. WRF_WARN_DRYRUN_READ) THEN<a name='256'>
+       <font color=#447700>! check input time against current time (which will be start time at <a name='257'></font>
+       <font color=#447700>! beginning)<a name='258'></font>
+       CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_9">( date_string, dataTime )<a name='259'>
+       CALL ESMF_ClockGet( clock, CurrTime=currentTime, rc=rc )<a name='260'>
+       IF (rc /= ESMF_SUCCESS) THEN<a name='261'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_492"> ( 'read_data:  ESMF_ClockGet() failed' )<a name='262'>
+       ENDIF<a name='263'>
+       CALL <A href='../../html_code/share/module_date_time.F.html#WRF_CLOCKPRINT'>wrf_clockprint</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_CLOCKPRINT_4">(150, clock, &amp;<a name='264'>
+              'DEBUG read_data():  get currentTime from clock,')<a name='265'>
+       IF ( dataTime .NE. currentTime ) THEN<a name='266'>
+           CALL <A href='../../html_code/share/module_date_time.F.html#WRF_TIMETOA'>wrf_timetoa</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_TIMETOA_9"> ( dataTime, timestr )<a name='267'>
+           WRITE( errormsg , * )'Time in file: ',trim( timestr )<a name='268'>
+           CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_529"> ( trim(errormsg) )<a name='269'>
+           CALL <A href='../../html_code/share/module_date_time.F.html#WRF_TIMETOA'>wrf_timetoa</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_TIMETOA_10"> ( currentTime, timestr )<a name='270'>
+           WRITE( errormsg , * )'Time on domain: ',trim( timestr )<a name='271'>
+           CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_530"> ( trim(errormsg) )<a name='272'>
+           CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_493">( &amp;<a name='273'>
+             "**ERROR** Time in input file not equal to time on domain **ERROR**" )<a name='274'>
+       ENDIF<a name='275'>
+     ENDIF<a name='276'>
+<a name='277'>
+     <font color=#447700>! doing this in a loop only works if staggering is the same for all fields<a name='278'></font>
+     this_data(SST_INDX)%r2d =&gt; file_sst_data<a name='279'>
+     this_data(LANDMASK_INDX)%r2d =&gt; file_landmask_data<a name='280'>
+     DO i=1, datacount<a name='281'>
+       fieldname = TRIM(datanames(i))<a name='282'>
+       debugmsg  = 'ext_read_field '//TRIM(fieldname)//' memorder XY'<a name='283'>
+       errormsg  = 'could not read '//TRIM(fieldname)//' data from file'<a name='284'>
+       CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_1"> (    &amp;<a name='285'>
+              fid                 , &amp;  <font color=#447700>! DataHandle<a name='286'></font>
+              date_string         , &amp;  <font color=#447700>! DateStr<a name='287'></font>
+              TRIM(fieldname)     , &amp;  <font color=#447700>! Data Name<a name='288'></font>
+              this_data(i)%r2d    , &amp;  <font color=#447700>! Field<a name='289'></font>
+              WRF_REAL            , &amp;  <font color=#447700>! FieldType<a name='290'></font>
+              mpicom              , &amp;  <font color=#447700>! Comm<a name='291'></font>
+              mpicom              , &amp;  <font color=#447700>! I/O Comm<a name='292'></font>
+              domdesc             , &amp;  <font color=#447700>! Domain descriptor<a name='293'></font>
+              bdy_mask            , &amp;  <font color=#447700>! bdy_mask<a name='294'></font>
+              'XY'                , &amp;  <font color=#447700>! MemoryOrder<a name='295'></font>
+              ''                  , &amp;  <font color=#447700>! Stagger<a name='296'></font>
+              TRIM(debugmsg)      , &amp;  <font color=#447700>! Debug message<a name='297'></font>
+#if 1<a name='298'>
+              ids , (ide-1) , jds , (jde-1) , 1 , 1 , &amp;<a name='299'>
+              ims , ime , jms , jme , 1 , 1         , &amp;<a name='300'>
+              ips , MIN( (ide-1), ipe ) , jps , MIN( (jde-1), jpe ) , 1 , 1 , &amp;<a name='301'>
+#else<a name='302'>
+<font color=#447700>!jm the dimensions have already been reduced to the non-staggered WRF grid when<a name='303'></font>
+<font color=#447700>!   they were stored in this module..  Just use as is.<a name='304'></font>
+              ids , ide , jds , jde , 1 , 1 , &amp;<a name='305'>
+              ims , ime , jms , jme , 1 , 1         , &amp;<a name='306'>
+              ips , ipe , jps , jpe , 1 , 1 , &amp;<a name='307'>
+#endif<a name='308'>
+              ierr )<a name='309'>
+       IF (ierr /= 0) THEN<a name='310'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_494"> ( TRIM(errormsg) )<a name='311'>
+       ENDIF<a name='312'>
+     ENDDO<a name='313'>
+<a name='314'>
+     <font color=#447700>! stuff fields into exportState<a name='315'></font>
+<font color=#447700>!TODO:  change this to Bundles, eventually<a name='316'></font>
+     CALL ESMF_StateGet( exportState, TRIM(datanames(SST_INDX)), &amp;<a name='317'>
+                              out_sst_field, rc=rc )<a name='318'>
+     IF (rc /= ESMF_SUCCESS) THEN<a name='319'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_495"> ( &amp;<a name='320'>
+         'could not find sea_surface_temperature field in exportState' )<a name='321'>
+     ENDIF<a name='322'>
+     CALL ESMF_StateGet( exportState, TRIM(datanames(LANDMASK_INDX)), &amp;<a name='323'>
+                              out_landmask_field, rc=rc )<a name='324'>
+     IF (rc /= ESMF_SUCCESS) THEN<a name='325'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_496"> ( &amp;<a name='326'>
+         'could not find land_binary_mask field in exportState' )<a name='327'>
+     ENDIF<a name='328'>
+<font color=#447700>!     CALL ESMF_FieldGetDataPointer( out_sst_field, out_sst_ptr, rc=rc )<a name='329'></font>
+     CALL ESMF_FieldGet( out_sst_field, 0, out_sst_ptr, rc=rc )<a name='330'>
+     IF (rc /= ESMF_SUCCESS) THEN<a name='331'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_497"> ( &amp;<a name='332'>
+         'could not find sea_surface_temperature data in sea_surface_temperature field' )<a name='333'>
+     ENDIF<a name='334'>
+<font color=#447700>!     CALL ESMF_FieldGetDataPointer( out_landmask_field, out_landmask_ptr, rc=rc )<a name='335'></font>
+     CALL ESMF_FieldGet( out_landmask_field, 0, out_landmask_ptr, rc=rc )<a name='336'>
+     IF (rc /= ESMF_SUCCESS) THEN<a name='337'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_498"> ( &amp;<a name='338'>
+         'could not find land_binary_mask data in land_binary_mask field' )<a name='339'>
+     ENDIF<a name='340'>
+     <font color=#447700>! staggered starts/ends<a name='341'></font>
+     DO j= jps , jpe<a name='342'>
+       DO i= ips , ipe<a name='343'>
+         out_sst_ptr(i,j) = file_sst_data(i,j)<a name='344'>
+         out_landmask_ptr(i,j) = file_landmask_data(i,j)<a name='345'>
+       ENDDO<a name='346'>
+     ENDDO<a name='347'>
+<a name='348'>
+   END SUBROUTINE read_data<a name='349'>
+<a name='350'>
+<a name='351'>
+<a name='352'>
+<a name='353'>
+<A NAME='COMPARE_DATA'><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='354'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>compare_data</font>( importState, clock ) <A href='../../call_to/COMPARE_DATA.html' TARGET='index'>1</A>,<A href='../../call_from/COMPARE_DATA.html' TARGET='index'>14</A><a name='355'>
+     TYPE(ESMF_State), INTENT(INOUT) :: importState<a name='356'>
+<font color=#447700>!TODO:  remove clock after debugging is finished<a name='357'></font>
+     TYPE(ESMF_Clock), INTENT(INOUT) :: clock<a name='358'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='359'></font>
+<font color=#447700>!     Gets data from coupler via importState <a name='360'></font>
+<font color=#447700>!     and compares with data read from file and <a name='361'></font>
+<font color=#447700>!     error-exits if they differ.  <a name='362'></font>
+<font color=#447700>!<a name='363'></font>
+<font color=#447700>!     The arguments are:<a name='364'></font>
+<font color=#447700>!       importState     Importstate<a name='365'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='366'></font>
+<a name='367'>
+     <font color=#447700>! Local variables<a name='368'></font>
+     TYPE(ESMF_Field) :: in_sst_field, in_landmask_field<a name='369'>
+     REAL(ESMF_KIND_R4), POINTER :: in_sst_ptr(:,:), in_landmask_ptr(:,:)<a name='370'>
+     REAL, POINTER :: in_sst_ptr_real(:,:), in_landmask_ptr_real(:,:)<a name='371'>
+     INTEGER :: i, j<a name='372'>
+     INTEGER :: rc<a name='373'>
+     LOGICAL :: landmask_ok, sst_ok<a name='374'>
+     <font color=#447700>! use these for debug prints<a name='375'></font>
+     TYPE(ESMF_Time) :: currentTime<a name='376'>
+     INTEGER, SAVE :: numtimes=0   <font color=#447700>! track number of calls<a name='377'></font>
+     CHARACTER(LEN=256) :: timestamp<a name='378'>
+<a name='379'>
+     <font color=#447700>! count calls for debug prints...<a name='380'></font>
+     CALL ESMF_ClockGet( clock, CurrTime=currentTime, rc=rc )<a name='381'>
+     IF (rc /= ESMF_SUCCESS) THEN<a name='382'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_499"> ( 'compare_data:  ESMF_ClockGet() failed' )<a name='383'>
+     ENDIF<a name='384'>
+     CALL <A href='../../html_code/share/module_date_time.F.html#WRF_TIMETOA'>wrf_timetoa</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_TIMETOA_11"> ( currentTime, timestamp )<a name='385'>
+     numtimes = numtimes + 1<a name='386'>
+     WRITE(str,*) 'SST compare_data:  begin, numtimes = ',numtimes,' time = ',TRIM(timestamp)<a name='387'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_429"> ( 100 , TRIM(str) )<a name='388'>
+<a name='389'>
+     <font color=#447700>! extract data from the importState and compare with data from file<a name='390'></font>
+<font color=#447700>!TODO:  change this to Bundles, eventually<a name='391'></font>
+     CALL ESMF_StateGet( importState, TRIM(datanames(SST_INDX)), &amp;<a name='392'>
+                              in_sst_field, rc=rc )<a name='393'>
+     IF (rc /= ESMF_SUCCESS) THEN<a name='394'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_500"> ( &amp;<a name='395'>
+         'could not extract sea_surface_temperature field from importState' )<a name='396'>
+     ENDIF<a name='397'>
+     CALL ESMF_StateGet( importState, TRIM(datanames(LANDMASK_INDX)), &amp;<a name='398'>
+                              in_landmask_field, rc=rc )<a name='399'>
+     IF (rc /= ESMF_SUCCESS) THEN<a name='400'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_501"> ( &amp;<a name='401'>
+         'could not extract land_binary_mask field from importState' )<a name='402'>
+     ENDIF<a name='403'>
+<font color=#447700>!     CALL ESMF_FieldGetDataPointer( in_sst_field, in_sst_ptr, rc=rc )<a name='404'></font>
+     CALL ESMF_FieldGet( in_sst_field, 0, in_sst_ptr, rc=rc )<a name='405'>
+     IF (rc /= ESMF_SUCCESS) THEN<a name='406'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_502"> ( &amp;<a name='407'>
+         'could not extract sea_surface_temperature data from sea_surface_temperature field' )<a name='408'>
+     ENDIF<a name='409'>
+     ALLOCATE( in_sst_ptr_real(ims:ime,jms:jme) )<a name='410'>
+     WRITE( str,* ) 'compare_data, ips:ipe,jps:jpe = ',           &amp;<a name='411'>
+       ips,':',ipe,',',jps,':',jpe,                               &amp;<a name='412'>
+       ', in_sst_ptr(BOUNDS) = ',                                 &amp;<a name='413'>
+       LBOUND(in_sst_ptr,1),':',UBOUND(in_sst_ptr,1),',',         &amp;<a name='414'>
+       LBOUND(in_sst_ptr,2),':',UBOUND(in_sst_ptr,2)<a name='415'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_430"> ( 100 , TRIM(str) )<a name='416'>
+     DO j= jms, jme<a name='417'>
+       DO i= ims, ime<a name='418'>
+         in_sst_ptr_real(i,j) = -(i*1000.0 + j)/100000.0     <font color=#447700>! obvious bad value for debugging<a name='419'></font>
+       ENDDO<a name='420'>
+     ENDDO<a name='421'>
+     in_sst_ptr_real(ips:MIN((ide-1),ipe),jps:MIN((jde-1),jpe)) = &amp;<a name='422'>
+          in_sst_ptr(ips:MIN((ide-1),ipe),jps:MIN((jde-1),jpe))<a name='423'>
+<font color=#447700>!     CALL ESMF_FieldGetDataPointer( in_landmask_field, in_landmask_ptr, rc=rc )<a name='424'></font>
+     CALL ESMF_FieldGet( in_landmask_field, 0, in_landmask_ptr, rc=rc )<a name='425'>
+     IF (rc /= ESMF_SUCCESS) THEN<a name='426'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_503"> ( &amp;<a name='427'>
+         'could not extract land_binary_mask data from land_binary_mask field' )<a name='428'>
+     ENDIF<a name='429'>
+     ALLOCATE( in_landmask_ptr_real(ims:ime,jms:jme) )<a name='430'>
+     WRITE( str,* ) 'compare_data, ips:ipe,jps:jpe = ',             &amp;<a name='431'>
+       ips,':',ipe,',',jps,':',jpe,                                 &amp;<a name='432'>
+       ', in_landmask_ptr(BOUNDS) = ',                              &amp;<a name='433'>
+       LBOUND(in_landmask_ptr,1),':',UBOUND(in_landmask_ptr,1),',', &amp;<a name='434'>
+       LBOUND(in_landmask_ptr,2),':',UBOUND(in_landmask_ptr,2)<a name='435'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_431"> ( 100 , TRIM(str) )<a name='436'>
+     DO j= jms, jme<a name='437'>
+       DO i= ims, ime<a name='438'>
+         in_landmask_ptr_real(i,j) = -(i*1000.0 + j)/100000.0     <font color=#447700>! obvious bad value for debugging<a name='439'></font>
+       ENDDO<a name='440'>
+     ENDDO<a name='441'>
+     in_landmask_ptr_real(ips:MIN((ide-1),ipe),jps:MIN((jde-1),jpe)) = &amp;<a name='442'>
+          in_landmask_ptr(ips:MIN((ide-1),ipe),jps:MIN((jde-1),jpe))<a name='443'>
+<a name='444'>
+     <font color=#447700>! compare LANDMASK...  <a name='445'></font>
+     landmask_ok = .TRUE.<a name='446'>
+     <font color=#447700>! staggered starts/ends<a name='447'></font>
+     LANDMASK_COMPARE : DO j= jps , MIN( (jde-1), jpe )<a name='448'>
+       DO i= ips , MIN( (ide-1), ipe )<a name='449'>
+         IF ( file_landmask_data(i,j) /= in_landmask_ptr_real(i,j) ) THEN<a name='450'>
+           landmask_ok = .FALSE.<a name='451'>
+           WRITE( str , * ) 'error landmask mismatch at (i,j) = (',i,',',j, &amp;<a name='452'>
+                            '), values are',file_landmask_data(i,j),' and ',     &amp;<a name='453'>
+                            in_landmask_ptr_real(i,j) <a name='454'>
+           EXIT LANDMASK_COMPARE<a name='455'>
+         ENDIF<a name='456'>
+       ENDDO<a name='457'>
+     ENDDO LANDMASK_COMPARE<a name='458'>
+     IF ( landmask_ok ) THEN<a name='459'>
+       WRITE(str,*) 'TESTING data returned from WRF through ESMF: LANDMASK compares OK'<a name='460'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_432"> ( 0 , TRIM(str) )<a name='461'>
+     ELSE<a name='462'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_504"> ( TRIM(str) )<a name='463'>
+     ENDIF<a name='464'>
+<a name='465'>
+     <font color=#447700>! compare SST...  <a name='466'></font>
+     sst_ok = .TRUE.<a name='467'>
+     <font color=#447700>! staggered starts/ends<a name='468'></font>
+     SST_COMPARE : DO j= jps , MIN( (jde-1), jpe )<a name='469'>
+       DO i= ips , MIN( (ide-1), ipe )<a name='470'>
+         IF ( file_sst_data(i,j) /= in_sst_ptr_real(i,j) ) THEN<a name='471'>
+           sst_ok = .FALSE.<a name='472'>
+           WRITE( str , * ) 'error sst mismatch at (i,j) = (',i,',',j, &amp;<a name='473'>
+                            '), values are',file_sst_data(i,j),' and ',     &amp;<a name='474'>
+                            in_sst_ptr_real(i,j) <a name='475'>
+           EXIT SST_COMPARE<a name='476'>
+         ENDIF<a name='477'>
+       ENDDO<a name='478'>
+     ENDDO SST_COMPARE<a name='479'>
+     IF ( sst_ok ) THEN<a name='480'>
+       WRITE(str,*) 'TESTING data returned from WRF through ESMF: SST compares OK'<a name='481'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_433"> ( 0 , TRIM(str) )<a name='482'>
+     ELSE<a name='483'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_505"> ( TRIM(str) )<a name='484'>
+     ENDIF<a name='485'>
+<a name='486'>
+     DEALLOCATE( in_sst_ptr_real, in_landmask_ptr_real )<a name='487'>
+<a name='488'>
+     WRITE(str,*) 'compare_data:  end, numtimes = ',numtimes<a name='489'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_434"> ( 100 , TRIM(str) )<a name='490'>
+<a name='491'>
+   END SUBROUTINE compare_data<a name='492'>
+<a name='493'>
+   <font color=#447700>! Second-phase "init" gets decomposition information from <a name='494'></font>
+   <font color=#447700>! importState.  <a name='495'></font>
+<A NAME='SST_COMPONENT_INIT2'><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='496'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>sst_component_init2</font>( gcomp, importState, exportState, clock, rc ),<A href='../../call_from/SST_COMPONENT_INIT2.html' TARGET='index'>37</A><a name='497'>
+     USE <A href='../../html_code/main/wrf_ESMFMod.F.html#MODULE_METADATAUTILS'>module_metadatautils</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_METADATAUTILS_3">, ONLY: GetDecompFromState<a name='498'>
+     USE <A href='../../html_code/frame/module_io.F.html#MODULE_IO'>module_io</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_IO_7"><a name='499'>
+     TYPE(ESMF_GridComp), TARGET, INTENT(INOUT) :: gcomp<a name='500'>
+     TYPE(ESMF_State),    TARGET, INTENT(INOUT) :: importState<a name='501'>
+     TYPE(ESMF_State),    TARGET, INTENT(INOUT) :: exportState<a name='502'>
+     TYPE(ESMF_Clock),    TARGET, INTENT(INOUT) :: clock<a name='503'>
+     INTEGER,                     INTENT(  OUT) :: rc<a name='504'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='505'></font>
+<font color=#447700>!     SST component init routine, phase 2.<a name='506'></font>
+<font color=#447700>!<a name='507'></font>
+<font color=#447700>!     The arguments are:<a name='508'></font>
+<font color=#447700>!       gcomp           Component<a name='509'></font>
+<font color=#447700>!       importState     Importstate<a name='510'></font>
+<font color=#447700>!       exportState     Exportstate<a name='511'></font>
+<font color=#447700>!       clock           External clock<a name='512'></font>
+<font color=#447700>!       rc              Return code; equals ESMF_SUCCESS if there are no errors,<a name='513'></font>
+<font color=#447700>!                       otherwise ESMF_FAILURE.<a name='514'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='515'></font>
+<a name='516'>
+     <font color=#447700>! Local variables<a name='517'></font>
+     TYPE(ESMF_Field) :: out_sst_field, out_landmask_field<a name='518'>
+     TYPE(ESMF_Field) :: in_sst_field, in_landmask_field<a name='519'>
+     INTEGER, PARAMETER :: NUMDIMS=2<a name='520'>
+     INTEGER :: DomainStart(NUMDIMS)<a name='521'>
+     INTEGER :: DomainEnd(NUMDIMS)<a name='522'>
+     INTEGER :: MemoryStart(NUMDIMS)<a name='523'>
+     INTEGER :: MemoryEnd(NUMDIMS)<a name='524'>
+     INTEGER :: PatchStart(NUMDIMS)<a name='525'>
+     INTEGER :: PatchEnd(NUMDIMS)<a name='526'>
+     INTEGER :: rc, i, j<a name='527'>
+     INTEGER :: ierr<a name='528'>
+<a name='529'>
+    <font color=#447700>! Get decomposition information from importState.  Note that index <a name='530'></font>
+    <font color=#447700>! values are for staggered dimensions, following the WRF convention.  <a name='531'></font>
+<font color=#447700>!TODO:  Note that this will only work for SPMD serial operation.  For <a name='532'></font>
+<font color=#447700>!TODO:  concurrent operation (SPMD or MPMD), we will need to create a new <a name='533'></font>
+<font color=#447700>!TODO:  "domdesc" suitable for the task layout of the SST component.  For<a name='534'></font>
+<font color=#447700>!TODO:  MPMD serial operation, we will need to extract serialized domdesc <a name='535'></font>
+<font color=#447700>!TODO:  from export state metadata and de-serialize it.  Similar arguments <a name='536'></font>
+<font color=#447700>!TODO:  apply to [ij][mp][se] and bdy_mask.  <a name='537'></font>
+     write(str,*) 'sst_component_init2: calling GetDecompFromState'<a name='538'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_435"> ( 100 , TRIM(str) )<a name='539'>
+     CALL <A href='../../html_code/main/wrf_ESMFMod.F.html#GETDECOMPFROMSTATE'>GetDecompFromState</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GETDECOMPFROMSTATE_1">( importState,                  &amp;<a name='540'>
+                              ids, ide, jds, jde, kds, kde, &amp;<a name='541'>
+                              ims, ime, jms, jme, kms, kme, &amp;<a name='542'>
+                              ips, ipe, jps, jpe, kps, kpe, &amp;<a name='543'>
+                              domdesc, bdy_mask )<a name='544'>
+     write(str,*) 'sst_component_init2: back from GetDecompFromState'<a name='545'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_436"> ( 100 , TRIM(str) )<a name='546'>
+     write(str,*) 'sst_component_init2: ids, ide, jds, jde, kds, kde = ', ids, ide, jds, jde, kds, kde<a name='547'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_437"> ( 100 , TRIM(str) )<a name='548'>
+     write(str,*) 'sst_component_init2: ims, ime, jms, jme, kms, kme = ', ims, ime, jms, jme, kms, kme<a name='549'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_438"> ( 100 , TRIM(str) )<a name='550'>
+     write(str,*) 'sst_component_init2: ips, ipe, jps, jpe, kps, kpe = ', ips, ipe, jps, jpe, kps, kpe<a name='551'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_439"> ( 100 , TRIM(str) )<a name='552'>
+<a name='553'>
+     <font color=#447700>! allocate space for data read from disk<a name='554'></font>
+     ALLOCATE( file_sst_data     (ims:ime,jms:jme) )<a name='555'>
+     DO j= jms, jme<a name='556'>
+       DO i= ims, ime<a name='557'>
+         file_sst_data(i,j) = -(i*1000.0 + j)/100000.0     <font color=#447700>! obvious bad value for debugging<a name='558'></font>
+       ENDDO<a name='559'>
+     ENDDO<a name='560'>
+<font color=#447700>!TODO:  Hmmm...  really need to load these pointers here?  Check...  <a name='561'></font>
+     this_data(SST_INDX)%r2d =&gt; file_sst_data<a name='562'>
+     ALLOCATE( file_landmask_data(ims:ime,jms:jme) )<a name='563'>
+     DO j= jms, jme<a name='564'>
+       DO i= ims, ime<a name='565'>
+         file_landmask_data(i,j) = -(i*1000.0 + j)/100000.0     <font color=#447700>! obvious bad value for debugging<a name='566'></font>
+       ENDDO<a name='567'>
+     ENDDO<a name='568'>
+     this_data(LANDMASK_INDX)%r2d =&gt; file_landmask_data<a name='569'>
+<a name='570'>
+     <font color=#447700>! Create ESMF_Fields in importState and exportState<a name='571'></font>
+     <font color=#447700>! Create ESMF_Grid.  Use exactly the same method as WRF so WRFIO will <a name='572'></font>
+     <font color=#447700>! work.  <a name='573'></font>
+     DomainStart(1) = ids; DomainEnd(1) = ide;<a name='574'>
+     DomainStart(2) = jds; DomainEnd(2) = jde;<a name='575'>
+     MemoryStart(1) = ims; MemoryEnd(1) = ime;<a name='576'>
+     MemoryStart(2) = jms; MemoryEnd(2) = jme;<a name='577'>
+     PatchStart(1)  = ips; PatchEnd(1)  = ipe;<a name='578'>
+     PatchStart(2)  = jps; PatchEnd(2)  = jpe<a name='579'>
+<font color=#447700>!write(0,*)__FILE__,__LINE__,'DomainStart ',DomainStart(1:2)<a name='580'></font>
+<font color=#447700>!write(0,*)__FILE__,__LINE__,'DomainEnd ',DomainEnd(1:2)<a name='581'></font>
+<font color=#447700>!write(0,*)__FILE__,__LINE__,'MemoryStart ',MemoryStart(1:2)<a name='582'></font>
+<font color=#447700>!write(0,*)__FILE__,__LINE__,'MemoryEnd ',MemoryEnd(1:2)<a name='583'></font>
+<font color=#447700>!write(0,*)__FILE__,__LINE__,'PatchStart ',PatchStart(1:2)<a name='584'></font>
+<font color=#447700>!write(0,*)__FILE__,__LINE__,'PatchEnd ',PatchEnd(1:2)<a name='585'></font>
+     CALL wrf_debug ( 5 , 'DEBUG sst_component_init2:  Calling ioesmf_create_grid_int()' )<a name='586'>
+     CALL ioesmf_create_grid_int( esmfgrid, NUMDIMS,      &amp;<a name='587'>
+                                  DomainStart, DomainEnd, &amp;<a name='588'>
+                                  MemoryStart, MemoryEnd, &amp;<a name='589'>
+                                  PatchStart, PatchEnd )<a name='590'>
+<font color=#447700>!write(0,*)__FILE__,__LINE__<a name='591'></font>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_440"> ( 5 , 'DEBUG sst_component_init2:  back from ioesmf_create_grid_int()' )<a name='592'>
+     <font color=#447700>! create ESMF_Fields<a name='593'></font>
+     <font color=#447700>! Note use of patch dimension for POINTERs allocated by ESMF.  <a name='594'></font>
+     CALL wrf_debug ( 5 , 'DEBUG sst_component_init2:  Calling ESMF_GridValidate(esmfgrid)' )<a name='595'>
+     CALL ESMF_GridValidate( esmfgrid, rc=rc )<a name='596'>
+<font color=#447700>!write(0,*)__FILE__,__LINE__<a name='597'></font>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='598'>
+       WRITE( str,* ) 'Error in ESMF_GridValidate ',   &amp;<a name='599'>
+                      __FILE__ ,                       &amp;<a name='600'>
+                      ', line ',                       &amp;<a name='601'>
+                      __LINE__ ,                       &amp;<a name='602'>
+                      ', error code = ',rc<a name='603'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_506"> ( TRIM(str) )<a name='604'>
+     ENDIF<a name='605'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_441"> ( 5 , 'DEBUG sst_component_init2:  back OK from ESMF_GridValidate(esmfgrid)' )<a name='606'>
+<font color=#447700>!TODO:  Once new ESMF 3.0 interfaces have settled down, eliminate "tmp_data_" <a name='607'></font>
+<font color=#447700>!TODO:  arrays and let ESMF allocate/deallocate them.  Assuming of course that <a name='608'></font>
+<font color=#447700>!TODO:  we can convince ESMF to deallocate safely...  <a name='609'></font>
+<font color=#447700>!write(0,*)__FILE__,__LINE__<a name='610'></font>
+     ALLOCATE( tmp_data_out_sst(ips:ipe,jps:jpe) )<a name='611'>
+<font color=#447700>!write(0,*)__FILE__,__LINE__<a name='612'></font>
+     write(str,*) 'sst_component_init2: tmp_data_out_sst(', &amp;<a name='613'>
+       LBOUND(tmp_data_out_sst,1),':',UBOUND(tmp_data_out_sst,1),',',LBOUND(tmp_data_out_sst,2),':',UBOUND(tmp_data_out_sst,2),')'<a name='614'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_442"> ( 100 , TRIM(str) )<a name='615'>
+     CALL wrf_debug ( 100, 'sst_component_init2: calling ESMF_FieldCreate(out_sst_field)' )<a name='616'>
+<font color=#447700>!write(0,*)__FILE__,__LINE__,trim(datanames(sst_indx))<a name='617'></font>
+<font color=#447700>!write(0,*)__FILE__,__LINE__,ips,jps,ipe,jpe<a name='618'></font>
+     out_sst_field = ESMF_FieldCreate(                 &amp;<a name='619'>
+                       esmfgrid, tmp_data_out_sst,     &amp;<a name='620'>
+                       datacopyflag=ESMF_DATACOPY_REFERENCE,         &amp;<a name='621'>
+                       staggerloc=ESMF_STAGGERLOC_CENTER,          &amp;<a name='622'>
+                       name=TRIM(datanames(SST_INDX)), &amp;<a name='623'>
+                       rc=rc )<a name='624'>
+<font color=#447700>!write(0,*)__FILE__,__LINE__,'Creating out_sst_field for exportState of SST component name ',TRIM(datanames(SST_INDX))<a name='625'></font>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='626'>
+       WRITE( str,* ) 'ESMF_FieldCreate(out_sst_field) failed ', &amp;<a name='627'>
+                      __FILE__ ,                                 &amp;<a name='628'>
+                      ', line ',                                 &amp;<a name='629'>
+                      __LINE__ ,                                 &amp;<a name='630'>
+                      ', error code = ',rc<a name='631'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_507"> ( TRIM(str) )<a name='632'>
+     ENDIF<a name='633'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_443"> ( 100, 'sst_component_init2: back from ESMF_FieldCreate(out_sst_field)' )<a name='634'>
+     write(str,*) 'sst_component_init2: ips:ipe,jps:jpe = ', &amp;<a name='635'>
+       ips,':',ipe,',',jps,':',jpe<a name='636'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_444"> ( 100 , TRIM(str) )<a name='637'>
+<font color=#447700>!TODO:  This bit will be useful once ESMF handles allocation/deallocation.  <a name='638'></font>
+     <font color=#447700>! validate ESMF allocation<a name='639'></font>
+     IF ( ( ips /= LBOUND(tmp_data_out_sst,1) ) .OR. ( ipe /= UBOUND(tmp_data_out_sst,1) ) .OR. &amp;<a name='640'>
+          ( jps /= LBOUND(tmp_data_out_sst,2) ) .OR. ( jpe /= UBOUND(tmp_data_out_sst,2) ) ) THEN<a name='641'>
+       WRITE( str,* ) 'ESMF_FieldCreate(out_sst_field) allocation failed ', &amp;<a name='642'>
+                      __FILE__ ,                                            &amp;<a name='643'>
+                      ', line ',                                            &amp;<a name='644'>
+                      __LINE__ ,                                            &amp;<a name='645'>
+                      ', ips:ipe,jps:jpe = ',ips,':',ipe,',',jps,':',jpe,   &amp;<a name='646'>
+                      ', tmp_data_out_sst(BOUNDS) = ',LBOUND(tmp_data_out_sst,1),':',UBOUND(tmp_data_out_sst,1),',', &amp;<a name='647'>
+                                              LBOUND(tmp_data_out_sst,2),':',UBOUND(tmp_data_out_sst,2)<a name='648'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_508"> ( TRIM(str) )<a name='649'>
+     ENDIF<a name='650'>
+     ALLOCATE( tmp_data_out_landmask(ips:ipe,jps:jpe) )<a name='651'>
+     write(str,*) 'sst_component_init2: tmp_data_out_landmask(', &amp;<a name='652'>
+       LBOUND(tmp_data_out_landmask,1),':',UBOUND(tmp_data_out_landmask,1),',',LBOUND(tmp_data_out_landmask,2),':',UBOUND(tmp_data_out_landmask,2),')'<a name='653'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_445"> ( 100 , TRIM(str) )<a name='654'>
+     CALL wrf_debug ( 100, 'sst_component_init2: calling ESMF_FieldCreate(out_landmask_field)' )<a name='655'>
+     out_landmask_field = ESMF_FieldCreate(                      &amp;<a name='656'>
+                            esmfgrid, tmp_data_out_landmask,     &amp;<a name='657'>
+                            datacopyflag=ESMF_DATACOPY_REFERENCE,              &amp;<a name='658'>
+                            staggerloc=ESMF_STAGGERLOC_CENTER,          &amp;<a name='659'>
+                            name=TRIM(datanames(LANDMASK_INDX)), &amp;<a name='660'>
+<font color=#447700>!                            lbounds=(/ips,jps/),                 &amp;<a name='661'></font>
+<font color=#447700>!                            ubounds=(/ipe,jpe/),                 &amp;<a name='662'></font>
+                            rc=rc )<a name='663'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='664'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_509"> ( 'ESMF_FieldCreate(out_landmask_field) failed' )<a name='665'>
+     ENDIF<a name='666'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_446"> ( 100, 'sst_component_init2: back from ESMF_FieldCreate(out_landmask_field)' )<a name='667'>
+<font color=#447700>!TODO:  This bit will be useful once ESMF handles allocation/deallocation.  <a name='668'></font>
+     <font color=#447700>! validate ESMF allocation<a name='669'></font>
+     IF ( ( ips /= LBOUND(tmp_data_out_landmask,1) ) .OR. ( ipe /= UBOUND(tmp_data_out_landmask,1) ) .OR. &amp;<a name='670'>
+          ( jps /= LBOUND(tmp_data_out_landmask,2) ) .OR. ( jpe /= UBOUND(tmp_data_out_landmask,2) ) ) THEN<a name='671'>
+       WRITE( str,* ) 'ESMF_FieldCreate(out_landmask_field) allocation failed ', &amp;<a name='672'>
+                      __FILE__ ,                                            &amp;<a name='673'>
+                      ', line ',                                            &amp;<a name='674'>
+                      __LINE__ ,                                            &amp;<a name='675'>
+                      ', ips:ipe,jps:jpe = ',ips,':',ipe,',',jps,':',jpe,   &amp;<a name='676'>
+                      ', tmp_data_out_landmask(BOUNDS) = ',LBOUND(tmp_data_out_landmask,1),':',UBOUND(tmp_data_out_landmask,1),',', &amp;<a name='677'>
+                                              LBOUND(tmp_data_out_landmask,2),':',UBOUND(tmp_data_out_landmask,2)<a name='678'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_510"> ( TRIM(str) )<a name='679'>
+     ENDIF<a name='680'>
+     ALLOCATE( tmp_data_in_sst(ips:ipe,jps:jpe) )<a name='681'>
+     write(str,*) 'sst_component_init2: tmp_data_in_sst(', &amp;<a name='682'>
+       LBOUND(tmp_data_in_sst,1),':',UBOUND(tmp_data_in_sst,1),',',LBOUND(tmp_data_in_sst,2),':',UBOUND(tmp_data_in_sst,2),')'<a name='683'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_447"> ( 100 , TRIM(str) )<a name='684'>
+     CALL wrf_debug ( 100, 'sst_component_init2: calling ESMF_FieldCreate(in_sst_field)' )<a name='685'>
+     in_sst_field = ESMF_FieldCreate(                 &amp;<a name='686'>
+                      esmfgrid, tmp_data_in_sst,      &amp;<a name='687'>
+                      datacopyflag=ESMF_DATACOPY_REFERENCE,         &amp;<a name='688'>
+                      staggerloc=ESMF_STAGGERLOC_CENTER,          &amp;<a name='689'>
+                      name=TRIM(datanames(SST_INDX)), &amp;<a name='690'>
+<font color=#447700>!                      lbounds=(/ips,jps/),            &amp;<a name='691'></font>
+<font color=#447700>!                      ubounds=(/ipe,jpe/),            &amp;<a name='692'></font>
+                      rc=rc )<a name='693'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='694'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_511"> ( 'ESMF_FieldCreate(in_sst_field) failed' )<a name='695'>
+     ENDIF<a name='696'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_448"> ( 100, 'sst_component_init2: back from ESMF_FieldCreate(in_sst_field)' )<a name='697'>
+<font color=#447700>!TODO:  This bit will be useful once ESMF handles allocation/deallocation.  <a name='698'></font>
+     <font color=#447700>! validate ESMF allocation<a name='699'></font>
+     IF ( ( ips /= LBOUND(tmp_data_in_sst,1) ) .OR. ( ipe /= UBOUND(tmp_data_in_sst,1) ) .OR. &amp;<a name='700'>
+          ( jps /= LBOUND(tmp_data_in_sst,2) ) .OR. ( jpe /= UBOUND(tmp_data_in_sst,2) ) ) THEN<a name='701'>
+       WRITE( str,* ) 'ESMF_FieldCreate(in_sst_field) allocation failed ', &amp;<a name='702'>
+                      __FILE__ ,                                            &amp;<a name='703'>
+                      ', line ',                                            &amp;<a name='704'>
+                      __LINE__ ,                                            &amp;<a name='705'>
+                      ', ips:ipe,jps:jpe = ',ips,':',ipe,',',jps,':',jpe,   &amp;<a name='706'>
+                      ', tmp_data_in_sst(BOUNDS) = ',LBOUND(tmp_data_in_sst,1),':',UBOUND(tmp_data_in_sst,1),',', &amp;<a name='707'>
+                                              LBOUND(tmp_data_in_sst,2),':',UBOUND(tmp_data_in_sst,2)<a name='708'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_512"> ( TRIM(str) )<a name='709'>
+     ENDIF<a name='710'>
+     ALLOCATE( tmp_data_in_landmask(ips:ipe,jps:jpe) )<a name='711'>
+     write(str,*) 'sst_component_init2: tmp_data_in_landmask(', &amp;<a name='712'>
+       LBOUND(tmp_data_in_landmask,1),':',UBOUND(tmp_data_in_landmask,1),',',LBOUND(tmp_data_in_landmask,2),':',UBOUND(tmp_data_in_landmask,2),')'<a name='713'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_449"> ( 100 , TRIM(str) )<a name='714'>
+     CALL wrf_debug ( 100, 'sst_component_init2: calling ESMF_FieldCreate(in_landmask_field)' )<a name='715'>
+     in_landmask_field = ESMF_FieldCreate(                      &amp;<a name='716'>
+                           esmfgrid, tmp_data_in_landmask,      &amp;<a name='717'>
+                           datacopyflag=ESMF_DATACOPY_REFERENCE,              &amp;<a name='718'>
+                           staggerloc=ESMF_STAGGERLOC_CENTER,          &amp;<a name='719'>
+                           name=TRIM(datanames(LANDMASK_INDX)), &amp;<a name='720'>
+<font color=#447700>!                           lbounds=(/ips,jps/),                 &amp;<a name='721'></font>
+<font color=#447700>!                           ubounds=(/ipe,jpe/),                 &amp;<a name='722'></font>
+                           rc=rc )<a name='723'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='724'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_513"> ( 'ESMF_FieldCreate(in_landmask_field) failed' )<a name='725'>
+     ENDIF<a name='726'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_450"> ( 100, 'sst_component_init2: back from ESMF_FieldCreate(in_landmask_field)' )<a name='727'>
+<font color=#447700>!TODO:  This bit will be useful once ESMF handles allocation/deallocation.  <a name='728'></font>
+     <font color=#447700>! validate ESMF allocation<a name='729'></font>
+     IF ( ( ips /= LBOUND(tmp_data_in_landmask,1) ) .OR. ( ipe /= UBOUND(tmp_data_in_landmask,1) ) .OR. &amp;<a name='730'>
+          ( jps /= LBOUND(tmp_data_in_landmask,2) ) .OR. ( jpe /= UBOUND(tmp_data_in_landmask,2) ) ) THEN<a name='731'>
+       WRITE( str,* ) 'ESMF_FieldCreate(in_landmask_field) allocation failed ', &amp;<a name='732'>
+                      __FILE__ ,                                            &amp;<a name='733'>
+                      ', line ',                                            &amp;<a name='734'>
+                      __LINE__ ,                                            &amp;<a name='735'>
+                      ', ips:ipe,jps:jpe = ',ips,':',ipe,',',jps,':',jpe,   &amp;<a name='736'>
+                      ', tmp_data_in_landmask(BOUNDS) = ',LBOUND(tmp_data_in_landmask,1),':',UBOUND(tmp_data_in_landmask,1),',', &amp;<a name='737'>
+                                              LBOUND(tmp_data_in_landmask,2),':',UBOUND(tmp_data_in_landmask,2)<a name='738'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_514"> ( TRIM(str) )<a name='739'>
+     ENDIF<a name='740'>
+<a name='741'>
+     <font color=#447700>! attach ESMF_Field to importState<a name='742'></font>
+     CALL ESMF_StateAdd( importState, fieldList=(/in_sst_field/), rc=rc )<a name='743'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='744'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_515"> ( 'ESMF_StateAdd(in_sst_field) failed' )<a name='745'>
+     ENDIF<a name='746'>
+     CALL ESMF_StateAdd( importState, fieldList=(/in_landmask_field/), rc=rc )<a name='747'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='748'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_516"> ( 'ESMF_StateAdd(in_landmask_field) failed' )<a name='749'>
+     ENDIF<a name='750'>
+     <font color=#447700>! attach ESMF_Field to exportState<a name='751'></font>
+     CALL ESMF_StateAdd( exportState, fieldList=(/out_sst_field/), rc=rc )<a name='752'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='753'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_517"> ( 'ESMF_StateAdd(out_sst_field) failed' )<a name='754'>
+     ENDIF<a name='755'>
+     CALL ESMF_StateAdd( exportState, fieldList=(/out_landmask_field/), rc=rc )<a name='756'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='757'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_518"> ( 'ESMF_StateAdd(out_landmask_field) failed' )<a name='758'>
+     ENDIF<a name='759'>
+<a name='760'>
+     <font color=#447700>!  Open the "SST" input data file for reading.<a name='761'></font>
+     write(str,'(A,A)') 'sst_component_init2: Opening data file ', &amp;<a name='762'>
+       TRIM(sstinfilename)<a name='763'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_531"> ( TRIM(str) )<a name='764'>
+     CALL <A href='../../html_code/frame/module_io.F.html#WRF_OPEN_FOR_READ'>wrf_open_for_read</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_OPEN_FOR_READ_2"> ( TRIM(sstinfilename) , &amp;<a name='765'>
+                              mpicom ,              &amp;<a name='766'>
+                              mpicom ,              &amp;<a name='767'>
+                              "DATASET=INPUT" ,     &amp;<a name='768'>
+                              fid ,                 &amp;<a name='769'>
+                              ierr )<a name='770'>
+     IF ( ierr .NE. 0 ) THEN<a name='771'>
+       WRITE( str , FMT='(A,A,A,I8)' )  &amp;<a name='772'>
+         'sst_component_init2: error opening ', &amp;<a name='773'>
+         TRIM(sstinfilename),' for reading ierr=',ierr<a name='774'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_519"> ( TRIM(str) )<a name='775'>
+     ENDIF<a name='776'>
+     WRITE( str , FMT='(A,A,A,I8)' ) &amp;<a name='777'>
+       'subroutine sst_component_init2: opened file ', &amp;<a name='778'>
+       TRIM(sstinfilename),' for reading fid=',fid<a name='779'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_451"> ( 100, TRIM(str) )<a name='780'>
+<a name='781'>
+     write(str,'(A)') 'sst_component_init2: returning rc=ESMF_SUCCESS'<a name='782'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_INIT2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_452"> ( 100 , TRIM(str) )<a name='783'>
+<a name='784'>
+     rc = ESMF_SUCCESS<a name='785'>
+<a name='786'>
+   END SUBROUTINE sst_component_init2<a name='787'>
+<a name='788'>
+<a name='789'>
+<a name='790'>
+<A NAME='SST_COMPONENT_RUN1'><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_RUN1' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='791'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>sst_component_run1</font>( gcomp, importState, exportState, clock, rc ),<A href='../../call_from/SST_COMPONENT_RUN1.html' TARGET='index'>1</A><a name='792'>
+     TYPE(ESMF_GridComp), TARGET, INTENT(INOUT) :: gcomp<a name='793'>
+     TYPE(ESMF_State),    TARGET, INTENT(INOUT) :: importState, exportState<a name='794'>
+     TYPE(ESMF_Clock),    TARGET, INTENT(INOUT) :: clock<a name='795'>
+     INTEGER,                     INTENT(  OUT) :: rc<a name='796'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='797'></font>
+<font color=#447700>!     SST component run routine, phase 1.<a name='798'></font>
+<font color=#447700>!     Read "SST" data from file and stuff into exportState.  <a name='799'></font>
+<font color=#447700>!<a name='800'></font>
+<font color=#447700>!     The arguments are:<a name='801'></font>
+<font color=#447700>!       gcomp           Component<a name='802'></font>
+<font color=#447700>!       importState     Importstate<a name='803'></font>
+<font color=#447700>!       exportState     Exportstate<a name='804'></font>
+<font color=#447700>!       clock           External clock<a name='805'></font>
+<font color=#447700>!       rc              Return code; equals ESMF_SUCCESS if there are no errors,<a name='806'></font>
+<font color=#447700>!                       otherwise ESMF_FAILURE.<a name='807'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='808'></font>
+<a name='809'>
+     rc = ESMF_SUCCESS<a name='810'>
+<a name='811'>
+     <font color=#447700>! Get "SST" data from file and stuff it into exportState.  <a name='812'></font>
+     CALL <A href='../../html_code/main/wrf_SST_ESMF.F.html#READ_DATA'>read_data</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_RUN1' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="READ_DATA_1">( exportState, clock )<a name='813'>
+<a name='814'>
+   END SUBROUTINE sst_component_run1<a name='815'>
+<a name='816'>
+<a name='817'>
+<a name='818'>
+<A NAME='SST_COMPONENT_RUN2'><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_RUN2' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='819'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>sst_component_run2</font>( gcomp, importState, exportState, clock, rc ),<A href='../../call_from/SST_COMPONENT_RUN2.html' TARGET='index'>1</A><a name='820'>
+     TYPE(ESMF_GridComp), TARGET, INTENT(INOUT) :: gcomp<a name='821'>
+     TYPE(ESMF_State),    TARGET, INTENT(INOUT) :: importState, exportState<a name='822'>
+     TYPE(ESMF_Clock),    TARGET, INTENT(INOUT) :: clock<a name='823'>
+     INTEGER,                     INTENT(  OUT) :: rc<a name='824'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='825'></font>
+<font color=#447700>!     SST component run routine, phase 2.<a name='826'></font>
+<font color=#447700>!     Get from importState, compare with file data, and error-exit <a name='827'></font>
+<font color=#447700>!     if they differ...  If they are the same, then <a name='828'></font>
+<font color=#447700>!     stuff the file data into the exportState.  <a name='829'></font>
+<font color=#447700>!<a name='830'></font>
+<font color=#447700>!     The arguments are:<a name='831'></font>
+<font color=#447700>!       gcomp           Component<a name='832'></font>
+<font color=#447700>!       importState     Importstate<a name='833'></font>
+<font color=#447700>!       exportState     Exportstate<a name='834'></font>
+<font color=#447700>!       clock           External clock<a name='835'></font>
+<font color=#447700>!       rc              Return code; equals ESMF_SUCCESS if there are no errors,<a name='836'></font>
+<font color=#447700>!                       otherwise ESMF_FAILURE.<a name='837'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='838'></font>
+<a name='839'>
+     rc = ESMF_SUCCESS<a name='840'>
+<a name='841'>
+     <font color=#447700>! Get from importState, compare with file data, and error_exit <a name='842'></font>
+     <font color=#447700>! if they differ...  <a name='843'></font>
+<font color=#447700>!TODO:  change this once WRF can load exportState after integrating<a name='844'></font>
+     <font color=#447700>! This works because WRF loads its exportState BEFORE integrating.  <a name='845'></font>
+     CALL wrf_clockprint ( 50, clock, 'sst_component_run2:  clock before call to compare_data()' )<a name='846'>
+     CALL <A href='../../html_code/main/wrf_SST_ESMF.F.html#COMPARE_DATA'>compare_data</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_RUN2' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="COMPARE_DATA_1">( importState, clock )<a name='847'>
+     CALL wrf_clockprint ( 50, clock, 'sst_component_run2:  clock after call to compare_data()' )<a name='848'>
+<a name='849'>
+   END SUBROUTINE sst_component_run2<a name='850'>
+<a name='851'>
+<a name='852'>
+<a name='853'>
+<A NAME='SST_COMPONENT_FINALIZE'><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_FINALIZE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='854'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>sst_component_finalize</font>( gcomp, importState, exportState, clock, rc ),<A href='../../call_from/SST_COMPONENT_FINALIZE.html' TARGET='index'>9</A><a name='855'>
+     USE <A href='../../html_code/frame/module_io.F.html#MODULE_IO'>module_io</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_FINALIZE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_IO_8"><a name='856'>
+     TYPE(ESMF_GridComp), TARGET, INTENT(INOUT) :: gcomp<a name='857'>
+     TYPE(ESMF_State),    TARGET, INTENT(INOUT) :: importState, exportState<a name='858'>
+     TYPE(ESMF_Clock),    TARGET, INTENT(INOUT) :: clock<a name='859'>
+     INTEGER,                     INTENT(  OUT) :: rc<a name='860'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='861'></font>
+<font color=#447700>!     SST component finalize routine.<a name='862'></font>
+<font color=#447700>!<a name='863'></font>
+<font color=#447700>!     The arguments are:<a name='864'></font>
+<font color=#447700>!       gcomp           Component<a name='865'></font>
+<font color=#447700>!       importState     Importstate<a name='866'></font>
+<font color=#447700>!       exportState     Exportstate<a name='867'></font>
+<font color=#447700>!       clock           External clock<a name='868'></font>
+<font color=#447700>!       rc              Return code; equals ESMF_SUCCESS if there are no errors,<a name='869'></font>
+<font color=#447700>!                       otherwise ESMF_FAILURE.<a name='870'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='871'></font>
+<a name='872'>
+     <font color=#447700>! Local variables<a name='873'></font>
+     TYPE(ESMF_Field) :: tmp_field<a name='874'>
+     INTEGER :: i, ierr<a name='875'>
+<a name='876'>
+     rc = ESMF_SUCCESS<a name='877'>
+<a name='878'>
+     <font color=#447700>! destroy ESMF_Fields and other "deep" objects created by this component<a name='879'></font>
+     <font color=#447700>! note that this component relied on ESMF to allocate data pointers during <a name='880'></font>
+     <font color=#447700>! calls to ESMF_FieldCreate() so it also expects ESMF to free these pointers <a name='881'></font>
+     DO i=1, datacount<a name='882'>
+       <font color=#447700>! destroy field in importState<a name='883'></font>
+       CALL ESMF_StateGet( importState, TRIM(datanames(i)), tmp_field, &amp;<a name='884'>
+                                rc=rc )<a name='885'>
+       IF (rc /= ESMF_SUCCESS) THEN<a name='886'>
+         WRITE( str , * )                                               &amp;<a name='887'>
+           'sst_component_finalize:  ESMF_StateGet( importState,', &amp;<a name='888'>
+           TRIM(datanames(i)),') failed'<a name='889'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_FINALIZE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_520"> ( TRIM(str) )<a name='890'>
+       ENDIF<a name='891'>
+       CALL ESMF_FieldDestroy( tmp_field, rc=rc )<a name='892'>
+       IF (rc /= ESMF_SUCCESS) THEN<a name='893'>
+         WRITE( str , * )                                              &amp;<a name='894'>
+           'sst_component_finalize:  ESMF_FieldDestroy( importState,', &amp;<a name='895'>
+           TRIM(datanames(i)),') failed'<a name='896'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_FINALIZE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_521"> ( TRIM(str) )<a name='897'>
+       ENDIF<a name='898'>
+       <font color=#447700>! destroy field in exportState<a name='899'></font>
+       CALL ESMF_StateGet( exportState, TRIM(datanames(i)), tmp_field, &amp;<a name='900'>
+                                rc=rc )<a name='901'>
+       IF (rc /= ESMF_SUCCESS) THEN<a name='902'>
+         WRITE( str , * )                                               &amp;<a name='903'>
+           'sst_component_finalize:  ESMF_StateGet( exportState,', &amp;<a name='904'>
+           TRIM(datanames(i)),') failed'<a name='905'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_FINALIZE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_522"> ( TRIM(str) )<a name='906'>
+       ENDIF<a name='907'>
+       CALL ESMF_FieldDestroy( tmp_field, rc=rc )<a name='908'>
+       IF (rc /= ESMF_SUCCESS) THEN<a name='909'>
+         WRITE( str , * )                                              &amp;<a name='910'>
+           'sst_component_finalize:  ESMF_FieldDestroy( exportState,', &amp;<a name='911'>
+           TRIM(datanames(i)),') failed'<a name='912'>
+         CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_FINALIZE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_523"> ( TRIM(str) )<a name='913'>
+       ENDIF<a name='914'>
+     ENDDO<a name='915'>
+<a name='916'>
+     <font color=#447700>! deallocate space for data read from disk<a name='917'></font>
+     DEALLOCATE( file_sst_data, file_landmask_data )<a name='918'>
+<a name='919'>
+     <font color=#447700>! close SST data file<a name='920'></font>
+     WRITE( str , FMT='(A,I8)' ) &amp;<a name='921'>
+       'subroutine sst_component_finalize: closing file fid=',fid<a name='922'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_FINALIZE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_453"> ( 100, TRIM(str) )<a name='923'>
+     CALL <A href='../../html_code/frame/module_io.F.html#WRF_IOCLOSE'>wrf_ioclose</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_FINALIZE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_IOCLOSE_2">( fid , ierr )<a name='924'>
+     IF ( ierr .NE. 0 ) THEN<a name='925'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_FINALIZE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_524"> ( 'sst_component_finalize:  wrf_ioclose failed' )<a name='926'>
+     ENDIF<a name='927'>
+<a name='928'>
+   END SUBROUTINE sst_component_finalize<a name='929'>
+<a name='930'>
+<a name='931'>
+END MODULE module_sst_component_top<a name='932'>
+<a name='933'>
+<a name='934'>
+<a name='935'>
+<a name='936'>
+<A NAME='MODULE_SST_SETSERVICES'><A href='../../html_code/main/wrf_SST_ESMF.F.html#MODULE_SST_SETSERVICES' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='937'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_sst_setservices</font> <A href='../../call_to/MODULE_SST_SETSERVICES.html' TARGET='index'>1</A><a name='938'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='939'></font>
+<font color=#447700>! This module defines SST "Set Services" method sst_register() <a name='940'></font>
+<font color=#447700>! used for ESMF coupling.  <a name='941'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='942'></font>
+<a name='943'>
+   USE <A href='../../html_code/main/wrf_SST_ESMF.F.html#MODULE_SST_COMPONENT_TOP'>module_sst_component_top</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_COMPONENT_FINALIZE' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_SST_COMPONENT_TOP_1">, ONLY: sst_component_init1,  &amp;<a name='944'>
+                                       sst_component_init2,  &amp;<a name='945'>
+                                       sst_component_run1,   &amp;<a name='946'>
+                                       sst_component_run2,   &amp;<a name='947'>
+                                       sst_component_finalize<a name='948'>
+<font color=#447700>!  Updated for ESMF 5.2.0r <a name='949'></font>
+<font color=#447700>!   USE ESMF_Mod<a name='950'></font>
+   USE ESMF<a name='951'>
+<a name='952'>
+   IMPLICIT NONE<a name='953'>
+<a name='954'>
+   <font color=#447700>! everything is private by default<a name='955'></font>
+   PRIVATE<a name='956'>
+<a name='957'>
+   <font color=#447700>! Public entry point for ESMF_GridCompSetServices()<a name='958'></font>
+   PUBLIC SST_register<a name='959'>
+<a name='960'>
+   <font color=#447700>! private stuff<a name='961'></font>
+   CHARACTER (ESMF_MAXSTR) :: str<a name='962'>
+<a name='963'>
+CONTAINS<a name='964'>
+<a name='965'>
+<a name='966'>
+<A NAME='SST_REGISTER'><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_REGISTER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='967'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>sst_register</font>(gcomp, rc),<A href='../../call_from/SST_REGISTER.html' TARGET='index'>5</A><a name='968'>
+     TYPE(ESMF_GridComp), INTENT(INOUT) :: gcomp<a name='969'>
+     INTEGER, INTENT(OUT) :: rc<a name='970'>
+     INTEGER :: finalrc<a name='971'>
+<font color=#447700>!<a name='972'></font>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='973'></font>
+<font color=#447700>!     SST_register - Externally visible registration routine<a name='974'></font>
+<font color=#447700>!<a name='975'></font>
+<font color=#447700>!     User-supplied SetServices routine.<a name='976'></font>
+<font color=#447700>!     The Register routine sets the subroutines to be called<a name='977'></font>
+<font color=#447700>!     as the init, run, and finalize routines.  Note that these are<a name='978'></font>
+<font color=#447700>!     private to the module.<a name='979'></font>
+<font color=#447700>!<a name='980'></font>
+<font color=#447700>!     The arguments are:<a name='981'></font>
+<font color=#447700>!       gcomp           Component<a name='982'></font>
+<font color=#447700>!       rc              Return code; equals ESMF_SUCCESS if there are no errors,<a name='983'></font>
+<font color=#447700>!                       otherwise ESMF_FAILURE.<a name='984'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='985'></font>
+<a name='986'>
+     finalrc = ESMF_SUCCESS<a name='987'>
+     <font color=#447700>! Register the callback routines.<a name='988'></font>
+     call ESMF_GridCompSetEntryPoint(gcomp, ESMF_METHOD_INITIALIZE, &amp;<a name='989'>
+                                     sst_component_init1, phase=1, rc=rc)<a name='990'>
+     IF ( rc /= ESMF_SUCCESS) THEN<a name='991'>
+        WRITE(str,*) 'ESMF_GridCompSetEntryPoint(sst_component_init1) failed with rc = ', rc<a name='992'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_REGISTER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_525"> ( TRIM(str) )<a name='993'>
+     ENDIF<a name='994'>
+     call ESMF_GridCompSetEntryPoint(gcomp, ESMF_METHOD_INITIALIZE, &amp;<a name='995'>
+                                     sst_component_init2, phase=2, rc=rc)<a name='996'>
+     IF ( rc /= ESMF_SUCCESS) THEN<a name='997'>
+        WRITE(str,*) 'ESMF_GridCompSetEntryPoint(sst_component_init2) failed with rc = ', rc<a name='998'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_REGISTER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_526"> ( TRIM(str) )<a name='999'>
+     ENDIF<a name='1000'>
+     call ESMF_GridCompSetEntryPoint(gcomp, ESMF_METHOD_RUN, &amp;<a name='1001'>
+                                     sst_component_run1, phase=1, rc=rc)<a name='1002'>
+     IF ( rc /= ESMF_SUCCESS) THEN<a name='1003'>
+        WRITE(str,*) 'ESMF_GridCompSetEntryPoint(sst_component_run1) failed with rc = ', rc<a name='1004'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_REGISTER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_527"> ( TRIM(str) )<a name='1005'>
+     ENDIF<a name='1006'>
+     call ESMF_GridCompSetEntryPoint(gcomp, ESMF_METHOD_RUN, &amp;<a name='1007'>
+                                     sst_component_run2, phase=2, rc=rc)<a name='1008'>
+     IF ( rc /= ESMF_SUCCESS) THEN<a name='1009'>
+        WRITE(str,*) 'ESMF_GridCompSetEntryPoint(sst_component_run2) failed with rc = ', rc<a name='1010'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_REGISTER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_528"> ( TRIM(str) )<a name='1011'>
+     ENDIF<a name='1012'>
+     call ESMF_GridCompSetEntryPoint(gcomp, ESMF_METHOD_FINALIZE, &amp;<a name='1013'>
+                                     sst_component_finalize, rc=rc)<a name='1014'>
+     IF ( rc /= ESMF_SUCCESS) THEN<a name='1015'>
+        WRITE(str,*) 'ESMF_GridCompSetEntryPoint(sst_component_finalize) failed with rc = ', rc<a name='1016'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#SST_REGISTER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_529"> ( TRIM(str) )<a name='1017'>
+     ENDIF<a name='1018'>
+<a name='1019'>
+     PRINT *,'SST:  Registered Initialize, Run, and Finalize routines'<a name='1020'>
+<a name='1021'>
+     rc = finalrc<a name='1022'>
+<a name='1023'>
+   END SUBROUTINE sst_register<a name='1024'>
+<a name='1025'>
+END MODULE module_sst_setservices<a name='1026'>
+<a name='1027'>
+<a name='1028'>
+<a name='1029'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='1030'></font>
+<font color=#447700>! Module module_wrfsst_coupler defines the <a name='1031'></font>
+<font color=#447700>! "WRF-SST" coupler component.  It provides two-way coupling between <a name='1032'></font>
+<font color=#447700>! the "SST" and "WRF" components.  <a name='1033'></font>
+<font color=#447700>! In its run routine it transfers data directly from the <a name='1034'></font>
+<font color=#447700>! SST Component's export state to the WRF Component's import state.  <a name='1035'></font>
+<font color=#447700>! It also transfers data directly from the <a name='1036'></font>
+<font color=#447700>! WRF Component's export state to the SST Component's import state.  <a name='1037'></font>
+<font color=#447700>!<a name='1038'></font>
+<font color=#447700>! This is derived from src/demo/coupled_flow/src/CouplerMod.F90<a name='1039'></font>
+<font color=#447700>! created by Nancy Collins and others on the ESMF Core Team.  <a name='1040'></font>
+<font color=#447700>!<a name='1041'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='1042'></font>
+<a name='1043'>
+<A NAME='MODULE_WRFSST_COUPLER'><A href='../../html_code/main/wrf_SST_ESMF.F.html#MODULE_WRFSST_COUPLER' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='1044'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_wrfsst_coupler</font> <A href='../../call_to/MODULE_WRFSST_COUPLER.html' TARGET='index'>1</A><a name='1045'>
+<a name='1046'>
+<font color=#447700>! Updated for ESMF 5.2.0r<a name='1047'></font>
+<font color=#447700>!    USE ESMF_Mod<a name='1048'></font>
+    USE ESMF<a name='1049'>
+<a name='1050'>
+    IMPLICIT NONE<a name='1051'>
+    <a name='1052'>
+    <font color=#447700>! everything is private by default<a name='1053'></font>
+    PRIVATE<a name='1054'>
+<a name='1055'>
+    <font color=#447700>! Public entry point <a name='1056'></font>
+    PUBLIC WRFSSTCpl_register<a name='1057'>
+<a name='1058'>
+    <font color=#447700>! private data members<a name='1059'></font>
+    <font color=#447700>! route handles and flags<a name='1060'></font>
+    TYPE(ESMF_RouteHandle), SAVE :: fromWRF_rh, fromSST_rh<a name='1061'>
+    LOGICAL, SAVE :: fromWRF_rh_ready = .FALSE.<a name='1062'>
+    LOGICAL, SAVE :: fromSST_rh_ready = .FALSE.<a name='1063'>
+    <font color=#447700>! field names<a name='1064'></font>
+    INTEGER, PARAMETER :: datacount = 2<a name='1065'>
+    INTEGER, PARAMETER :: SST_INDX = 1<a name='1066'>
+    INTEGER, PARAMETER :: LANDMASK_INDX = 2<a name='1067'>
+    CHARACTER(LEN=ESMF_MAXSTR), SAVE :: datanames(datacount)<a name='1068'>
+    CHARACTER(LEN=ESMF_MAXSTR) :: str<a name='1069'>
+<a name='1070'>
+<a name='1071'>
+CONTAINS<a name='1072'>
+<a name='1073'>
+<a name='1074'>
+<A NAME='WRFSSTCPL_REGISTER'><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_REGISTER' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1075'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>WRFSSTCpl_register</font>(comp, rc),<A href='../../call_from/WRFSSTCPL_REGISTER.html' TARGET='index'>3</A><a name='1076'>
+     TYPE(ESMF_CplComp), INTENT(INOUT) :: comp<a name='1077'>
+     INTEGER, INTENT(OUT) :: rc<a name='1078'>
+<font color=#447700>!<a name='1079'></font>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='1080'></font>
+<font color=#447700>!     WRFSSTCpl_register - Externally visible registration routine<a name='1081'></font>
+<font color=#447700>!<a name='1082'></font>
+<font color=#447700>!     User-supplied SetServices routine.<a name='1083'></font>
+<font color=#447700>!     The Register routine sets the subroutines to be called<a name='1084'></font>
+<font color=#447700>!     as the init, run, and finalize routines.  Note that these are<a name='1085'></font>
+<font color=#447700>!     private to the module.<a name='1086'></font>
+<font color=#447700>!<a name='1087'></font>
+<font color=#447700>!     The arguments are:<a name='1088'></font>
+<font color=#447700>!       comp            Component<a name='1089'></font>
+<font color=#447700>!       rc              Return code; equals ESMF_SUCCESS if there are no errors,<a name='1090'></font>
+<font color=#447700>!                       otherwise ESMF_FAILURE.<a name='1091'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='1092'></font>
+<a name='1093'>
+      <font color=#447700>! guilty until proven innocent<a name='1094'></font>
+      rc = ESMF_FAILURE<a name='1095'>
+<a name='1096'>
+      <font color=#447700>! Register the callback routines.<a name='1097'></font>
+<a name='1098'>
+      call ESMF_CplCompSetEntryPoint(comp, ESMF_METHOD_INITIALIZE, WRFSSTCpl_init, &amp;<a name='1099'>
+                                     rc=rc)<a name='1100'>
+      IF ( rc /= ESMF_SUCCESS ) THEN<a name='1101'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_REGISTER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_530"> ( 'ESMF_CplCompSetEntryPoint(WRFSSTCpl_init) failed' )<a name='1102'>
+      ENDIF<a name='1103'>
+      call ESMF_CplCompSetEntryPoint(comp, ESMF_METHOD_RUN, WRFSSTCpl_run, &amp;<a name='1104'>
+                                     rc=rc)<a name='1105'>
+      IF ( rc /= ESMF_SUCCESS ) THEN<a name='1106'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_REGISTER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_531"> ( 'ESMF_CplCompSetEntryPoint(WRFSSTCpl_run) failed' )<a name='1107'>
+      ENDIF<a name='1108'>
+      call ESMF_CplCompSetEntryPoint(comp, ESMF_METHOD_FINALIZE, WRFSSTCpl_final, &amp;<a name='1109'>
+                                     rc=rc)<a name='1110'>
+      IF ( rc /= ESMF_SUCCESS ) THEN<a name='1111'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_REGISTER' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_532"> ( 'ESMF_CplCompSetEntryPoint(WRFSSTCpl_final) failed' )<a name='1112'>
+      ENDIF<a name='1113'>
+<a name='1114'>
+      print *, "module_wrfsst_coupler: Registered Initialize, Run, and Finalize routines"<a name='1115'>
+<a name='1116'>
+    END SUBROUTINE WRFSSTCpl_register<a name='1117'>
+<a name='1118'>
+<a name='1119'>
+<A NAME='WRFSSTCPL_INIT'><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_INIT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1120'>
+    <font color=#993300>SUBROUTINE </font><font color=#cc0000>WRFSSTCpl_init</font>(comp, importState, exportState, clock, rc),<A href='../../call_from/WRFSSTCPL_INIT.html' TARGET='index'>5</A><a name='1121'>
+      USE <A href='../../html_code/main/wrf_ESMFMod.F.html#MODULE_METADATAUTILS'>module_metadatautils</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_METADATAUTILS_4">, ONLY: AttachDecompToState, GetDecompFromState<a name='1122'>
+      TYPE(ESMF_CplComp), INTENT(INOUT) :: comp<a name='1123'>
+      TYPE(ESMF_State), INTENT(INOUT) :: importState, exportState<a name='1124'>
+      TYPE(ESMF_Clock), INTENT(INOUT) :: clock<a name='1125'>
+      INTEGER, INTENT(OUT) :: rc<a name='1126'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='1127'></font>
+<font color=#447700>!     WRF-SST coupler component init routine.  This simply passes needed <a name='1128'></font>
+<font color=#447700>!     metadata from WRF to SST.  Initialization of ESMF_RouteHandle objects <a name='1129'></font>
+<font color=#447700>!     is handled later via lazy evaluation.  <a name='1130'></font>
+<font color=#447700>!<a name='1131'></font>
+<font color=#447700>!     The arguments are:<a name='1132'></font>
+<font color=#447700>!       comp            Component<a name='1133'></font>
+<font color=#447700>!       importState     Importstate<a name='1134'></font>
+<font color=#447700>!       exportState     Exportstate<a name='1135'></font>
+<font color=#447700>!       clock           External clock<a name='1136'></font>
+<font color=#447700>!       rc              Return code; equals ESMF_SUCCESS if there are no errors,<a name='1137'></font>
+<font color=#447700>!                       otherwise ESMF_FAILURE.<a name='1138'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='1139'></font>
+<a name='1140'>
+      <font color=#447700>! Local variables<a name='1141'></font>
+      CHARACTER(ESMF_MAXSTR) :: importstatename<a name='1142'>
+      <font color=#447700>! decomposition information<a name='1143'></font>
+      INTEGER :: ids, ide, jds, jde, kds, kde<a name='1144'>
+      INTEGER :: ims, ime, jms, jme, kms, kme<a name='1145'>
+      INTEGER :: ips, ipe, jps, jpe, kps, kpe<a name='1146'>
+      INTEGER :: domdesc<a name='1147'>
+      LOGICAL :: bdy_mask(4)<a name='1148'>
+<a name='1149'>
+      PRINT *, "DEBUG:  Coupler Init starting"<a name='1150'>
+<a name='1151'>
+      <font color=#447700>! guilty until proven innocent<a name='1152'></font>
+      rc = ESMF_FAILURE<a name='1153'>
+<a name='1154'>
+      CALL ESMF_StateGet(importState, name=importstatename, rc=rc)<a name='1155'>
+      IF ( rc /= ESMF_SUCCESS ) THEN<a name='1156'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_533"> ( 'WRFSSTCpl_init:  ESMF_StateGet failed' )<a name='1157'>
+      ENDIF<a name='1158'>
+<a name='1159'>
+      IF ( TRIM(importstatename) .EQ. "WRF Export State" ) THEN<a name='1160'>
+        <font color=#447700>! get metadata from WRF export state<a name='1161'></font>
+        CALL <A href='../../html_code/main/wrf_ESMFMod.F.html#GETDECOMPFROMSTATE'>GetDecompFromState</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GETDECOMPFROMSTATE_2">( importState,                  &amp;<a name='1162'>
+                                 ids, ide, jds, jde, kds, kde, &amp;<a name='1163'>
+                                 ims, ime, jms, jme, kms, kme, &amp;<a name='1164'>
+                                 ips, ipe, jps, jpe, kps, kpe, &amp;<a name='1165'>
+                                 domdesc, bdy_mask )<a name='1166'>
+        <font color=#447700>! put metadata from in SST import state<a name='1167'></font>
+        CALL <A href='../../html_code/main/wrf_ESMFMod.F.html#ATTACHDECOMPTOSTATE'>AttachDecompToState</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ATTACHDECOMPTOSTATE_3">( exportState,                  &amp;<a name='1168'>
+                                  ids, ide, jds, jde, kds, kde, &amp;<a name='1169'>
+                                  ims, ime, jms, jme, kms, kme, &amp;<a name='1170'>
+                                  ips, ipe, jps, jpe, kps, kpe, &amp;<a name='1171'>
+                                  domdesc, bdy_mask )<a name='1172'>
+<a name='1173'>
+<a name='1174'>
+      ELSE<a name='1175'>
+        WRITE(str,*)'WRFSSTCpl_init:  invalid importState name: ',TRIM(importstatename)<a name='1176'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_INIT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_534"> ( TRIM(str) )<a name='1177'>
+      ENDIF<a name='1178'>
+<a name='1179'>
+      <font color=#447700>! set up field names<a name='1180'></font>
+<font color=#447700>!TODO:  use CF conventions for "standard_name" once WRF Registry supports them<a name='1181'></font>
+<font color=#447700>!TODO:      datanames(SST_INDX) = "sea_surface_temperature"<a name='1182'></font>
+<font color=#447700>!TODO:      datanames(LANDMASK_INDX) = "land_binary_mask"<a name='1183'></font>
+      datanames(SST_INDX) = "SST"<a name='1184'>
+      datanames(LANDMASK_INDX) = "LANDMASK"<a name='1185'>
+<a name='1186'>
+      PRINT *, "DEBUG:  Coupler Init returning"<a name='1187'>
+   <a name='1188'>
+    END SUBROUTINE WRFSSTCpl_init<a name='1189'>
+<a name='1190'>
+<a name='1191'>
+<a name='1192'>
+<A NAME='WRFSSTCPL_RUN'><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1193'>
+    <font color=#993300>SUBROUTINE </font><font color=#cc0000>WRFSSTCpl_run</font>(comp, importState, exportState, clock, rc),<A href='../../call_from/WRFSSTCPL_RUN.html' TARGET='index'>43</A><a name='1194'>
+      USE ESMF<a name='1195'>
+      TYPE(ESMF_CplComp), INTENT(INOUT) :: comp<a name='1196'>
+      TYPE(ESMF_State), INTENT(INOUT) :: importState, exportState<a name='1197'>
+      TYPE(ESMF_Clock), INTENT(INOUT) :: clock<a name='1198'>
+      INTEGER, INTENT(OUT) :: rc<a name='1199'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='1200'></font>
+<font color=#447700>!     WRF-SST coupler component run routine.<a name='1201'></font>
+<font color=#447700>!<a name='1202'></font>
+<font color=#447700>!     The arguments are:<a name='1203'></font>
+<font color=#447700>!       comp            Component<a name='1204'></font>
+<font color=#447700>!       importState     Importstate<a name='1205'></font>
+<font color=#447700>!       exportState     Exportstate<a name='1206'></font>
+<font color=#447700>!       clock           External clock<a name='1207'></font>
+<font color=#447700>!       rc              Return code; equals ESMF_SUCCESS if there are no errors,<a name='1208'></font>
+<font color=#447700>!                       otherwise ESMF_FAILURE.<a name='1209'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='1210'></font>
+<a name='1211'>
+<font color=#447700>! Note that comments in this code are preserved from the sample coupler <a name='1212'></font>
+<font color=#447700>! provided by the ESMF core team.  <a name='1213'></font>
+<a name='1214'>
+      <font color=#447700>! Local variables<a name='1215'></font>
+      TYPE(ESMF_Field) :: src_field, dst_field<a name='1216'>
+      TYPE(ESMF_Array) :: src_array, dst_array<a name='1217'>
+      TYPE(ESMF_RouteHandle) :: routehandle<a name='1218'>
+      TYPE(ESMF_VM) :: vm<a name='1219'>
+      LOGICAL :: build_fromWRF_rh, build_fromSST_rh, fromWRF<a name='1220'>
+      CHARACTER(LEN=ESMF_MAXSTR) :: importStatename<a name='1221'>
+      CHARACTER(LEN=ESMF_MAXSTR) :: SST_exportStatename, WRF_exportStatename<a name='1222'>
+      INTEGER :: i<a name='1223'>
+      CHARACTER(LEN=256) :: directionString<a name='1224'>
+      LOGICAL :: neededFlag(1)<a name='1225'>
+<a name='1226'>
+      WRITE(str,*) 'WRFSSTCpl_run: begin'<a name='1227'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_454"> ( 100 , TRIM(str) )<a name='1228'>
+<a name='1229'>
+      <font color=#447700>! guilty until proven innocent<a name='1230'></font>
+      rc = ESMF_FAILURE<a name='1231'>
+<a name='1232'>
+      <font color=#447700>! Which way is this coupling going?  <a name='1233'></font>
+      WRITE(str,*) 'WRFSSTCpl_run: calling ESMF_StateGet(importState,name,...)'<a name='1234'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_455"> ( 100 , TRIM(str) )<a name='1235'>
+      CALL ESMF_StateGet( importState, name=importStatename, rc=rc )<a name='1236'>
+      WRITE(str,*) 'WRFSSTCpl_run: importStatename ', trim(importStatename), 'rc = ', rc<a name='1237'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_456"> ( 100, TRIM(str) )<a name='1238'>
+      IF ( rc /= ESMF_SUCCESS ) THEN<a name='1239'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_535"> ( 'WRFSSTCpl_run:  ESMF_StateGet(importState,name,...) failed' )<a name='1240'>
+      ENDIF<a name='1241'>
+      WRITE(str,*) 'WRFSSTCpl_run: back from ESMF_StateGet, importStatename = &lt;',TRIM(importStatename),'&gt;'<a name='1242'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_457"> ( 100 , TRIM(str) )<a name='1243'>
+<a name='1244'>
+      <font color=#447700>! first time through in each direction:  create route handle and <a name='1245'></font>
+      <font color=#447700>! associated objects<a name='1246'></font>
+      WRF_exportStatename = "WRF Export State"<a name='1247'>
+      SST_exportStatename = "SST Export State"<a name='1248'>
+      IF ( TRIM(importStatename) .EQ. TRIM(WRF_exportStatename) ) THEN<a name='1249'>
+        fromWRF = .TRUE.<a name='1250'>
+        directionString = 'WRFtoSST'<a name='1251'>
+      ELSE IF ( TRIM(importStatename) .EQ. TRIM(SST_exportStatename) ) THEN<a name='1252'>
+        fromWRF = .FALSE.<a name='1253'>
+        directionString = 'SSTtoWRF'<a name='1254'>
+      ELSE<a name='1255'>
+        WRITE(str,*)'WRFSSTCpl_run:  invalid importState name: ',TRIM(importstatename)<a name='1256'>
+        CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_536"> ( TRIM(str) )<a name='1257'>
+      ENDIF<a name='1258'>
+      WRITE(str,*) 'WRFSSTCpl_run: fromWRF = ',fromWRF<a name='1259'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_458"> ( 100 , TRIM(str) )<a name='1260'>
+      build_fromWRF_rh =         fromWRF   .AND. ( .NOT. fromWRF_rh_ready )<a name='1261'>
+      build_fromSST_rh = ( .NOT. fromWRF ) .AND. ( .NOT. fromSST_rh_ready )<a name='1262'>
+      WRITE(str,*) 'WRFSSTCpl_run: build_fromWRF_rh = ',build_fromWRF_rh<a name='1263'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_459"> ( 100 , TRIM(str) )<a name='1264'>
+      WRITE(str,*) 'WRFSSTCpl_run: build_fromSST_rh = ',build_fromSST_rh<a name='1265'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_460"> ( 100 , TRIM(str) )<a name='1266'>
+      IF ( build_fromWRF_rh .OR. build_fromSST_rh ) THEN<a name='1267'>
+        CALL ESMF_CplCompGet( comp, vm=vm, rc=rc )<a name='1268'>
+        IF ( rc /= ESMF_SUCCESS ) THEN<a name='1269'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_537"> ( 'WRFSSTCpl_run:  ESMF_CplCompGet failed' )<a name='1270'>
+        ENDIF<a name='1271'>
+        <font color=#447700>! The use of literal index "1" here indicates that we don't care which <a name='1272'></font>
+        <font color=#447700>! ESMF_Field we get so we might as well get the first one.  <a name='1273'></font>
+        WRITE(str,*) 'WRFSSTCpl_run: grabbing first field &lt;',TRIM(datanames(1)), &amp;<a name='1274'>
+                     '&gt; from import state'<a name='1275'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_461"> ( 100 , TRIM(str) )<a name='1276'>
+<a name='1277'>
+        CALL ESMF_StateGet( importState, TRIM(datanames(1)), src_field, &amp;<a name='1278'>
+                                 rc=rc )<a name='1279'>
+        IF ( rc /= ESMF_SUCCESS ) THEN<a name='1280'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_538"> ( 'WRFSSTCpl_run:  ESMF_StateGet(importState) failed' )<a name='1281'>
+        ENDIF<a name='1282'>
+<a name='1283'>
+        CALL ESMF_FieldGet( src_field, array=src_array, rc=rc )<a name='1284'>
+        IF ( rc /= ESMF_SUCCESS ) THEN<a name='1285'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_539"> ( 'WRFSSTCpl_run:  ESMF_FieldGet src_array failed' )<a name='1286'>
+        ENDIF<a name='1287'>
+        WRITE(str,*) 'WRFSSTCpl_run: grabbing first field &lt;',TRIM(datanames(1)), &amp;<a name='1288'>
+                     '&gt; from export state'<a name='1289'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_462"> ( 100 , TRIM(str) )<a name='1290'>
+<a name='1291'>
+        CALL ESMF_StateGet( exportState, TRIM(datanames(1)), dst_field, &amp;<a name='1292'>
+                                 rc=rc )<a name='1293'>
+        IF ( rc /= ESMF_SUCCESS ) THEN<a name='1294'>
+          WRITE(str,*)'WRFSSTCpl_run: datanames(1) ',TRIM(datanames(1)),' rc ',rc<a name='1295'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_532">(TRIM(str))<a name='1296'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_540"> ( 'WRFSSTCpl_run:  ESMF_StateGet(exportState) failed' )<a name='1297'>
+        ENDIF<a name='1298'>
+        CALL ESMF_FieldGet( dst_field, array=dst_array, &amp;<a name='1299'>
+                                 rc=rc )<a name='1300'>
+        IF ( rc /= ESMF_SUCCESS ) THEN<a name='1301'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_541"> ( 'WRFSSTCpl_run:  ESMF_FieldGet dst_array failed' )<a name='1302'>
+        ENDIF<a name='1303'>
+<a name='1304'>
+<a name='1305'>
+        IF ( build_fromWRF_rh ) THEN<a name='1306'>
+          WRITE(str,*) 'WRFSSTCpl_run: creating fromWRF_rh'<a name='1307'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_463"> ( 100 , TRIM(str) )<a name='1308'>
+          fromWRF_rh = ESMF_RouteHandleCreate( rc )<a name='1309'>
+          IF ( rc /= ESMF_SUCCESS ) THEN<a name='1310'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_542"> ( 'WRFSSTCpl_run:  ESMF_RouteHandleCreate(fromWRF_rh) failed' )<a name='1311'>
+          ENDIF<a name='1312'>
+          WRITE(str,*) 'WRFSSTCpl_run: calling ESMF_FieldRedistStore(fromWRF_rh)'<a name='1313'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_464"> ( 100 , TRIM(str) )<a name='1314'>
+          CALL ESMF_ArrayRedistStore( src_array, dst_array, &amp;<a name='1315'>
+                                      routehandle=fromWRF_rh, rc=rc )<a name='1316'>
+          IF ( rc /= ESMF_SUCCESS ) THEN<a name='1317'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_543"> ( 'WRFSSTCpl_run:  ESMF_FieldRedistStore(fromWRF_rh) failed' )<a name='1318'>
+          ENDIF<a name='1319'>
+          fromWRF_rh_ready = .TRUE.<a name='1320'>
+        ENDIF<a name='1321'>
+        IF ( build_fromSST_rh ) THEN<a name='1322'>
+          WRITE(str,*) 'WRFSSTCpl_run: creating fromSST_rh'<a name='1323'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_465"> ( 100 , TRIM(str) )<a name='1324'>
+          fromSST_rh = ESMF_RouteHandleCreate( rc )<a name='1325'>
+          IF ( rc /= ESMF_SUCCESS ) THEN<a name='1326'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_544"> ( 'WRFSSTCpl_run:  ESMF_RouteHandleCreate(fromSST_rh) failed' )<a name='1327'>
+          ENDIF<a name='1328'>
+          WRITE(str,*) 'WRFSSTCpl_run: calling ESMF_FieldRedistStore(fromSST_rh)'<a name='1329'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_466"> ( 100 , TRIM(str) )<a name='1330'>
+          CALL ESMF_ArrayRedistStore( src_array, dst_array, &amp;<a name='1331'>
+                                      routehandle=fromSST_rh, rc=rc )<a name='1332'>
+<font color=#447700>!write(0,*)__FILE__,__LINE__,'rc = ',rc<a name='1333'></font>
+          IF ( rc /= ESMF_SUCCESS ) THEN<a name='1334'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_545"> ( 'WRFSSTCpl_run:  ESMF_FieldRedistStore(fromSST_rh) failed' )<a name='1335'>
+          ENDIF<a name='1336'>
+          fromSST_rh_ready = .TRUE.<a name='1337'>
+        ENDIF<a name='1338'>
+        DO i=1, datacount<a name='1339'>
+          WRITE(str,*) 'WRFSSTCpl_run: calling ESMF_AttributeSet(importState, ',TRIM(datanames(i))//':needed',')'<a name='1340'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_467"> ( 100 , TRIM(str) )<a name='1341'>
+<font color=#447700>!5.2.0r          CALL ESMF_StateSetNeeded( importState, TRIM(datanames(i)), &amp;<a name='1342'></font>
+<font color=#447700>!5.2.0r                                    ESMF_NEEDED, rc=rc )<a name='1343'></font>
+          CALL ESMF_AttributeSet( importState, name=TRIM(datanames(i))//':needed',value=.true.,rc=rc)<a name='1344'>
+          IF ( rc /= ESMF_SUCCESS ) THEN<a name='1345'>
+            WRITE(str,*) 'WRFSSTCpl_run:  ESMF_AttributeSet(',TRIM(datanames(i))//':needed',') failed'<a name='1346'>
+            CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_546"> ( str )<a name='1347'>
+          ENDIF<a name='1348'>
+        ENDDO<a name='1349'>
+      ENDIF<a name='1350'>
+<a name='1351'>
+      <font color=#447700>! In this case, the coupling is symmetric - you call redist going<a name='1352'></font>
+      <font color=#447700>! both ways - so we only care about the coupling direction in order <a name='1353'></font>
+      <font color=#447700>! to get the right routehandle selected.<a name='1354'></font>
+      IF ( fromWRF ) THEN<a name='1355'>
+        WRITE(str,*) 'WRFSSTCpl_run: routehandle = fromWRF_rh'<a name='1356'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_468"> ( 100 , TRIM(str) )<a name='1357'>
+        routehandle = fromWRF_rh <a name='1358'>
+      ELSE<a name='1359'>
+        WRITE(str,*) 'WRFSSTCpl_run: routehandle = fromSST_rh'<a name='1360'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_469"> ( 100 , TRIM(str) )<a name='1361'>
+        routehandle = fromSST_rh <a name='1362'>
+      ENDIF<a name='1363'>
+<a name='1364'>
+      DO i=1, datacount<a name='1365'>
+        WRITE(str,*) 'WRFSSTCpl_run: grabbing field &lt;',TRIM(datanames(i)),'&gt;'<a name='1366'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_470"> ( 100 , TRIM(str) )<a name='1367'>
+        <font color=#447700>! check isneeded flag here<a name='1368'></font>
+<font color=#447700>!5.2.0r        IF ( .NOT. ESMF_StateIsNeeded( importState, TRIM(datanames(i)), rc=rc ) ) THEN <a name='1369'></font>
+<font color=#447700>!5.2.0r         IF ( rc /= ESMF_SUCCESS ) THEN<a name='1370'></font>
+<font color=#447700>!5.2.0r            WRITE(str,*) 'WRFSSTCpl_run:  ESMF_StateIsNeeded(',TRIM(datanames(i)),') failed'<a name='1371'></font>
+<font color=#447700>!5.2.0r            CALL wrf_error_fatal ( str )<a name='1372'></font>
+<font color=#447700>!5.2.0r          ENDIF<a name='1373'></font>
+<font color=#447700>!5.2.0r          WRITE(str,*) 'WRFSSTCpl_run: skipping field &lt;',TRIM(datanames(i)),'&gt;'<a name='1374'></font>
+<font color=#447700>!5.2.0r          CALL wrf_debug ( 100 , TRIM(str) )<a name='1375'></font>
+<font color=#447700>!5.2.0r          CYCLE<a name='1376'></font>
+<font color=#447700>!5.2.0r        ENDIF<a name='1377'></font>
+        CALL ESMF_AttributeGet(importState,name=TRIM(datanames(i))//':needed',valueList=neededFlag,rc=rc)<a name='1378'>
+        IF ( rc == ESMF_SUCCESS ) THEN<a name='1379'>
+          IF ( .NOT. neededFlag(1) ) THEN<a name='1380'>
+            WRITE(str,*) 'WRFSSTCpl_run: skipping field &lt;',TRIM(datanames(i)),'&gt;'<a name='1381'>
+            CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_471"> ( 100 , TRIM(str) )<a name='1382'>
+            CYCLE<a name='1383'>
+          ENDIF<a name='1384'>
+        ELSE<a name='1385'>
+          WRITE(str,*) 'WRFSSTCpl_run:  ESMF_AttributeGet(',TRIM(datanames(i))//':needed',') failed'<a name='1386'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_547"> ( str )<a name='1387'>
+        ENDIF<a name='1388'>
+<a name='1389'>
+        WRITE(str,*) 'WRFSSTCpl_run: processing field &lt;',TRIM(datanames(i)),'&gt;'<a name='1390'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_472"> ( 100 , TRIM(str) )<a name='1391'>
+<a name='1392'>
+<font color=#447700>!   The following piece of code provides an example of calling the data<a name='1393'></font>
+<font color=#447700>!   redistribution routine  between two Fields in the Coupler Component.  <a name='1394'></font>
+<font color=#447700>!   Unlike regrid, which translates between<a name='1395'></font>
+<font color=#447700>!   different Grids, redist translates between different DELayouts on<a name='1396'></font>
+<font color=#447700>!   the same Grid.   The first two lines get the Fields from the <a name='1397'></font>
+<font color=#447700>!   States, each corresponding to a different subcomponent.  One is<a name='1398'></font>
+<font color=#447700>!   an Export State and the other is an Import State.<a name='1399'></font>
+<font color=#447700>!<a name='1400'></font>
+        WRITE(str,*) 'WRFSSTCpl_run:  calling ESMF_StateGet(importState,', &amp;<a name='1401'>
+                     TRIM(datanames(i)),')...'<a name='1402'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_473"> ( 100 , TRIM(str) )<a name='1403'>
+        CALL ESMF_StateGet( importState, TRIM(datanames(i)), src_field, &amp;<a name='1404'>
+                                 rc=rc )<a name='1405'>
+        IF ( rc /= ESMF_SUCCESS ) THEN<a name='1406'>
+          WRITE(str,*) 'WRFSSTCpl_run:  ESMF_StateGet(importState,', &amp;<a name='1407'>
+                       TRIM(datanames(i)),') failed'<a name='1408'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_548"> ( str )<a name='1409'>
+        ENDIF<a name='1410'>
+        CALL ESMF_FieldGet( src_field, array=src_array, rc=rc )<a name='1411'>
+        IF ( rc /= ESMF_SUCCESS ) THEN<a name='1412'>
+          WRITE(str,*) 'WRFSSTCpl_run:  ESMF_FieldGet(src_field,src_array,rc) failed'<a name='1413'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_549"> ( str )<a name='1414'>
+        ENDIF<a name='1415'>
+<a name='1416'>
+        WRITE(str,*) 'WRFSSTCpl_run:  calling ESMF_StateGet(exportState,', &amp;<a name='1417'>
+                     TRIM(datanames(i)),')...'<a name='1418'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_474"> ( 100 , TRIM(str) )<a name='1419'>
+        CALL ESMF_StateGet( exportState, TRIM(datanames(i)), dst_field, &amp;<a name='1420'>
+                                 rc=rc )<a name='1421'>
+        IF ( rc /= ESMF_SUCCESS ) THEN<a name='1422'>
+          WRITE(str,*) 'WRFSSTCpl_run:  ESMF_StateGet(exportState,', &amp;<a name='1423'>
+                       TRIM(datanames(i)),') failed'<a name='1424'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_550"> ( str )<a name='1425'>
+        ENDIF<a name='1426'>
+        CALL ESMF_FieldGet( dst_field, array=dst_array, rc=rc )<a name='1427'>
+        IF ( rc /= ESMF_SUCCESS ) THEN<a name='1428'>
+          WRITE(str,*) 'WRFSSTCpl_run:  ESMF_FieldGet(dst_field,dst_array,rc) failed'<a name='1429'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_551"> ( str )<a name='1430'>
+        ENDIF<a name='1431'>
+<a name='1432'>
+<font color=#447700>!   The redist routine uses information contained in the Fields and the<a name='1433'></font>
+<font color=#447700>!   Coupler VM object to call the communication routines to move the data.<a name='1434'></font>
+<font color=#447700>!   Because many Fields may share the same Grid association, the same<a name='1435'></font>
+<font color=#447700>!   routing information may be needed repeatedly.  Route information is <a name='1436'></font>
+<font color=#447700>!   saved so the precomputed information can be retained.  The following <a name='1437'></font>
+<font color=#447700>!   is an example of a Field redist call:<a name='1438'></font>
+        WRITE(str,*) 'WRFSSTCpl_run:  calling ESMF_FieldRedist for &lt;', &amp;<a name='1439'>
+                     TRIM(datanames(i)),'&gt;...'<a name='1440'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_475"> ( 100 , TRIM(str) )<a name='1441'>
+        CALL ESMF_ArrayRedist( src_array, dst_array, routehandle, rc=rc )<a name='1442'>
+        IF ( rc /= ESMF_SUCCESS ) THEN<a name='1443'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_552"> ( 'WRFSSTCpl_run:  ESMF_FieldRedist failed' )<a name='1444'>
+        ENDIF<a name='1445'>
+        WRITE(str,*) 'WRFSSTCpl_run:  back from ESMF_FieldRedist for &lt;', &amp;<a name='1446'>
+                     TRIM(datanames(i)),'&gt;...'<a name='1447'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_476"> ( 100 , TRIM(str) )<a name='1448'>
+<a name='1449'>
+      ENDDO<a name='1450'>
+<a name='1451'>
+      WRITE(str,*) 'WRFSSTCpl_run: end'<a name='1452'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_RUN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_477"> ( 100 , TRIM(str) )<a name='1453'>
+<a name='1454'>
+    END SUBROUTINE WRFSSTCpl_run<a name='1455'>
+<a name='1456'>
+<a name='1457'>
+<a name='1458'>
+<A NAME='WRFSSTCPL_FINAL'><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_FINAL' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1459'>
+    <font color=#993300>SUBROUTINE </font><font color=#cc0000>WRFSSTCpl_final</font>(comp, importState, exportState, clock, rc),<A href='../../call_from/WRFSSTCPL_FINAL.html' TARGET='index'>2</A><a name='1460'>
+      TYPE(ESMF_CplComp) :: comp<a name='1461'>
+      TYPE(ESMF_State), INTENT(INOUT) :: importState, exportState<a name='1462'>
+      TYPE(ESMF_Clock), INTENT(INOUT) :: clock<a name='1463'>
+      INTEGER, INTENT(OUT) :: rc<a name='1464'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='1465'></font>
+<font color=#447700>!     WRF-SST coupler component finalize routine.<a name='1466'></font>
+<font color=#447700>!<a name='1467'></font>
+<font color=#447700>!     The arguments are:<a name='1468'></font>
+<font color=#447700>!       comp            Component<a name='1469'></font>
+<font color=#447700>!       importState     Importstate<a name='1470'></font>
+<font color=#447700>!       exportState     Exportstate<a name='1471'></font>
+<font color=#447700>!       clock           External clock<a name='1472'></font>
+<font color=#447700>!       rc              Return code; equals ESMF_SUCCESS if there are no errors,<a name='1473'></font>
+<font color=#447700>!                       otherwise ESMF_FAILURE.<a name='1474'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='1475'></font>
+<a name='1476'>
+      PRINT *, "DEBUG:  Coupler Final starting"<a name='1477'>
+   <a name='1478'>
+      <font color=#447700>! guilty until proven innocent<a name='1479'></font>
+      rc = ESMF_FAILURE<a name='1480'>
+<a name='1481'>
+      <font color=#447700>! Only thing to do here is release redist and route handles<a name='1482'></font>
+      IF ( fromWRF_rh_ready ) THEN<a name='1483'>
+        CALL ESMF_RouteHandleDestroy(fromWRF_rh, rc)<a name='1484'>
+        IF ( rc /= ESMF_SUCCESS ) THEN<a name='1485'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_FINAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_553"> ( 'WRFSSTCpl_final:  ESMF_RouteHandleDestroy(fromWRF_rh) failed' )<a name='1486'>
+        ENDIF<a name='1487'>
+      ENDIF<a name='1488'>
+      IF ( fromSST_rh_ready ) THEN<a name='1489'>
+        CALL ESMF_RouteHandleDestroy(fromSST_rh, rc)<a name='1490'>
+        IF ( rc /= ESMF_SUCCESS ) THEN<a name='1491'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRFSSTCPL_FINAL' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_554"> ( 'WRFSSTCpl_final:  ESMF_RouteHandleDestroy(fromSST_rh) failed' )<a name='1492'>
+        ENDIF<a name='1493'>
+      ENDIF<a name='1494'>
+<a name='1495'>
+      PRINT *, "DEBUG:  Coupler Final returning"<a name='1496'>
+   <a name='1497'>
+    END SUBROUTINE WRFSSTCpl_final<a name='1498'>
+<a name='1499'>
+<a name='1500'>
+END MODULE module_wrfsst_coupler<a name='1501'>
+    <a name='1502'>
+    <a name='1503'>
+<a name='1504'>
+<a name='1505'>
+<A NAME='WRF_SST_ESMF'><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='top_target'><IMG SRC="../../gif/bar_yellow.gif" border=0></A><a name='1506'>
+<font color=#993300>PROGRAM </font><font color=#cc0000>wrf_SST_ESMF</font>,<A href='../../call_from/WRF_SST_ESMF.html' TARGET='index'>55</A><a name='1507'>
+<a name='1508'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='1509'></font>
+<font color=#447700>! ESMF Application Wrapper for coupling WRF with a "dummy" component <a name='1510'></font>
+<font color=#447700>! that simply reads SSTs from a file and sends them to WRF (one-way <a name='1511'></font>
+<font color=#447700>! coupling).  Fields are returned from WRF to SST via the coupler for <a name='1512'></font>
+<font color=#447700>! self-test only.  <a name='1513'></font>
+<font color=#447700>!<a name='1514'></font>
+<font color=#447700>! Note that, like other WRF coupling methods (MCEL, MCT), ESMF coupling is <a name='1515'></font>
+<font color=#447700>! supported only via auxiliary input and history streams.  <a name='1516'></font>
+<font color=#447700>!<a name='1517'></font>
+<font color=#447700>! This is the main program that creates the ESMF Gridded and Coupler <a name='1518'></font>
+<font color=#447700>! Component.  <a name='1519'></font>
+<font color=#447700>!<a name='1520'></font>
+<font color=#447700>! "init" looks like this:  <a name='1521'></font>
+<font color=#447700>!   1. Init phase 1 for WRF, sets WRF exportState metadata for "time" <a name='1522'></font>
+<font color=#447700>!      and "domain" information needed by WRF IOAPI (which is called from <a name='1523'></font>
+<font color=#447700>!      the SST component).  It also sets up all WRF and WSF modules.  Note <a name='1524'></font>
+<font color=#447700>!      that this must be called before SST phase-1 init because SST uses <a name='1525'></font>
+<font color=#447700>!      WRF IOAPI.  <a name='1526'></font>
+<font color=#447700>!   2. Init phase 1 for SST, sets "time" metadata in SST exportState.  <a name='1527'></font>
+<font color=#447700>!   3. Initialize coupler, passing decomposition metadata from WRF exportState <a name='1528'></font>
+<font color=#447700>!      to SST importState.  <a name='1529'></font>
+<font color=#447700>!   4. Resolve any "time" metadata inconsistencies and create top-level clock.  <a name='1530'></font>
+<font color=#447700>!   5. Init phase 2 for SST, gets "domain" information from importState, <a name='1531'></font>
+<font color=#447700>!      creates an ESMF_Grid based on "domain" information using the exact same <a name='1532'></font>
+<font color=#447700>!      method as WRF (so WRF IOAPI calls will work), and sets up SST <a name='1533'></font>
+<font color=#447700>!      importState and exportState.  <a name='1534'></font>
+<font color=#447700>!   6. Init phase 2 for WRF, runs up to the end of the head_grid I/O "training" <a name='1535'></font>
+<font color=#447700>!      phase (done in med_before_solve_io()).  This initializes WRF <a name='1536'></font>
+<font color=#447700>!      importState and exportState prior to the first coupling step during the <a name='1537'></font>
+<font color=#447700>!      "run" loop.  Note that this only works for head_grid at present because <a name='1538'></font>
+<font color=#447700>!      recursion in WRF traversal of subdomains is not dealt with yet and <a name='1539'></font>
+<font color=#447700>!      because the code that populates the WRF importState and exportState is <a name='1540'></font>
+<font color=#447700>!      not yet sophisticated enough to handle creating and destroying nested <a name='1541'></font>
+<font color=#447700>!      domains at any time during the model run.  <a name='1542'></font>
+<font color=#447700>!TODO:  ESMF auxio must begin at the start of the run.  Remove this <a name='1543'></font>
+<font color=#447700>!TODO:  restriction later, if needed.  <a name='1544'></font>
+<font color=#447700>!<a name='1545'></font>
+<font color=#447700>!TODO:  Note that coupling is currently limited to one auxin plus one auxout <a name='1546'></font>
+<font color=#447700>!TODO:  streams.  Extension to multiple pairs of auxio streams requires <a name='1547'></font>
+<font color=#447700>!TODO:  nested states (one for each auxio stream pair).  <a name='1548'></font>
+<font color=#447700>!TODO:  For now, only support one input and/or one output stream via <a name='1549'></font>
+<font color=#447700>!TODO:  io_esmf.  This condition is asserted in <a name='1550'></font>
+<font color=#447700>!TODO:  ext_esmf_open_for_read_begin() and <a name='1551'></font>
+<font color=#447700>!TODO:  ext_esmf_open_for_write_begin().  <a name='1552'></font>
+<font color=#447700>!<a name='1553'></font>
+<font color=#447700>! "run" loop looks like this:  <a name='1554'></font>
+<font color=#447700>!   1. Run SST phase 1, reads SST from file and writes it to SST exportState <a name='1555'></font>
+<font color=#447700>!      for coupling to WRF.  <a name='1556'></font>
+<font color=#447700>!   2. Couple SST exportState -&gt; WRF importState.  First iteration:  set up <a name='1557'></font>
+<font color=#447700>!      SST-&gt;WRF routeHandle via lazy evaluation.  <a name='1558'></font>
+<font color=#447700>!   3. Run WRF.  First iteration:  head_grid resumes after I/O "training" <a name='1559'></font>
+<font color=#447700>!      phase.  Other iterations and domains:  run normally.  <a name='1560'></font>
+<font color=#447700>!      Read WRF importState and write WRF exportState (via med_before_solve_io()).  <a name='1561'></font>
+<font color=#447700>!      Note that WRF assigns sst -&gt; tsk for sea points in <a name='1562'></font>
+<font color=#447700>!      share/module_soil_pre.F.  <a name='1563'></font>
+<font color=#447700>!   4. Couple WRF exportState -&gt; SST importState.  First iteration:  set up<a name='1564'></font>
+<font color=#447700>!      WRF-&gt;SST routeHandle via lazy evaluation.<a name='1565'></font>
+<font color=#447700>!   5. Run SST phase 2, compare SST from file with SST from WRF (via <a name='1566'></font>
+<font color=#447700>!      SST importState) and error-exit if they differ.  <a name='1567'></font>
+<font color=#447700>!   6. Advance clock and goto step 1<a name='1568'></font>
+<font color=#447700>!<a name='1569'></font>
+<font color=#447700>! "finalize" is trivial, except for destruction of ESMF objects which is <a name='1570'></font>
+<font color=#447700>! quite non-trivial at the moment.  <a name='1571'></font>
+<font color=#447700>!<a name='1572'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='1573'></font>
+<a name='1574'>
+   <font color=#447700>! WRF registration routine<a name='1575'></font>
+   USE <A href='../../html_code/main/wrf_ESMFMod.F.html#MODULE_WRF_SETSERVICES'>module_wrf_setservices</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRF_SETSERVICES_1">, ONLY: WRF_register<a name='1576'>
+   <font color=#447700>! SST registration routine<a name='1577'></font>
+   USE <A href='../../html_code/main/wrf_SST_ESMF.F.html#MODULE_SST_SETSERVICES'>module_sst_setservices</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_SST_SETSERVICES_1">, ONLY: SST_register<a name='1578'>
+   <font color=#447700>! WRF-SST coupler registration routine<a name='1579'></font>
+   USE <A href='../../html_code/main/wrf_SST_ESMF.F.html#MODULE_WRFSST_COUPLER'>module_wrfsst_coupler</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_WRFSST_COUPLER_1">, ONLY: WRFSSTCpl_register<a name='1580'>
+   <font color=#447700>! ESMF module, defines all ESMF data types and procedures<a name='1581'></font>
+<font color=#447700>! Updated for ESMF 5.2.0r<a name='1582'></font>
+<font color=#447700>!   USE ESMF_Mod<a name='1583'></font>
+   USE ESMF<a name='1584'>
+   <font color=#447700>! Not-yet-implemented ESMF features<a name='1585'></font>
+   USE module_esmf_extensions<a name='1586'>
+   <font color=#447700>! Component-independent utilities<a name='1587'></font>
+   USE <A href='../../html_code/main/wrf_ESMFMod.F.html#MODULE_METADATAUTILS'>module_metadatautils</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_METADATAUTILS_5">, ONLY: GetTimesFromStates<a name='1588'>
+<a name='1589'>
+   IMPLICIT NONE<a name='1590'>
+<a name='1591'>
+   <font color=#447700>! Local variables<a name='1592'></font>
+<a name='1593'>
+   <font color=#447700>! Components<a name='1594'></font>
+   TYPE(ESMF_GridComp) :: compGriddedWRF   <font color=#447700>! WRF<a name='1595'></font>
+   TYPE(ESMF_GridComp) :: compGriddedSST   <font color=#447700>! SST reader<a name='1596'></font>
+   TYPE(ESMF_CplComp) :: compCplWRFSST     <font color=#447700>! WRF-SST coupler<a name='1597'></font>
+<a name='1598'>
+   <font color=#447700>! State, Virtual Machine, and DELayout<a name='1599'></font>
+   TYPE(ESMF_VM) :: vm<a name='1600'>
+   TYPE(ESMF_State) :: importStateWRF, exportStateWRF<a name='1601'>
+   TYPE(ESMF_State) :: importStateSST, exportStateSST<a name='1602'>
+<a name='1603'>
+   <font color=#447700>! A clock, some times, and a time step<a name='1604'></font>
+   TYPE(ESMF_Clock) :: driverClock<a name='1605'>
+   TYPE(ESMF_Time) :: startTime<a name='1606'>
+   TYPE(ESMF_Time) :: stopTime<a name='1607'>
+   TYPE(ESMF_TimeInterval) :: couplingInterval<a name='1608'>
+<a name='1609'>
+   <font color=#447700>! other misc stuff<a name='1610'></font>
+   TYPE(ESMF_State) :: tmpState<a name='1611'>
+   INTEGER :: timestepdebug<a name='1612'>
+   INTEGER :: thecount  <font color=#447700>! ah ah ah<a name='1613'></font>
+<a name='1614'>
+   <font color=#447700>! Return codes for error checks<a name='1615'></font>
+   INTEGER :: rc<a name='1616'>
+   CHARACTER (ESMF_MAXSTR) :: str<a name='1617'>
+<a name='1618'>
+   <font color=#447700>! debugging<a name='1619'></font>
+   CHARACTER(LEN=256) :: couplingIntervalString<a name='1620'>
+integer(ESMF_KIND_I4) :: timevals(6)<a name='1621'>
+<a name='1622'>
+        <a name='1623'>
+   <font color=#447700>! Warn users that this is not yet ready for general use.  <a name='1624'></font>
+   PRINT *, '                      W A R N I N G                          '<a name='1625'>
+   PRINT *, '  ESMF COUPLING CAPABILITY IS EXPERIMENTAL AND UNSUPPORTED   '<a name='1626'>
+   PRINT *, '               IN THIS VERSION OF WRF-CPL-SST                '<a name='1627'>
+   PRINT *, '          U S E   A T   Y O U R   O W N   R I S K            '<a name='1628'>
+<a name='1629'>
+   <font color=#447700>! Initialize ESMF, get the default Global VM, and set<a name='1630'></font>
+   <font color=#447700>! the default calendar to be Gregorian.<a name='1631'></font>
+#ifdef NO_LEAP_CALENDAR<a name='1632'>
+   CALL ESMF_Initialize( vm=vm, defaultCalKind=ESMF_CALKIND_NOLEAP, logkindflag=ESMF_LOGKIND_MULTI,rc=rc )<a name='1633'>
+#else<a name='1634'>
+   CALL ESMF_Initialize( vm=vm, defaultCalKind=ESMF_CALKIND_GREGORIAN, logkindflag=ESMF_LOGKIND_MULTI,rc=rc )<a name='1635'>
+#endif<a name='1636'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1637'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_Initialize failed'<a name='1638'>
+   ENDIF<a name='1639'>
+   <font color=#447700>! Note:  wrf_debug and wrf_error_fatal are not initialized yet<a name='1640'></font>
+   PRINT *, 'DEBUG wrf_SST_ESMF:  returned from ESMF_Initialize'<a name='1641'>
+   CALL ESMF_SetInitialized()   <font color=#447700>! eliminate this once ESMF does it internally<a name='1642'></font>
+<a name='1643'>
+   <font color=#447700>! Create the WRF Gridded Component, passing in the default VM.<a name='1644'></font>
+   compGriddedWRF = ESMF_GridCompCreate( name="WRF Model", rc=rc)<a name='1645'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1646'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_GridCompCreate(WRF Model) failed'<a name='1647'>
+   ENDIF<a name='1648'>
+<a name='1649'>
+   <font color=#447700>! Create the SST Gridded Component, passing in the default VM.<a name='1650'></font>
+   compGriddedSST = ESMF_GridCompCreate( name="SST Dummy Model", rc=rc)<a name='1651'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1652'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_GridCompCreate(WRF Dummy Model) failed'<a name='1653'>
+   ENDIF<a name='1654'>
+<a name='1655'>
+   <font color=#447700>! Create the WRF-SST Coupler Component, passing in the default VM.<a name='1656'></font>
+   compCplWRFSST = ESMF_CplCompCreate( name="WRF-SST Coupler", rc=rc)<a name='1657'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1658'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_CplCompCreate failed'<a name='1659'>
+   ENDIF<a name='1660'>
+<a name='1661'>
+   <font color=#447700>! Create empty import and export states for WRF<a name='1662'></font>
+   importStateWRF = ESMF_StateCreate(name="WRF Import State", stateintent=ESMF_STATEINTENT_IMPORT, rc=rc)<a name='1663'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1664'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_StateCreate(WRF Import State) failed'<a name='1665'>
+   ENDIF<a name='1666'>
+   exportStateWRF = ESMF_StateCreate(name="WRF Export State", stateintent=ESMF_STATEINTENT_EXPORT, rc=rc)<a name='1667'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1668'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_StateCreate(WRF Export State) failed'<a name='1669'>
+   ENDIF<a name='1670'>
+<a name='1671'>
+   <font color=#447700>! Create empty import and export states for SST<a name='1672'></font>
+   importStateSST = ESMF_StateCreate(name="SST Import State", stateintent=ESMF_STATEINTENT_IMPORT, rc=rc)<a name='1673'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1674'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_StateCreate(SST Import State) failed'<a name='1675'>
+   ENDIF<a name='1676'>
+   exportStateSST = ESMF_StateCreate(name="SST Export State", stateintent=ESMF_STATEINTENT_EXPORT, rc=rc)<a name='1677'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1678'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_StateCreate(SST Export State) failed'<a name='1679'>
+   ENDIF<a name='1680'>
+<a name='1681'>
+   <font color=#447700>! Register the WRF Gridded Component<a name='1682'></font>
+   CALL ESMF_GridCompSetServices(compGriddedWRF, WRF_register, rc=rc)<a name='1683'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1684'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_GridCompSetServices(compGriddedWRF) failed'<a name='1685'>
+   ENDIF<a name='1686'>
+<a name='1687'>
+   <font color=#447700>! Register the SST Gridded Component<a name='1688'></font>
+   CALL ESMF_GridCompSetServices(compGriddedSST, SST_register, rc=rc)<a name='1689'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1690'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_GridCompSetServices(compGriddedSST) failed'<a name='1691'>
+   ENDIF<a name='1692'>
+<a name='1693'>
+   <font color=#447700>! Register the WRF-SST Coupler Component<a name='1694'></font>
+   CALL ESMF_CplCompSetServices(compCplWRFSST, WRFSSTCpl_register, rc=rc)<a name='1695'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1696'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_CplCompSetServices failed'<a name='1697'>
+   ENDIF<a name='1698'>
+<a name='1699'>
+   <font color=#447700>! Create top-level clock.  There is no way to create an "empty" clock, so <a name='1700'></font>
+   <font color=#447700>! stuff in bogus values for start time, stop time, and time step and fix <a name='1701'></font>
+   <font color=#447700>! them after gridded component "init" phases return.  <a name='1702'></font>
+   CALL ESMF_TimeSet(startTime, yy=2000, mm=1, dd=1, &amp;<a name='1703'>
+                     h=0, m=0, s=0, rc=rc)<a name='1704'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1705'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_TimeSet(startTime) failed'<a name='1706'>
+   ENDIF<a name='1707'>
+   CALL ESMF_TimeSet(stopTime, yy=2000, mm=1, dd=1, &amp;<a name='1708'>
+                     h=12, m=0, s=0, rc=rc)<a name='1709'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1710'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_TimeSet(stopTime) failed'<a name='1711'>
+   ENDIF<a name='1712'>
+   CALL ESMF_TimeIntervalSet(couplingInterval, s=2, rc=rc)<a name='1713'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1714'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_TimeIntervalSet failed'<a name='1715'>
+   ENDIF<a name='1716'>
+   driverClock = ESMF_ClockCreate(timeStep=couplingInterval, &amp;<a name='1717'>
+                                  startTime=startTime,       &amp;<a name='1718'>
+                                  stopTime=stopTime, rc=rc)<a name='1719'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1720'>
+     PRINT *, 'wrf_SST_ESMF:  ESMF_ClockCreate failed'<a name='1721'>
+   ENDIF<a name='1722'>
+<a name='1723'>
+   <font color=#447700>! Init, Run, and Finalize section<a name='1724'></font>
+<a name='1725'>
+   <font color=#447700>! Init...<a name='1726'></font>
+   <font color=#447700>! initialize WRF, phase 1<a name='1727'></font>
+   <font color=#447700>! Phase 1 init returns WRF time and decomposition information as<a name='1728'></font>
+   <font color=#447700>! exportState metadata.<a name='1729'></font>
+   PRINT *, 'DEBUG wrf_SST_ESMF:  calling phase-1 WRF init (wrf_component_init1)'<a name='1730'>
+   CALL ESMF_GridCompInitialize(compGriddedWRF, importstate=importStateWRF, &amp;<a name='1731'>
+                                exportstate=exportStateWRF, clock=driverClock, phase=1, rc=rc)<a name='1732'>
+thecount = size(timevals)<a name='1733'>
+call esmf_attributeget(exportstatewrf,'ComponentCouplingInterval',timevals,itemcount=thecount,rc=rc)<a name='1734'>
+<font color=#447700>!write(0,*) 'exportStateWRF year ',timevals(1),__LINE__<a name='1735'></font>
+<font color=#447700>!write(0,*) 'exportStateWRF month ',timevals(2),__LINE__<a name='1736'></font>
+<font color=#447700>!write(0,*) 'exportStateWRF day ',timevals(3),__LINE__<a name='1737'></font>
+<font color=#447700>!write(0,*) 'exportStateWRF hour ',timevals(4),__LINE__<a name='1738'></font>
+<font color=#447700>!write(0,*) 'exportStateWRF minute ',timevals(5),__LINE__<a name='1739'></font>
+<font color=#447700>!write(0,*) 'exportStateWRF second ',timevals(6),__LINE__<a name='1740'></font>
+   <font color=#447700>! Note:  wrf_debug and wrf_error_fatal are now initialized<a name='1741'></font>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1742'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_555"> ( 'wrf_SST_ESMF:  ESMF_GridCompInitialize(WRF phase 1) failed' )<a name='1743'>
+   ENDIF<a name='1744'>
+<a name='1745'>
+   <font color=#447700>! initialize SST, phase 1<a name='1746'></font>
+   <font color=#447700>! Phase 1 init returns SST time information as<a name='1747'></font>
+   <font color=#447700>! exportState metadata.<a name='1748'></font>
+   PRINT *, 'DEBUG wrf_SST_ESMF:  calling phase-1 SST init (sst_component_init1)'<a name='1749'>
+   CALL ESMF_GridCompInitialize(compGriddedSST, importstate=importStateSST, &amp;<a name='1750'>
+                                exportstate=exportStateSST, clock=driverClock, phase=1, rc=rc)<a name='1751'>
+thecount = size(timevals)<a name='1752'>
+call esmf_attributeget(exportstatesst,'ComponentCouplingInterval',timevals,itemcount=thecount,rc=rc)<a name='1753'>
+<font color=#447700>!write(0,*) 'exportStateSST year ',timevals(1),__LINE__<a name='1754'></font>
+<font color=#447700>!write(0,*) 'exportStateSST month ',timevals(2),__LINE__<a name='1755'></font>
+<font color=#447700>!write(0,*) 'exportStateSST day ',timevals(3),__LINE__<a name='1756'></font>
+<font color=#447700>!write(0,*) 'exportStateSST hour ',timevals(4),__LINE__<a name='1757'></font>
+<font color=#447700>!write(0,*) 'exportStateSST minute ',timevals(5),__LINE__<a name='1758'></font>
+<font color=#447700>!write(0,*) 'exportStateSST second ',timevals(6),__LINE__<a name='1759'></font>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1760'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_556"> ( 'wrf_SST_ESMF:  ESMF_GridCompInitialize(SST phase 1) failed' )<a name='1761'>
+   ENDIF<a name='1762'>
+<a name='1763'>
+   <font color=#447700>! Reconcile clock settings from WRF and SST components to set up <a name='1764'></font>
+   <font color=#447700>! top-level clock.  These are passed back from each "init" as attributes <a name='1765'></font>
+   <font color=#447700>! on exportState*.  <a name='1766'></font>
+   <font color=#447700>! Stuff both States into a single State to pass into GetTimesFromStates() <a name='1767'></font>
+   <font color=#447700>! which is smart enough to deal with a Composite.  <a name='1768'></font>
+   PRINT *, 'DEBUG wrf_SST_ESMF:  reconciling clock from WRF and SST components'<a name='1769'>
+   tmpState = ESMF_StateCreate( rc=rc )<a name='1770'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1771'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_557"> ( 'wrf_SST_ESMF:  ESMF_StateCreate(tmpState) failed' )<a name='1772'>
+   ENDIF<a name='1773'>
+   CALL ESMF_StateAdd( tmpState, nestedStateList=(/exportStateWRF,exportStateSST/), rc=rc )<a name='1774'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1775'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_558"> ( 'wrf_SST_ESMF:  ESMF_StateAdd(exportStateWRF,exportStateSST) failed' )<a name='1776'>
+   ENDIF<a name='1777'>
+   CALL <A href='../../html_code/main/wrf_ESMFMod.F.html#GETTIMESFROMSTATES'>GetTimesFromStates</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GETTIMESFROMSTATES_1">( tmpState, startTime, stopTime, couplingInterval )<a name='1778'>
+   CALL ESMF_TimeIntervalGet( couplingInterval, TimeString=couplingIntervalString, &amp;<a name='1779'>
+                              rc=rc )<a name='1780'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1781'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_559"> ( 'wrf_SST_ESMF:  ESMF_TimeIntervalGet failed' )<a name='1782'>
+   ENDIF<a name='1783'>
+   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_478">( 100, 'wrf_SST_ESMF:  couplingInterval = '//TRIM(couplingIntervalString) )<a name='1784'>
+   CALL ESMF_StateDestroy( tmpState, rc=rc )<a name='1785'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1786'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_560"> ( 'wrf_SST_ESMF:  ESMF_StateDestroy(tmpState) failed' )<a name='1787'>
+   ENDIF<a name='1788'>
+   <font color=#447700>! update driver clock<a name='1789'></font>
+   CALL ESMF_ClockDestroy(driverClock, rc=rc)<a name='1790'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1791'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_561"> ( 'wrf_SST_ESMF:  ESMF_ClockDestroy failed' )<a name='1792'>
+   ENDIF<a name='1793'>
+   driverClock = ESMF_ClockCreate(timeStep=couplingInterval, &amp;<a name='1794'>
+                                  startTime=startTime,       &amp;<a name='1795'>
+                                  stopTime=stopTime, rc=rc)<a name='1796'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1797'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_562"> ( 'wrf_SST_ESMF:  ESMF_ClockCreate(driverClock) failed' )<a name='1798'>
+   ENDIF<a name='1799'>
+   PRINT *, 'DEBUG wrf_SST_ESMF:  done reconciling clock from WRF and SST components'<a name='1800'>
+   CALL <A href='../../html_code/share/module_date_time.F.html#WRF_CLOCKPRINT'>wrf_clockprint</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_CLOCKPRINT_5">(50, driverClock, &amp;<a name='1801'>
+          'DEBUG wrf_SST_ESMF:  driverClock after creation,')<a name='1802'>
+<a name='1803'>
+   <font color=#447700>! initialize WRF-SST Coupler<a name='1804'></font>
+   PRINT *, 'DEBUG wrf_SST_ESMF:  calling phase-1 CPL init (WRFSSTCpl_init)'<a name='1805'>
+   CALL ESMF_CplCompInitialize(compCplWRFSST, importstate=exportStateWRF, &amp;<a name='1806'>
+                               exportstate=importStateSST, clock=driverClock, rc=rc)<a name='1807'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1808'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_563"> ( 'wrf_SST_ESMF:  ESMF_CplCompInitialize(WRF -&gt; SST) failed' )<a name='1809'>
+   ENDIF<a name='1810'>
+<a name='1811'>
+<font color=#447700>! TBH:  this bit is not needed, but would be in general<a name='1812'></font>
+<font color=#447700>!   CALL ESMF_CplCompInitialize(compCplWRFSST, importstate=exportStateSST, &amp;<a name='1813'></font>
+<font color=#447700>!                               exportstate=importStateWRF, clock=driverClock, rc=rc)<a name='1814'></font>
+<font color=#447700>!   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1815'></font>
+<font color=#447700>!     CALL wrf_error_fatal ( 'wrf_SST_ESMF:  ESMF_CplCompInitialize(SST -&gt; WRF) failed' )<a name='1816'></font>
+<font color=#447700>!   ENDIF<a name='1817'></font>
+<a name='1818'>
+   <font color=#447700>! initialize SST, phase 2<a name='1819'></font>
+   WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: Calling phase-2 init for SST (sst_component_init2)'<a name='1820'>
+   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_479"> ( 100 , TRIM(str) )<a name='1821'>
+   CALL ESMF_GridCompInitialize(compGriddedSST, importstate=importStateSST, &amp;<a name='1822'>
+                                exportstate=exportStateSST, clock=driverClock, phase=2, rc=rc)<a name='1823'>
+   WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: back from phase-2 init for SST'<a name='1824'>
+   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_480"> ( 100 , TRIM(str) )<a name='1825'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1826'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_564"> ( 'wrf_SST_ESMF:  ESMF_GridCompInitialize(SST phase 2) failed' )<a name='1827'>
+   ENDIF<a name='1828'>
+<a name='1829'>
+   <font color=#447700>! initialize WRF, phase 2<a name='1830'></font>
+   <font color=#447700>! Phase 2 init sets up WRF importState and exportState.<a name='1831'></font>
+   WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: Calling phase-2 init for WRF (wrf_component_init2)'<a name='1832'>
+   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_481"> ( 100 , TRIM(str) )<a name='1833'>
+   CALL ESMF_GridCompInitialize(compGriddedWRF, importstate=importStateWRF, &amp;<a name='1834'>
+                                exportstate=exportStateWRF, clock=driverClock, phase=2, rc=rc)<a name='1835'>
+   WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: back from phase-2 init for WRF'<a name='1836'>
+   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_482"> ( 100 , TRIM(str) )<a name='1837'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1838'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_565"> ( 'wrf_SST_ESMF:  ESMF_GridCompInitialize(WRF phase 2) failed' )<a name='1839'>
+   ENDIF<a name='1840'>
+<a name='1841'>
+   CALL <A href='../../html_code/share/module_date_time.F.html#WRF_CLOCKPRINT'>wrf_clockprint</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_CLOCKPRINT_6">(50, driverClock, &amp;<a name='1842'>
+          'DEBUG wrf_SST_ESMF:  driverClock before main time-stepping loop,')<a name='1843'>
+   <font color=#447700>! Run...<a name='1844'></font>
+   <font color=#447700>! main time-stepping loop<a name='1845'></font>
+   timestepdebug = 0<a name='1846'>
+   DO WHILE ( .NOT. ESMF_ClockIsStopTime(driverClock, rc=rc) )<a name='1847'>
+<a name='1848'>
+     timestepdebug = timestepdebug + 1<a name='1849'>
+     WRITE(str,'(A,I8)') 'PROGRAM wrf_SST_ESMF: Top of time-stepping loop, timestepdebug = ',timestepdebug<a name='1850'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_483"> ( 100 , TRIM(str) )<a name='1851'>
+     CALL <A href='../../html_code/share/module_date_time.F.html#WRF_CLOCKPRINT'>wrf_clockprint</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_CLOCKPRINT_7">(50, driverClock, &amp;<a name='1852'>
+            'DEBUG wrf_SST_ESMF:  driverClock at top of time-stepping loop,')<a name='1853'>
+<a name='1854'>
+     <font color=#447700>! Run SST phase 1<a name='1855'></font>
+     WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: Calling phase-1 run for SST (sst_component_run1)'<a name='1856'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_484"> ( 100 , TRIM(str) )<a name='1857'>
+     CALL ESMF_GridCompRun(compGriddedSST, importstate=importStateSST, exportstate=exportStateSST, &amp;<a name='1858'>
+                           clock=driverClock, phase=1, rc=rc)<a name='1859'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='1860'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_566"> ( 'wrf_SST_ESMF:  ESMF_GridCompRun(SST phase 1) failed' )<a name='1861'>
+     ENDIF<a name='1862'>
+     WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: back from phase-1 run for SST (sst_component_run1)'<a name='1863'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_485"> ( 100 , TRIM(str) )<a name='1864'>
+<a name='1865'>
+     <font color=#447700>! couple SST export -&gt; WRF import<a name='1866'></font>
+     WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: Calling run for CPL SST-&gt;WRF (WRFSSTCpl_run)'<a name='1867'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_486"> ( 100 , TRIM(str) )<a name='1868'>
+     CALL ESMF_CplCompRun(compCplWRFSST, importstate=exportStateSST, &amp;<a name='1869'>
+                          exportstate=importStateWRF, clock=driverClock, rc=rc)<a name='1870'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='1871'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_567"> ( 'wrf_SST_ESMF:  ESMF_CplCompRun(SST -&gt; WRF) failed' )<a name='1872'>
+     ENDIF<a name='1873'>
+     WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: back from run for CPL SST-&gt;WRF (WRFSSTCpl_run)'<a name='1874'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_487"> ( 100 , TRIM(str) )<a name='1875'>
+<a name='1876'>
+     <font color=#447700>! Run WRF<a name='1877'></font>
+     WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: Calling run for WRF (wrf_component_run)'<a name='1878'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_488"> ( 100 , TRIM(str) )<a name='1879'>
+     CALL ESMF_GridCompRun(compGriddedWRF, importstate=importStateWRF, exportstate=exportStateWRF, &amp;<a name='1880'>
+                           clock=driverClock, rc=rc)<a name='1881'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='1882'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_568"> ( 'wrf_SST_ESMF:  ESMF_GridCompRun(WRF) failed' )<a name='1883'>
+     ENDIF<a name='1884'>
+     WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: back from run for WRF (wrf_component_run)'<a name='1885'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_489"> ( 100 , TRIM(str) )<a name='1886'>
+<a name='1887'>
+     <font color=#447700>! couple WRF export -&gt; SST import<a name='1888'></font>
+     WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: Calling run for CPL WRF-&gt;SST (WRFSSTCpl_run)'<a name='1889'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_490"> ( 100 , TRIM(str) )<a name='1890'>
+     CALL ESMF_CplCompRun(compCplWRFSST, importstate=exportStateWRF, &amp;<a name='1891'>
+                          exportstate=importStateSST, clock=driverClock, rc=rc)<a name='1892'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='1893'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_569"> ( 'wrf_SST_ESMF:  ESMF_CplCompRun(WRF -&gt; SST) failed' )<a name='1894'>
+     ENDIF<a name='1895'>
+     WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: back from run for CPL WRF-&gt;SST (WRFSSTCpl_run)'<a name='1896'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_491"> ( 100 , TRIM(str) )<a name='1897'>
+<a name='1898'>
+     <font color=#447700>! Run SST phase 2<a name='1899'></font>
+     WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: Calling phase-2 run for SST (sst_component_run2)'<a name='1900'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_492"> ( 100 , TRIM(str) )<a name='1901'>
+     CALL ESMF_GridCompRun(compGriddedSST, importstate=importStateSST, exportstate=exportStateSST, &amp;<a name='1902'>
+                           clock=driverClock, phase=2, rc=rc)<a name='1903'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='1904'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_570"> ( 'wrf_SST_ESMF:  ESMF_GridCompRun(SST phase 2) failed' )<a name='1905'>
+     ENDIF<a name='1906'>
+     WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: back from phase-2 run for SST (sst_component_run2)'<a name='1907'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_493"> ( 100 , TRIM(str) )<a name='1908'>
+<a name='1909'>
+     <font color=#447700>! advance clock to next coupling time step<a name='1910'></font>
+     WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: advancing clock'<a name='1911'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_494"> ( 100 , TRIM(str) )<a name='1912'>
+     CALL ESMF_ClockAdvance( driverClock, rc=rc )<a name='1913'>
+     IF ( rc /= ESMF_SUCCESS ) THEN<a name='1914'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_571"> ( 'wrf_SST_ESMF:  ESMF_ClockAdvance failed' )<a name='1915'>
+     ENDIF<a name='1916'>
+     WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: done advancing clock'<a name='1917'>
+     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_495"> ( 100 , TRIM(str) )<a name='1918'>
+<a name='1919'>
+     CALL <A href='../../html_code/share/module_date_time.F.html#WRF_CLOCKPRINT'>wrf_clockprint</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_CLOCKPRINT_8">(50, driverClock, &amp;<a name='1920'>
+            'DEBUG wrf_SST_ESMF:  driverClock at end of time-stepping loop,')<a name='1921'>
+<a name='1922'>
+   ENDDO<a name='1923'>
+<a name='1924'>
+   WRITE(str,'(A)') 'PROGRAM wrf_SST_ESMF: done with time-stepping loop'<a name='1925'>
+   CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_496"> ( 100 , TRIM(str) )<a name='1926'>
+<a name='1927'>
+   <font color=#447700>! clean up SST<a name='1928'></font>
+   CALL ESMF_GridCompFinalize(compGriddedSST, importstate=importStateSST, exportstate=exportStateSST, &amp;<a name='1929'>
+                              clock=driverClock, rc=rc)<a name='1930'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1931'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_572"> ( 'wrf_SST_ESMF:  ESMF_GridCompFinalize(compGriddedSST) failed' )<a name='1932'>
+   ENDIF<a name='1933'>
+ <a name='1934'>
+   <font color=#447700>! clean up compCplWRFSST<a name='1935'></font>
+   CALL ESMF_CplCompFinalize( compCplWRFSST, importstate=exportStateWRF, exportstate=importStateSST, &amp;<a name='1936'>
+                              clock=driverClock, rc=rc)<a name='1937'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1938'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_573"> ( 'wrf_SST_ESMF:  ESMF_CplCompFinalize(compCplWRFSST) failed' )<a name='1939'>
+   ENDIF<a name='1940'>
+ <a name='1941'>
+   <font color=#447700>! clean up WRF<a name='1942'></font>
+   <font color=#447700>! must do this AFTER clean up of SST since SST uses WRF IOAPI<a name='1943'></font>
+   CALL ESMF_GridCompFinalize(compGriddedWRF, importstate=importStateWRF, exportstate=exportStateWRF, &amp;<a name='1944'>
+                              clock=driverClock, rc=rc)<a name='1945'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1946'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_574"> ( 'wrf_SST_ESMF:  ESMF_GridCompFinalize(compGriddedWRF) failed' )<a name='1947'>
+   ENDIF<a name='1948'>
+ <a name='1949'>
+   <font color=#447700>! Clean up<a name='1950'></font>
+<a name='1951'>
+   CALL ESMF_GridCompDestroy(compGriddedWRF, rc=rc)<a name='1952'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1953'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_575"> ( 'wrf_SST_ESMF:  ESMF_GridCompDestroy(compGriddedWRF) failed' )<a name='1954'>
+   ENDIF<a name='1955'>
+   CALL ESMF_StateDestroy(importStateWRF, rc=rc)<a name='1956'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1957'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_576"> ( 'wrf_SST_ESMF:  ESMF_StateDestroy(importStateWRF) failed' )<a name='1958'>
+   ENDIF<a name='1959'>
+   CALL ESMF_StateDestroy(exportStateWRF, rc=rc)<a name='1960'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1961'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_577"> ( 'wrf_SST_ESMF:  ESMF_StateDestroy(exportStateWRF) failed' )<a name='1962'>
+   ENDIF<a name='1963'>
+   CALL ESMF_StateDestroy(importStateSST, rc=rc)<a name='1964'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1965'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_578"> ( 'wrf_SST_ESMF:  ESMF_StateDestroy(importStateSST) failed' )<a name='1966'>
+   ENDIF<a name='1967'>
+   CALL ESMF_StateDestroy(exportStateSST, rc=rc)<a name='1968'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1969'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_579"> ( 'wrf_SST_ESMF:  ESMF_StateDestroy(exportStateSST) failed' )<a name='1970'>
+   ENDIF<a name='1971'>
+   CALL ESMF_ClockDestroy(driverClock, rc=rc)<a name='1972'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1973'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_580"> ( 'wrf_SST_ESMF:  ESMF_ClockDestroy(driverClock) failed' )<a name='1974'>
+   ENDIF<a name='1975'>
+<a name='1976'>
+   CALL ESMF_Finalize( rc=rc )<a name='1977'>
+   IF ( rc /= ESMF_SUCCESS ) THEN<a name='1978'>
+     CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/main/wrf_SST_ESMF.F.html#WRF_SST_ESMF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_581"> ( 'wrf_SST_ESMF:  ESMF_Finalize failed' )<a name='1979'>
+   ENDIF<a name='1980'>
+<a name='1981'>
+END PROGRAM wrf_SST_ESMF<a name='1982'>
+<a name='1983'>
+<a name='1984'>
+</pre></body></html>

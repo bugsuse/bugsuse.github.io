@@ -1,0 +1,797 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!<a name='2'></font>
+<A NAME='MODULE_FR_FIRE_PHYS'><A href='../../html_code/phys/module_fr_fire_phys.F.html#MODULE_FR_FIRE_PHYS' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='3'>
+<font color=#993300>module </font><font color=#cc0000>module_fr_fire_phys</font> <A href='../../call_to/MODULE_FR_FIRE_PHYS.html' TARGET='index'>3</A><a name='4'>
+<a name='5'>
+use <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#module_fr_fire_phys.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_69">, only: cp,xlv<a name='6'>
+use <A href='../../html_code/phys/module_fr_fire_util.F.html#MODULE_FR_FIRE_UTIL'>module_fr_fire_util</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#module_fr_fire_phys.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_FR_FIRE_UTIL_6"><a name='7'>
+<a name='8'>
+PRIVATE<a name='9'>
+<a name='10'>
+<font color=#447700>! subroutines and functions <a name='11'></font>
+PUBLIC:: init_fuel_cats,fire_ros,heat_fluxes,set_nfuel_cat,set_fire_params,write_fuels_m<a name='12'>
+<a name='13'>
+PUBLIC::fire_params<a name='14'>
+<a name='15'>
+<font color=#447700>! arrays passed to fire_ros<a name='16'></font>
+type fire_params<a name='17'>
+real,pointer,dimension(:,:):: vx,vy                <font color=#447700>! wind velocity (m/s)<a name='18'></font>
+real,pointer,dimension(:,:):: zsf                  <font color=#447700>! terrain height (m) <a name='19'></font>
+real,pointer,dimension(:,:):: dzdxf,dzdyf          <font color=#447700>! terrain grad (1) <a name='20'></font>
+real,pointer,dimension(:,:):: bbb,betafl,phiwc,r_0 <font color=#447700>! spread formula coefficients<a name='21'></font>
+real,pointer,dimension(:,:):: fgip                 <font color=#447700>! init mass of surface fuel (kg/m^2)<a name='22'></font>
+real,pointer,dimension(:,:):: ischap               <font color=#447700>! if fuel is chaparral and want rate of spread treated differently<a name='23'></font>
+end type fire_params<a name='24'>
+<a name='25'>
+<font color=#447700>! use as<a name='26'></font>
+<font color=#447700>! type(fire_params)::fp<a name='27'></font>
+<a name='28'>
+<font color=#447700>!D in col 2 means quantity derived from the others<a name='29'></font>
+<font color=#447700>!<a name='30'></font>
+<font color=#447700>!  Scalar constants (data same for all fuel categories):<a name='31'></font>
+<font color=#447700>!       HFGL           SURFACE FIRE HEAT FLUX THRESHOLD TO IGNITE CANOPY (W/m^2)<a name='32'></font>
+<font color=#447700>!       CMBCNST        JOULES PER KG OF DRY FUEL<a name='33'></font>
+<font color=#447700>!       FUELHEAT       FUEL PARTICLE LOW HEAT CONTENT, BTU/LB<a name='34'></font>
+<font color=#447700>!       FUELMC_G       FUEL PARTICLE (SURFACE) MOISTURE CONTENT<a name='35'></font>
+<font color=#447700>!D      BMST           RATIO OF LATENT TO SENSIBLE HEAT FROM SFC BURN:<a name='36'></font>
+<font color=#447700>!                        % of total fuel mass that is water (not quite<a name='37'></font>
+<font color=#447700>!                        = % fuel moisture).    BMST= (H20)/(H20+DRY)<a name='38'></font>
+<font color=#447700>!                        so BMST = FUELMC_G / (1 + FUELMC_G)  where<a name='39'></font>
+<font color=#447700>!                        FUELMC_G = moisture content of surface fuel<a name='40'></font>
+<font color=#447700>!<a name='41'></font>
+<font color=#447700>!  Data arrays indexed by fuel category:<a name='42'></font>
+<font color=#447700>!       FGI            INITIAL TOTAL MASS OF SURFACE FUEL (KG/M**2)<a name='43'></font>
+<font color=#447700>!       FUELDEPTHM     FUEL DEPTH, IN M  (CONVERTED TO FT)              <a name='44'></font>
+<font color=#447700>!       SAVR           FUEL PARTICLE SURFACE-AREA-TO-VOLUME RATIO, 1/FT<a name='45'></font>
+<font color=#447700>!                         GRASS: 3500., 10 hr fuel: 109.,  100 hr fuel: 30.<a name='46'></font>
+<font color=#447700>!       FUELMCE        MOISTURE CONTENT OF EXTINCTION; 0.30 FOR MANY DEAD FUELS; 0.15 FOR GRASS<a name='47'></font>
+<font color=#447700>!       FUELDENS       OVENDRY PARTICLE DENSITY, LB/FT^3<a name='48'></font>
+<font color=#447700>!       ST             FUEL PARTICLE TOTAL MINERAL CONTENT<a name='49'></font>
+<font color=#447700>!       SE             FUEL PARTICLE EFFECTIVE MINERAL CONTENT<a name='50'></font>
+<font color=#447700>!       WEIGHT         WEIGHTING PARAMETER THAT DETERMINES THE SLOPE OF THE MASS LOSS CURVE<a name='51'></font>
+<font color=#447700>!                        RANGES FROM ~5 (FAST BURNUP) TO 1000 ( ~40% DECR OVER 10 MIN).<a name='52'></font>
+<font color=#447700>!       FCI_D          INITIAL DRY MASS OF CANOPY FUEL<a name='53'></font>
+<font color=#447700>!       FCT            BURN OUT TIME FOR CANOPY FUEL, AFTER DRY (S)<a name='54'></font>
+<font color=#447700>!       ichap          Set=1 if fuel is chaparral and want the rate of spread treated differently, 0 if not<a name='55'></font>
+<font color=#447700>!D      FCI            INITIAL TOTAL MASS OF CANOPY FUEL<a name='56'></font>
+<font color=#447700>!D      FCBR           FUEL CANOPY BURN RATE (KG/M**2/S) <a name='57'></font>
+<a name='58'>
+<font color=#447700>! =============================================================================<a name='59'></font>
+<font color=#447700>! Anderson 13 surface fire fuel models, along with some<a name='60'></font>
+<font color=#447700>!          estimated canopy properties (for crown fire).<a name='61'></font>
+<font color=#447700>! =============================================================================<a name='62'></font>
+<font color=#447700>!  --- Grass-dominated fuel models<a name='63'></font>
+<font color=#447700>!  FUEL MODEL 1: Short grass (1 ft)<a name='64'></font>
+<font color=#447700>!  FUEL MODEL 2: Timber (grass and understory)<a name='65'></font>
+<font color=#447700>!  FUEL MODEL 3: Tall grass (2.5 ft)<a name='66'></font>
+<font color=#447700>!  --- Shrub-dominated fuel models<a name='67'></font>
+<font color=#447700>!  FUEL MODEL 4: Chaparral (6 ft)<a name='68'></font>
+<font color=#447700>!  FUEL MODEL 5: Brush (2 ft) <a name='69'></font>
+<font color=#447700>!  FUEL MODEL 6: Dormant brush, hardwood slash<a name='70'></font>
+<font color=#447700>!  FUEL MODEL 7: Southern rough<a name='71'></font>
+<font color=#447700>!  --- Forest litter-dominated fuel models<a name='72'></font>
+<font color=#447700>!  FUEL MODEL 8: Closed timber litter<a name='73'></font>
+<font color=#447700>!  FUEL MODEL 9: Hardwood litter<a name='74'></font>
+<font color=#447700>!  FUEL MODEL 10: Timber (litter + understory)<a name='75'></font>
+<font color=#447700>!  --- Logging debris-dominated fuel models<a name='76'></font>
+<font color=#447700>!  FUEL MODEL 11: Light logging slash<a name='77'></font>
+<font color=#447700>!  FUEL MODEL 12: Medium logging slash<a name='78'></font>
+<font color=#447700>!  FUEL MODEL 13: Heavy logging slash<a name='79'></font>
+<font color=#447700>!  --- Fuel-free <a name='80'></font>
+<font color=#447700>!  FUEL MODEL 14: no fuel<a name='81'></font>
+<a name='82'>
+<font color=#447700>! scalar fuel coefficients<a name='83'></font>
+   REAL, SAVE:: cmbcnst,hfgl,fuelmc_g,fuelmc_c<a name='84'>
+<font color=#447700>! computed values<a name='85'></font>
+   REAL, SAVE:: bmst,fuelheat<a name='86'>
+<a name='87'>
+<font color=#447700>! defaults, may be changed in init_fuel_cats<a name='88'></font>
+   DATA cmbcnst  / 17.433e+06/             <font color=#447700>! J/kg dry fuel<a name='89'></font>
+   DATA hfgl     / 17.e4 /                <font color=#447700>! W/m^2<a name='90'></font>
+   DATA fuelmc_g / 0.08  /                <font color=#447700>! set = 0 for dry surface fuel<a name='91'></font>
+   DATA fuelmc_c / 1.00  /                <font color=#447700>! set = 0 for dry canopy<a name='92'></font>
+<font color=#447700>!  REAL, PARAMETER :: bmst     = fuelmc_g/(1+fuelmc_g)<a name='93'></font>
+<font color=#447700>!  REAL, PARAMETER :: fuelheat = cmbcnst * 4.30e-04     ! convert J/kg to BTU/lb<a name='94'></font>
+<font color=#447700>!  real, parameter :: xlv      = 2.5e6                  ! to make it selfcontained<a name='95'></font>
+<font color=#447700>!  real, parameter :: cp      =  7.*287./2              ! to make it selfcontained<a name='96'></font>
+<a name='97'>
+<a name='98'>
+<font color=#447700>! fuel categorytables<a name='99'></font>
+   INTEGER, PARAMETER :: nf=14              <font color=#447700>! number of fuel categories in data stmts<a name='100'></font>
+   INTEGER, SAVE      :: nfuelcats = 13     <font color=#447700>! number of fuel categories that are specified<a name='101'></font>
+   INTEGER, PARAMETER :: mfuelcats = 30     <font color=#447700>! allowable number of fuel categories <a name='102'></font>
+   INTEGER, PARAMETER :: zf = mfuelcats-nf  <font color=#447700>! number of zero fillers in data stmt <a name='103'></font>
+   INTEGER, SAVE      :: no_fuel_cat = 14   <font color=#447700>! special category outside of 1:nfuelcats<a name='104'></font>
+   CHARACTER (len=80), DIMENSION(mfuelcats ), save :: fuel_name<a name='105'>
+   INTEGER, DIMENSION( mfuelcats ), save :: ichap<a name='106'>
+   REAL   , DIMENSION( mfuelcats ), save :: windrf,weight,fgi,fci,fci_d,fct,fcbr, &amp;<a name='107'>
+                                            fueldepthm,fueldens,fuelmce,   &amp;<a name='108'>
+                                            savr,st,se<a name='109'>
+   DATA windrf /0.36, 0.36, 0.44,  0.55,  0.42,  0.44,  0.44, &amp;     <a name='110'>
+                0.36, 0.36, 0.36,  0.36,  0.43,  0.46,  1e-7, zf*0 /<a name='111'>
+   DATA fgi / 0.166, 0.896, 0.674, 3.591, 0.784, 1.344, 1.091, &amp;<a name='112'>
+              1.120, 0.780, 2.692, 2.582, 7.749, 13.024, 1.e-7, zf*0.  /<a name='113'>
+   DATA fueldepthm /0.305,  0.305,  0.762, 1.829, 0.61,  0.762,0.762, &amp;<a name='114'>
+                    0.0610, 0.0610, 0.305, 0.305, 0.701, 0.914, 0.305,zf*0. /<a name='115'>
+   DATA savr / 3500., 2784., 1500., 1739., 1683., 1564., 1562.,  &amp;<a name='116'>
+               1889., 2484., 1764., 1182., 1145., 1159., 3500., zf*0. /<a name='117'>
+   DATA fuelmce / 0.12, 0.15, 0.25, 0.20, 0.20, 0.25, 0.40,  &amp;<a name='118'>
+                  0.30, 0.25, 0.25, 0.15, 0.20, 0.25, 0.12 , zf*0. / <a name='119'>
+   DATA fueldens / nf * 32., zf*0. /   <font color=#447700>! 32 if solid, 19 if rotten.<a name='120'></font>
+   DATA st / nf* 0.0555 , zf*0./<a name='121'>
+   DATA se / nf* 0.010 , zf*0./<a name='122'>
+<font color=#447700>! ----- Notes on weight: (4) - best fit of data from D. Latham (pers. comm.);<a name='123'></font>
+<font color=#447700>!              (5)-(7) could be 60-120; (8)-(10) could be 300-1600;<a name='124'></font>
+<font color=#447700>!              (11)-(13) could be 300-1600<a name='125'></font>
+   DATA weight / 7.,  7.,  7., 180., 100., 100., 100.,  &amp;<a name='126'>
+              900., 900., 900., 900., 900., 900., 7. , zf*0./ <a name='127'>
+<font color=#447700>! ----- 1.12083 is 5 tons/acre.  5-50 tons/acre orig., 100-300 after blowdown<a name='128'></font>
+   DATA fci_d / 0., 0., 0., 1.123, 0., 0., 0.,  &amp;<a name='129'>
+            1.121, 1.121, 1.121, 1.121, 1.121, 1.121, 0., zf*0./<a name='130'>
+   DATA fct / 60., 60., 60., 60., 60., 60., 60.,  &amp;<a name='131'>
+            60., 120., 180., 180., 180., 180. , 60. , zf*0.   /<a name='132'>
+   DATA ichap / 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 , zf*0/ <a name='133'>
+<font color=#447700>! =========================================================================<a name='134'></font>
+<a name='135'>
+contains<a name='136'>
+<a name='137'>
+<A NAME='INIT_FUEL_CATS'><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='138'>
+<font color=#993300>subroutine </font><font color=#cc0000>init_fuel_cats</font> <A href='../../call_to/INIT_FUEL_CATS.html' TARGET='index'>1</A>,<A href='../../call_from/INIT_FUEL_CATS.html' TARGET='index'>49</A><a name='139'>
+implicit none<a name='140'>
+<font color=#447700>!*** purpose: initialize fuel tables and variables by constants<a name='141'></font>
+<font color=#447700>!*** arguments: none<a name='142'></font>
+logical, external:: wrf_dm_on_monitor<a name='143'>
+#ifdef _OPENMP<a name='144'>
+<font color=#447700>!integer, external:: OMP_GET_THREAD_NUM<a name='145'></font>
+#endif<a name='146'>
+<font color=#447700>!*** local<a name='147'></font>
+integer:: i,j,k,ii,iounit<a name='148'>
+character(len=128):: msg<a name='149'>
+<font color=#447700>!*** executable<a name='150'></font>
+<a name='151'>
+<font color=#447700>! read <a name='152'></font>
+namelist /fuel_scalars/ cmbcnst,hfgl,fuelmc_g,fuelmc_c,nfuelcats,no_fuel_cat<a name='153'>
+namelist /fuel_categories/ fuel_name,windrf,fgi,fueldepthm,savr, &amp;<a name='154'>
+    fuelmce,fueldens,st,se,weight,fci_d,fct,ichap<a name='155'>
+<a name='156'>
+#ifdef _OPENMP<a name='157'>
+<font color=#447700>!   if (OMP_GET_THREAD_NUM() .ne. 0)then<a name='158'></font>
+<font color=#447700>!      call crash('init_fuel_cats: must be called from master thread')<a name='159'></font>
+<font color=#447700>!   endif<a name='160'></font>
+#endif<a name='161'>
+<a name='162'>
+IF ( wrf_dm_on_monitor() ) THEN<a name='163'>
+    <font color=#447700>! if we are the master task, read the file<a name='164'></font>
+    iounit=<A href='../../html_code/phys/module_fr_fire_util.F.html#OPEN_TEXT_FILE'>open_text_file</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OPEN_TEXT_FILE_1">('namelist.fire','read')<a name='165'>
+    read(iounit,fuel_scalars)<a name='166'>
+    read(iounit,fuel_categories)<a name='167'>
+    CLOSE(iounit)<a name='168'>
+    <a name='169'>
+    if (nfuelcats&gt;mfuelcats) then<a name='170'>
+        write(msg,*)'nfuelcats=',nfuelcats,' is too large, increase mfuelcats'<a name='171'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_18">(msg)<a name='172'>
+    endif<a name='173'>
+        if (no_fuel_cat &gt;= 1 .and. no_fuel_cat &lt;= nfuelcats)then<a name='174'>
+        write(msg,*)'no_fuel_cat=',no_fuel_cat,' may not be between 1 and nfuelcats=',nfuelcats<a name='175'>
+        call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_19">(msg)<a name='176'>
+    endif<a name='177'>
+ENDIF<a name='178'>
+<a name='179'>
+<font color=#447700>! broadcast the contents of the file<a name='180'></font>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_3">(cmbcnst,1)<a name='181'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_4">(hfgl,1)<a name='182'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_5">(fuelmc_g,1)<a name='183'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_6">(fuelmc_c,1)<a name='184'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_INTEGER'>wrf_dm_bcast_integer</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_INTEGER_5">(nfuelcats,1)<a name='185'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_INTEGER'>wrf_dm_bcast_integer</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_INTEGER_6">(no_fuel_cat,1)<a name='186'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_7">(windrf,    nfuelcats)<a name='187'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_8">(fgi,       nfuelcats)<a name='188'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_9">(fueldepthm,nfuelcats)<a name='189'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_10">(savr,      nfuelcats)<a name='190'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_11">(fuelmce,   nfuelcats)<a name='191'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_12">(fueldens,  nfuelcats)<a name='192'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_13">(st,        nfuelcats)<a name='193'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_14">(se,        nfuelcats)<a name='194'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_15">(weight,    nfuelcats)<a name='195'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_16">(fci_d,     nfuelcats)<a name='196'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_REAL'>wrf_dm_bcast_real</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_REAL_17">(fct,       nfuelcats)<a name='197'>
+call <A href='../../html_code/frame/module_dm_stubs.F.html#WRF_DM_BCAST_INTEGER'>wrf_dm_bcast_integer</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DM_BCAST_INTEGER_7">(ichap,  nfuelcats)<a name='198'>
+<a name='199'>
+<font color=#447700>! compute derived scalars<a name='200'></font>
+<a name='201'>
+bmst     = fuelmc_g/(1+fuelmc_g)<a name='202'>
+fuelheat = cmbcnst * 4.30e-04     <font color=#447700>! convert J/kg to BTU/lb<a name='203'></font>
+<a name='204'>
+<font color=#447700>! compute derived fuel category coefficients <a name='205'></font>
+<a name='206'>
+DO i = 1,nfuelcats<a name='207'>
+    fci(i) = (1.+fuelmc_c)*fci_d(i)<a name='208'>
+    if(fct(i) .ne.  0.)then<a name='209'>
+        fcbr(i) = fci_d(i)/fct(i) <font color=#447700>!  avoid division by zero<a name='210'></font>
+    else<a name='211'>
+        fcbr(i) = 0<a name='212'>
+    endif<a name='213'>
+END DO<a name='214'>
+<a name='215'>
+<font color=#447700>! prints<a name='216'></font>
+<a name='217'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_68">('**********************************************************')<a name='218'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_69">('FUEL COEFFICIENTS')<a name='219'>
+write(msg,8)'cmbcnst    ',cmbcnst<a name='220'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_70">(msg)<a name='221'>
+write(msg,8)'hfgl       ',hfgl<a name='222'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_71">(msg)<a name='223'>
+write(msg,8)'fuelmc_g   ',fuelmc_g<a name='224'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_72">(msg)<a name='225'>
+write(msg,8)'fuelmc_c   ',fuelmc_c<a name='226'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_73">(msg)<a name='227'>
+write(msg,8)'bmst       ',bmst<a name='228'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_74">(msg)<a name='229'>
+write(msg,8)'fuelheat   ',fuelheat<a name='230'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_75">(msg)<a name='231'>
+write(msg,7)'nfuelcats  ',nfuelcats<a name='232'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_76">(msg)<a name='233'>
+write(msg,7)'no_fuel_cat',no_fuel_cat<a name='234'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_77">(msg)<a name='235'>
+<a name='236'>
+j=1<a name='237'>
+7 format(a,5(1x,i8,4x))<a name='238'>
+8 format(a,5(1x,g12.5e2))<a name='239'>
+9 format(a,5(1x,a))<a name='240'>
+do i=1,nfuelcats,j<a name='241'>
+    k=min(i+j-1,nfuelcats)<a name='242'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_78">(' ')<a name='243'>
+    write(msg,7)'CATEGORY  ',(ii,ii=i,k)<a name='244'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_79">(msg)<a name='245'>
+    write(msg,9)'fuel name ',(fuel_name(ii),ii=i,k)<a name='246'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_80">(msg)<a name='247'>
+<font color=#447700>!    write(msg,8)'windrf    ',(windrf(ii),ii=i,k)<a name='248'></font>
+<font color=#447700>!    call message(msg)<a name='249'></font>
+    write(msg,8)'fgi       ',(fgi(ii),ii=i,k)<a name='250'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_81">(msg)<a name='251'>
+    write(msg,8)'fueldepthm',(fueldepthm(ii),ii=i,k)<a name='252'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_82">(msg)<a name='253'>
+    write(msg,8)'savr      ',(savr(ii),ii=i,k)<a name='254'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_83">(msg)<a name='255'>
+    write(msg,8)'fuelmce   ',(fuelmce(ii),ii=i,k)<a name='256'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_84">(msg)<a name='257'>
+    write(msg,8)'fueldens  ',(fueldens(ii),ii=i,k)<a name='258'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_85">(msg)<a name='259'>
+    write(msg,8)'st        ',(st(ii),ii=i,k)<a name='260'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_86">(msg)<a name='261'>
+    write(msg,8)'se        ',(se(ii),ii=i,k)<a name='262'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_87">(msg)<a name='263'>
+    write(msg,8)'weight    ',(weight(ii),ii=i,k)<a name='264'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_88">(msg)<a name='265'>
+    write(msg,8)'fci_d     ',(fci_d(ii),ii=i,k)<a name='266'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_89">(msg)<a name='267'>
+    write(msg,8)'fct       ',(fct(ii),ii=i,k)<a name='268'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_90">(msg)<a name='269'>
+    write(msg,7)'ichap     ',(ichap(ii),ii=i,k)<a name='270'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_91">(msg)<a name='271'>
+    write(msg,8)'fci       ',(fci(ii),ii=i,k)<a name='272'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_92">(msg)<a name='273'>
+    write(msg,8)'fcbr      ',(fcbr(ii),ii=i,k)<a name='274'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_93">(msg)<a name='275'>
+enddo<a name='276'>
+call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_94">('**********************************************************')<a name='277'>
+<a name='278'>
+<font color=#447700>! and print to file<a name='279'></font>
+IF ( wrf_dm_on_monitor() ) THEN<a name='280'>
+  call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M'>write_fuels_m</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#INIT_FUEL_CATS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_FUELS_M_1">(61,30.,1.)<a name='281'>
+ENDIF<a name='282'>
+end subroutine init_fuel_cats<a name='283'>
+<a name='284'>
+<a name='285'>
+<A NAME='WRITE_FUELS_M'><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='286'>
+<font color=#993300>subroutine </font><font color=#cc0000>write_fuels_m</font>(nsteps,maxwind,maxslope) <A href='../../call_to/WRITE_FUELS_M.html' TARGET='index'>1</A>,<A href='../../call_from/WRITE_FUELS_M.html' TARGET='index'>22</A><a name='287'>
+implicit none<a name='288'>
+integer, intent(in):: nsteps   <font color=#447700>! number of steps for speed computation<a name='289'></font>
+real, intent(in):: maxwind,maxslope <font color=#447700>! computer from zero to these<a name='290'></font>
+<a name='291'>
+integer:: iounit,k,j,i<a name='292'>
+type(fire_params)::fp<a name='293'>
+<font color=#447700>!type fire_params<a name='294'></font>
+<font color=#447700>!real,pointer,dimension(:,:):: vx,vy                ! wind velocity (m/s)<a name='295'></font>
+<font color=#447700>!real,pointer,dimension(:,:):: zsf                  ! terrain height (m) <a name='296'></font>
+<font color=#447700>!real,pointer,dimension(:,:):: dzdxf,dzdyf          ! terrain grad (1) <a name='297'></font>
+<font color=#447700>!real,pointer,dimension(:,:):: bbb,betafl,phiwc,r_0 ! spread formula coefficients<a name='298'></font>
+<font color=#447700>!real,pointer,dimension(:,:):: fgip                 ! init mass of surface fuel (kg/m^2)<a name='299'></font>
+<font color=#447700>!real,pointer,dimension(:,:):: ischap               ! 1 if chapparal<a name='300'></font>
+<font color=#447700>!end type fire_params<a name='301'></font>
+real, dimension(1:2,1:nsteps), target::vx,vy,zsf,dzdxf,dzdyf,bbb,betafl,phiwc,r_0,fgip,ischap<a name='302'>
+real, dimension(1:2,1:nsteps)::nfuel_cat,fuel_time,ros<a name='303'>
+real::ros_base,ros_wind,ros_slope,propx,propy,r<a name='304'>
+<a name='305'>
+fp%vx=&gt;vx<a name='306'>
+fp%vy=&gt;vy<a name='307'>
+fp%dzdxf=&gt;dzdxf<a name='308'>
+fp%dzdyf=&gt;dzdyf<a name='309'>
+fp%bbb=&gt;bbb<a name='310'>
+fp%betafl=&gt;betafl<a name='311'>
+fp%phiwc=&gt;phiwc<a name='312'>
+fp%r_0=&gt;r_0<a name='313'>
+fp%fgip=&gt;fgip<a name='314'>
+fp%ischap=&gt;ischap<a name='315'>
+<a name='316'>
+iounit = <A href='../../html_code/phys/module_fr_fire_util.F.html#OPEN_TEXT_FILE'>open_text_file</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="OPEN_TEXT_FILE_2">('fuels.m','write')<a name='317'>
+<a name='318'>
+10 format('fuel(',i3,').',a,'=',"'",a,"'",';% ',a)<a name='319'>
+do k=1,nfuelcats<a name='320'>
+    write(iounit,10)k,'fuel_name',trim(fuel_name(k)),'FUEL MODEL NAME'<a name='321'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_1">(k,'windrf',windrf(k),'WIND REDUCTION FACTOR FROM 20ft TO MIDFLAME HEIGHT' )<a name='322'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_2">(k,'fgi',fgi(k),'INITIAL TOTAL MASS OF SURFACE FUEL (KG/M**2)' )<a name='323'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_3">(k,'fueldepthm',fueldepthm(k),'FUEL DEPTH (M)')<a name='324'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_4">(k,'savr',savr(k),'FUEL PARTICLE SURFACE-AREA-TO-VOLUME RATIO, 1/FT')<a name='325'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_5">(k,'fuelmce',fuelmce(k),'MOISTURE CONTENT OF EXTINCTION')<a name='326'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_6">(k,'fueldens',fueldens(k),'OVENDRY PARTICLE DENSITY, LB/FT^3')<a name='327'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_7">(k,'st',st(k),'FUEL PARTICLE TOTAL MINERAL CONTENT')<a name='328'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_8">(k,'se',se(k),'FUEL PARTICLE EFFECTIVE MINERAL CONTENT')<a name='329'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_9">(k,'weight',weight(k),'WEIGHTING PARAMETER THAT DETERMINES THE SLOPE OF THE MASS LOSS CURVE')<a name='330'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_10">(k,'fci_d',fci_d(k),'INITIAL DRY MASS OF CANOPY FUEL')<a name='331'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_11">(k,'fct',fct(k),'BURN OUT TIME FOR CANOPY FUEL, AFTER DRY (S)')<a name='332'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_12">(k,'ichap',float(ichap(k)),'1 if chaparral, 0 if not')<a name='333'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_13">(k,'fci',fci(k),'INITIAL TOTAL MASS OF CANOPY FUEL')<a name='334'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_14">(k,'fcbr',fcbr(k),'FUEL CANOPY BURN RATE (KG/M**2/S)')<a name='335'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_15">(k,'hfgl',hfgl,'SURFACE FIRE HEAT FLUX THRESHOLD TO IGNITE CANOPY (W/m^2)')<a name='336'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_16">(k,'cmbcnst',cmbcnst,'JOULES PER KG OF DRY FUEL')<a name='337'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_17">(k,'fuelheat',fuelheat,'FUEL PARTICLE LOW HEAT CONTENT, BTU/LB')<a name='338'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_18">(k,'fuelmc_g',fuelmc_g,'FUEL PARTICLE (SURFACE) MOISTURE CONTENT')<a name='339'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR'>write_var</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRITE_VAR_19">(k,'fuelmc_c',fuelmc_c,'FUEL PARTICLE (CANOPY) MOISTURE CONTENT')<a name='340'>
+    <font color=#447700>! set up fuel arrays <a name='341'></font>
+    <font color=#447700>!subroutine set_fire_params( &amp;<a name='342'></font>
+    <font color=#447700>!                       ifds,ifde,jfds,jfde, &amp;<a name='343'></font>
+    <font color=#447700>!                       ifms,ifme,jfms,jfme, &amp;<a name='344'></font>
+    <font color=#447700>!                       ifts,ifte,jfts,jfte, &amp;<a name='345'></font>
+    <font color=#447700>!                       fdx,fdy,nfuel_cat0,  &amp;<a name='346'></font>
+    <font color=#447700>!                       nfuel_cat,fuel_time, &amp;<a name='347'></font>
+    <font color=#447700>!                       fp ) <a name='348'></font>
+    nfuel_cat = k<a name='349'>
+    call <A href='../../html_code/phys/module_fr_fire_phys.F.html#SET_FIRE_PARAMS'>set_fire_params</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_FIRE_PARAMS_2">( &amp;<a name='350'>
+                           1,2,1,nsteps, &amp;<a name='351'>
+                           1,2,1,nsteps, &amp;<a name='352'>
+                           1,2,1,nsteps, &amp;<a name='353'>
+                           0.,0.,k,  &amp;<a name='354'>
+                           nfuel_cat,fuel_time, &amp;<a name='355'>
+                           fp ) <a name='356'>
+    <font color=#447700>! set up windspeed and slope table<a name='357'></font>
+    propx=1.<a name='358'>
+    propy=0.<a name='359'>
+    do j=1,nsteps<a name='360'>
+       r=float(j-1)/float(nsteps-1)<a name='361'>
+       <font color=#447700>! line 1 varies windspeed (in x direction), zero slope<a name='362'></font>
+       vx(1,j)=maxwind*r<a name='363'>
+       vy(1,j)=0.<a name='364'>
+       dzdxf(1,j)=0.<a name='365'>
+       dzdyf(1,j)=0.<a name='366'>
+       <font color=#447700>! line 2 varies slope (in x direction), zero slope<a name='367'></font>
+       vx(2,j)=0.<a name='368'>
+       vy(2,j)=0.<a name='369'>
+       dzdxf(2,j)=maxslope*r<a name='370'>
+       dzdyf(2,j)=0.<a name='371'>
+    enddo<a name='372'>
+    do j=1,nsteps<a name='373'>
+       do i=1,2<a name='374'>
+          call <A href='../../html_code/phys/module_fr_fire_phys.F.html#FIRE_ROS'>fire_ros</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_FUELS_M' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FIRE_ROS_3">(ros_base,ros_wind,ros_slope, &amp;<a name='375'>
+             propx,propy,i,j,fp)<a name='376'>
+          ros(i,j)=ros_base+ros_wind+ros_slope<a name='377'>
+       enddo<a name='378'>
+       write(iounit,13)k,'wind',j,vx(1,j),'wind speed'<a name='379'>
+       write(iounit,13)k,'ros_wind',j,ros(1,j),'rate of spread for the wind speed'<a name='380'>
+       write(iounit,13)k,'slope',j,dzdxf(2,j),'slope'<a name='381'>
+       write(iounit,13)k,'ros_slope',j,ros(2,j),'rate of spread for the slope'<a name='382'>
+    enddo<a name='383'>
+enddo<a name='384'>
+13 format('fuel(',i3,').',a,'(',i3,')=',g12.5e2,';% ',a)<a name='385'>
+ <a name='386'>
+close(iounit)<a name='387'>
+<font color=#447700>! stop<a name='388'></font>
+<a name='389'>
+contains<a name='390'>
+<a name='391'>
+<A NAME='WRITE_VAR'><A href='../../html_code/phys/module_fr_fire_phys.F.html#WRITE_VAR' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='392'>
+<font color=#993300>subroutine </font><font color=#cc0000>write_var</font>(k,name,value,descr) <A href='../../call_to/WRITE_VAR.html' TARGET='index'>19</A><a name='393'>
+<font color=#447700>! write entry for one variable<a name='394'></font>
+integer, intent(in)::k<a name='395'>
+character(len=*), intent(in)::name,descr<a name='396'>
+real, intent(in)::value<a name='397'>
+write(iounit,11)k,name,value<a name='398'>
+write(iounit,12)k,name,descr<a name='399'>
+11 format('fuel(',i3,').',a,'=',g12.5e2,  ';')<a name='400'>
+12 format('fuel(',i3,').',a,"_descr='",a,"';")<a name='401'>
+end subroutine write_var<a name='402'>
+<a name='403'>
+end subroutine write_fuels_m<a name='404'>
+<a name='405'>
+<font color=#447700>!<a name='406'></font>
+<font color=#447700>!*******************<a name='407'></font>
+<font color=#447700>!<a name='408'></font>
+<a name='409'>
+<A NAME='SET_FIRE_PARAMS'><A href='../../html_code/phys/module_fr_fire_phys.F.html#SET_FIRE_PARAMS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='410'>
+<font color=#993300>subroutine </font><font color=#cc0000>set_fire_params</font>( &amp; <A href='../../call_to/SET_FIRE_PARAMS.html' TARGET='index'>2</A>,<A href='../../call_from/SET_FIRE_PARAMS.html' TARGET='index'>3</A><a name='411'>
+                           ifds,ifde,jfds,jfde, &amp;<a name='412'>
+                           ifms,ifme,jfms,jfme, &amp;<a name='413'>
+                           ifts,ifte,jfts,jfte, &amp;<a name='414'>
+                           fdx,fdy,nfuel_cat0,  &amp;<a name='415'>
+                           nfuel_cat,fuel_time, &amp;<a name='416'>
+                           fp ) <a name='417'>
+<a name='418'>
+implicit none<a name='419'>
+<a name='420'>
+<font color=#447700>!*** purpose: Set all fire model params arrays, constant values.<a name='421'></font>
+<a name='422'>
+<font color=#447700>!*** arguments<a name='423'></font>
+integer, intent(in)::ifds,ifde,jfds,jfde                        <font color=#447700>! fire domain bounds<a name='424'></font>
+integer, intent(in)::ifts,ifte,jfts,jfte                        <font color=#447700>! fire tile bounds<a name='425'></font>
+integer, intent(in)::ifms,ifme,jfms,jfme                        <font color=#447700>! memory array bounds<a name='426'></font>
+real, intent(in):: fdx,fdy                                      <font color=#447700>! fire mesh spacing<a name='427'></font>
+integer,intent(in)::nfuel_cat0                                  <font color=#447700>! default fuel category, if nfuel_cat=0<a name='428'></font>
+real, intent(in),dimension(ifms:ifme, jfms:jfme)::nfuel_cat  <font color=#447700>! fuel data<a name='429'></font>
+real, intent(out), dimension(ifms:ifme, jfms:jfme)::fuel_time   <font color=#447700>! fire params arrays<a name='430'></font>
+type(fire_params),intent(inout)::fp<a name='431'>
+<a name='432'>
+<font color=#447700>!*** local<a name='433'></font>
+<a name='434'>
+real::  fuelload, fueldepth, rtemp1, rtemp2, &amp;<a name='435'>
+        qig, epsilon, rhob, wn, betaop, e, c, &amp;<a name='436'>
+        xifr, etas, etam, a, gammax, gamma, ratio, ir, &amp;<a name='437'>
+        fuelloadm,fdxinv,fdyinv<a name='438'>
+integer:: i,j,k<a name='439'>
+integer::nerr<a name='440'>
+character(len=128)::msg<a name='441'>
+<a name='442'>
+<font color=#447700>!*** executable<a name='443'></font>
+<a name='444'>
+nerr=0<a name='445'>
+do j=jfts,jfte<a name='446'>
+   do i=ifts,ifte<a name='447'>
+     <font color=#447700>! fuel category <a name='448'></font>
+     k=int( nfuel_cat(i,j) )<a name='449'>
+     if(k.eq.no_fuel_cat)then   <font color=#447700>! no fuel <a name='450'></font>
+        fp%fgip(i,j)=0.            <font color=#447700>! no mass <a name='451'></font>
+        fp%ischap(i,j)=0.<a name='452'>
+        fp%betafl(i,j)=0.          <font color=#447700>! to prevent division by zero<a name='453'></font>
+        fp%bbb(i,j)=1.             <font color=#447700>!<a name='454'></font>
+        fuel_time(i,j)=7./0.85  <font color=#447700>! does not matter, just what was there before<a name='455'></font>
+        fp%phiwc(i,j)=0.<a name='456'>
+        fp%r_0(i,j)=0.             <font color=#447700>! no fuel, no spread.<a name='457'></font>
+     else<a name='458'>
+        if(k.eq.0.and.nfuel_cat0.ge.1.and.nfuel_cat0.le.nfuelcats)then<a name='459'>
+            <font color=#447700>! replace k=0 by default<a name='460'></font>
+            k=nfuel_cat0<a name='461'>
+            nerr=nerr+1<a name='462'>
+        endif<a name='463'>
+   <a name='464'>
+        if(k.lt.1.or.k.gt.nfuelcats)then<a name='465'>
+<font color=#447700>!$OMP CRITICAL(FIRE_PHYS_CRIT)<a name='466'></font>
+            write(msg,'(3(a,i5))')'nfuel_cat(', i ,',',j,')=',k<a name='467'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_PHYS_CRIT)<a name='468'></font>
+            call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#SET_FIRE_PARAMS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_95">(msg)<a name='469'>
+            call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#SET_FIRE_PARAMS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_20">('set_fire_params: fuel category out of bounds')<a name='470'>
+        endif<a name='471'>
+<a name='472'>
+        fuel_time(i,j)=weight(k)/0.85 <font color=#447700>! cell based<a name='473'></font>
+        <a name='474'>
+        <font color=#447700>! set fuel time constant: weight=1000 =&gt; 40% decrease over 10 min<a name='475'></font>
+        <font color=#447700>! fuel decreases as exp(-t/fuel_time) <a name='476'></font>
+        <font color=#447700>! exp(-600*0.85/1000) = approx 0.6 <a name='477'></font>
+<a name='478'>
+        fp%ischap(i,j)=ichap(k)<a name='479'>
+        fp%fgip(i,j)=fgi(k)<a name='480'>
+<a name='481'>
+        <font color=#447700>!     ...Settings of fire spread parameters from Rothermel follows. These<a name='482'></font>
+        <font color=#447700>!        don't need to be recalculated later.<a name='483'></font>
+        <a name='484'>
+        fuelloadm= (1.-bmst) * fgi(k)  <font color=#447700>!  fuelload without moisture<a name='485'></font>
+        fuelload = fuelloadm * (.3048)**2 * 2.205    <font color=#447700>! to lb/ft^2<a name='486'></font>
+        fueldepth = fueldepthm(k)/0.3048               <font color=#447700>! to ft<a name='487'></font>
+        fp%betafl(i,j) = fuelload/(fueldepth * fueldens(k))<font color=#447700>! packing ratio<a name='488'></font>
+        betaop = 3.348 * savr(k)**(-0.8189)     <font color=#447700>! optimum packing ratio<a name='489'></font>
+        qig = 250. + 1116.*fuelmc_g            <font color=#447700>! heat of preignition, btu/lb<a name='490'></font>
+        epsilon = exp(-138./savr(k) )    <font color=#447700>! effective heating number<a name='491'></font>
+        rhob = fuelload/fueldepth    <font color=#447700>! ovendry bulk density, lb/ft^3<a name='492'></font>
+<a name='493'>
+        c = 7.47 * exp( -0.133 * savr(k)**0.55)    <font color=#447700>! const in wind coef<a name='494'></font>
+        fp%bbb(i,j) = 0.02526 * savr(k)**0.54      <font color=#447700>! const in wind coef<a name='495'></font>
+        e = 0.715 * exp( -3.59e-4 * savr(k))       <font color=#447700>! const in wind coef<a name='496'></font>
+        fp%phiwc(i,j) = c * (fp%betafl(i,j)/betaop)**(-e)<a name='497'>
+<a name='498'>
+        rtemp2 = savr(k)**1.5<a name='499'>
+        gammax = rtemp2/(495. + 0.0594*rtemp2)              <font color=#447700>! maximum rxn vel, 1/min<a name='500'></font>
+        a = 1./(4.774 * savr(k)**0.1 - 7.27)   <font color=#447700>! coef for optimum rxn vel<a name='501'></font>
+        ratio = fp%betafl(i,j)/betaop<a name='502'>
+        gamma = gammax *(ratio**a) *exp(a*(1.-ratio)) <font color=#447700>!optimum rxn vel, 1/min<a name='503'></font>
+<a name='504'>
+        wn = fuelload/(1 + st(k))       <font color=#447700>! net fuel loading, lb/ft^2<a name='505'></font>
+        rtemp1 = fuelmc_g/fuelmce(k)<a name='506'>
+        etam = 1.-2.59*rtemp1 +5.11*rtemp1**2 -3.52*rtemp1**3  <font color=#447700>!moist damp coef<a name='507'></font>
+        etas = 0.174* se(k)**(-0.19)                <font color=#447700>! mineral damping coef<a name='508'></font>
+        ir = gamma * wn * fuelheat * etam * etas  <font color=#447700>!rxn intensity,btu/ft^2 min<a name='509'></font>
+        <font color=#447700>! irm = ir * 1055./( 0.3048**2 * 60.) * 1.e-6     !for mw/m^2<a name='510'></font>
+<a name='511'>
+        xifr = exp( (0.792 + 0.681*savr(k)**0.5) &amp;<a name='512'>
+            * (fp%betafl(i,j)+0.1)) /(192. + 0.2595*savr(k)) <font color=#447700>! propagating flux ratio<a name='513'></font>
+<a name='514'>
+<font color=#447700>!        ... r_0 is the spread rate for a fire on flat ground with no wind.<a name='515'></font>
+        fp%r_0(i,j) = ir*xifr/(rhob * epsilon *qig)    <font color=#447700>! default spread rate in ft/min<a name='516'></font>
+<a name='517'>
+     endif<a name='518'>
+  enddo<a name='519'>
+enddo<a name='520'>
+<a name='521'>
+if(nerr.gt.1)then<a name='522'>
+<font color=#447700>!$OMP CRITICAL(FIRE_PHYS_CRIT)<a name='523'></font>
+    write(msg,'(a,i6,a)')'set_fire_params: WARNING: fuel category 0 replaced in',nerr,' cells'<a name='524'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_PHYS_CRIT)<a name='525'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#SET_FIRE_PARAMS' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_96">(msg)<a name='526'>
+endif<a name='527'>
+<a name='528'>
+end subroutine set_fire_params<a name='529'>
+<a name='530'>
+<font color=#447700>!<a name='531'></font>
+<font color=#447700>!*******************<a name='532'></font>
+<font color=#447700>!<a name='533'></font>
+<a name='534'>
+<A NAME='HEAT_FLUXES'><A href='../../html_code/phys/module_fr_fire_phys.F.html#HEAT_FLUXES' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='535'>
+<font color=#993300>subroutine </font><font color=#cc0000>heat_fluxes</font>(dt,                        &amp; <A href='../../call_to/HEAT_FLUXES.html' TARGET='index'>1</A><a name='536'>
+        ifms,ifme,jfms,jfme,                      &amp;  <font color=#447700>! memory dims<a name='537'></font>
+        ifts,ifte,jfts,jfte,                      &amp;  <font color=#447700>! tile dims<a name='538'></font>
+        iffs,iffe,jffs,jffe,                      &amp;  <font color=#447700>! fuel_frac_burnt dims<a name='539'></font>
+        fgip,fuel_frac_burnt,                     &amp; <font color=#447700>!in<a name='540'></font>
+        grnhft,grnqft)                              <font color=#447700>!out<a name='541'></font>
+implicit none<a name='542'>
+<a name='543'>
+<font color=#447700>!*** purpose        <a name='544'></font>
+<font color=#447700>! compute the heat fluxes on the fire grid cells<a name='545'></font>
+<a name='546'>
+<font color=#447700>!*** arguments<a name='547'></font>
+real, intent(in)::dt          <font color=#447700>! dt  the fire time step (the fire model advances time by this)<a name='548'></font>
+integer, intent(in)::ifts,ifte,jfts,jfte,ifms,ifme,jfms,jfme,iffs,iffe,jffs,jffe   <font color=#447700>! dimensions                   <a name='549'></font>
+real, intent(in),dimension(ifms:ifme,jfms:jfme):: fgip<a name='550'>
+real, intent(in),dimension(iffs:iffe,jffs:jffe):: fuel_frac_burnt<a name='551'>
+real, intent(out),dimension(ifms:ifme,jfms:jfme):: grnhft,grnqft<a name='552'>
+<a name='553'>
+<font color=#447700>!*** local<a name='554'></font>
+integer::i,j<a name='555'>
+real:: dmass<a name='556'>
+<a name='557'>
+<font color=#447700>!*** executable        <a name='558'></font>
+do j=jfts,jfte<a name='559'>
+    do i=ifts,ifte<a name='560'>
+         dmass =                     &amp;     <font color=#447700>! surface fuel dry mass burnt this call (kg/m^2)<a name='561'></font>
+             fgip(i,j)               &amp;     <font color=#447700>! init mass from fuel model no (kg/m^2) = fgi(nfuel_cat(i,j)<a name='562'></font>
+             * fuel_frac_burnt(i,j)        <font color=#447700>! fraction burned this call    (1)<a name='563'></font>
+         grnhft(i,j) = (dmass/dt)*(1.-bmst)*cmbcnst         <font color=#447700>! surface fire sensible heat flux W/m^2<a name='564'></font>
+         grnqft(i,j) = (bmst+(1.-bmst)*.56)*(dmass/dt)*xlv  <font color=#447700>! surface fire latent heat flux W/m<a name='565'></font>
+         <font color=#447700>! xlv is defined in module_model_constants.. Assume 56% of cellulose molecule mass is water.<a name='566'></font>
+    enddo<a name='567'>
+enddo<a name='568'>
+<a name='569'>
+end subroutine heat_fluxes<a name='570'>
+<a name='571'>
+<font color=#447700>!<a name='572'></font>
+<font color=#447700>!**********************<a name='573'></font>
+<font color=#447700>!            <a name='574'></font>
+<a name='575'>
+<a name='576'>
+<A NAME='SET_NFUEL_CAT'><A href='../../html_code/phys/module_fr_fire_phys.F.html#SET_NFUEL_CAT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='577'>
+<font color=#993300>subroutine </font><font color=#cc0000>set_nfuel_cat</font>(   &amp; <A href='../../call_to/SET_NFUEL_CAT.html' TARGET='index'>1</A>,<A href='../../call_from/SET_NFUEL_CAT.html' TARGET='index'>6</A><a name='578'>
+    ifms,ifme,jfms,jfme,               &amp;<a name='579'>
+    ifts,ifte,jfts,jfte,               &amp;<a name='580'>
+    ifuelread,nfuel_cat0,zsf,nfuel_cat)<a name='581'>
+<a name='582'>
+implicit none<a name='583'>
+<a name='584'>
+<font color=#447700>! set fuel distributions for testing<a name='585'></font>
+integer, intent(in)::   ifts,ifte,jfts,jfte,               &amp;<a name='586'>
+                        ifms,ifme,jfms,jfme               <a name='587'>
+<a name='588'>
+integer, intent(in)::ifuelread,nfuel_cat0<a name='589'>
+real, intent(in), dimension(ifms:ifme, jfms:jfme)::zsf<a name='590'>
+real, intent(out), dimension(ifms:ifme, jfms:jfme)::nfuel_cat<a name='591'>
+<a name='592'>
+<font color=#447700>!*** local<a name='593'></font>
+<a name='594'>
+<font color=#447700>! parameters to control execution<a name='595'></font>
+integer:: i,j,iu1<a name='596'>
+real:: t1<a name='597'>
+character(len=128)msg<a name='598'>
+<a name='599'>
+<font color=#447700>!$OMP CRITICAL(FIRE_PHYS_CRIT)<a name='600'></font>
+    write(msg,'(a,i3)')'set_nfuel_cat: ifuelread=',ifuelread <a name='601'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_PHYS_CRIT)<a name='602'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#SET_NFUEL_CAT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_97">(msg)<a name='603'>
+<a name='604'>
+if (ifuelread .eq. -1 .or. ifuelread .eq. 2) then<a name='605'>
+<font color=#447700>!$OMP CRITICAL(FIRE_PHYS_CRIT)<a name='606'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#SET_NFUEL_CAT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_98">('set_nfuel_cat: assuming nfuel_cat initialized already') <a name='607'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#SET_NFUEL_CAT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_99">(msg)<a name='608'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_PHYS_CRIT)<a name='609'></font>
+else if (ifuelread .eq. 0) then<a name='610'>
+<font color=#447700>!<a name='611'></font>
+    do j=jfts,jfte<a name='612'>
+        do  i=ifts,ifte<a name='613'>
+            nfuel_cat(i,j)=real(nfuel_cat0)<a name='614'>
+        enddo<a name='615'>
+    enddo<a name='616'>
+<font color=#447700>!$OMP CRITICAL(FIRE_PHYS_CRIT)<a name='617'></font>
+    write(msg,'(a,i3)')'set_nfuel_cat: fuel initialized with category',nfuel_cat0<a name='618'>
+<font color=#447700>!$OMP END CRITICAL(FIRE_PHYS_CRIT)<a name='619'></font>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#SET_NFUEL_CAT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_100">(msg)<a name='620'>
+         <a name='621'>
+else if (ifuelread .eq. 1) then<a name='622'>
+<font color=#447700>!<a name='623'></font>
+<font color=#447700>!         make dependent on altitude (co mountains/forest vs. plains)<a name='624'></font>
+<font color=#447700>!          2000 m : 6562 ft   ;    1600 m: 5249 ft<a name='625'></font>
+<a name='626'>
+<font color=#447700>!        ... user defines fuel category spatial variability ! param!<a name='627'></font>
+    do j=jfts,jfte<a name='628'>
+        do  i=ifts,ifte<a name='629'>
+            <font color=#447700>! nfuel_cat(i,j)= 2     ! grass with understory ! jm does nothing<a name='630'></font>
+            <font color=#447700>!jm t1=zsf(i,j)*slngth/100.<a name='631'></font>
+            t1 = zsf(i,j)  <font color=#447700>! this is in m<a name='632'></font>
+            if(t1.le.1524.)then   <font color=#447700>!  up to 5000 ft<a name='633'></font>
+                nfuel_cat(i,j)= 3  <font color=#447700>! tall grass<a name='634'></font>
+            else if(t1.ge.1524. .and. t1.le.2073.)then  <font color=#447700>! 5.0-6.8 kft.<a name='635'></font>
+                nfuel_cat(i,j)= 2  <font color=#447700>! grass with understory<a name='636'></font>
+            else if(t1.ge.2073..and.t1.le.2438.)then  <font color=#447700>! 6.8-8.0 kft.<a name='637'></font>
+                nfuel_cat(i,j)= 8  <font color=#447700>! timber litter - 10 (ponderosa)<a name='638'></font>
+            else if(t1.gt.2438. .and. t1.le. 3354.) then <font color=#447700>! 8.0-11.0 kft.<a name='639'></font>
+<font color=#447700>!                 ... could also be mixed conifer.<a name='640'></font>
+                nfuel_cat(i,j)= 10 <font color=#447700>! timber litter - 8 (lodgepole)<a name='641'></font>
+            else if(t1.gt.3354. .and. t1.le. 3658.) then <font color=#447700>! 11.0-12.0 kft<a name='642'></font>
+                nfuel_cat(i,j)= 1  <font color=#447700>! alpine meadow - 1<a name='643'></font>
+            else if(t1.gt.3658. ) then  <font color=#447700>! &gt; 12.0 kft<a name='644'></font>
+                nfuel_cat(i,j)= 14 <font color=#447700>! no fuel.<a name='645'></font>
+            endif<a name='646'>
+        enddo<a name='647'>
+    enddo<a name='648'>
+<a name='649'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#MESSAGE'>message</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#SET_NFUEL_CAT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MESSAGE_101">('set_nfuel_cat: fuel initialized by altitude')<a name='650'>
+else<a name='651'>
+<a name='652'>
+    call <A href='../../html_code/phys/module_fr_fire_util.F.html#CRASH'>crash</A><A href='../../html_code/phys/module_fr_fire_phys.F.html#SET_NFUEL_CAT' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="CRASH_21">('set_nfuel_cat: bad ifuelread')<a name='653'>
+endif<a name='654'>
+<font color=#447700>!     .............end  load fuel categories (or constant) here.<a name='655'></font>
+<a name='656'>
+end subroutine set_nfuel_cat            <a name='657'>
+<a name='658'>
+<font color=#447700>!<a name='659'></font>
+<font color=#447700>!**********************<a name='660'></font>
+<font color=#447700>!            <a name='661'></font>
+<a name='662'>
+<A NAME='FIRE_ROS'><A href='../../html_code/phys/module_fr_fire_phys.F.html#FIRE_ROS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='663'>
+<font color=#993300>subroutine </font><font color=#cc0000>fire_ros</font>(ros_base,ros_wind,ros_slope, &amp; <A href='../../call_to/FIRE_ROS.html' TARGET='index'>3</A><a name='664'>
+propx,propy,i,j,fp)<a name='665'>
+<a name='666'>
+implicit none<a name='667'>
+<a name='668'>
+<font color=#447700>! copied with the following changes ONLY: <a name='669'></font>
+<font color=#447700>!   0.5*(speed + abs(speed)) -&gt; max(speed,0.)<a name='670'></font>
+<font color=#447700>!   index l -&gt; j <a name='671'></font>
+<font color=#447700>!   not using nfuel_cat here - cell info was put into arrays passed as arguments<a name='672'></font>
+<font color=#447700>!       in include file to avoid transcription errors when used elsewhere<a name='673'></font>
+<font color=#447700>!   betaop is absorbed in phiwc, see module_fr_fire_model/fire_startup<a name='674'></font>
+<font color=#447700>!   return the base, wind, and slope contributions to the rate of spread separately<a name='675'></font>
+<font color=#447700>!       because they may be needed to take advantage of known wind and slope vectors.<a name='676'></font>
+<font color=#447700>!       They should add up to get the total rate of spread.<a name='677'></font>
+<font color=#447700>!ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc<a name='678'></font>
+<font color=#447700>!     ... calculates fire spread rate with McArthur formula or Rothermel<a name='679'></font>
+<font color=#447700>!           using fuel type of fuel cell<a name='680'></font>
+<font color=#447700>!      <a name='681'></font>
+<font color=#447700>!         m/s =(ft/min) *.3048/60. =(ft/min) * .00508   ! conversion rate<a name='682'></font>
+<font color=#447700>!         ft/min = m/s * 2.2369 * 88. = m/s *  196.850 ! conversion rate<a name='683'></font>
+<font color=#447700>!      <a name='684'></font>
+<font color=#447700>!ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc<a name='685'></font>
+<a name='686'>
+<font color=#447700>!*** arguments<a name='687'></font>
+real, intent(out)::ros_base,ros_wind,ros_slope <font color=#447700>! rate of spread contribution due to fuel, wind, and slope<a name='688'></font>
+real, intent(in)::propx,propy<a name='689'>
+integer, intent(in)::i,j         <font color=#447700>! node mesh coordinates<a name='690'></font>
+type(fire_params),intent(in)::fp<a name='691'>
+<a name='692'>
+<font color=#447700>!*** local<a name='693'></font>
+real:: speed, tanphi <font color=#447700>! windspeed and slope in the direction normal to the fireline<a name='694'></font>
+real:: umid, phis, phiw, spdms, umidm, excess<a name='695'>
+real:: ros_back<a name='696'>
+integer, parameter::ibeh=1<a name='697'>
+real, parameter::ros_max=6.<a name='698'>
+character(len=128)msg<a name='699'>
+real::cor_wind,cor_slope,nvx,nvy,scale<a name='700'>
+<a name='701'>
+<a name='702'>
+<font color=#447700>!*** executable<a name='703'></font>
+<a name='704'>
+<font color=#447700>! make sure normal direction is size 1<a name='705'></font>
+<font color=#447700>!scale=sqrt(propx*propx+propy*propy)+tiny(scale)<a name='706'></font>
+scale=1.<a name='707'>
+nvx=propx/scale<a name='708'>
+nvy=propy/scale<a name='709'>
+if (fire_advection.ne.0) then <font color=#447700>! from flags in module_fr_fire_util<a name='710'></font>
+    <font color=#447700>! wind speed is total speed <a name='711'></font>
+    speed =  sqrt(fp%vx(i,j)*fp%vx(i,j)+ fp%vy(i,j)*fp%vy(i,j))+tiny(speed)<a name='712'>
+    <font color=#447700>! slope is total slope<a name='713'></font>
+    tanphi = sqrt(fp%dzdxf(i,j)*fp%dzdxf(i,j) + fp%dzdyf(i,j)*fp%dzdyf(i,j))+tiny(tanphi)<a name='714'>
+    <font color=#447700>! cos of wind and spread, if &gt;0<a name='715'></font>
+    cor_wind =  max(0.,(fp%vx(i,j)*nvx + fp%vy(i,j)*nvy)/speed)<a name='716'>
+    <font color=#447700>! cos of slope and spread, if &gt;0<a name='717'></font>
+    cor_slope = max(0., (fp%dzdxf(i,j)*nvx + fp%dzdyf(i,j)*nvy)/tanphi)<a name='718'>
+else<a name='719'>
+    <font color=#447700>! wind speed in spread direction<a name='720'></font>
+    speed =  fp%vx(i,j)*nvx + fp%vy(i,j)*nvy<a name='721'>
+    <font color=#447700>! slope in spread direction<a name='722'></font>
+    tanphi = fp%dzdxf(i,j)*nvx + fp%dzdyf(i,j)*nvy<a name='723'>
+    cor_wind=1.<a name='724'>
+    cor_slope=1.<a name='725'>
+endif<a name='726'>
+<a name='727'>
+if (.not. fp%ischap(i,j) &gt; 0.) then      <font color=#447700>! if fuel is not chaparral, calculate rate of spread one of these ways<a name='728'></font>
+    if (ibeh .eq. 1) then                <font color=#447700>! use Rothermel formula<a name='729'></font>
+<font color=#447700>!       ... if wind is 0 or into fireline, phiw = 0, &amp;this reduces to backing ros.<a name='730'></font>
+        spdms = max(speed,0.)            <font color=#447700>! <a name='731'></font>
+        umidm = min(spdms,30.)           <font color=#447700>! max input wind spd is 30 m/s   !param!<a name='732'></font>
+        umid = umidm * 196.850           <font color=#447700>! m/s to ft/min<a name='733'></font>
+        <font color=#447700>!  eqn.: phiw = c * umid**bbb(i,j) * (fp%betafl(i,j)/betaop)**(-e) ! wind coef<a name='734'></font>
+        phiw = umid**fp%bbb(i,j) * fp%phiwc(i,j) <font color=#447700>! wind coef<a name='735'></font>
+        phis=0.<a name='736'>
+        if (tanphi .gt. 0.) then<a name='737'>
+            phis = 5.275 *(fp%betafl(i,j))**(-0.3) *tanphi**2   <font color=#447700>! slope factor<a name='738'></font>
+        endif<a name='739'>
+        <font color=#447700>! rosm = fp%r_0(i,j)*(1. + phiw + phis)  * .00508 ! spread rate, m/s<a name='740'></font>
+        ros_base = fp%r_0(i,j) * .00508<a name='741'>
+        ros_wind = ros_base*phiw<a name='742'>
+        ros_slope= ros_base*phis<a name='743'>
+        <a name='744'>
+<a name='745'>
+    else                                   <font color=#447700>! McArthur formula (Australian)<a name='746'></font>
+        <font color=#447700>! rosm = 0.18*exp(0.8424*max(speed,0.))<a name='747'></font>
+        ros_base = 0.18*exp(0.8424)<a name='748'>
+        ros_wind = 0.18*exp(0.8424*max(speed,0.))<a name='749'>
+        ros_slope =0.<a name='750'>
+    endif<a name='751'>
+<font color=#447700>!<a name='752'></font>
+else   <font color=#447700>! chaparral<a name='753'></font>
+<font color=#447700>!        .... spread rate has no dependency on fuel character, only windspeed.<a name='754'></font>
+    spdms = max(speed,0.)      <a name='755'>
+    <font color=#447700>! rosm = 1.2974 * spdms**1.41       ! spread rate, m/s<a name='756'></font>
+    <font color=#447700>! note: backing ros is 0 for chaparral without setting nozero value below<a name='757'></font>
+    <font color=#447700>!sp_n=.03333  <a name='758'></font>
+    <font color=#447700>! chaparral backing fire spread rate 0.033 m/s   ! param!<a name='759'></font>
+    <font color=#447700>!rosm= max(rosm, sp_n)   ! no less than backing r.o.s.<a name='760'></font>
+<a name='761'>
+    ros_back=.03333    <font color=#447700>! chaparral backing fire spread rate 0.033 m/s   ! param!<a name='762'></font>
+    ros_wind = 1.2974 * spdms**1.41       <font color=#447700>! spread rate, m/s<a name='763'></font>
+    ros_wind = max(ros_wind, ros_back)<a name='764'>
+    ros_slope =0.<a name='765'>
+<a name='766'>
+endif<a name='767'>
+<font color=#447700>! if advection, multiply by the cosines<a name='768'></font>
+ros_wind=ros_wind*cor_wind<a name='769'>
+ros_slope=ros_slope*cor_slope<a name='770'>
+<font color=#447700>!<a name='771'></font>
+<font color=#447700>!     ----------note!  put an 6 m/s cap on max spread rate -----------<a name='772'></font>
+<font color=#447700>! rosm= min(rosm, 6.)         ! no faster than this cap   ! param !<a name='773'></font>
+<a name='774'>
+excess = ros_base + ros_wind + ros_slope - ros_max<a name='775'>
+<a name='776'>
+if (excess &gt; 0.)then<a name='777'>
+    <font color=#447700>! take it out of wind and slope in proportion<a name='778'></font>
+    ros_wind = ros_wind - excess*ros_wind/(ros_wind+ros_slope)<a name='779'>
+    ros_slope = ros_slope - excess*ros_slope/(ros_wind+ros_slope)<a name='780'>
+endif<a name='781'>
+<a name='782'>
+<font color=#447700>!write(msg,*)i,j,' speed=',speed,' tanphi',tanphi,' ros=',ros_base,ros_wind,ros_slope<a name='783'></font>
+<font color=#447700>!call message(msg)<a name='784'></font>
+      return<a name='785'>
+<a name='786'>
+contains<a name='787'>
+<A NAME='NRM2'><A href='../../html_code/phys/module_fr_fire_phys.F.html#NRM2' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='788'>
+real <font color=#993300>function </font><font color=#cc0000>nrm2</font>(u,v)<a name='789'>
+real, intent(in)::u,v<a name='790'>
+nrm2=sqrt(u*u+v*v)<a name='791'>
+end function nrm2<a name='792'>
+<a name='793'>
+end subroutine fire_ros <a name='794'>
+<a name='795'>
+end module module_fr_fire_phys<a name='796'>
+</pre></body></html>

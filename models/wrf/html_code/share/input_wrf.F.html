@@ -1,0 +1,1716 @@
+<HTML> <BODY BGCOLOR=#eedddd LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:MEDIATION:IO<a name='2'></font>
+<font color=#447700>!  ---principal wrf input routine (called from routines in module_io_domain )<a name='3'></font>
+<a name='4'>
+<A NAME='INPUT_WRF'><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='5'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>input_wrf</font> ( fid , grid , config_flags , switch , ierr ) <A href='../../call_to/INPUT_WRF.html' TARGET='index'>2</A>,<A href='../../call_from/INPUT_WRF.html' TARGET='index'>184</A><a name='6'>
+    USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_317"><a name='7'>
+    USE <A href='../../html_code/frame/module_state_description.F.html#MODULE_STATE_DESCRIPTION'>module_state_description</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_STATE_DESCRIPTION_177"><a name='8'>
+    USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>module_configure</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_167"><a name='9'>
+    USE <A href='../../html_code/frame/module_io.F.html#MODULE_IO'>module_io</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_IO_10"><a name='10'>
+    USE <A href='../../html_code/share/module_io_wrf.F.html#MODULE_IO_WRF'>module_io_wrf</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_IO_WRF_3"><a name='11'>
+    USE <A href='../../html_code/share/module_date_time.F.html#MODULE_DATE_TIME'>module_date_time</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DATE_TIME_15"><a name='12'>
+    USE <A href='../../html_code/share/module_bc_time_utilities.F.html#MODULE_BC_TIME_UTILITIES'>module_bc_time_utilities</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_BC_TIME_UTILITIES_6"><a name='13'>
+    USE module_utility<a name='14'>
+<a name='15'>
+    IMPLICIT NONE<a name='16'>
+#include "<A href='../../html_code/include/wrf_io_flags.h.html'>wrf_io_flags.h</A>"<A NAME="wrf_io_flags.h_1"><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='17'>
+#include "<A href='../../html_code/include/wrf_status_codes.h.html'>wrf_status_codes.h</A>"<A NAME="wrf_status_codes.h_2"><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><a name='18'>
+    TYPE(domain) :: grid<a name='19'>
+    TYPE(grid_config_rec_type),  INTENT(INOUT)    :: config_flags<a name='20'>
+    INTEGER, INTENT(IN) :: fid<a name='21'>
+    INTEGER, INTENT(IN) :: switch<a name='22'>
+    INTEGER, INTENT(INOUT) :: ierr<a name='23'>
+<a name='24'>
+    <font color=#447700>! Local data<a name='25'></font>
+    INTEGER ids , ide , jds , jde , kds , kde , &amp;<a name='26'>
+            ims , ime , jms , jme , kms , kme , &amp;<a name='27'>
+            ips , ipe , jps , jpe , kps , kpe<a name='28'>
+<a name='29'>
+    TYPE( fieldlist ), POINTER :: p<a name='30'>
+<a name='31'>
+    INTEGER newswitch, itrace<a name='32'>
+<a name='33'>
+    INTEGER       iname(9)<a name='34'>
+    INTEGER       iordering(3)<a name='35'>
+    INTEGER       icurrent_date(24)<a name='36'>
+    INTEGER       i,j,k<a name='37'>
+    INTEGER       icnt<a name='38'>
+    INTEGER       ndim<a name='39'>
+    INTEGER       ilen<a name='40'>
+    INTEGER , DIMENSION(3) :: domain_start , domain_end<a name='41'>
+    INTEGER , DIMENSION(3) :: memory_start , memory_end<a name='42'>
+    INTEGER , DIMENSION(3) :: patch_start , patch_end<a name='43'>
+    CHARACTER*256 errmess, currtimestr<a name='44'>
+    CHARACTER*40            :: this_datestr, next_datestr<a name='45'>
+    CHARACTER*9   NAMESTR<a name='46'>
+    INTEGER       IBDY, NAMELEN<a name='47'>
+    LOGICAL wrf_dm_on_monitor<a name='48'>
+    EXTERNAL wrf_dm_on_monitor<a name='49'>
+    Type(WRFU_Time) time, currtime, currentTime<a name='50'>
+    CHARACTER*19  new_date<a name='51'>
+    CHARACTER*24  base_date<a name='52'>
+    CHARACTER*256  fname<a name='53'>
+    CHARACTER*80  dname, memord, sim_type<a name='54'>
+    LOGICAL dryrun<a name='55'>
+    INTEGER idt<a name='56'>
+    INTEGER itmp<a name='57'>
+    INTEGER filestate, ierr3<a name='58'>
+    INTEGER :: ide_compare , jde_compare , kde_compare<a name='59'>
+    CHARACTER (len=19) simulation_start_date , first_date_input , first_date_nml<a name='60'>
+    INTEGER first_date_start_year   , &amp;<a name='61'>
+            first_date_start_month  , &amp;<a name='62'>
+            first_date_start_day    , &amp;<a name='63'>
+            first_date_start_hour   , &amp;<a name='64'>
+            first_date_start_minute , &amp;<a name='65'>
+            first_date_start_second<a name='66'>
+    INTEGER simulation_start_year   , &amp;<a name='67'>
+            simulation_start_month  , &amp;<a name='68'>
+            simulation_start_day    , &amp;<a name='69'>
+            simulation_start_hour   , &amp;<a name='70'>
+            simulation_start_minute , &amp;<a name='71'>
+            simulation_start_second<a name='72'>
+    LOGICAL reset_simulation_start<a name='73'>
+    REAL dx_compare , dy_compare , dum<a name='74'>
+    INTEGER :: num_land_cat_compare<a name='75'>
+    CHARACTER (LEN=256) :: MMINLU<a name='76'>
+<a name='77'>
+    <font color=#447700>!  Local variables for vertical interpolation.<a name='78'></font>
+<a name='79'>
+    REAL, ALLOCATABLE, DIMENSION(:      ) ::  f_vint_1d<a name='80'>
+    REAL, ALLOCATABLE, DIMENSION(:,:,:  ) ::  f_vint_3d<a name='81'>
+    REAL, ALLOCATABLE, DIMENSION(:,:,:,:) ::  f_vint_4d<a name='82'>
+    integer :: ed1_c,em1_c,ep1_c<a name='83'>
+    integer :: ed2_c,em2_c,ep2_c<a name='84'>
+    integer :: n_ref_m,i_inter<a name='85'>
+<a name='86'>
+    <font color=#447700>!  Local variables for the alarms in the input restart file.<a name='87'></font>
+<a name='88'>
+    INTEGER max_wrf_alarms_compare, seconds<a name='89'>
+    CHARACTER*80 alarmname, timestr<a name='90'>
+    TYPE(WRFU_Time) :: curtime, ringTime<a name='91'>
+    TYPE(WRFU_TimeInterval) :: interval, interval2<a name='92'>
+    integer s, iring<a name='93'>
+<a name='94'>
+    <font color=#447700>!  Local variables: are we are using the correct hypsometric option for ARW ideal cases.<a name='95'></font>
+<a name='96'>
+    CHARACTER (LEN=256) :: input_name<a name='97'>
+    INTEGER :: loop, hypsometric_opt, icount<a name='98'>
+<a name='99'>
+    CHARACTER (LEN=256) :: a_message<a name='100'>
+<a name='101'>
+    <font color=#447700>!  Bundle up the fatal errors in one piece at the end of the file.<a name='102'></font>
+<a name='103'>
+    INTEGER :: count_fatal_error<a name='104'>
+<a name='105'>
+<a name='106'>
+<a name='107'>
+<font color=#447700>!&lt;DESCRIPTION&gt;<a name='108'></font>
+<font color=#447700>!<a name='109'></font>
+<font color=#447700>! Core wrf input routine for all input data streams. Part of mediation layer.<a name='110'></font>
+<font color=#447700>!<a name='111'></font>
+<font color=#447700>! Note that WRF IOAPI routines wrf_get_dom_ti_*() do not return values during<a name='112'></font>
+<font color=#447700>! training reads (dryrun).<a name='113'></font>
+<font color=#447700>!<a name='114'></font>
+<font color=#447700>!&lt;/DESCRIPTION&gt;<a name='115'></font>
+<a name='116'>
+    WRITE(wrf_err_message,*)'input_wrf: begin'<a name='117'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_868">( 300 , wrf_err_message )<a name='118'>
+<a name='119'>
+    CALL <A href='../../html_code/frame/module_domain.F.html#MODIFY_IO_MASKS'>modify_io_masks</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODIFY_IO_MASKS_1"> ( grid%id )   <font color=#447700>! this adjusts the I/O masks according to the users run-time specs, if any<a name='120'></font>
+<a name='121'>
+    <font color=#447700>!  Initializations for error checking<a name='122'></font>
+<a name='123'>
+    ierr = 0<a name='124'>
+    count_fatal_error = 0<a name='125'>
+<a name='126'>
+<a name='127'>
+    CALL <A href='../../html_code/frame/module_domain.F.html#GET_IJK_FROM_GRID'>get_ijk_from_grid</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_IJK_FROM_GRID_99"> (  grid ,                        &amp;<a name='128'>
+                              ids, ide, jds, jde, kds, kde,    &amp;<a name='129'>
+                              ims, ime, jms, jme, kms, kme,    &amp;<a name='130'>
+                              ips, ipe, jps, jpe, kps, kpe    )<a name='131'>
+<a name='132'>
+<font color=#447700>! If this was not a training read (dry run) check for erroneous values.<a name='133'></font>
+    CALL <A href='../../html_code/frame/module_io.F.html#WRF_INQUIRE_FILENAME'>wrf_inquire_filename</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_INQUIRE_FILENAME_1"> ( fid , fname , filestate , ierr )<a name='134'>
+    IF ( ierr /= 0 ) THEN<a name='135'>
+      WRITE(wrf_err_message,*)'---- ERROR: module_io_wrf: input_wrf: wrf_inquire_filename Status = ',ierr<a name='136'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_869"> ( 0, TRIM( wrf_err_message ) )<a name='137'>
+      count_fatal_error = count_fatal_error + 1<a name='138'>
+    ENDIF<a name='139'>
+<a name='140'>
+    WRITE(wrf_err_message,*)'input_wrf: filestate = ',filestate<a name='141'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_870">( 300 , wrf_err_message )<a name='142'>
+<a name='143'>
+    dryrun        = ( filestate .EQ. WRF_FILE_OPENED_NOT_COMMITTED )<a name='144'>
+<a name='145'>
+    WRITE(wrf_err_message,*)'input_wrf: dryrun = ',dryrun,' switch ',switch<a name='146'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_871">( 300 , wrf_err_message )<a name='147'>
+<a name='148'>
+    check_if_dryrun : IF ( .NOT. dryrun ) THEN<a name='149'>
+<a name='150'>
+#if ( ( EM_CORE == 1 ) &amp;&amp; ( DA_CORE <font color=#447700>!= 1 ) )<a name='151'></font>
+      IF ( switch .EQ. boundary_only ) THEN<a name='152'>
+         grid%just_read_boundary = .true.<a name='153'>
+      END IF<a name='154'>
+#endif<a name='155'>
+<a name='156'>
+      <font color=#447700>! INPUT ONLY (KK)<a name='157'></font>
+<a name='158'>
+      IF ( switch .EQ. restart_only ) THEN<a name='159'>
+<a name='160'>
+        <font color=#447700>! recover the restart alarms from input if available<a name='161'></font>
+ <a name='162'>
+        CALL wrf_get_dom_ti_integer( fid , 'MAX_WRF_ALARMS', max_wrf_alarms_compare, 1, icnt, ierr )<a name='163'>
+        IF ( max_wrf_alarms_compare .NE. MAX_WRF_ALARMS ) THEN<a name='164'>
+          WRITE(wrf_err_message,*)'MAX_WRF_ALARMS different in restart file (',max_wrf_alarms_compare,&amp;<a name='165'>
+                                  ') from in code (',MAX_WRF_ALARMS,').  Disregarding info in restart file.'<a name='166'>
+        ELSE<a name='167'>
+          curtime = <A href='../../html_code/frame/module_domain.F.html#DOMAIN_GET_CURRENT_TIME'>domain_get_current_time</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DOMAIN_GET_CURRENT_TIME_1">( grid )<a name='168'>
+          DO i = auxinput1_only, MAX_WRF_ALARMS<a name='169'>
+            IF ( grid%alarms_created(i) .AND. .NOT. i .EQ. boundary_only ) THEN<a name='170'>
+              write(alarmname,'("WRF_ALARM_ISRINGING_",i2.2)')i<a name='171'>
+              CALL wrf_get_dom_ti_integer( fid, TRIM(alarmname), iring, 1, icnt, ierr )<a name='172'>
+  <a name='173'>
+              write(alarmname,'("WRF_ALARM_SECS_TIL_NEXT_RING_",i2.2)')i<a name='174'>
+              CALL wrf_get_dom_ti_integer( fid, TRIM(alarmname), seconds, 1, icnt, ierr )<a name='175'>
+              IF ( ierr .EQ. 0 &amp;<a name='176'>
+                   .AND. seconds .GE. 0 ) THEN  <font color=#447700>! disallow negative intervals; can happen with wrfbdy datasets<a name='177'></font>
+                                                <font color=#447700>! which keep time differently<a name='178'></font>
+  <a name='179'>
+                <font color=#447700>! Get and set interval so that we are sure to have both the<a name='180'></font>
+                <font color=#447700>! interval and first ring time set correctly<a name='181'></font>
+                CALL WRFU_AlarmGet( grid%alarms(i), ringinterval=interval2 )<a name='182'>
+<a name='183'>
+                IF (config_flags%override_restart_timers) THEN<a name='184'>
+                   IF (i .EQ. restart_only) THEN<a name='185'>
+                      seconds = grid%restart_interval_d * 86400 + &amp;<a name='186'>
+                                grid%restart_interval_h *  3600 + &amp;<a name='187'>
+                                grid%restart_interval_m *    60 + &amp;<a name='188'>
+                                grid%restart_interval   *    60 + &amp;<a name='189'>
+                                grid%restart_interval_s<a name='190'>
+                   ENDIF<a name='191'>
+                ENDIF<a name='192'>
+<a name='193'>
+                CALL WRFU_TimeIntervalSet(interval,S=seconds)<a name='194'>
+                ringTime = curtime + interval<a name='195'>
+                CALL WRFU_AlarmSet( grid%alarms(i), RingInterval=interval2, RingTime=ringTime )<a name='196'>
+<a name='197'>
+              ENDIF<a name='198'>
+<a name='199'>
+              IF ( iring .EQ. 1 ) THEN<a name='200'>
+                CALL WRFU_AlarmRingerOn( grid%alarms( i ) )<a name='201'>
+              ELSE<a name='202'>
+                CALL WRFU_AlarmRingerOff( grid%alarms( i ) )<a name='203'>
+              ENDIF<a name='204'>
+            ENDIF<a name='205'>
+          ENDDO<a name='206'>
+        ENDIF<a name='207'>
+<a name='208'>
+     <a name='209'>
+     <font color=#447700>!OUTPUT ONLY (KK)<a name='210'></font>
+<a name='211'>
+      IF ( switch .EQ. restart_only .AND. .NOT. config_flags%override_restart_timers ) THEN<a name='212'>
+<a name='213'>
+        <font color=#447700>! recover the restart alarms from input if available<a name='214'></font>
+ <a name='215'>
+        CALL wrf_get_dom_ti_integer( fid , 'MAX_WRF_ALARMS', max_wrf_alarms_compare, 1, icnt, ierr )<a name='216'>
+        IF ( max_wrf_alarms_compare .NE. MAX_WRF_ALARMS ) THEN<a name='217'>
+          WRITE(wrf_err_message,*)'MAX_WRF_ALARMS different in restart file (',max_wrf_alarms_compare,&amp;<a name='218'>
+                                  ') from in code (',MAX_WRF_ALARMS,').  Disregarding info in restart file.'<a name='219'>
+        ELSE<a name='220'>
+          curtime = <A href='../../html_code/frame/module_domain.F.html#DOMAIN_GET_CURRENT_TIME'>domain_get_current_time</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DOMAIN_GET_CURRENT_TIME_2">( grid )<a name='221'>
+          DO i = 1, auxinput1_only-1<a name='222'>
+            IF ( grid%alarms_created(i) .AND. .NOT. i .EQ. boundary_only ) THEN<a name='223'>
+              write(alarmname,'("WRF_ALARM_ISRINGING_",i2.2)')i<a name='224'>
+              CALL wrf_get_dom_ti_integer( fid, TRIM(alarmname), iring, 1, icnt, ierr )<a name='225'>
+  <a name='226'>
+              write(alarmname,'("WRF_ALARM_SECS_TIL_NEXT_RING_",i2.2)')i<a name='227'>
+              CALL wrf_get_dom_ti_integer( fid, TRIM(alarmname), seconds, 1, icnt, ierr )<a name='228'>
+              IF ( ierr .EQ. 0 &amp;<a name='229'>
+                   .AND. seconds .GE. 0 ) THEN  <font color=#447700>! disallow negative intervals; can happen with wrfbdy datasets<a name='230'></font>
+                                                <font color=#447700>! which keep time differently<a name='231'></font>
+  <a name='232'>
+                <font color=#447700>! Get and set interval so that we are sure to have both the<a name='233'></font>
+                <font color=#447700>! interval and first ring time set correctly<a name='234'></font>
+                CALL WRFU_AlarmGet( grid%alarms(i), ringinterval=interval2 )<a name='235'>
+<a name='236'>
+                IF (config_flags%override_restart_timers) THEN<a name='237'>
+                   IF (i .EQ. history_only) THEN<a name='238'>
+                      seconds = grid%history_interval_d * 86400 + &amp;<a name='239'>
+                                grid%history_interval_h *  3600 + &amp;<a name='240'>
+                                grid%history_interval_m *    60 + &amp;<a name='241'>
+                                grid%history_interval   *    60 + &amp;<a name='242'>
+                                grid%history_interval_s<a name='243'>
+                   ENDIF<a name='244'>
+                ENDIF<a name='245'>
+<a name='246'>
+                CALL WRFU_TimeIntervalSet(interval,S=seconds)<a name='247'>
+                ringTime = curtime + interval<a name='248'>
+                CALL WRFU_AlarmSet( grid%alarms(i), RingInterval=interval, RingTime=ringTime )<a name='249'>
+<a name='250'>
+              ENDIF<a name='251'>
+<a name='252'>
+              IF ( iring .EQ. 1 ) THEN<a name='253'>
+                CALL WRFU_AlarmRingerOn( grid%alarms( i ) )<a name='254'>
+              ELSE<a name='255'>
+                CALL WRFU_AlarmRingerOff( grid%alarms( i ) )<a name='256'>
+              ENDIF<a name='257'>
+            ENDIF<a name='258'>
+          ENDDO<a name='259'>
+        ENDIF<a name='260'>
+<a name='261'>
+      ENDIF<a name='262'>
+<a name='263'>
+      CALL wrf_get_dom_ti_char ( fid , 'SIMULATION_START_DATE' , simulation_start_date , ierr )<a name='264'>
+      CALL nl_get_reset_simulation_start ( 1, reset_simulation_start )<a name='265'>
+<a name='266'>
+      IF ( ( ierr .EQ. 0 ) .AND. ( .NOT. reset_simulation_start ) ) THEN<a name='267'>
+        <font color=#447700>! Overwrite simulation start date with metadata.<a name='268'></font>
+#ifdef PLANET<a name='269'>
+        READ ( simulation_start_date , fmt = '(I4,1x,I5,1x,I2,1x,I2,1x,I2)' )       &amp;<a name='270'>
+               simulation_start_year,                                               &amp;<a name='271'>
+               simulation_start_day,    simulation_start_hour,                      &amp;<a name='272'>
+               simulation_start_minute, simulation_start_second<a name='273'>
+        simulation_start_month = 0<a name='274'>
+#else<a name='275'>
+        READ ( simulation_start_date , fmt = '(I4,1x,I2,1x,I2,1x,I2,1x,I2,1x,I2)' ) &amp;<a name='276'>
+               simulation_start_year,   simulation_start_month,                     &amp;<a name='277'>
+               simulation_start_day,    simulation_start_hour,                      &amp;<a name='278'>
+               simulation_start_minute, simulation_start_second<a name='279'>
+#endif<a name='280'>
+        CALL nl_set_simulation_start_year   ( 1 , simulation_start_year   )<a name='281'>
+        CALL nl_set_simulation_start_month  ( 1 , simulation_start_month  )<a name='282'>
+        CALL nl_set_simulation_start_day    ( 1 , simulation_start_day    )<a name='283'>
+        CALL nl_set_simulation_start_hour   ( 1 , simulation_start_hour   )<a name='284'>
+        CALL nl_set_simulation_start_minute ( 1 , simulation_start_minute )<a name='285'>
+        CALL nl_set_simulation_start_second ( 1 , simulation_start_second )<a name='286'>
+        IF ( switch .EQ. input_only  ) THEN<a name='287'>
+          WRITE(wrf_err_message,*) ' input_wrf, input_only:  SIMULATION_START_DATE = ', &amp;<a name='288'>
+                                  simulation_start_date(1:19)<a name='289'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_872"> ( 300 , TRIM(wrf_err_message ) )<a name='290'>
+        ELSE IF ( switch .EQ. restart_only  ) THEN<a name='291'>
+          WRITE(wrf_err_message,*) ' input_wrf, restart_only:  SIMULATION_START_DATE = ', &amp;<a name='292'>
+                                  simulation_start_date(1:19)<a name='293'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_873"> ( 300 , TRIM(wrf_err_message ) )<a name='294'>
+        ENDIF<a name='295'>
+      ELSE<a name='296'>
+        CALL nl_get_start_year   ( 1 , simulation_start_year   )<a name='297'>
+        CALL nl_get_start_month  ( 1 , simulation_start_month  )<a name='298'>
+        CALL nl_get_start_day    ( 1 , simulation_start_day    )<a name='299'>
+        CALL nl_get_start_hour   ( 1 , simulation_start_hour   )<a name='300'>
+        CALL nl_get_start_minute ( 1 , simulation_start_minute )<a name='301'>
+        CALL nl_get_start_second ( 1 , simulation_start_second )<a name='302'>
+        CALL nl_set_simulation_start_year   ( 1 , simulation_start_year   )<a name='303'>
+        CALL nl_set_simulation_start_month  ( 1 , simulation_start_month  )<a name='304'>
+        CALL nl_set_simulation_start_day    ( 1 , simulation_start_day    )<a name='305'>
+        CALL nl_set_simulation_start_hour   ( 1 , simulation_start_hour   )<a name='306'>
+        CALL nl_set_simulation_start_minute ( 1 , simulation_start_minute )<a name='307'>
+        CALL nl_set_simulation_start_second ( 1 , simulation_start_second )<a name='308'>
+        IF ( reset_simulation_start ) THEN<a name='309'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1089">('input_wrf: forcing SIMULATION_START_DATE = head_grid start time')<a name='310'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1090">('           due to namelist variable reset_simulation_start')<a name='311'>
+        ELSE<a name='312'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1091">('input_wrf: SIMULATION_START_DATE not available in input')<a name='313'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1092">('will use head_grid start time from namelist')<a name='314'>
+        ENDIF<a name='315'>
+      ENDIF<a name='316'>
+      <font color=#447700>! Initialize derived time quantity in grid%xtime.<a name='317'></font>
+      <font color=#447700>! Note that this call is also made in setup_timekeeping().<a name='318'></font>
+      <font color=#447700>! Ugh, what a hack.  Simplify all this later...<a name='319'></font>
+      CALL <A href='../../html_code/frame/module_domain.F.html#DOMAIN_CLOCK_GET'>domain_clock_get</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DOMAIN_CLOCK_GET_40">( grid, minutesSinceSimulationStart=grid%xtime )<a name='320'>
+      <font color=#447700>! Note that it is NOT necessary to reset grid%julian here.<a name='321'></font>
+      WRITE(wrf_err_message,*) 'input_wrf:  set xtime to ',grid%xtime<a name='322'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_874"> ( 100, TRIM(wrf_err_message) )<a name='323'>
+    ELSE IF ( switch .EQ. auxinput1_only ) then<a name='324'>
+      CALL wrf_get_dom_ti_char ( fid , 'SIMULATION_START_DATE' , first_date_input , ierr )<a name='325'>
+      WRITE(wrf_err_message,*)'metgrid input_wrf.F first_date_input = ',first_date_input<a name='326'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1093">(wrf_err_message)<a name='327'>
+      CALL nl_get_start_year   ( 1 , first_date_start_year   )<a name='328'>
+      CALL nl_get_start_month  ( 1 , first_date_start_month  )<a name='329'>
+      CALL nl_get_start_day    ( 1 , first_date_start_day    )<a name='330'>
+      CALL nl_get_start_hour   ( 1 , first_date_start_hour   )<a name='331'>
+      CALL nl_get_start_minute ( 1 , first_date_start_minute )<a name='332'>
+      CALL nl_get_start_second ( 1 , first_date_start_second )<a name='333'>
+      WRITE ( first_date_nml, fmt = '(I4.4,"-",I2.2,"-",I2.2,"_",I2.2,":",I2.2,":",I2.2)' ) &amp;<a name='334'>
+             first_date_start_year,   first_date_start_month,                     &amp;<a name='335'>
+             first_date_start_day,    first_date_start_hour,                      &amp;<a name='336'>
+             first_date_start_minute, first_date_start_second<a name='337'>
+      WRITE (wrf_err_message,*) 'metgrid input_wrf.F first_date_nml = ',first_date_nml<a name='338'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1094">( TRIM(wrf_err_message ) )<a name='339'>
+    ENDIF<a name='340'>
+<a name='341'>
+    <font color=#447700>!  Test to make sure that the input data is the right size.  Do this for input from real/ideal into<a name='342'></font>
+    <font color=#447700>!  WRF, and from the standard initialization into real.<a name='343'></font>
+<a name='344'>
+    IF ( ( switch .EQ.     input_only  ) .OR. &amp;<a name='345'>
+         ( switch .EQ. auxinput1_only ) ) THEN<a name='346'>
+       ierr = 0<a name='347'>
+       CALL wrf_get_dom_ti_integer ( fid , 'WEST-EAST_GRID_DIMENSION' ,    ide_compare , 1 , icnt , ierr3 )<a name='348'>
+       ierr = max( ierr, ierr3 )<a name='349'>
+       CALL wrf_get_dom_ti_integer ( fid , 'SOUTH-NORTH_GRID_DIMENSION' ,  jde_compare , 1 , icnt , ierr3 )<a name='350'>
+       ierr = max( ierr, ierr3 )<a name='351'>
+       CALL wrf_get_dom_ti_integer ( fid , 'BOTTOM-TOP_GRID_DIMENSION' ,   kde_compare , 1 , icnt , ierr3 )<a name='352'>
+       ierr = max( ierr, ierr3 )<a name='353'>
+       IF ( ierr3 .NE. 0 ) THEN<a name='354'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_875"> ( 0, '---- ERROR: wrf_get_dom_ti_integer getting dimension information from dataset' )<a name='355'>
+          count_fatal_error = count_fatal_error + 1<a name='356'>
+       END IF<a name='357'>
+<a name='358'>
+#if (EM_CORE == 1)<a name='359'>
+<a name='360'>
+       <font color=#447700>!  Test to make sure that the grid distances are the right size.<a name='361'></font>
+<a name='362'>
+       CALL wrf_get_dom_ti_real ( fid , 'DX' ,  dx_compare , 1 , icnt , ierr )<a name='363'>
+       CALL wrf_get_dom_ti_real ( fid , 'DY' ,  dy_compare , 1 , icnt , ierr )<a name='364'>
+<a name='365'>
+       IF ( ( ABS ( dx_compare - config_flags%dx ) .GT. 1.E-5 * dx_compare ) .OR. &amp;<a name='366'>
+            ( ABS ( dy_compare - config_flags%dy ) .GT. 1.E-5 * dy_compare ) ) THEN<a name='367'>
+          IF ( ( config_flags%polar ) .AND. ( config_flags%grid_id .EQ. 1 ) ) THEN<a name='368'>
+             WRITE(wrf_err_message,*)'input_wrf: DX and DY from input file expected to be wrong'<a name='369'>
+             CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_876"> ( 1 , wrf_err_message )<a name='370'>
+          ELSE<a name='371'>
+             WRITE(wrf_err_message,*)'dx and dy from file     ',dx_compare,dy_compare<a name='372'>
+             CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1095">(wrf_err_message)<a name='373'>
+             WRITE(wrf_err_message,*)'dx and dy from namelist ',config_flags%dx,config_flags%dy<a name='374'>
+             CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1096">(wrf_err_message)<a name='375'>
+             CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_877"> ( 0, '---- ERROR: DX and DY do not match comparing namelist to the input file' )<a name='376'>
+             count_fatal_error = count_fatal_error + 1<a name='377'>
+          END IF<a name='378'>
+       END IF<a name='379'>
+#endif<a name='380'>
+    END IF<a name='381'>
+<a name='382'>
+#if (EM_CORE == 1)<a name='383'>
+    IF ( ( switch .EQ. input_only ) .OR. ( switch .EQ. auxinput2_only ) .OR. ( switch .EQ. auxinput1_only ) ) THEN<a name='384'>
+       ierr  = 0<a name='385'>
+       ierr3 = 0<a name='386'>
+       IF      ( ( ( switch .EQ. input_only ) .AND. ( grid%id .GE. 2 ) ) .OR. ( switch .EQ. auxinput2_only ) ) THEN<a name='387'>
+          CALL wrf_get_dom_ti_integer ( fid , 'I_PARENT_START' ,    itmp , 1 , icnt , ierr3 )<a name='388'>
+       ELSE IF ( ( switch .EQ. auxinput1_only ) .AND. ( grid%id .GE. 2 ) ) THEN<a name='389'>
+          CALL wrf_get_dom_ti_integer ( fid , 'i_parent_start' ,    itmp , 1 , icnt , ierr3 )<a name='390'>
+       ELSE IF ( ( ( switch .EQ. auxinput1_only ) .OR. ( switch .EQ. input_only ) ) .AND. ( grid%id .EQ. 1 ) ) THEN<a name='391'>
+          itmp  = config_flags%i_parent_start<a name='392'>
+          ierr3 = 0 <a name='393'>
+       END IF<a name='394'>
+       ierr = max( ierr, ierr3 )<a name='395'>
+       IF ( itmp .NE. config_flags%i_parent_start ) THEN<a name='396'>
+          ierr = 1<a name='397'>
+          WRITE(wrf_err_message,*)'i_parent_start from namelist.input file = ',config_flags%i_parent_start<a name='398'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1097">(wrf_err_message)<a name='399'>
+          WRITE(wrf_err_message,*)'i_parent_start from gridded input file  = ',itmp<a name='400'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1098">(wrf_err_message)<a name='401'>
+       END IF<a name='402'>
+       IF      ( ( ( switch .EQ. input_only ) .AND. ( grid%id .GE. 2 ) ) .OR. ( switch .EQ. auxinput2_only ) ) THEN<a name='403'>
+          CALL wrf_get_dom_ti_integer ( fid , 'J_PARENT_START' ,    itmp , 1 , icnt , ierr3 )<a name='404'>
+       ELSE IF ( ( switch .EQ. auxinput1_only ) .AND. ( grid%id .GE. 2 ) ) THEN<a name='405'>
+          CALL wrf_get_dom_ti_integer ( fid , 'j_parent_start' ,    itmp , 1 , icnt , ierr3 )<a name='406'>
+       ELSE IF ( ( ( switch .EQ. auxinput1_only ) .OR. ( switch .EQ. input_only ) ) .AND. ( grid%id .EQ. 1 ) ) THEN<a name='407'>
+          itmp  = config_flags%j_parent_start<a name='408'>
+          ierr3 = 0 <a name='409'>
+       END IF<a name='410'>
+       ierr = max( ierr, ierr3 )<a name='411'>
+       IF ( itmp .NE. config_flags%j_parent_start ) THEN<a name='412'>
+          ierr = 1<a name='413'>
+          WRITE(wrf_err_message,*)'j_parent_start from namelist.input file = ',config_flags%j_parent_start<a name='414'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1099">(wrf_err_message)<a name='415'>
+          WRITE(wrf_err_message,*)'j_parent_start from gridded input file  = ',itmp<a name='416'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1100">(wrf_err_message)<a name='417'>
+       END IF<a name='418'>
+       IF ( ierr .NE. 0 ) THEN<a name='419'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_878"> ( 0, '---- ERROR: Nest start locations do not match: namelist.input vs gridded input file' )<a name='420'>
+          count_fatal_error = count_fatal_error + 1<a name='421'>
+       END IF<a name='422'>
+    END IF<a name='423'>
+#endif<a name='424'>
+<a name='425'>
+    <font color=#447700>! do the check later (see check_if_dryrun below)<a name='426'></font>
+<a name='427'>
+    <font color=#447700>!  We do not want the CEN_LAT LON values from the boundary file.  For 1-way nests<a name='428'></font>
+    <font color=#447700>!  with ndown, this ends up being the data from the previous coarse domain.<a name='429'></font>
+<a name='430'>
+    IF ( switch .NE. boundary_only ) THEN<a name='431'>
+       CALL wrf_get_dom_ti_real ( fid , 'CEN_LAT' ,  config_flags%cen_lat , 1 , icnt , ierr )<a name='432'>
+       WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_real for CEN_LAT returns ',config_flags%cen_lat<a name='433'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_879"> ( 300 , wrf_err_message )<a name='434'>
+       CALL nl_set_cen_lat ( grid%id , config_flags%cen_lat )<a name='435'>
+<a name='436'>
+       CALL wrf_get_dom_ti_real ( fid , 'CEN_LON' ,  config_flags%cen_lon , 1 , icnt , ierr )<a name='437'>
+       WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_real for CEN_LON returns ',config_flags%cen_lon<a name='438'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_880"> ( 300 , wrf_err_message )<a name='439'>
+       CALL nl_set_cen_lon ( grid%id , config_flags%cen_lon )<a name='440'>
+    ELSE<a name='441'>
+       CALL wrf_get_dom_ti_real ( fid , 'CEN_LAT' ,  dum , 1 , icnt , ierr )<a name='442'>
+       WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_real for CEN_LAT returns ',dum<a name='443'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_881"> ( 300 , wrf_err_message )<a name='444'>
+<a name='445'>
+       CALL wrf_get_dom_ti_real ( fid , 'CEN_LON' ,  dum , 1 , icnt , ierr )<a name='446'>
+       WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_real for CEN_LON returns ',dum<a name='447'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_882"> ( 300 , wrf_err_message )<a name='448'>
+    END IF<a name='449'>
+<a name='450'>
+    CALL wrf_get_dom_ti_real ( fid , 'TRUELAT1' ,  config_flags%truelat1 , 1 , icnt , ierr )<a name='451'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_real for TRUELAT1 returns ',config_flags%truelat1<a name='452'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_883"> ( 300 , wrf_err_message )<a name='453'>
+    CALL nl_set_truelat1 ( grid%id , config_flags%truelat1 )<a name='454'>
+<a name='455'>
+    CALL wrf_get_dom_ti_real ( fid , 'TRUELAT2' ,  config_flags%truelat2 , 1 , icnt , ierr )<a name='456'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_real for TRUELAT2 returns ',config_flags%truelat2<a name='457'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_884"> ( 300 , wrf_err_message )<a name='458'>
+    CALL nl_set_truelat2 ( grid%id , config_flags%truelat2 )<a name='459'>
+<a name='460'>
+    CALL wrf_get_dom_ti_real ( fid , 'MOAD_CEN_LAT' ,  config_flags%moad_cen_lat , 1 , icnt , ierr )<a name='461'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_real for MOAD_CEN_LAT returns ',config_flags%moad_cen_lat<a name='462'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_885"> ( 300 , wrf_err_message )<a name='463'>
+    CALL nl_set_moad_cen_lat ( grid%id , config_flags%moad_cen_lat )<a name='464'>
+<a name='465'>
+    CALL wrf_get_dom_ti_real ( fid , 'STAND_LON' ,  config_flags%stand_lon , 1 , icnt , ierr )<a name='466'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_real for STAND_LON returns ',config_flags%stand_lon<a name='467'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_886"> ( 300 , wrf_err_message )<a name='468'>
+    CALL nl_set_stand_lon ( grid%id , config_flags%stand_lon )<a name='469'>
+<a name='470'>
+#if ( NMM_CORE <font color=#447700>!= 1 )<a name='471'></font>
+<a name='472'>
+    CALL wrf_get_dom_ti_real ( fid , 'POLE_LAT' ,  config_flags%pole_lat , 1 , icnt , ierr )<a name='473'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_real for POLE_LAT returns ',config_flags%pole_lat<a name='474'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_887"> ( 300 , wrf_err_message )<a name='475'>
+    CALL nl_set_pole_lat ( grid%id , config_flags%pole_lat )<a name='476'>
+<a name='477'>
+    CALL wrf_get_dom_ti_real ( fid , 'POLE_LON' ,  config_flags%pole_lon , 1 , icnt , ierr )<a name='478'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_real for POLE_LON returns ',config_flags%pole_lon<a name='479'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_888"> ( 300 , wrf_err_message )<a name='480'>
+    CALL nl_set_pole_lon ( grid%id , config_flags%pole_lon )<a name='481'>
+<a name='482'>
+<font color=#447700>! program_name is defined in module_domain and set in the main program for whatever application<a name='483'></font>
+<font color=#447700>! is using subroutine input_wrf (that is, the subroutine you are looking at here). Data files<a name='484'></font>
+<font color=#447700>! written by SI have P_TOP as a metadata item; the real program and wrf model have it as a<a name='485'></font>
+<font color=#447700>! state variable. This test is to supress non-fatal but confusing messages from the model complaining<a name='486'></font>
+<font color=#447700>! that P_TOP cannot be read from the metadata for this dataset.  JM 20040905<a name='487'></font>
+<font color=#447700>!<a name='488'></font>
+<font color=#447700>! Note, P_TOP is not defined in the NMM core.<a name='489'></font>
+<a name='490'>
+    IF ( program_name(1:7) .EQ. "REAL_EM" ) THEN<a name='491'>
+      CALL wrf_get_dom_ti_real ( fid , 'P_TOP' ,  grid%p_top , 1 , icnt , ierr )<a name='492'>
+      WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_real for P_TOP returns ',grid%p_top<a name='493'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_889"> ( 300 , wrf_err_message )<a name='494'>
+    ENDIF<a name='495'>
+#endif<a name='496'>
+<a name='497'>
+    IF ( switch .NE. boundary_only ) THEN<a name='498'>
+      CALL wrf_get_dom_ti_real ( fid , 'GMT' ,  config_flags%gmt , 1 , icnt , ierr )<a name='499'>
+      WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_real for GMT returns ',config_flags%gmt<a name='500'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_890"> ( 300 , wrf_err_message )<a name='501'>
+      CALL nl_set_gmt ( grid%id , config_flags%gmt )<a name='502'>
+<a name='503'>
+      CALL wrf_get_dom_ti_integer ( fid , 'JULYR' ,  config_flags%julyr , 1 , icnt , ierr )<a name='504'>
+      WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_integer for JULYR returns ',config_flags%julyr<a name='505'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_891"> ( 300 , wrf_err_message )<a name='506'>
+      CALL nl_set_julyr ( grid%id , config_flags%julyr )<a name='507'>
+<a name='508'>
+      CALL wrf_get_dom_ti_integer ( fid , 'JULDAY' ,  config_flags%julday , 1 , icnt , ierr )<a name='509'>
+      WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_integer for JULDAY returns ',config_flags%julday<a name='510'>
+      CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_892"> ( 300 , wrf_err_message )<a name='511'>
+      CALL nl_set_julday ( grid%id , config_flags%julday )<a name='512'>
+    ENDIF<a name='513'>
+<a name='514'>
+    CALL wrf_get_dom_ti_integer ( fid , 'MAP_PROJ' ,  config_flags%map_proj , 1 , icnt , ierr )<a name='515'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_integer for MAP_PROJ returns ',config_flags%map_proj<a name='516'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_893"> ( 300 , wrf_err_message )<a name='517'>
+    CALL nl_set_map_proj ( grid%id , config_flags%map_proj )<a name='518'>
+    grid%map_proj = config_flags%map_proj<a name='519'>
+<a name='520'>
+    mminlu = " "<a name='521'>
+    CALL wrf_get_dom_ti_char ( fid , 'MMINLU', mminlu , ierr )<a name='522'>
+    IF ( ierr .NE. 0 ) mminlu = " "<a name='523'>
+#if ( ( EM_CORE == 1 ) &amp;&amp; ( DA_CORE <font color=#447700>!= 1 ) )<a name='524'></font>
+    IF ( ( ( switch .EQ. input_only ) .OR. ( switch .EQ. restart_only ) ) .AND. &amp;<a name='525'>
+         ( ( config_flags%io_form_input .EQ.  2 ) .OR. &amp;<a name='526'>
+           ( config_flags%io_form_input .EQ. 11 ) ) ) THEN<a name='527'>
+      CALL wrf_get_dom_ti_char ( fid , 'SIMULATION_INITIALIZATION_TYPE', sim_type , icnt )<a name='528'>
+      IF ( TRIM(sim_type) .NE. "IDEALIZED DATA" ) THEN<a name='529'>
+        IF ( ierr .NE. 0 ) THEN<a name='530'>
+          WRITE(wrf_err_message,*)'MMINLU error on input'<a name='531'>
+          mminlu = " "<a name='532'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_894"> ( 0 , wrf_err_message )<a name='533'>
+        END IF<a name='534'>
+      END IF<a name='535'>
+    ELSE IF ( ( switch .EQ. input_only ) .OR. ( switch .EQ. restart_only ) ) THEN<a name='536'>
+      IF ( ierr .NE. 0 ) THEN<a name='537'>
+        WRITE(wrf_err_message,*)'MMINLU error on input'<a name='538'>
+        mminlu = " "<a name='539'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_895"> ( 0 , wrf_err_message )<a name='540'>
+      END IF<a name='541'>
+    END IF<a name='542'>
+#endif<a name='543'>
+    IF ( ierr .EQ. 0 ) THEN<a name='544'>
+      IF ( ( ( mminlu(1:1) .GE. "A" ) .AND. ( mminlu(1:1) .LE. "Z" ) ) .OR. &amp;<a name='545'>
+                ( ( mminlu(1:1) .GE. "a" ) .AND. ( mminlu(1:1) .LE. "z" ) ) .OR. &amp;<a name='546'>
+                ( ( mminlu(1:1) .GE. "0" ) .AND. ( mminlu(1:1) .LE. "9" ) ) ) THEN<a name='547'>
+         <font color=#447700>! no-op, the mminlu field is probably OK<a name='548'></font>
+      ELSE IF ( mminlu(1:1) .EQ. " " ) THEN<a name='549'>
+         mminlu = " "<a name='550'>
+      ELSE<a name='551'>
+         mminlu = " "<a name='552'>
+      END IF<a name='553'>
+    END IF<a name='554'>
+    call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_896">( 1 , "mminlu = '" // TRIM(mminlu) // "'")<a name='555'>
+    if (index(mminlu, char(0)) &gt; 0) mminlu(index(mminlu, char(0)):) = " "<a name='556'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_char for MMINLU returns ' // TRIM(mminlu)<a name='557'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_897"> ( 300 , wrf_err_message )<a name='558'>
+    CALL nl_set_mminlu ( grid%id, mminlu )<a name='559'>
+<a name='560'>
+    <font color=#447700>! Test to make sure that the number of land categories is set correctly<a name='561'></font>
+    <font color=#447700>! The default is set to 24 somewhere, from the number of categories<a name='562'></font>
+    <font color=#447700>! in the traditional USGS dataset<a name='563'></font>
+<a name='564'>
+    IF ( ( switch .EQ. input_only )       .OR. &amp; <a name='565'>
+         ( switch .EQ. auxinput1_only )   .OR. &amp;<a name='566'>
+         ( switch .EQ. auxinput2_only ) ) THEN<a name='567'>
+      call wrf_get_dom_ti_integer(fid, "NUM_LAND_CAT", num_land_cat_compare, 1, icnt, ierr)<a name='568'>
+      if ( (ierr .NE. 0) .OR. ( num_land_cat_compare .LT. 1 ) .OR. ( num_land_cat_compare .GT. 1000 ) ) then<a name='569'>
+        IF (mminlu == 'MODIFIED_IGBP_MODIS_NOAH') THEN<a name='570'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_898">( 1 , "Must be old WPS data, assuming 20 levels for NUM_LAND_CAT")<a name='571'>
+          num_land_cat_compare = 20<a name='572'>
+        ELSE<a name='573'>
+          call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_899">( 1 , "Must be old WPS data, assuming 24 levels for NUM_LAND_CAT")<a name='574'>
+          num_land_cat_compare = 24<a name='575'>
+        END IF<a name='576'>
+      endif<a name='577'>
+      if ( config_flags%num_land_cat /= num_land_cat_compare ) then<a name='578'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1101">("----------------- ERROR -------------------")<a name='579'>
+        WRITE(wrf_err_message,'("namelist    : NUM_LAND_CAT = ",I10)') config_flags%num_land_cat<a name='580'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1102">(wrf_err_message)<a name='581'>
+        WRITE(wrf_err_message,'("input files : NUM_LAND_CAT = ",I10, " (from geogrid selections).")') num_land_cat_compare<a name='582'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1103">(wrf_err_message)<a name='583'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_900"> ( 0, '---- ERROR: Mismatch between namelist and wrf input files for dimension NUM_LAND_CAT')<a name='584'>
+        count_fatal_error = count_fatal_error + 1<a name='585'>
+      endif<a name='586'>
+    ENDIF<a name='587'>
+<a name='588'>
+    <font color=#447700>! Test here to check that config_flags%num_metgrid_soil_levels in namelist<a name='589'></font>
+    <font color=#447700>! is equal to what is in the global attributes of the met_em files.  Note that<a name='590'></font>
+    <font color=#447700>! if this is not the first time period, we don't really care about soil data.<a name='591'></font>
+<a name='592'>
+    IF ( ( switch .EQ. auxinput1_only ) .AND. &amp;<a name='593'>
+         ( first_date_nml .EQ. first_date_input ) )  THEN<a name='594'>
+       CALL wrf_get_dom_ti_integer ( fid, 'NUM_METGRID_SOIL_LEVELS', itmp, 1, icnt, ierr )<a name='595'>
+   <a name='596'>
+       IF ( ierr .EQ. 0 ) THEN<a name='597'>
+<a name='598'>
+#if (EM_CORE == 1)<a name='599'>
+          IF ( itmp .EQ. 1 ) THEN<a name='600'>
+             CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_901"> ( 0, "---- ERROR: NUM_METGRID_SOIL_LEVELS must be greater than 1")<a name='601'>
+             count_fatal_error = count_fatal_error + 1<a name='602'>
+          END IF<a name='603'>
+#endif<a name='604'>
+          WRITE(wrf_err_message,*)'input_wrf: global attribute NUM_METGRID_SOIL_LEVELS returns ', itmp<a name='605'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_902"> ( 300 , wrf_err_message )<a name='606'>
+          IF ( config_flags%num_metgrid_soil_levels /= itmp ) THEN<a name='607'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1104">("----------------- ERROR -------------------")<a name='608'>
+             WRITE(wrf_err_message,'("namelist    : num_metgrid_soil_levels = ",I10)') config_flags%num_metgrid_soil_levels<a name='609'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1105">(wrf_err_message)<a name='610'>
+#if (EM_CORE == 1)<a name='611'>
+             WRITE(wrf_err_message,'("input files : NUM_METGRID_SOIL_LEVELS = ",I10, " (from met_em files).")') itmp<a name='612'>
+#else<a name='613'>
+             WRITE(wrf_err_message,'("input files : NUM_METGRID_SOIL_LEVELS = ",I10, " (from met_nmm files).")') itmp<a name='614'>
+#endif<a name='615'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1106">(wrf_err_message)<a name='616'>
+             CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_903"> ( 0, "---- ERROR: Mismatch between namelist and global attribute NUM_METGRID_SOIL_LEVELS")<a name='617'>
+             count_fatal_error = count_fatal_error + 1<a name='618'>
+          END IF<a name='619'>
+       END IF<a name='620'>
+    END IF<a name='621'>
+<a name='622'>
+#if 0<a name='623'>
+#if ( WRF_CHEM == 1 )<a name='624'>
+    <font color=#447700>!  Dust erosion static data.<a name='625'></font>
+<a name='626'>
+    CALL wrf_get_dom_ti_integer ( fid, 'EROSION_DIM', itmp, 1, icnt, ierr )<a name='627'>
+<a name='628'>
+    IF ( ierr .EQ. 0 ) THEN<a name='629'>
+       WRITE(wrf_err_message,*)'input_wrf: global attribute EROSION_DIM returns ', itmp<a name='630'>
+       CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_904"> ( 300 , wrf_err_message )<a name='631'>
+       IF ( config_flags%erosion_dim /= itmp ) THEN<a name='632'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1107">("----------------- ERROR -------------------")<a name='633'>
+          WRITE(wrf_err_message,'("namelist    : erosion_dim = ",I10)') config_flags%erosion_dim<a name='634'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1108">(wrf_err_message)<a name='635'>
+          WRITE(wrf_err_message,'("input files : EROSION_DIM = ",I10, " (from met_em files).")') itmp<a name='636'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1109">(wrf_err_message)<a name='637'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_905"> ( 0, "---- ERROR: Mismatch between namelist and global attribute EROSION_DIM")<a name='638'>
+          count_fatal_error = count_fatal_error + 1<a name='639'>
+       END IF<a name='640'>
+    END IF<a name='641'>
+#endif<a name='642'>
+#endif<a name='643'>
+<a name='644'>
+#if ( DA_CORE <font color=#447700>!= 1 )<a name='645'></font>
+    <font color=#447700>! Test here to check that config_flags%sf_surface_physics in namelist<a name='646'></font>
+    <font color=#447700>! is equal to what is in the global attributes of the wrfinput files<a name='647'></font>
+<a name='648'>
+    IF ( switch .EQ. input_only  ) THEN<a name='649'>
+       CALL wrf_get_dom_ti_integer ( fid, 'SF_SURFACE_PHYSICS', itmp, 1, icnt, ierr )<a name='650'>
+       IF ( ierr .EQ. 0 ) THEN<a name='651'>
+          WRITE(wrf_err_message,*)'input_wrf: global attribute SF_SURFACE_PHYSICS returns ', itmp<a name='652'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_906"> ( 300 , wrf_err_message )<a name='653'>
+          IF ( config_flags%sf_surface_physics /= itmp ) THEN<a name='654'>
+             IF ( ( config_flags%sf_surface_physics == LSMSCHEME ) .and. ( itmp == NOAHMPSCHEME ) ) then<a name='655'>
+                <font color=#447700>! All is well.  Noah-MP and Noah have compatible wrfinput files.<a name='656'></font>
+             ELSE IF ( ( config_flags%sf_surface_physics == NOAHMPSCHEME ) .and. ( itmp == LSMSCHEME ) ) then<a name='657'>
+                <font color=#447700>! All is well.  Noah-MP and Noah have compatible wrfinput files.<a name='658'></font>
+             ELSE<a name='659'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1110">("----------------- ERROR -------------------")<a name='660'>
+                WRITE(wrf_err_message,'("namelist    : sf_surface_physics = ",I10)') config_flags%sf_surface_physics<a name='661'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1111">(wrf_err_message)<a name='662'>
+                WRITE(wrf_err_message,'("input files : SF_SURFACE_PHYSICS = ",I10, " (from wrfinput files).")') itmp<a name='663'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1112">(wrf_err_message)<a name='664'>
+                CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_907"> ( 0, "---- ERROR: Mismatch between namelist and global attribute SF_SURFACE_PHYSICS")<a name='665'>
+                count_fatal_error = count_fatal_error + 1<a name='666'>
+             END IF<a name='667'>
+          END IF<a name='668'>
+       END IF<a name='669'>
+    END IF<a name='670'>
+<a name='671'>
+<a name='672'>
+    <font color=#447700>! Test here to check that config_flags%gwd_opt in namelist<a name='673'></font>
+    <font color=#447700>! is equal to what is in the global attributes of the wrfinput files<a name='674'></font>
+<a name='675'>
+    IF ( switch .EQ. input_only  ) THEN<a name='676'>
+       CALL wrf_get_dom_ti_integer ( fid, 'GWD_OPT', itmp, 1, icnt, ierr )<a name='677'>
+       IF ( ierr .EQ. 0 ) THEN<a name='678'>
+          WRITE(wrf_err_message,*)'input_wrf: global attribute GWD_OPT returns ', itmp<a name='679'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_908"> ( 300 , wrf_err_message )<a name='680'>
+          IF ( config_flags%gwd_opt /= itmp ) THEN<a name='681'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1113">("----------------- ERROR -------------------")<a name='682'>
+             WRITE(wrf_err_message,'("namelist    : gwd_opt            = ",I10)') config_flags%gwd_opt<a name='683'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1114">(wrf_err_message)<a name='684'>
+             WRITE(wrf_err_message,'("input files : GWD_OPT            = ",I10, " (from wrfinput files).")') itmp<a name='685'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1115">(wrf_err_message)<a name='686'>
+             call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_909"> ( 0, "---- ERROR: Mismatch between namelist and global attribute GWD_OPT")<a name='687'>
+             count_fatal_error = count_fatal_error + 1<a name='688'>
+          END IF<a name='689'>
+       END IF<a name='690'>
+    END IF<a name='691'>
+#endif<a name='692'>
+<a name='693'>
+#if ( ( EM_CORE == 1 ) &amp;&amp; ( DA_CORE <font color=#447700>!= 1 ) )<a name='694'></font>
+    <font color=#447700>! Test here to check that config_flags%sf_ocean_physics in namelist<a name='695'></font>
+    <font color=#447700>! is equal to what is in the global attributes of the wrfinput files<a name='696'></font>
+<a name='697'>
+    IF ( switch .EQ. input_only  ) THEN<a name='698'>
+       CALL wrf_get_dom_ti_integer ( fid, 'SF_OCEAN_PHYSICS', itmp, 1, icnt, ierr )<a name='699'>
+       IF ( ierr .EQ. 0 ) THEN<a name='700'>
+          WRITE(wrf_err_message,*)'input_wrf: global attribute SF_OCEAN_PHYSICS returns ', itmp<a name='701'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_910"> ( 300 , wrf_err_message )<a name='702'>
+          IF ( config_flags%sf_ocean_physics /= itmp ) THEN<a name='703'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1116">("----------------- ERROR -------------------")<a name='704'>
+             WRITE(wrf_err_message,'("namelist    : sf_ocean_physics   = ",I10)') config_flags%sf_ocean_physics<a name='705'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1117">(wrf_err_message)<a name='706'>
+             WRITE(wrf_err_message,'("input files : SF_OCEAN_PHYSICS   = ",I10, " (from wrfinput files).")') itmp<a name='707'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1118">(wrf_err_message)<a name='708'>
+             call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_911"> ( 0, "---- ERROR: Mismatch between namelist and global attribute SF_OCEAN_PHYSICS")<a name='709'>
+             count_fatal_error = count_fatal_error + 1<a name='710'>
+          END IF<a name='711'>
+       END IF<a name='712'>
+    END IF<a name='713'>
+#endif<a name='714'>
+<a name='715'>
+#if ( DA_CORE <font color=#447700>!= 1 )<a name='716'></font>
+    <font color=#447700>! Test here to check that config_flags%sf_urban_physics in namelist<a name='717'></font>
+    <font color=#447700>! is equal to what is in the global attributes of the wrfinput files<a name='718'></font>
+<a name='719'>
+    IF ( switch .EQ. input_only  ) THEN<a name='720'>
+       CALL wrf_get_dom_ti_integer ( fid, 'SF_URBAN_PHYSICS', itmp, 1, icnt, ierr )<a name='721'>
+       IF ( ierr .EQ. 0 ) THEN<a name='722'>
+          WRITE(wrf_err_message,*)'input_wrf: global attribute SF_URBAN_PHYSICS returns ', itmp<a name='723'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_912"> ( 300 , wrf_err_message )<a name='724'>
+          IF ( config_flags%sf_urban_physics /= itmp ) THEN<a name='725'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1119">("----------------- ERROR -------------------")<a name='726'>
+             WRITE(wrf_err_message,'("namelist    : sf_urban_physics   = ",I10)') config_flags%sf_urban_physics<a name='727'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1120">(wrf_err_message)<a name='728'>
+             WRITE(wrf_err_message,'("input files : SF_URBAN_PHYSICS   = ",I10, " (from wrfinput files).")') itmp<a name='729'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1121">(wrf_err_message)<a name='730'>
+             call <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_913"> ( 0, "---- ERROR: Mismatch between namelist and global attribute SF_URBAN_PHYSICS")<a name='731'>
+             count_fatal_error = count_fatal_error + 1<a name='732'>
+          END IF<a name='733'>
+       END IF<a name='734'>
+    END IF<a name='735'>
+#endif<a name='736'>
+<a name='737'>
+    CALL wrf_get_dom_ti_integer ( fid , 'ISWATER' ,  config_flags%iswater , 1 , icnt , ierr )<a name='738'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_integer for ISWATER returns ',config_flags%iswater<a name='739'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_914"> ( 300 , wrf_err_message )<a name='740'>
+    IF ( ierr .NE. 0 ) THEN<a name='741'>
+         IF (mminlu == 'UMD') THEN<a name='742'>
+              config_flags%iswater = 14<a name='743'>
+         ELSE IF (mminlu == 'MODIFIED_IGBP_MODIS_NOAH') THEN<a name='744'>
+              config_flags%iswater = 17<a name='745'>
+         ELSE<a name='746'>
+              config_flags%iswater = 16<a name='747'>
+         ENDIF<a name='748'>
+    ENDIF<a name='749'>
+    CALL nl_set_iswater ( grid%id , config_flags%iswater )<a name='750'>
+    grid%iswater = config_flags%iswater<a name='751'>
+<a name='752'>
+    CALL wrf_get_dom_ti_integer ( fid , 'ISLAKE' ,  config_flags%islake , 1 , icnt , ierr )<a name='753'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_integer for ISLAKE returns ',config_flags%islake<a name='754'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_915"> ( 300 , wrf_err_message )<a name='755'>
+    IF ( ierr .NE. 0 ) THEN<a name='756'>
+         config_flags%islake = -1<a name='757'>
+    ENDIF<a name='758'>
+    CALL nl_set_islake ( grid%id , config_flags%islake )<a name='759'>
+    grid%islake = config_flags%islake<a name='760'>
+<a name='761'>
+    CALL wrf_get_dom_ti_integer ( fid , 'ISICE' ,  config_flags%isice , 1 , icnt , ierr )<a name='762'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_integer for ISICE returns ',config_flags%isice<a name='763'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_916"> ( 300 , wrf_err_message )<a name='764'>
+    IF ( ierr .NE.  0 ) THEN<a name='765'>
+         IF (mminlu == 'UMD') THEN<a name='766'>
+              config_flags%isice = 14<a name='767'>
+         ELSE IF (mminlu == 'MODIFIED_IGBP_MODIS_NOAH') THEN<a name='768'>
+              config_flags%isice = 15<a name='769'>
+         ELSE<a name='770'>
+              config_flags%isice = 24<a name='771'>
+         ENDIF<a name='772'>
+    ENDIF<a name='773'>
+    CALL nl_set_isice ( grid%id , config_flags%isice )<a name='774'>
+    grid%isice = config_flags%isice<a name='775'>
+<a name='776'>
+    CALL wrf_get_dom_ti_integer ( fid , 'ISURBAN' ,  config_flags%isurban , 1 , icnt , ierr )<a name='777'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_integer for ISURBAN returns ',config_flags%isurban<a name='778'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_917"> ( 300 , wrf_err_message )<a name='779'>
+    IF ( ierr .NE. 0 ) THEN<a name='780'>
+         IF (mminlu == 'UMD') THEN<a name='781'>
+              config_flags%isurban = 13<a name='782'>
+         ELSE IF (mminlu == 'MODIFIED_IGBP_MODIS_NOAH') THEN<a name='783'>
+              config_flags%isurban = 13<a name='784'>
+         ELSE<a name='785'>
+              config_flags%isurban = 1<a name='786'>
+         ENDIF<a name='787'>
+    ENDIF<a name='788'>
+    CALL nl_set_isurban ( grid%id , config_flags%isurban )<a name='789'>
+    grid%isurban = config_flags%isurban<a name='790'>
+<a name='791'>
+    CALL wrf_get_dom_ti_integer ( fid , 'ISOILWATER' ,  config_flags%isoilwater , 1 , icnt , ierr )<a name='792'>
+    WRITE(wrf_err_message,*)'input_wrf: wrf_get_dom_ti_integer for ISOILWATER returns ',config_flags%isoilwater<a name='793'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_918"> ( 300 , wrf_err_message )<a name='794'>
+    IF ( ierr .NE. 0 ) THEN<a name='795'>
+         config_flags%isoilwater = 14<a name='796'>
+    ENDIF<a name='797'>
+    CALL nl_set_isoilwater ( grid%id , config_flags%isoilwater )<a name='798'>
+    grid%isoilwater = config_flags%isoilwater<a name='799'>
+<a name='800'>
+#ifdef MOVE_NESTS<a name='801'>
+<font color=#447700>! Added these fields for restarting of moving nests, JM<a name='802'></font>
+<font color=#447700>! DANGER and TODO<a name='803'></font>
+<font color=#447700>! It is very important that these be set correctly if they are set at all in here.<a name='804'></font>
+<font color=#447700>! Garbage values will produce unpredictable results, possibly segfaults, in the nesting<a name='805'></font>
+<font color=#447700>! code. Need some integrity checking here or elsewhere in the code to at least check to<a name='806'></font>
+<font color=#447700>! make sure that the istart and jstart values make sense with respect to the nest dimensions<a name='807'></font>
+<font color=#447700>! and the position in the parent domain.<a name='808'></font>
+    CALL wrf_get_dom_ti_integer ( fid , 'I_PARENT_START' ,  itmp  , 1 , icnt, ierr )<a name='809'>
+    IF ( ierr .EQ. 0 .AND. switch .EQ. restart_only ) THEN<a name='810'>
+      config_flags%i_parent_start = itmp<a name='811'>
+      CALL nl_set_i_parent_start ( grid%id , config_flags%i_parent_start )<a name='812'>
+    ENDIF<a name='813'>
+    CALL wrf_get_dom_ti_integer ( fid , 'J_PARENT_START' ,  itmp  , 1 , icnt, ierr )<a name='814'>
+    IF ( ierr .EQ. 0 .AND. switch .EQ. restart_only ) THEN<a name='815'>
+      config_flags%j_parent_start = itmp<a name='816'>
+      CALL nl_set_j_parent_start ( grid%id , config_flags%j_parent_start )<a name='817'>
+    ENDIF<a name='818'>
+#endif<a name='819'>
+<a name='820'>
+#if (EM_CORE == 1)<a name='821'>
+<a name='822'>
+<font color=#447700>!KLUDGE - is there a more elegant way to determine "old si" input<a name='823'></font>
+    IF      ( ( switch .EQ.     input_only  ) .OR. &amp;<a name='824'>
+            ( ( switch .EQ. auxinput1_only ) .AND. &amp;<a name='825'>
+              ( config_flags%auxinput1_inname(1:8) .EQ. 'wrf_real' ) ) ) THEN<a name='826'>
+<a name='827'>
+       <font color=#447700>!  Test to make sure that the input data is the right size.<a name='828'></font>
+<a name='829'>
+       IF ( ( ide .NE. ide_compare    ) .OR. &amp;<a name='830'>
+            ( kde .NE. kde_compare    ) .OR. &amp;<a name='831'>
+            ( jde .NE. jde_compare    ) ) THEN<a name='832'>
+          WRITE(wrf_err_message,*)'input_wrf.F: SIZE MISMATCH:  namelist   ide,jde,kde=',ide,jde,kde<a name='833'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_919"> ( 0, TRIM( wrf_err_message ) )<a name='834'>
+          WRITE(wrf_err_message,*)'input_wrf.F: SIZE MISMATCH:  input file ide,jde,kde=',ide_compare , jde_compare , kde_compare<a name='835'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_920"> ( 0, TRIM( wrf_err_message ) )<a name='836'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_921"> ( 0, "---- ERROR: Mismatch between namelist and input file dimensions" )<a name='837'>
+          count_fatal_error = count_fatal_error + 1<a name='838'>
+       ENDIF<a name='839'>
+<a name='840'>
+    ELSE IF ( switch .EQ. auxinput1_only ) THEN<a name='841'>
+<a name='842'>
+       <font color=#447700>!  Test to make sure that the input data is the right size.<a name='843'></font>
+<a name='844'>
+       IF ( ( ide                             .NE. ide_compare ) .OR. &amp;<a name='845'>
+            ( config_flags%num_metgrid_levels .NE. kde_compare ) .OR. &amp;<a name='846'>
+            ( jde                             .NE. jde_compare ) ) THEN<a name='847'>
+          WRITE(wrf_err_message,*)'input_wrf.F: SIZE MISMATCH:  namelist   ide,jde,num_metgrid_levels=',ide,jde,config_flags%num_metgrid_levels<a name='848'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_922"> ( 0, TRIM( wrf_err_message ) )<a name='849'>
+          WRITE(wrf_err_message,*)'input_wrf.F: SIZE MISMATCH:  input file ide,jde,kde               =',ide_compare , jde_compare , kde_compare<a name='850'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_923"> ( 0, TRIM( wrf_err_message ) )<a name='851'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_924"> ( 0, "---- ERROR: Mismatch between namelist and input file dimensions" )<a name='852'>
+          count_fatal_error = count_fatal_error + 1<a name='853'>
+       ENDIF<a name='854'>
+    ENDIF<a name='855'>
+<a name='856'>
+#endif<a name='857'>
+<a name='858'>
+#if (NMM_CORE == 1)<a name='859'>
+<a name='860'>
+    IF      ( ( switch .EQ. auxinput1_only  ) .AND. &amp;<a name='861'>
+              ( config_flags%auxinput1_inname(1:8) .EQ. 'wrf_real' ) ) THEN<a name='862'>
+<a name='863'>
+       CALL wrf_get_dom_ti_integer ( fid , 'BOTTOM-TOP_GRID_DIMSNSION' ,   kde_compare , 1 , icnt , ierr3 )<a name='864'>
+<a name='865'>
+       <font color=#447700>!  Test to make sure that the input data is the right size.<a name='866'></font>
+<a name='867'>
+       IF ( ( ide-1 .NE. ide_compare    ) .OR. &amp;<a name='868'>
+            ( kde   .NE. kde_compare    ) .OR. &amp;<a name='869'>
+            ( jde-1 .NE. jde_compare    ) .AND. ierr3 .EQ. 0 ) THEN<a name='870'>
+          WRITE(wrf_err_message,*)'input_wrf.F: SIZE MISMATCH:  namelist ide-1,jde-1,kde=',ide-1,jde-1,kde,&amp;<a name='871'>
+                                  '; input data ide,jde,kde=',ide_compare , jde_compare , kde_compare<a name='872'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_925">( 100, wrf_err_message )<a name='873'>
+       ENDIF<a name='874'>
+<a name='875'>
+       ELSEIF ( switch .EQ. auxinput1_only ) THEN          <font color=#447700>! assume just WPS in this branch<a name='876'></font>
+         IF ( ( ide-1                           .NE. ide_compare ) .OR. &amp;<a name='877'>
+            ( config_flags%num_metgrid_levels .NE. kde_compare ) .OR. &amp;<a name='878'>
+            ( jde-1                             .NE. jde_compare ) .AND. ierr3 .EQ. 0 ) THEN<a name='879'>
+                WRITE(wrf_err_message,*)'input_wrf.F: SIZE MISMATCH:  ',&amp;<a name='880'>
+                 'namelist ide-1,jde-1,num_metgrid_levels=',ide-1,jde-1,config_flags%num_metgrid_levels,&amp;<a name='881'>
+                 '; input data ide,jde,num_metgrid_levels=',ide_compare , jde_compare , kde_compare<a name='882'>
+                IF (ide-1 .eq. ide_compare .AND. jde-1 .EQ. jde_compare) THEN<a name='883'>
+                  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1122">(wrf_err_message)<a name='884'>
+                  CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_926"> ( 0, "---- ERROR: appears that the vertical dimension is wrong - quitting" )<a name='885'>
+                  count_fatal_error = count_fatal_error + 1<a name='886'>
+                ELSE<a name='887'>
+                  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1123">(wrf_err_message)<a name='888'>
+                  CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_927"> ( 0, "---- ERROR: appears that I or J dimensions are wrong - quitting" )<a name='889'>
+                  count_fatal_error = count_fatal_error + 1<a name='890'>
+                ENDIF<a name='891'>
+         ENDIF<a name='892'>
+       ENDIF<a name='893'>
+<a name='894'>
+#endif<a name='895'>
+<a name='896'>
+#if (DA_CORE == 1)<a name='897'>
+    <font color=#447700>! Test here to check that config_flags%hypsometric_opt in namelist<a name='898'></font>
+    <font color=#447700>! is equal to what is in the global attributes of the wrfinput files<a name='899'></font>
+<a name='900'>
+    IF ( switch .EQ. input_only  ) THEN<a name='901'>
+       CALL wrf_get_dom_ti_integer ( fid, 'HYPSOMETRIC_OPT', itmp, 1, icnt, ierr )<a name='902'>
+       IF ( ierr .EQ. 0 ) THEN<a name='903'>
+          WRITE(wrf_err_message,*)'input_wrf: global attribute HYPSOMETRIC_OPT returns ', itmp<a name='904'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_928"> ( 300 , wrf_err_message )<a name='905'>
+          IF ( config_flags%hypsometric_opt /= itmp ) THEN<a name='906'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1124">("----------------- WARNING  -------------------")<a name='907'>
+             WRITE(wrf_err_message,'("namelist    : hypsometric_opt = ",I10)') config_flags%hypsometric_opt<a name='908'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1125">(wrf_err_message)<a name='909'>
+             WRITE(wrf_err_message,'("input files : HYPSOMETRIC_OPT = ",I10, " (from wrfinput files).")') itmp<a name='910'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1126">(wrf_err_message)<a name='911'>
+             CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_929"> ( 0, "---- ERROR: Mismatch between namelist and global attribute HYPSOMETRIC_OPT")<a name='912'>
+             count_fatal_error = count_fatal_error + 1<a name='913'>
+          END IF<a name='914'>
+       ELSE<a name='915'>
+          <font color=#447700>! For WRFDA backward compatibility.  If hypsometric_opt is not defined in the fg file, it is<a name='916'></font>
+          <font color=#447700>! pre-version 3.4 WRF input data.  For older versions, hypsometric_opt should be 1.<a name='917'></font>
+          hypsometric_opt = -1<a name='918'>
+          CALL wrf_get_dom_ti_integer ( fid , 'HYPSOMETRIC_OPT' , hypsometric_opt, 1 , icnt , ierr )<a name='919'>
+          IF ( ( hypsometric_opt .NE. 1 ) .AND. ( hypsometric_opt .NE. 2 ) ) THEN<a name='920'>
+             grid%hypsometric_opt = 1<a name='921'>
+             config_flags%hypsometric_opt = 1<a name='922'>
+             DO loop = 1 , grid%max_dom<a name='923'>
+                CALL nl_set_hypsometric_opt ( loop , 1 )<a name='924'>
+             END DO<a name='925'>
+             WRITE(wrf_err_message,*)'Background (fg) file appears to be from earlier than WRF V3.4;'<a name='926'>
+             call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1127">(wrf_err_message)<a name='927'>
+             WRITE(wrf_err_message,*)'Resetting the hypsometric_opt from default value of 2 to 1'<a name='928'>
+             CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1128">(wrf_err_message)<a name='929'>
+          END IF<a name='930'>
+<a name='931'>
+       END IF<a name='932'>
+    END IF<a name='933'>
+<a name='934'>
+#endif<a name='935'>
+<a name='936'>
+#if ( ( EM_CORE == 1 ) &amp;&amp; ( DA_CORE <font color=#447700>!= 1 ) )<a name='937'></font>
+      IF ( ( switch .EQ. input_only ) .OR. ( switch .EQ. restart_only ) ) THEN<a name='938'>
+<a name='939'>
+        <font color=#447700>!  Make sure for ARW ideal cases that the hypsometric option, the<a name='940'></font>
+        <font color=#447700>!  way that we integrate the height field, is set to 1.  This is the<a name='941'></font>
+        <font color=#447700>!  method that is used in all of the "ideal" programs to get the<a name='942'></font>
+        <font color=#447700>!  base-state height (phb).<a name='943'></font>
+<a name='944'>
+        CALL wrf_get_dom_ti_char ( fid , 'SIMULATION_INITIALIZATION_TYPE', sim_type , ierr )<a name='945'>
+        IF      ( TRIM(sim_type) .EQ. "IDEALIZED DATA" ) THEN<a name='946'>
+           grid%this_is_an_ideal_run = .TRUE.<a name='947'>
+        ELSE IF ( TRIM(sim_type) .EQ. "REAL-DATA CASE" ) THEN<a name='948'>
+           grid%this_is_an_ideal_run = .FALSE.<a name='949'>
+        ELSE IF ( ierr .NE. 0 ) THEN<a name='950'>
+           CALL wrf_get_dom_ti_char ( fid , 'START_DATE' , input_name , ierr )<a name='951'>
+           grid%this_is_an_ideal_run = INDEX(TRIM(input_name) , '0001-' ) .NE. 0<a name='952'>
+        END IF<a name='953'>
+<a name='954'>
+        IF ( grid%this_is_an_ideal_run ) THEN<a name='955'>
+          grid%hypsometric_opt = 1<a name='956'>
+          config_flags%hypsometric_opt = 1<a name='957'>
+	  DO loop = 1 , grid%max_dom<a name='958'>
+            CALL nl_set_hypsometric_opt ( loop , 1 ) <a name='959'>
+          END DO<a name='960'>
+          WRITE(wrf_err_message,*)'NOTE:  Ideal cases always use hypsometric_opt=1, regardless of namelist setting'<a name='961'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_930">( 1 , wrf_err_message )<a name='962'>
+        END IF<a name='963'>
+      END IF<a name='964'>
+<a name='965'>
+       IF ( ( switch .EQ. input_only ) .AND. ( config_flags%io_form_input .EQ. 2 ) ) THEN<a name='966'>
+<a name='967'>
+        <font color=#447700>!  For backward compatibility.  If we do not find the hypsometric_opt defined<a name='968'></font>
+        <font color=#447700>!  in the input data, this is pre version 3.4.  Most likely, the hypsometric_opt<a name='969'></font>
+        <font color=#447700>!  was the default value, 1.  <a name='970'></font>
+<a name='971'>
+        hypsometric_opt = -1<a name='972'>
+        CALL wrf_get_dom_ti_integer ( fid , 'HYPSOMETRIC_OPT' , hypsometric_opt , 1 , icnt , ierr )<a name='973'>
+        IF ( ( hypsometric_opt .NE. 1 ) .AND. ( hypsometric_opt .NE. 2 ) ) THEN<a name='974'>
+          grid%hypsometric_opt = 1<a name='975'>
+          config_flags%hypsometric_opt = 1<a name='976'>
+	  DO loop = 1 , grid%max_dom<a name='977'>
+            CALL nl_set_hypsometric_opt ( loop , 1 ) <a name='978'>
+          END DO<a name='979'>
+          WRITE(wrf_err_message,*)'Resetting the hypsometric_opt from default value of 2 to 1'<a name='980'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_931">( 0 , wrf_err_message )<a name='981'>
+        END IF<a name='982'>
+       END IF<a name='983'>
+#endif<a name='984'>
+<a name='985'>
+    ENDIF check_if_dryrun<a name='986'>
+<a name='987'>
+<font color=#447700>!<a name='988'></font>
+<font color=#447700>! This call to wrf_get_next_time will position the dataset over the next time-frame<a name='989'></font>
+<font color=#447700>! in the file and return the current_date, which is used as an argument to the<a name='990'></font>
+<font color=#447700>! read_field routines in the blocks of code included below.  Note that we read the<a name='991'></font>
+<font color=#447700>! next time *after* all the meta data has been read. This is only important for the<a name='992'></font>
+<font color=#447700>! WRF internal I/O format because it is order-dependent. Other formats shouldn't care<a name='993'></font>
+<font color=#447700>! about this.<a name='994'></font>
+<font color=#447700>!<a name='995'></font>
+<a name='996'>
+    3003 continue<a name='997'>
+<a name='998'>
+    CALL <A href='../../html_code/frame/module_io.F.html#WRF_GET_NEXT_TIME'>wrf_get_next_time</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_GET_NEXT_TIME_4">(fid, current_date , ierr)<a name='999'>
+    WRITE(wrf_err_message,*)fid,' input_wrf: wrf_get_next_time current_date: ',current_date(1:19),' Status = ',ierr<a name='1000'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_932"> ( 300 , TRIM(wrf_err_message ) )<a name='1001'>
+    IF ( ierr .NE. 0 .AND. ierr .NE. WRF_WARN_NOTSUPPORTED .AND. ierr .NE. WRF_WARN_DRYRUN_READ ) THEN<a name='1002'>
+      CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1129"> ( TRIM(wrf_err_message ) )<a name='1003'>
+      IF ( switch .EQ. boundary_only ) THEN<a name='1004'>
+        WRITE(wrf_err_message,*) '---- ERROR: Ran out of valid boundary conditions in file ',TRIM(fname)<a name='1005'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_933"> ( 0, TRIM( wrf_err_message ) )<a name='1006'>
+        count_fatal_error = count_fatal_error + 1<a name='1007'>
+      ELSE<a name='1008'>
+#if ( NMM_CORE <font color=#447700>!= 1 )<a name='1009'></font>
+        WRITE(wrf_err_message,*) '---- ERROR: Could not find matching time in input file ',TRIM(fname)<a name='1010'>
+        CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_934"> ( 0, TRIM( wrf_err_message ) )<a name='1011'>
+        count_fatal_error = count_fatal_error + 1<a name='1012'>
+#endif<a name='1013'>
+      ENDIF<a name='1014'>
+    ELSE IF ( ierr .NE. WRF_WARN_NOTSUPPORTED .AND. ierr .NE. WRF_WARN_DRYRUN_READ) THEN<a name='1015'>
+<font color=#447700>!<a name='1016'></font>
+<font color=#447700>! check input time against domain time (which will be start time at beginning, see share/set_timekeeping.F)<a name='1017'></font>
+<font color=#447700>! JM 20040511<a name='1018'></font>
+<font color=#447700>!<a name='1019'></font>
+      SELECT CASE ( switch )<a name='1020'>
+        CASE ( input_only, auxinput1_only, auxinput2_only,       &amp;<a name='1021'>
+               auxinput3_only, auxinput4_only, auxinput5_only,  &amp;<a name='1022'>
+               auxinput6_only, auxinput7_only, auxinput8_only,  &amp;<a name='1023'>
+               auxinput9_only, auxinput10_only )<a name='1024'>
+#if ( WRF_CHEM == 1 )<a name='1025'>
+           IF( (config_flags%io_style_emissions .eq. 1) .and.                                &amp;<a name='1026'>
+              ((switch.eq.auxinput5_only) .or. (switch.eq.auxinput6_only) .or. &amp;<a name='1027'>
+               (switch.eq.auxinput7_only) .or. (switch.eq.auxinput8_only)) ) then<a name='1028'>
+               CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1130">( "**WARNING** Time in input file not being checked **WARNING**" )<a name='1029'>
+           ELSE<a name='1030'>
+#endif<a name='1031'>
+            CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_10">( current_date(1:19), time )<a name='1032'>
+            CALL <A href='../../html_code/frame/module_domain.F.html#DOMAIN_CLOCK_GET'>domain_clock_get</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DOMAIN_CLOCK_GET_41">( grid, current_time=currtime, &amp;<a name='1033'>
+                                         current_timestr=currtimestr )<a name='1034'>
+#if (DA_CORE <font color=#447700>!= 1) <a name='1035'></font>
+<font color=#447700>! Don't perform the check for WRFVAR, as we're not passing the right dates<a name='1036'></font>
+<font color=#447700>! around<a name='1037'></font>
+            CALL <A href='../../html_code/frame/module_domain.F.html#DOMAIN_CLOCKPRINT'>domain_clockprint</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DOMAIN_CLOCKPRINT_22">(150, grid, &amp;<a name='1038'>
+                   'DEBUG input_wrf():  get CurrTime from clock,')<a name='1039'>
+            IF ( time .NE. currtime ) THEN<a name='1040'>
+                WRITE( wrf_err_message , * )'Time in file: ',trim( current_date(1:19) )<a name='1041'>
+                CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1131"> ( trim(wrf_err_message) )<a name='1042'>
+                WRITE( wrf_err_message , * )'Time on domain: ',trim( currtimestr )<a name='1043'>
+                CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1132"> ( trim(wrf_err_message) )<a name='1044'>
+                CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1133">( "**WARNING** Time in input file not equal to time on domain **WARNING**" )<a name='1045'>
+                WRITE(wrf_err_message,*) "**WARNING** Trying next time in file ",TRIM(fname)," ..."<a name='1046'>
+                CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1134">( TRIM(wrf_err_message) )<a name='1047'>
+                GOTO 3003<a name='1048'>
+            ENDIF<a name='1049'>
+#endif<a name='1050'>
+#if ( WRF_CHEM == 1 )<a name='1051'>
+            ENDIF<a name='1052'>
+#endif<a name='1053'>
+        CASE DEFAULT<a name='1054'>
+      END SELECT<a name='1055'>
+    ENDIF<a name='1056'>
+<a name='1057'>
+<font color=#447700>! set the lbc time interval fields in the domain data structure<a name='1058'></font>
+<font color=#447700>! these time values are checked as stopping condition for the while loop in<a name='1059'></font>
+<font color=#447700>! latbound_in() defined in share/medation_integrate.F, which is used to<a name='1060'></font>
+<font color=#447700>! iterate forward to the correct interval in the input LBC file<a name='1061'></font>
+<font color=#447700>!<a name='1062'></font>
+    IF ( switch .EQ. boundary_only ) THEN<a name='1063'>
+       IF ( config_flags%restart ) THEN<a name='1064'>
+          <font color=#447700>! get WRF time of current_date position in boundary file<a name='1065'></font>
+          CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_11">( current_date(1:19), time )<a name='1066'>
+          <font color=#447700>! jump straight to the restart time<a name='1067'></font>
+          CALL <A href='../../html_code/frame/module_domain.F.html#DOMAIN_CLOCK_GET'>domain_clock_get</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DOMAIN_CLOCK_GET_42">( grid, current_time=currentTime, &amp;<a name='1068'>
+                                     current_timestr=currtimestr )<a name='1069'>
+          write(wrf_err_message, '(4a)') "WRF restart, LBC starts at ", &amp;<a name='1070'>
+                                     &amp; trim(current_date), " and restart starts at ", trim(currtimestr)<a name='1071'>
+          CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_935">( 0 , wrf_err_message )<a name='1072'>
+          CALL wrf_get_dom_td_char ( fid , 'THISBDYTIME' ,  current_date(1:19), this_datestr , ierr )<a name='1073'>
+          CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_12">( this_datestr(1:19), grid%this_bdy_time )<a name='1074'>
+          CALL wrf_get_dom_td_char ( fid , 'NEXTBDYTIME' ,  current_date(1:19), next_datestr , ierr )<a name='1075'>
+          CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_13">( next_datestr(1:19), grid%next_bdy_time )<a name='1076'>
+         <a name='1077'>
+          WRITE ( wrf_err_message , * ) 'LBC for restart: Starting valid date = ',this_datestr(1:19),', Ending valid date = ',next_datestr(1:19)<a name='1078'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1135">( TRIM(wrf_err_message) )<a name='1079'>
+          WRITE ( wrf_err_message , * ) 'LBC for restart: Restart time            = ',trim(currtimestr)<a name='1080'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1136">( TRIM(wrf_err_message) )<a name='1081'>
+<a name='1082'>
+          IF ( ( grid%this_bdy_time .LE. currentTime ) .AND. ( grid%next_bdy_time .GT. currentTime ) ) THEN<a name='1083'>
+              WRITE ( wrf_err_message , * ) 'LBC for restart: Found the correct bounding LBC time periods'<a name='1084'>
+              CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1137">( TRIM(wrf_err_message) )<a name='1085'>
+          ELSE<a name='1086'>
+<a name='1087'>
+              WRITE ( wrf_err_message , * ) 'LBC for restart: Looking for a bounding time'<a name='1088'>
+              CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1138">( TRIM(wrf_err_message) )<a name='1089'>
+<a name='1090'>
+              <font color=#447700>!  While the lateral BC time is less than the restart time, advance forward to the next LBC time.<a name='1091'></font>
+<a name='1092'>
+              icount = 0<a name='1093'>
+              DO WHILE ( ( currentTime .GE. grid%next_bdy_time ) .AND. ( icount &lt; 10000 ) ) <a name='1094'>
+                  CALL <A href='../../html_code/frame/module_io.F.html#WRF_GET_NEXT_TIME'>wrf_get_next_time</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_GET_NEXT_TIME_5">(fid, current_date , ierr)<a name='1095'>
+                  IF ( ierr .NE. 0 ) THEN<a name='1096'>
+                     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_936"> ( 0, '---- ERROR: Cannot find a valid time to start the LBC during this restart, likely ran out of time periods to test' )<a name='1097'>
+                     count_fatal_error = count_fatal_error + 1<a name='1098'>
+                  END IF<a name='1099'>
+                  CALL wrf_get_dom_td_char ( fid , 'THISBDYTIME' ,  current_date(1:19), this_datestr , ierr )<a name='1100'>
+                  CALL wrf_get_dom_td_char ( fid , 'NEXTBDYTIME' ,  current_date(1:19), next_datestr , ierr )<a name='1101'>
+                  CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_14">( next_datestr(1:19), grid%next_bdy_time )<a name='1102'>
+                  WRITE ( wrf_err_message , * ) 'LBC for restart: Starting valid date = ',this_datestr(1:19),', Ending valid date = ',next_datestr(1:19)<a name='1103'>
+                  CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1139">( TRIM(wrf_err_message) )<a name='1104'>
+                  icount = icount + 1<a name='1105'>
+              END DO<a name='1106'>
+             <a name='1107'>
+              <font color=#447700>!  Now the LBC time either matches or is beyond the restart time.  If it matches, we are at the<a name='1108'></font>
+              <font color=#447700>!  right time.  If we have gone too far, then back up one time period, and we are good to go.<a name='1109'></font>
+<a name='1110'>
+              IF ( time .eq. currentTime ) THEN<a name='1111'>
+                  CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_937"> ( 0 , 'Found correct time, LBC matches the restart interval.' )<a name='1112'>
+              ELSE IF ( time .gt. currentTime ) THEN<a name='1113'>
+                  CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_938"> ( 0 , 'Went one LBC interval too far, backing up for restart.' )<a name='1114'>
+                  CALL <A href='../../html_code/frame/module_io.F.html#WRF_GET_PREVIOUS_TIME'>wrf_get_previous_time</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_GET_PREVIOUS_TIME_2">(fid, current_date , ierr)<a name='1115'>
+                  IF ( ierr .EQ. 0 ) THEN<a name='1116'>
+                     CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_15">(current_date(1:19), time)<a name='1117'>
+                     WRITE(wrf_err_message,*) 'LBC: wrf_get_prev_time current_date: ',&amp;<a name='1118'>
+                                             &amp; current_date(1:19),' Status = ',ierr<a name='1119'>
+                     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_939"> ( 0 , TRIM(wrf_err_message ) )<a name='1120'>
+                     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_940"> ( 0 , 'LBC is now correctly positioned for requested restart time' )<a name='1121'>
+                  ELSE<a name='1122'>
+                     CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_941"> ( 0, '---- ERROR: Problems backing up in the LBC file to find starting location for restart' )<a name='1123'>
+                     count_fatal_error = count_fatal_error + 1<a name='1124'>
+                  END IF<a name='1125'>
+              END IF<a name='1126'>
+          END IF<a name='1127'>
+<a name='1128'>
+          CALL wrf_get_dom_td_char ( fid , 'THISBDYTIME' ,  current_date(1:19), this_datestr , ierr )<a name='1129'>
+          CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_16">( this_datestr(1:19), grid%this_bdy_time )<a name='1130'>
+          CALL wrf_get_dom_td_char ( fid , 'NEXTBDYTIME' ,  current_date(1:19), next_datestr , ierr )<a name='1131'>
+          CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_17">( next_datestr(1:19), grid%next_bdy_time )<a name='1132'>
+          WRITE ( wrf_err_message , * ) 'LBC for restart: Found the correct bounding LBC time periods for restart time = ',trim(currtimestr)<a name='1133'>
+          CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1140"> ( TRIM(wrf_err_message) )<a name='1134'>
+<a name='1135'>
+       ELSE IF ( .NOT. config_flags%restart ) THEN<a name='1136'>
+          CALL <A href='../../html_code/frame/module_domain.F.html#DOMAIN_CLOCK_GET'>domain_clock_get</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="DOMAIN_CLOCK_GET_43">( grid, current_time=currentTime )<a name='1137'>
+          CALL wrf_get_dom_td_char ( fid , 'THISBDYTIME' ,  current_date(1:19), this_datestr , ierr )<a name='1138'>
+          CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_18">( this_datestr(1:19), grid%this_bdy_time )<a name='1139'>
+          CALL wrf_get_dom_td_char ( fid , 'NEXTBDYTIME' ,  current_date(1:19), next_datestr , ierr )<a name='1140'>
+          CALL <A href='../../html_code/share/module_date_time.F.html#WRF_ATOTIME'>wrf_atotime</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ATOTIME_19">( next_datestr(1:19), grid%next_bdy_time )<a name='1141'>
+       END IF<a name='1142'>
+#if (DA_CORE <font color=#447700>!= 1)<a name='1143'></font>
+       IF( currentTime .GE. grid%next_bdy_time ) THEN<a name='1144'>
+          IF ( wrf_dm_on_monitor() ) THEN<a name='1145'>
+             write(a_message,*) 'THIS TIME ',this_datestr(1:19),', NEXT TIME ',next_datestr(1:19)<a name='1146'>
+             CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1141"> ( a_message ) <a name='1147'>
+          END IF<a name='1148'>
+          RETURN<a name='1149'>
+       ENDIF<a name='1150'>
+#endif<a name='1151'>
+    ENDIF<a name='1152'>
+<a name='1153'>
+#if ( ( EM_CORE == 1 ) &amp;&amp; ( DA_CORE <font color=#447700>!= 1 ) )<a name='1154'></font>
+    <font color=#447700>!  Vertical interpolation space is required if specified by user.<a name='1155'></font>
+<a name='1156'>
+    n_ref_m = config_flags%vert_refine_fact<a name='1157'>
+#else<a name='1158'>
+    <font color=#447700>!  Default value indicating no vertical interpolation required.<a name='1159'></font>
+<a name='1160'>
+    n_ref_m = 0<a name='1161'>
+#endif<a name='1162'>
+<a name='1163'>
+    <font color=#447700>!  This test should go after all of the metadata is input, and before the gridded input is ingested.<a name='1164'></font>
+     <a name='1165'>
+    IF ( count_fatal_error .GT. 0 ) THEN<a name='1166'>
+       WRITE (wrf_err_message, FMT='(A,I6, A)') 'NOTE:  ', count_fatal_error, ' namelist vs input data inconsistencies found.'<a name='1167'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1142"> ( wrf_err_message )<a name='1168'>
+       WRITE (wrf_err_message, FMT='(A,I6, A)') 'NOTE:  Please check and reset these options'<a name='1169'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1311"> ( wrf_err_message )<a name='1170'>
+    END IF<a name='1171'>
+<a name='1172'>
+    IF ( (first_input   .LE. switch .AND. switch .LE. last_input) .OR. &amp;<a name='1173'>
+         (first_history .LE. switch .AND. switch .LE. last_history) .OR. &amp;<a name='1174'>
+         switch .EQ. restart_only    ) THEN<a name='1175'>
+      newswitch = switch<a name='1176'>
+      p =&gt; grid%head_statevars%next<a name='1177'>
+      DO WHILE ( ASSOCIATED( p ) ) <a name='1178'>
+        IF ( p%ProcOrient .NE. 'X' .AND. p%ProcOrient .NE. 'Y' ) THEN   <font color=#447700>! no I/O for xposed variables<a name='1179'></font>
+          IF ( p%Ndim .EQ. 0 ) THEN<a name='1180'>
+            IF ((p%Restart.AND.switch.EQ.restart_only).OR.on_stream( p%streams,newswitch)) THEN<a name='1181'>
+              IF ( in_use_for_config(grid%id,TRIM(p%VarName)) ) THEN<a name='1182'>
+                IF (p%Ntl.GT.0.AND.switch.NE.restart_only)dname=dname(1:len(TRIM(dname))-2)<a name='1183'>
+                dname = p%DataName<a name='1184'>
+                IF (switch.EQ.restart_only.OR.p%Ntl/100.EQ.mod(p%Ntl,100)) THEN<a name='1185'>
+                  IF      ( p%Type .EQ. 'r' ) THEN<a name='1186'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_2"> (  &amp;<a name='1187'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1188'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1189'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1190'></font>
+                                    p%rfield_0d             , &amp; <font color=#447700>! Field<a name='1191'></font>
+                                    WRF_FLOAT               , &amp; <font color=#447700>! FieldType<a name='1192'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1193'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1194'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1195'></font>
+                                    '0'                     , &amp; <font color=#447700>! MemoryOrder<a name='1196'></font>
+                                    ''                      , &amp; <font color=#447700>! Stagger<a name='1197'></font>
+                     __FILE__ // ' reading 0d real ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1198'></font>
+                     1 , 1 , 1 , 1 , 1 , 1 ,  &amp;<a name='1199'>
+                     1 , 1 , 1 , 1 , 1 , 1 ,  &amp;<a name='1200'>
+                     1 , 1 , 1 , 1 , 1 , 1 ,  &amp;<a name='1201'>
+                     ierr )<a name='1202'>
+                  ELSE IF ( p%Type .EQ. 'd' ) THEN<a name='1203'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_3"> (  &amp;<a name='1204'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1205'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1206'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1207'></font>
+                                    p%dfield_0d             , &amp; <font color=#447700>! Field<a name='1208'></font>
+                                    WRF_DOUBLE              , &amp; <font color=#447700>! FieldType<a name='1209'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1210'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1211'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1212'></font>
+                                    '0'                     , &amp; <font color=#447700>! MemoryOrder<a name='1213'></font>
+                                    ''                      , &amp; <font color=#447700>! Stagger<a name='1214'></font>
+                     __FILE__ // ' reading 0d double ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1215'></font>
+                     1 , 1 , 1 , 1 , 1 , 1 ,  &amp;<a name='1216'>
+                     1 , 1 , 1 , 1 , 1 , 1 ,  &amp;<a name='1217'>
+                     1 , 1 , 1 , 1 , 1 , 1 ,  &amp;<a name='1218'>
+                     ierr )<a name='1219'>
+                  ELSE IF ( p%Type .EQ. 'i' ) THEN<a name='1220'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_4"> (  &amp;<a name='1221'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1222'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1223'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1224'></font>
+                                    p%ifield_0d             , &amp; <font color=#447700>! Field<a name='1225'></font>
+                                    WRF_INTEGER             , &amp; <font color=#447700>! FieldType<a name='1226'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1227'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1228'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1229'></font>
+                                    '0'                     , &amp; <font color=#447700>! MemoryOrder<a name='1230'></font>
+                                    ''                      , &amp; <font color=#447700>! Stagger<a name='1231'></font>
+                     __FILE__ // ' reading 0d integer ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1232'></font>
+                     1 , 1 , 1 , 1 , 1 , 1 ,  &amp;<a name='1233'>
+                     1 , 1 , 1 , 1 , 1 , 1 ,  &amp;<a name='1234'>
+                     1 , 1 , 1 , 1 , 1 , 1 ,  &amp;<a name='1235'>
+                     ierr )<a name='1236'>
+                  ELSE IF ( p%Type .EQ. 'l' ) THEN<a name='1237'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_5"> (  &amp;<a name='1238'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1239'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1240'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1241'></font>
+                                    p%lfield_0d             , &amp; <font color=#447700>! Field<a name='1242'></font>
+                                    WRF_LOGICAL             , &amp; <font color=#447700>! FieldType<a name='1243'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1244'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1245'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1246'></font>
+                                    '0'                     , &amp; <font color=#447700>! MemoryOrder<a name='1247'></font>
+                                    ''                      , &amp; <font color=#447700>! Stagger<a name='1248'></font>
+                     __FILE__ // ' reading 0d logical ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1249'></font>
+                     1 , 1 , 1 , 1 , 1 , 1 ,  &amp;<a name='1250'>
+                     1 , 1 , 1 , 1 , 1 , 1 ,  &amp;<a name='1251'>
+                     1 , 1 , 1 , 1 , 1 , 1 ,  &amp;<a name='1252'>
+                     ierr )<a name='1253'>
+                  ENDIF<a name='1254'>
+                ENDIF<a name='1255'>
+              ENDIF<a name='1256'>
+            ENDIF<a name='1257'>
+          ELSE IF ( p%Ndim .EQ. 1 ) THEN<a name='1258'>
+            IF ((p%Restart.AND.switch.EQ.restart_only).OR.on_stream( p%streams,newswitch)) THEN<a name='1259'>
+              IF ( in_use_for_config(grid%id,TRIM(p%VarName)) ) THEN<a name='1260'>
+                IF (switch.EQ.restart_only.OR.p%Ntl/100.EQ.mod(p%Ntl,100)) THEN<a name='1261'>
+                  dname = p%DataName<a name='1262'>
+                  IF (p%Ntl.GT.0.AND.switch.NE.restart_only)dname=dname(1:len(TRIM(dname))-2)<a name='1263'>
+                  memord = p%MemoryOrder<a name='1264'>
+<a name='1265'>
+                  i_inter = 0<a name='1266'>
+#if ( ( EM_CORE == 1 ) &amp;&amp; ( DA_CORE <font color=#447700>!= 1 ) )<a name='1267'></font>
+                  <font color=#447700>!  Vertical interpolation space is required if specified by user.<a name='1268'></font>
+<a name='1269'>
+                  if( TRIM(p%dimname1).EQ.'bottom_top'.OR.TRIM(p%dimname1).EQ.'bottom_top_stag') i_inter = 1 <a name='1270'>
+#endif<a name='1271'>
+                  <a name='1272'>
+                  IF      ( p%Type .EQ. 'r' ) THEN<a name='1273'>
+                    IF( (i_inter.eq.1.and.n_ref_m.ge.2).and.(switch.eq.history_only) ) THEN<a name='1274'>
+                       em1_c = (p%em1 - 1)/n_ref_m +1<a name='1275'>
+                       ed1_c = em1_c<a name='1276'>
+                       ep1_c = em1_c<a name='1277'>
+                       if (TRIM(p%dimname1).EQ.'bottom_top') then<a name='1278'>
+                       ed1_c = em1_c-1<a name='1279'>
+                       ep1_c = em1_c-1<a name='1280'>
+                       endif<a name='1281'>
+                       allocate (f_vint_1d(em1_c))<a name='1282'>
+<a name='1283'>
+                       CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_6"> (  &amp;<a name='1284'>
+                                       fid                     , &amp; <font color=#447700>! DataHandle<a name='1285'></font>
+                                       current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1286'></font>
+                                       TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1287'></font>
+                                       f_vint_1d               , &amp; <font color=#447700>! Field<a name='1288'></font>
+                                       WRF_FLOAT               , &amp; <font color=#447700>! FieldType<a name='1289'></font>
+                                       grid                    , &amp; <font color=#447700>! grid<a name='1290'></font>
+                                       grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1291'></font>
+                                       grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1292'></font>
+                                       TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1293'></font>
+                                       p%Stagger               , &amp; <font color=#447700>! Stagger<a name='1294'></font>
+                        __FILE__ // ' reading 1d real ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1295'></font>
+                        p%sd1 , ed1_c , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1296'>
+                        p%sm1 , em1_c , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1297'>
+                        p%sp1 , ep1_c , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1298'>
+                        ierr )<a name='1299'>
+<a name='1300'>
+                        do k=1,ed1_c<a name='1301'>
+                        p%rfield_1d(k) = f_vint_1d(k)<a name='1302'>
+                        enddo<a name='1303'>
+                        deallocate (f_vint_1d)<a name='1304'>
+<a name='1305'>
+                     ELSE<a name='1306'>
+                       CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_7"> (  &amp;<a name='1307'>
+                                       fid                     , &amp; <font color=#447700>! DataHandle<a name='1308'></font>
+                                       current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1309'></font>
+                                       TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1310'></font>
+                                       p%rfield_1d             , &amp; <font color=#447700>! Field<a name='1311'></font>
+                                       WRF_FLOAT               , &amp; <font color=#447700>! FieldType<a name='1312'></font>
+                                       grid                    , &amp; <font color=#447700>! grid<a name='1313'></font>
+                                       grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1314'></font>
+                                       grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1315'></font>
+                                       TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1316'></font>
+                                       p%Stagger               , &amp; <font color=#447700>! Stagger<a name='1317'></font>
+                        __FILE__ // ' reading 1d real ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1318'></font>
+                        p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1319'>
+                        p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1320'>
+                        p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1321'>
+                        ierr )<a name='1322'>
+                     END IF<a name='1323'>
+                  ELSE IF ( p%Type .EQ. 'd' ) THEN<a name='1324'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_8"> (  &amp;<a name='1325'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1326'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1327'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1328'></font>
+                                    p%dfield_1d             , &amp; <font color=#447700>! Field<a name='1329'></font>
+                                    WRF_DOUBLE              , &amp; <font color=#447700>! FieldType<a name='1330'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1331'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1332'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1333'></font>
+                                    TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1334'></font>
+                                    TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1335'></font>
+                     __FILE__ // ' reading 1d double ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1336'></font>
+                     p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1337'>
+                     p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1338'>
+                     p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1339'>
+                     ierr )<a name='1340'>
+                  ELSE IF ( p%Type .EQ. 'i' ) THEN<a name='1341'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_9"> (  &amp;<a name='1342'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1343'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1344'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1345'></font>
+                                    p%ifield_1d             , &amp; <font color=#447700>! Field<a name='1346'></font>
+                                    WRF_INTEGER             , &amp; <font color=#447700>! FieldType<a name='1347'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1348'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1349'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1350'></font>
+                                    TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1351'></font>
+                                    TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1352'></font>
+                     __FILE__ // ' reading 1d integer ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1353'></font>
+                     p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1354'>
+                     p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1355'>
+                     p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1356'>
+                     ierr )<a name='1357'>
+                  ELSE IF ( p%Type .EQ. 'l' ) THEN<a name='1358'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_10"> (  &amp;<a name='1359'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1360'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1361'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1362'></font>
+                                    p%lfield_1d             , &amp; <font color=#447700>! Field<a name='1363'></font>
+                                    WRF_LOGICAL             , &amp; <font color=#447700>! FieldType<a name='1364'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1365'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1366'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1367'></font>
+                                    TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1368'></font>
+                                    TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1369'></font>
+                     __FILE__ // ' reading 1d logical ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1370'></font>
+                     p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1371'>
+                     p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1372'>
+                     p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1373'>
+                     ierr )<a name='1374'>
+                  ENDIF<a name='1375'>
+                ENDIF<a name='1376'>
+              ENDIF<a name='1377'>
+            ENDIF<a name='1378'>
+          ELSE IF ( p%Ndim .EQ. 2 ) THEN<a name='1379'>
+            IF ((p%Restart.AND.switch.EQ.restart_only).OR.on_stream( p%streams,newswitch)) THEN<a name='1380'>
+              IF ( in_use_for_config(grid%id,TRIM(p%VarName)) .AND.  &amp;<a name='1381'>
+                   ( .NOT. p%subgrid_x .OR. (p%subgrid_x .AND. grid%sr_x .GT. 0) ) .AND. &amp;<a name='1382'>
+                   ( .NOT. p%subgrid_y .OR. (p%subgrid_y .AND. grid%sr_y .GT. 0) )       &amp;<a name='1383'>
+                 ) THEN<a name='1384'>
+                IF (switch.EQ.restart_only.OR.p%Ntl/100.EQ.mod(p%Ntl,100)) THEN<a name='1385'>
+                  dname = p%DataName<a name='1386'>
+                  IF (p%Ntl.GT.0.AND.switch.NE.restart_only)dname=dname(1:len(TRIM(dname))-2)<a name='1387'>
+                  memord = p%MemoryOrder<a name='1388'>
+                  IF      ( p%Type .EQ. 'r' ) THEN<a name='1389'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_11"> (  &amp;<a name='1390'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1391'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1392'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1393'></font>
+                                    p%rfield_2d             , &amp; <font color=#447700>! Field<a name='1394'></font>
+                                    WRF_FLOAT               , &amp; <font color=#447700>! FieldType<a name='1395'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1396'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1397'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1398'></font>
+                                    TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1399'></font>
+                                    TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1400'></font>
+                     __FILE__ // ' reading 2d real ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1401'></font>
+                     p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1402'>
+                     p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1403'>
+                     p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1404'>
+                     ierr )<a name='1405'>
+                  ELSE IF ( p%Type .EQ. 'd' ) THEN<a name='1406'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_12"> (  &amp;<a name='1407'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1408'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1409'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1410'></font>
+                                    p%dfield_2d             , &amp; <font color=#447700>! Field<a name='1411'></font>
+                                    WRF_DOUBLE              , &amp; <font color=#447700>! FieldType<a name='1412'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1413'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1414'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1415'></font>
+                                    TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1416'></font>
+                                    TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1417'></font>
+                     __FILE__ // ' reading 2d double ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1418'></font>
+                     p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1419'>
+                     p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1420'>
+                     p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1421'>
+                     ierr )<a name='1422'>
+                  ELSE IF ( p%Type .EQ. 'i' ) THEN<a name='1423'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_13"> (  &amp;<a name='1424'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1425'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1426'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1427'></font>
+                                    p%ifield_2d             , &amp; <font color=#447700>! Field<a name='1428'></font>
+                                    WRF_INTEGER             , &amp; <font color=#447700>! FieldType<a name='1429'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1430'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1431'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1432'></font>
+                                    TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1433'></font>
+                                    TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1434'></font>
+                     __FILE__ // ' reading 2d integer ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1435'></font>
+                     p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1436'>
+                     p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1437'>
+                     p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1438'>
+                     ierr )<a name='1439'>
+                  ELSE IF ( p%Type .EQ. 'l' ) THEN<a name='1440'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_14"> (  &amp;<a name='1441'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1442'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1443'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1444'></font>
+                                    p%lfield_2d             , &amp; <font color=#447700>! Field<a name='1445'></font>
+                                    WRF_LOGICAL             , &amp; <font color=#447700>! FieldType<a name='1446'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1447'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1448'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1449'></font>
+                                    TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1450'></font>
+                                    TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1451'></font>
+                     __FILE__ // ' reading 2d logical ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1452'></font>
+                     p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1453'>
+                     p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1454'>
+                     p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1455'>
+                     ierr )<a name='1456'>
+                  ENDIF<a name='1457'>
+                ENDIF<a name='1458'>
+              ENDIF<a name='1459'>
+            ENDIF<a name='1460'>
+          ELSE IF ( p%Ndim .EQ. 3 ) THEN<a name='1461'>
+            IF ((p%Restart.AND.switch.EQ.restart_only).OR.on_stream( p%streams,newswitch)) THEN<a name='1462'>
+              IF ( in_use_for_config(grid%id,TRIM(p%VarName)) .AND.  &amp;<a name='1463'>
+                   ( .NOT. p%subgrid_x .OR. (p%subgrid_x .AND. grid%sr_x .GT. 0) ) .AND. &amp;<a name='1464'>
+                   ( .NOT. p%subgrid_y .OR. (p%subgrid_y .AND. grid%sr_y .GT. 0) )       &amp;<a name='1465'>
+                 ) THEN<a name='1466'>
+                IF (switch.EQ.restart_only.OR.p%Ntl/100.EQ.mod(p%Ntl,100)) THEN<a name='1467'>
+                  dname = p%DataName<a name='1468'>
+                  IF (p%Ntl.GT.0.AND.switch.NE.restart_only)dname=dname(1:len(TRIM(dname))-2)<a name='1469'>
+                  memord = p%MemoryOrder<a name='1470'>
+<a name='1471'>
+                  i_inter = 0<a name='1472'>
+#if ( ( EM_CORE == 1 ) &amp;&amp; ( DA_CORE <font color=#447700>!= 1 ) )<a name='1473'></font>
+                  <font color=#447700>!  Vertical interpolation space is required if specified by user.<a name='1474'></font>
+<a name='1475'>
+                  if( TRIM(p%dimname2).EQ.'bottom_top'.OR.TRIM(p%dimname2).EQ.'bottom_top_stag') i_inter = 1<a name='1476'>
+#endif<a name='1477'>
+<a name='1478'>
+                  IF      ( p%Type .EQ. 'r' ) THEN<a name='1479'>
+                    IF( (i_inter.eq.1.and.n_ref_m.ge.2).and.(switch.eq.history_only) ) then<a name='1480'>
+                       em2_c = (p%em2 - 1)/n_ref_m +1<a name='1481'>
+                       ed2_c = em2_c<a name='1482'>
+                       ep2_c = em2_c<a name='1483'>
+                       if (TRIM(p%dimname2).EQ.'bottom_top') then<a name='1484'>
+                       ed2_c = em2_c-1<a name='1485'>
+                       ep2_c = em2_c-1<a name='1486'>
+                       endif<a name='1487'>
+                       allocate (f_vint_3d(p%sm1:p%em1,em2_c,p%sm3:p%em3))<a name='1488'>
+                       CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_15"> (  &amp;<a name='1489'>
+                                       fid                     , &amp; <font color=#447700>! DataHandle<a name='1490'></font>
+                                       current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1491'></font>
+                                       TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1492'></font>
+                                       f_vint_3d               , &amp; <font color=#447700>! Field<a name='1493'></font>
+                                       WRF_FLOAT               , &amp; <font color=#447700>! FieldType<a name='1494'></font>
+                                       grid                    , &amp; <font color=#447700>! grid<a name='1495'></font>
+                                       grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1496'></font>
+                                       grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1497'></font>
+                                       TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1498'></font>
+                                       TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1499'></font>
+                        __FILE__ // ' reading 3d real ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1500'></font>
+                        p%sd1 , p%ed1 , p%sd2 , ed2_c , p%sd3 , p%ed3 ,  &amp;<a name='1501'>
+                        p%sm1 , p%em1 , p%sm2 , em2_c , p%sm3 , p%em3 ,  &amp;<a name='1502'>
+                        p%sp1 , p%ep1 , p%sp2 , ep2_c , p%sp3 , p%ep3 ,  &amp;<a name='1503'>
+                        ierr )<a name='1504'>
+<a name='1505'>
+                        do j = p%sm3,p%em3<a name='1506'>
+                        do k = 1,ed2_c<a name='1507'>
+                        do i = p%sm1,p%em1<a name='1508'>
+                        p%rfield_3d(i,k,j) = f_vint_3d(i,k,j)<a name='1509'>
+                        enddo<a name='1510'>
+                        enddo<a name='1511'>
+                        enddo<a name='1512'>
+                        deallocate (f_vint_3d)<a name='1513'>
+                    ELSE<a name='1514'>
+                       CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_16"> (  &amp;<a name='1515'>
+                                       fid                     , &amp; <font color=#447700>! DataHandle<a name='1516'></font>
+                                       current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1517'></font>
+                                       TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1518'></font>
+                                       p%rfield_3d             , &amp; <font color=#447700>! Field<a name='1519'></font>
+                                       WRF_FLOAT               , &amp; <font color=#447700>! FieldType<a name='1520'></font>
+                                       grid                    , &amp; <font color=#447700>! grid<a name='1521'></font>
+                                       grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1522'></font>
+                                       grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1523'></font>
+                                       TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1524'></font>
+                                       TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1525'></font>
+                        __FILE__ // ' reading 3d real ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1526'></font>
+                        p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1527'>
+                        p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1528'>
+                        p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1529'>
+                        ierr )<a name='1530'>
+                    ENDIF<a name='1531'>
+                  ELSE IF ( p%Type .EQ. 'd' ) THEN<a name='1532'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_17"> (  &amp;<a name='1533'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1534'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1535'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1536'></font>
+                                    p%dfield_3d             , &amp; <font color=#447700>! Field<a name='1537'></font>
+                                    WRF_DOUBLE              , &amp; <font color=#447700>! FieldType<a name='1538'></font>
+                                    grid%communicator       , &amp; <font color=#447700>! Comm<a name='1539'></font>
+                                    grid%iocommunicator     , &amp; <font color=#447700>! Comm<a name='1540'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! Comm<a name='1541'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1542'></font>
+                                    TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1543'></font>
+                                    TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1544'></font>
+                     __FILE__ // ' reading 3d double ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1545'></font>
+                     p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1546'>
+                     p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1547'>
+                     p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1548'>
+                     ierr )<a name='1549'>
+                  ELSE IF ( p%Type .EQ. 'i' ) THEN<a name='1550'>
+                    CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD'>wrf_ext_read_field</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_18"> (  &amp;<a name='1551'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1552'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1553'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1554'></font>
+                                    p%ifield_3d             , &amp; <font color=#447700>! Field<a name='1555'></font>
+                                    WRF_INTEGER             , &amp; <font color=#447700>! FieldType<a name='1556'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1557'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1558'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1559'></font>
+                                    TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1560'></font>
+                                    TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1561'></font>
+                     __FILE__ // ' reading 3d integer ' // TRIM(p%VarName)     , &amp; <font color=#447700>! Debug message<a name='1562'></font>
+                     p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1563'>
+                     p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1564'>
+                     p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1565'>
+                     ierr )<a name='1566'>
+<font color=#447700>! NOTE no io on logical arrays greater than 2d<a name='1567'></font>
+                  ENDIF<a name='1568'>
+                ENDIF<a name='1569'>
+              ENDIF<a name='1570'>
+            ENDIF<a name='1571'>
+          ELSE IF ( p%Ndim .EQ. 4 .AND. p%scalar_array ) THEN<a name='1572'>
+<font color=#447700>! Use a different read routine, wrf_ext_read_field_arr, and pass in the<a name='1573'></font>
+<font color=#447700>! tracer indeces so that p%rfield_4d can be passsed in without arguments,<a name='1574'></font>
+<font color=#447700>! avoiding the possiblity of a copy-in/copy-out problem for some compilers.<a name='1575'></font>
+<font color=#447700>! JM 20091208<a name='1576'></font>
+            DO itrace = PARAM_FIRST_SCALAR , p%num_table(grid%id)<a name='1577'>
+              IF ((p%Restart.AND.switch.EQ.restart_only).OR.on_stream( p%streams_table(grid%id,itrace)%stream,newswitch)) THEN<a name='1578'>
+                dname = p%dname_table( grid%id, itrace )<a name='1579'>
+                IF (p%Ntl.GT.0.AND.switch.NE.restart_only)dname=dname(1:len(TRIM(dname))-2)<a name='1580'>
+                memord = p%MemoryOrder<a name='1581'>
+<a name='1582'>
+                i_inter = 0<a name='1583'>
+#if ( ( EM_CORE == 1 ) &amp;&amp; ( DA_CORE <font color=#447700>!= 1 ) )<a name='1584'></font>
+                <font color=#447700>!  Vertical interpolation space is required if specified by user.<a name='1585'></font>
+<a name='1586'>
+                if( TRIM(p%dimname2).EQ.'bottom_top'.OR.TRIM(p%dimname2).EQ.'bottom_top_stag') i_inter = 1<a name='1587'>
+#endif<a name='1588'>
+<a name='1589'>
+                IF      ( p%Type .EQ. 'r' ) THEN<a name='1590'>
+                    IF( (i_inter.eq.1.and.n_ref_m.ge.2).and.(switch.eq.history_only) ) then<a name='1591'>
+                       em2_c = (p%em2 - 1)/n_ref_m +1<a name='1592'>
+                       ed2_c = em2_c<a name='1593'>
+                       ep2_c = em2_c<a name='1594'>
+                       if (TRIM(p%dimname2).EQ.'bottom_top') then<a name='1595'>
+                       ed2_c = em2_c-1<a name='1596'>
+                       ep2_c = em2_c-1<a name='1597'>
+                       endif<a name='1598'>
+                       allocate (f_vint_4d(p%sm1:p%em1,em2_c,p%sm3:p%em3,p%num_table(grid%id)))<a name='1599'>
+<a name='1600'>
+                       CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD_ARR'>wrf_ext_read_field_arr</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_ARR_1"> (  &amp;<a name='1601'>
+                                         fid                     , &amp; <font color=#447700>! DataHandle<a name='1602'></font>
+                                         current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1603'></font>
+                                         TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1604'></font>
+                                         f_vint_4d               , &amp; <font color=#447700>! Field<a name='1605'></font>
+                                         itrace, 1, 1, 1         , &amp; <font color=#447700>! see comment above<a name='1606'></font>
+                                         1, 1, 1                 , &amp; <font color=#447700>! see comment above<a name='1607'></font>
+                                         RWORDSIZE               , &amp;<a name='1608'>
+                                         WRF_FLOAT               , &amp; <font color=#447700>! FieldType<a name='1609'></font>
+                                         grid                    , &amp; <font color=#447700>! grid<a name='1610'></font>
+                                         grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1611'></font>
+                                         grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1612'></font>
+                                         TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1613'></font>
+                                         TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1614'></font>
+                        __FILE__ // ' reading 4d real ' // TRIM(p%dname_table(grid%id,itrace))     , &amp; <font color=#447700>! Debug message<a name='1615'></font>
+                        p%sd1 , p%ed1 , p%sd2 , ed2_c , p%sd3 , p%ed3 ,  &amp;<a name='1616'>
+                        p%sm1 , p%em1 , p%sm2 , em2_c , p%sm3 , p%em3 ,  &amp;<a name='1617'>
+                        p%sp1 , p%ep1 , p%sp2 , ep2_c , p%sp3 , p%ep3 ,  &amp;<a name='1618'>
+                        ierr )<a name='1619'>
+                        do j = p%sm3,p%em3<a name='1620'>
+                        do k = 1,ed2_c<a name='1621'>
+                        do i = p%sm1,p%em1<a name='1622'>
+                        p%rfield_4d(i,k,j,itrace) = f_vint_4d(i,k,j,itrace)<a name='1623'>
+                        enddo<a name='1624'>
+                        enddo<a name='1625'>
+                        enddo<a name='1626'>
+                        deallocate (f_vint_4d)<a name='1627'>
+                   ELSE<a name='1628'>
+                        CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD_ARR'>wrf_ext_read_field_arr</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_ARR_2"> (  &amp;<a name='1629'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1630'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1631'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1632'></font>
+                                    p%rfield_4d             , &amp; <font color=#447700>! Field<a name='1633'></font>
+                                    itrace, 1, 1, 1         , &amp; <font color=#447700>! see comment above<a name='1634'></font>
+                                    1, 1, 1                 , &amp; <font color=#447700>! see comment above<a name='1635'></font>
+                                    RWORDSIZE               , &amp;<a name='1636'>
+                                    WRF_FLOAT               , &amp; <font color=#447700>! FieldType<a name='1637'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1638'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1639'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1640'></font>
+                                    TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1641'></font>
+                                    TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1642'></font>
+                       __FILE__ // ' reading 4d real ' // TRIM(p%dname_table(grid%id,itrace))     , &amp; <font color=#447700>! Debug message<a name='1643'></font>
+                       p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1644'>
+                       p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1645'>
+                       p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1646'>
+                       ierr )<a name='1647'>
+                   ENDIF<a name='1648'>
+                ELSE IF ( p%Type .EQ. 'd' ) THEN<a name='1649'>
+                  CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD_ARR'>wrf_ext_read_field_arr</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_ARR_3"> (  &amp;<a name='1650'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1651'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1652'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1653'></font>
+                                    p%dfield_4d             , &amp; <font color=#447700>! Field<a name='1654'></font>
+                                    itrace, 1, 1, 1         , &amp; <font color=#447700>! see comment above<a name='1655'></font>
+                                    1, 1, 1                 , &amp; <font color=#447700>! see comment above<a name='1656'></font>
+                                    DWORDSIZE               , &amp;<a name='1657'>
+                                    WRF_DOUBLE              , &amp; <font color=#447700>! FieldType<a name='1658'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1659'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1660'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1661'></font>
+                                    TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1662'></font>
+                                    TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1663'></font>
+                   __FILE__ // ' reading 4d double ' // TRIM(p%dname_table(grid%id,itrace))     , &amp; <font color=#447700>! Debug message<a name='1664'></font>
+                   p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1665'>
+                   p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1666'>
+                   p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1667'>
+                   ierr )<a name='1668'>
+                ELSE IF ( p%Type .EQ. 'i' ) THEN<a name='1669'>
+                  CALL <A href='../../html_code/share/wrf_ext_read_field.F.html#WRF_EXT_READ_FIELD_ARR'>wrf_ext_read_field_arr</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_EXT_READ_FIELD_ARR_4"> (  &amp;<a name='1670'>
+                                    fid                     , &amp; <font color=#447700>! DataHandle<a name='1671'></font>
+                                    current_date(1:19)      , &amp; <font color=#447700>! DateStr<a name='1672'></font>
+                                    TRIM(dname)             , &amp; <font color=#447700>! Data Name<a name='1673'></font>
+                                    p%ifield_4d             , &amp; <font color=#447700>! Field<a name='1674'></font>
+                                    itrace, 1, 1, 1         , &amp; <font color=#447700>! see comment above<a name='1675'></font>
+                                    1, 1, 1                 , &amp; <font color=#447700>! see comment above<a name='1676'></font>
+                                    IWORDSIZE               , &amp;<a name='1677'>
+                                    WRF_INTEGER             , &amp; <font color=#447700>! FieldType<a name='1678'></font>
+                                    grid                    , &amp; <font color=#447700>! grid<a name='1679'></font>
+                                    grid%domdesc            , &amp; <font color=#447700>! domdesc<a name='1680'></font>
+                                    grid%bdy_mask           , &amp; <font color=#447700>! bdy_mask<a name='1681'></font>
+                                    TRIM(memord)            , &amp; <font color=#447700>! MemoryOrder<a name='1682'></font>
+                                    TRIM(p%Stagger)         , &amp; <font color=#447700>! Stagger<a name='1683'></font>
+                   __FILE__ // ' reading 4d integer ' // TRIM(p%dname_table(grid%id,itrace))     , &amp; <font color=#447700>! Debug message<a name='1684'></font>
+                   p%sd1 , p%ed1 , p%sd2 , p%ed2 , p%sd3 , p%ed3 ,  &amp;<a name='1685'>
+                   p%sm1 , p%em1 , p%sm2 , p%em2 , p%sm3 , p%em3 ,  &amp;<a name='1686'>
+                   p%sp1 , p%ep1 , p%sp2 , p%ep2 , p%sp3 , p%ep3 ,  &amp;<a name='1687'>
+                   ierr )<a name='1688'>
+                ENDIF<a name='1689'>
+              ENDIF<a name='1690'>
+            ENDDO  <font color=#447700>! loop over tracers<a name='1691'></font>
+          ENDIF<a name='1692'>
+        ENDIF<a name='1693'>
+        p =&gt; p%next<a name='1694'>
+      ENDDO<a name='1695'>
+    ELSE<a name='1696'>
+      IF ( switch .EQ. boundary_only ) THEN<a name='1697'>
+        CALL <A href='../../html_code/share/wrf_bdyin.F.html#WRF_BDYIN'>wrf_bdyin</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_BDYIN_1">( fid , grid , config_flags , switch , ierr )<a name='1698'>
+      ENDIF<a name='1699'>
+    ENDIF<a name='1700'>
+<a name='1701'>
+#if (DA_CORE <font color=#447700>!= 1)<a name='1702'></font>
+    CALL <A href='../../html_code/share/wrf_tsin.F.html#WRF_TSIN'>wrf_tsin</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_TSIN_1">( grid , ierr )<a name='1703'>
+#if (EM_CORE == 1)<a name='1704'>
+    if (config_flags%track_loc_in &gt; 0 ) then<a name='1705'>
+       call <A href='../../html_code/share/track_input.F.html#TRACK_INPUT'>track_input</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="TRACK_INPUT_1">( grid , ierr )<a name='1706'>
+    end if<a name='1707'>
+#endif<a name='1708'>
+#endif<a name='1709'>
+<a name='1710'>
+    WRITE(wrf_err_message,*)'input_wrf: end, fid = ',fid<a name='1711'>
+    CALL <A href='../../html_code/frame/wrf_debug.F.html#WRF_DEBUG'>wrf_debug</A><A href='../../html_code/share/input_wrf.F.html#INPUT_WRF' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_DEBUG_942">( 300 , wrf_err_message )<a name='1712'>
+<a name='1713'>
+    RETURN<a name='1714'>
+  END SUBROUTINE input_wrf<a name='1715'>
+</pre></body></html>

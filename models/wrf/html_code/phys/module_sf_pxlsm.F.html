@@ -1,0 +1,1938 @@
+<HTML> <BODY BGCOLOR=#ddddee LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<A NAME='MODULE_SF_PXLSM'><A href='../../html_code/phys/module_sf_pxlsm.F.html#MODULE_SF_PXLSM' TARGET='top_target'><IMG SRC="../../gif/bar_purple.gif" border=0></A><a name='2'>
+<font color=#993300>MODULE </font><font color=#cc0000>module_sf_pxlsm</font> <A href='../../call_to/MODULE_SF_PXLSM.html' TARGET='index'>2</A><a name='3'>
+ <a name='4'>
+  USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#module_sf_pxlsm.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_99"><a name='5'>
+  USE <A href='../../html_code/phys/module_sf_pxlsm_data.F.html#MODULE_SF_PXLSM_DATA'>module_sf_pxlsm_data</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#module_sf_pxlsm.F' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_SF_PXLSM_DATA_1"><a name='6'>
+<a name='7'>
+  INTEGER, PARAMETER   :: NSOLD=20<a name='8'>
+  REAL, PARAMETER      :: RD     = 287.04,   CPD   = 1004.67,             &amp;<a name='9'>
+                          CPH2O  = 4.218E+3, CPICE = 2.106E+3,            &amp;<a name='10'>
+                          LSUBF  = 3.335E+5, SIGMA = 5.67E-8,             &amp;  <a name='11'>
+                          ROVCP  = RD / CPD<a name='12'>
+                          <a name='13'>
+  REAL, PARAMETER      :: CRANKP = 0.5                    <font color=#447700>! CRANK-NIC PARAMETER<a name='14'></font>
+  REAL, PARAMETER      :: RIC    = 0.25                   <font color=#447700>! critical Richardson number<a name='15'></font>
+  REAL, PARAMETER      :: DENW   = 1000.0                 <font color=#447700>! water density in KG/M3                  <a name='16'></font>
+  REAL, PARAMETER      :: TAUINV = 1.0 / 86400.0          <font color=#447700>! 1/1DAY(SEC)<a name='17'></font>
+  REAL, PARAMETER      :: T2TFAC = 1.0 / 10.0             <font color=#447700>! Bottom soil temp response factor<a name='18'></font>
+  REAL, PARAMETER      :: PI = 3.1415926<a name='19'>
+  REAL, PARAMETER      :: PR0 = 0.95<a name='20'>
+  REAL, PARAMETER      :: CZO    = 0.032<a name='21'>
+  REAL, PARAMETER      :: OZO    = 1.E-4<a name='22'>
+<a name='23'>
+CONTAINS<a name='24'>
+<font color=#447700>!<a name='25'></font>
+<a name='26'>
+<font color=#447700>!-------------------------------------------------------------------------<a name='27'></font>
+<font color=#447700>!-------------------------------------------------------------------------<a name='28'></font>
+<A NAME='PXLSM'><A href='../../html_code/phys/module_sf_pxlsm.F.html#PXLSM' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='29'>
+   <font color=#993300>SUBROUTINE </font><font color=#cc0000>pxlsm</font>(U3D, V3D, DZ8W, QV3D,T3D,TH3D, RHO,         &amp;    <A href='../../call_to/PXLSM.html' TARGET='index'>1</A>,<A href='../../call_from/PXLSM.html' TARGET='index'>10</A><a name='30'>
+                    PSFC, GSW, GLW, RAINBL, EMISS,              &amp;<a name='31'>
+                    ITIMESTEP,CURR_SECS,NSOIL,DT,ANAL_INTERVAL, &amp;            <a name='32'>
+                    XLAND, XICE, ALBBCK, ALBEDO,                &amp;<a name='33'>
+                    SNOALB, SMOIS, TSLB, MAVAIL, TA2,           &amp;<a name='34'>
+                    QA2, QSFC, ZS,DZS, PSIH,                          &amp;<a name='35'>
+                    LANDUSEF,SOILCTOP,SOILCBOT,VEGFRA,VEGF_PX,  &amp;<a name='36'>
+                    ISLTYP,RA,RS,LAI,IMPERV,CANFRA,NLCAT,NSCAT, &amp; <a name='37'>
+                    HFX,QFX,LH,TSK,SST,ZNT,CANWAT,              &amp;<a name='38'>
+                    GRDFLX,SHDMIN,SHDMAX,                       &amp;<a name='39'>
+                    SNOWC,PBLH,RMOL,UST,CAPG,DTBL,              &amp;<a name='40'>
+                    T2_NDG_OLD, T2_NDG_NEW,                     &amp;     <a name='41'>
+                    Q2_NDG_OLD, Q2_NDG_NEW,                     &amp; <a name='42'>
+                    SN_NDG_OLD, SN_NDG_NEW, SNOW, SNOWH,SNOWNCV,&amp;<a name='43'>
+                    T2OBS, Q2OBS, PXLSM_SMOIS_INIT,             &amp;           <a name='44'>
+                    PXLSM_SOIL_NUDGE,                           &amp;<a name='45'>
+                    ids,ide, jds,jde, kds,kde,                  &amp;<a name='46'>
+                    ims,ime, jms,jme, kms,kme,                  &amp;<a name='47'>
+                    its,ite, jts,jte, kts,kte                    )<a name='48'>
+<a name='49'>
+<font color=#447700>!-------------------------------------------------------------------------<a name='50'></font>
+<font color=#447700>!   THIS MODULE CONTAINS THE PLEIM-XIU LAND-SURFACE MODEL (PX-LSM).<a name='51'></font>
+<font color=#447700>!   IT IS DESIGNED TO SIMULATE CHARACTERISTICS OF THE LAND SURFACE AND<a name='52'></font>
+<font color=#447700>!   VEGETATION AND EXCHANGE WITH THE PLANETARY BOUNDARY LAYER (PBL). THE<a name='53'></font>
+<font color=#447700>!   SOIL MOISTURE MODEL IS BASED ON THE ISBA SCHEME DEVELOPED BY NOILHAN<a name='54'></font>
+<font color=#447700>!   AND PLANTON (1989) AND JACQUEMIN AND NOILHAN (1990) AND INCLUDES<a name='55'></font>
+<font color=#447700>!   PROGNOSTIC EQUATIONS FOR SOIL MOISTURE AND SOIL TEMPERATURE IN TWO<a name='56'></font>
+<font color=#447700>!   LAYERS (1 CM AND 1 M) AS WELL AS CANOPY WATER CONTENT.  SURFACE<a name='57'></font>
+<font color=#447700>!   MOISTURE FLUXES ARE MODELED BY 3 PATHWAYS: SOIL EVAPORATION, CANOPY<a name='58'></font>
+<font color=#447700>!   EVAPORATION, AND VEGETATIVE EVAPOTRANSPIRRATION.<a name='59'></font>
+<font color=#447700>!   EVAPOTRANSPIRATION DIRECTLY FROM THE ROOT ZONE SOIL LAYER IS MODELED<a name='60'></font>
+<font color=#447700>!   VIA A CANOPY RESISTANCE ANALOG ALGORITHM WHERE STOMATAL CONDUCTANCE<a name='61'></font>
+<font color=#447700>!   IS CONTROLLED BY SOLAR RADIATION, AIR TEMPERATURE, AIR HUMIDITY, AND<a name='62'></font>
+<font color=#447700>!   ROOT ZONE SOIL MOISTURE. REQUIRED VEGETATION CHARACTERISTICS DERIVED<a name='63'></font>
+<font color=#447700>!   FROM THE USGS LANDUSE DATA INCLUDE: LEAF AREA INDEX, FRACTIONAL VEGETATION<a name='64'></font>
+<font color=#447700>!   COVERAGE, ROUGHNESS LENGTH, AND MINIMUM STOMATAL RESISTANCE. AN INDIRECT<a name='65'></font>
+<font color=#447700>!   NUDGING SCHEME ADJUSTS SOIL MOISTURE ACCORDING TO DIFFERENCES BETWEEN<a name='66'></font>
+<font color=#447700>!   MODELED TEMPERATURE AND HUMIDITY AND ANALYSED SURFACE FIELDS.<a name='67'></font>
+<font color=#447700>!<a name='68'></font>
+<font color=#447700>! References:<a name='69'></font>
+<font color=#447700>! Pleim and Xiu, 1995: Development and testing of a surface flux and planetary <a name='70'></font>
+<font color=#447700>!                      boundary layer model for application in mesoscale models.<a name='71'></font>
+<font color=#447700>!                      J. Appl. Meteoro., Vol. 34, 16-32.<a name='72'></font>
+<font color=#447700>! Xiu and Pleim, 2001: Development of a land surface model. Part I: Application<a name='73'></font>
+<font color=#447700>!                      in a mesoscale meteorological model. J. Appl. Meteoro.,<a name='74'></font>
+<font color=#447700>!                      Vol. 40, 192-209.<a name='75'></font>
+<font color=#447700>! Pleim and Xiu, 2003: Development of a land surface model. Part II: Data<a name='76'></font>
+<font color=#447700>!                      assimilation. J. Appl. Meteoro., Vol. 42, 1811-1822.<a name='77'></font>
+<font color=#447700>! <a name='78'></font>
+<font color=#447700>! Pleim and Gilliam, 2009: An Indirect Data Assimilation Scheme for Deep Soil Temperature in the <a name='79'></font>
+<font color=#447700>!                          Pleim-Xiu Land Surface Model. J. Appl. Meteor. Climatol., 48, 1362-1376.<a name='80'></font>
+<font color=#447700>!<a name='81'></font>
+<font color=#447700>! Gilliam and Pleim, 2010: Performance assessment of new land-surface and planetary boundary layer <a name='82'></font>
+<font color=#447700>!                          physics in the WRF-ARW. Journal of Applied Meteorology and Climatology, 49, 760-774. <a name='83'></font>
+<font color=#447700>! REVISION HISTORY:<a name='84'></font>
+<font color=#447700>!     AX     4/2005  - developed the initial WRF version based on the MM5 PX LSM<a name='85'></font>
+<font color=#447700>!     RG     2/2008  - Completed testing of the intial working version of PX LSM, released in WRFV3.0 early 2008<a name='86'></font>
+<font color=#447700>!     DW     8/2011  - Landuse specific versions of PX (USGS/NLCD/MODIS) were unified into a single code with<a name='87'></font>
+<font color=#447700>!                      landuse characteristics defined in module_sf_pxsfclay.F.<a name='88'></font>
+<font color=#447700>!     RG     12/2011 - Basic code clean, removed commented out debug statements, lined up columns, etc.<a name='89'></font>
+<font color=#447700>!     RG     01/2012 - Removed FIRSTIME Logic that computes PX Landuse characteristics at first time step only. This resulted <a name='90'></font>
+<font color=#447700>!                      in different solutions when OpenMP was used and would not work with moving domains.<a name='91'></font>
+<font color=#447700>!     RG     08/2012 - Added CURR_SECS variable in argument list as replacement for PX internal CURRTIME internally comp var.<a name='92'></font>
+<font color=#447700>!                      This is neccessary for PX to correctly interpolate analyses for soil nudging. In this same calculation<a name='93'></font>
+<font color=#447700>!                      logic was added for cases where user does not specify the analysis interval, or no analysis interval is<a name='94'></font>
+<font color=#447700>!                      relevant as in the no PX soil nudging via namelist (pxlsm_soil_nudge = 0). Prior to this fix the default<a name='95'></font>
+<font color=#447700>!                      analysis interval was zero, so if not speficied a divide by zero was the result. Also, changes were made to <a name='96'></font>
+<font color=#447700>!                      ensure PX LSM will work with not only MODIS and USGS, but also both the 40 and 50 class NLCD-MODIS data.<a name='97'></font>
+<font color=#447700>!                      Also, coupled module_sf_pxlsm_data.F was updated so landuse characteristics across datasets are more<a name='98'></font>
+<font color=#447700>!                      consistent. Albedo for NLCD two grassland categories were lowered from 23 and 25 to 18 and 19.<a name='99'></font>
+<font color=#447700>!                      For the NLCD40 and NLCD50 roughness and leaf area were made consistent between the US NLCD and<a name='100'></font>
+<font color=#447700>!                      outside US MODIS datasets. Prior, US boundaries created boundaries of roughness and LAI.<a name='101'></font>
+<font color=#447700>!<a name='102'></font>
+<font color=#447700>!     RG     10/2014 - Wetlands soil moisture treatment. Grid cell soil moisture cannot fall less than fraction of a grid<a name='103'></font>
+<font color=#447700>!                      cells wetland area * soil saturation (e.g., SMOIS of cell with 50% wetlands cannot fall below 50% of WSAT)<a name='104'></font>
+<font color=#447700>!                    - Both soil levels are initialized using MVAVAIL (Soil moisture availability) instead of just layer 2.<a name='105'></font>
+<font color=#447700>!                    - Veg Cv (heat capacity) changed from 8x10-6 to 1.2x10-5 (K-M2/J)<a name='106'></font>
+<font color=#447700>!                    - Alternate empirical stomatal function of PAR (F1) to better replicate photosynthesis-conductance models.<a name='107'></font>
+<font color=#447700>!                      The main effect is to reduce stomatal conductance for low PAR.<a name='108'></font>
+<font color=#447700>!                    - Snow albedo is now computed using fractional land-use weighting. Values for each land-use class<a name='109'></font>
+<font color=#447700>!                      are defined like other PX landuse parameters in module_sf_pxlsm_data.F. These are based on values<a name='110'></font>
+<font color=#447700>!                      used by NOAH LSM MODIS in VEGPARM.TBL (MAXALB), but tuned to better match satellite values in maxsnowalb <a name='111'></font>
+<font color=#447700>!                      dataset. Tuning reduced the MAXALB for all forest classes from values in the 50-60% range to 30-40% range.<a name='112'></font>
+<font color=#447700>!                      These static values are more representative of albedo after snow has melted of fallen from trees. These<a name='113'></font>
+<font color=#447700>!                      values were also cross verified with http://www.globalbedo.org/global.php<a name='114'></font>
+<font color=#447700>!                    - USGS 28 category added as an option<a name='115'></font>
+<font color=#447700>!                    - Impervious surface and canopy fraction data can be used if processed (otherwise 0% so no impact)<a name='116'></font>
+<font color=#447700>!                      to alter surface heat capacity (See SURFPX subroutine for details) in urban areas and refine<a name='117'></font>
+<font color=#447700>!                      LAI and VEGF_PX estimations (see VEGLAND subroutine).<a name='118'></font>
+<font color=#447700>!<a name='119'></font>
+<font color=#447700>!     JP     12/2015 - Surface water vapor mixing ratio calculation added for land surface, which is passed to PX-SFCLAY <a name='120'></font>
+<font color=#447700>!                      for use over all non-water and non-frozen surfaces.<a name='121'></font>
+<font color=#447700>!                    - PAR function and impact on transpiration modified according to Echer et al.(2015). See P-X LSM documentation<a name='122'></font>
+<font color=#447700>!                      for full reference. These act to reduce moisture bias near surface during PBL transition.<a name='123'></font>
+<font color=#447700>!                                                   <a name='124'></font>
+<font color=#447700>!--------------------------------------------------------------------------------------------------------------<a name='125'></font>
+<font color=#447700>!--------------------------------------------------------------------------------------------------------------<a name='126'></font>
+<font color=#447700>!   ARGUMENT LIST:<a name='127'></font>
+<font color=#447700>!<a name='128'></font>
+<font color=#447700>!... Inputs:<a name='129'></font>
+<font color=#447700>!-- U3D          3D u-velocity interpolated to theta points (m/s)<a name='130'></font>
+<font color=#447700>!-- V3D          3D v-velocity interpolated to theta points (m/s)<a name='131'></font>
+<font color=#447700>!-- DZ8W         dz between full levels (m)<a name='132'></font>
+<font color=#447700>!-- QV3D	       3D mixing ratio<a name='133'></font>
+<font color=#447700>!-- T3D          Temperature (K)<a name='134'></font>
+<font color=#447700>!-- TH3D         Theta (K)<a name='135'></font>
+<font color=#447700>!-- RHO          3D dry air density (kg/m^3)<a name='136'></font>
+<a name='137'>
+<font color=#447700>!-- PSFC         surface pressure (Pa)<a name='138'></font>
+<font color=#447700>!-- GSW          downward short wave flux at ground surface (W/m^2)      <a name='139'></font>
+<font color=#447700>!-- GLW          downward long wave flux at ground surface (W/m^2)<a name='140'></font>
+<font color=#447700>!-- RAINBL       Timestep rainfall <a name='141'></font>
+<font color=#447700>!-- EMISS        surface emissivity (between 0 and 1)<a name='142'></font>
+<a name='143'>
+<font color=#447700>!-- ITIMESTEP    time step number <a name='144'></font>
+<font color=#447700>!-- NSOIL        number of soil layers<a name='145'></font>
+<font color=#447700>!-- DT           time step (second)<a name='146'></font>
+<font color=#447700>!-- CURR_SECS    time on model domain in seconds, universal WRF variable<a name='147'></font>
+<font color=#447700>!-- ANAL_INTERVAL Interval of analyses used for soil moisture and temperature nudging<a name='148'></font>
+<a name='149'>
+<font color=#447700>!-- XLAND        land mask (1 for land, 2 for water)<a name='150'></font>
+<font color=#447700>!-- XICE         Sea ice<a name='151'></font>
+<font color=#447700>!-- ALBBCK       Background Albedo<a name='152'></font>
+<font color=#447700>!-- ALBEDO       surface albedo with snow cover effects<a name='153'></font>
+<font color=#447700>!-- SNOALB       Albedo of snow<a name='154'></font>
+<a name='155'>
+<font color=#447700>!-- SMOIS        total soil moisture content (volumetric fraction)<a name='156'></font>
+<font color=#447700>!-- TSLB         soil temp (k)<a name='157'></font>
+<font color=#447700>!-- MAVAIL       Moisture availibility of soil<a name='158'></font>
+<font color=#447700>!-- TA2          2-m temperature<a name='159'></font>
+<font color=#447700>!-- QA2          2-m mixing ratio<a name='160'></font>
+<a name='161'>
+<font color=#447700>!-- SVPT0        constant for saturation vapor pressure (K)<a name='162'></font>
+<font color=#447700>!-- SVP1         constant for saturation vapor pressure (kPa)<a name='163'></font>
+<font color=#447700>!-- SVP2         constant for saturation vapor pressure (dimensionless)<a name='164'></font>
+<font color=#447700>!-- SVP3         constant for saturation vapor pressure (K)<a name='165'></font>
+<a name='166'>
+<font color=#447700>!-- ZS           depths of centers of soil layers<a name='167'></font>
+<font color=#447700>!-- DZS          thicknesses of soil layers<a name='168'></font>
+<font color=#447700>!-- PSIH         similarity stability function for heat<a name='169'></font>
+<a name='170'>
+<font color=#447700>!-- LANDUSEF     Landuse fraction		<a name='171'></font>
+<font color=#447700>!-- SOILCTOP     Top soil fraction		<a name='172'></font>
+<font color=#447700>!-- SOILCBOT     Bottom soil fraction		<a name='173'></font>
+<font color=#447700>!-- VEGFRA       Vegetation fraction                   <a name='174'></font>
+<font color=#447700>!-- VEGF_PX      Veg fraction recomputed and used by PX LSM<a name='175'></font>
+<font color=#447700>!-- ISLTYP       Soil type<a name='176'></font>
+<a name='177'>
+<font color=#447700>!-- RA           Aerodynamic resistence			<a name='178'></font>
+<font color=#447700>!-- RS           Stomatal resistence			<a name='179'></font>
+<font color=#447700>!-- LAI          Leaf area index (weighted according to fractional landuse)<a name='180'></font>
+<font color=#447700>!-- ZNT          rougness length<a name='181'></font>
+<font color=#447700>!-- QSFC         Sat. water vapor mixing ratio at the surface interface<a name='182'></font>
+<a name='183'>
+<font color=#447700>!-- IMPERV       Fraction (percent) of grid cell that is impervious surface (concrete/road/non-veg)<a name='184'></font>
+<font color=#447700>!-- CANFRA       Fraction (percent) of grid cell that is covered with tree canopy<a name='185'></font>
+<a name='186'>
+<font color=#447700>!-- NLCAT        Number of landuse categories		<a name='187'></font>
+<font color=#447700>!-- NSCAT        Number of soil categories		<a name='188'></font>
+<a name='189'>
+<font color=#447700>!-- HFX          net upward heat flux at the surface (W/m^2)<a name='190'></font>
+<font color=#447700>!-- QFX          net upward moisture flux at the surface (kg/m^2/s)<a name='191'></font>
+<font color=#447700>!-- LH           net upward latent heat flux at surface (W/m^2)<a name='192'></font>
+<font color=#447700>!-- TSK          surface skin temperature (K)<a name='193'></font>
+<font color=#447700>!-- SST          sea surface temperature<a name='194'></font>
+<font color=#447700>!-- CANWAT       Canopy water (mm)<a name='195'></font>
+<a name='196'>
+<font color=#447700>!-- GRDFLX       Ground heat flux<a name='197'></font>
+<font color=#447700>!-- SFCEVP       Evaportation from surface<a name='198'></font>
+<font color=#447700>!-- SHDMIN       Minimum annual vegetation fraction for each grid cell<a name='199'></font>
+<font color=#447700>!-- SHDMAX       Maximum annual vegetation fraction for each grid cell<a name='200'></font>
+<a name='201'>
+<font color=#447700>!-- SNOWC        flag indicating snow coverage (1 for snow cover)<a name='202'></font>
+<font color=#447700>!-- PBLH         PBL height (m)<a name='203'></font>
+<font color=#447700>!-- RMOL         1/L Reciprocal of Monin-Obukhov length<a name='204'></font>
+<font color=#447700>!-- UST          u* in similarity theory (m/s)<a name='205'></font>
+<font color=#447700>!-- CAPG         heat capacity for soil (J/K/m^3)<a name='206'></font>
+<font color=#447700>!-- DTBL	       time step of boundary layer calls<a name='207'></font>
+<a name='208'>
+<font color=#447700>!-- T2_NDG_OLD   Analysis temperature prior to current time<a name='209'></font>
+<font color=#447700>!-- T2_NDG_NEW   Analysis temperature ahead of current time<a name='210'></font>
+<font color=#447700>!-- Q2_NDG_OLD   Analysis mixing ratio prior to current time<a name='211'></font>
+<font color=#447700>!-- Q2_NDG_NEW   Analysis mixing ratio ahead of current time<a name='212'></font>
+<a name='213'>
+<font color=#447700>!-- SN_NDG_OLD   Analysis snow water prior to current time<a name='214'></font>
+<font color=#447700>!-- SN_NDG_NEW   Analysis snow water ahead of current time<a name='215'></font>
+<font color=#447700>!-- SNOW         Snow water equivalent<a name='216'></font>
+<font color=#447700>!-- SNOWH        Physical snow depth<a name='217'></font>
+<font color=#447700>!-- SNOWNCV      Time step accumulated snow<a name='218'></font>
+<a name='219'>
+<font color=#447700>!-- T2OBS             Analysis temperature interpolated from prior and next in time analysese<a name='220'></font>
+<font color=#447700>!-- Q2OBS             Analysis moisture interpolated from prior and next in time analysese<a name='221'></font>
+<font color=#447700>!-- PXLSM_SMOIS_INIT  Flag to intialize deep soil moisture to a value derived from moisture availiability.<a name='222'></font>
+<font color=#447700>!-- PXLSM_SOIL_NUDGE  Flag to use soil moisture and temperature nudging in the PX LSM<a name='223'></font>
+<font color=#447700>!                     This is typically done for the first simulation.<a name='224'></font>
+<a name='225'>
+<font color=#447700>!-- ids             start index for i in domain<a name='226'></font>
+<font color=#447700>!-- ide             end index for i in domain<a name='227'></font>
+<font color=#447700>!-- jds             start index for j in domain<a name='228'></font>
+<font color=#447700>!-- jde             end index for j in domain<a name='229'></font>
+<font color=#447700>!-- kds             start index for k in domain<a name='230'></font>
+<font color=#447700>!-- kde             end index for k in domain<a name='231'></font>
+<font color=#447700>!-- ims             start index for i in memory<a name='232'></font>
+<font color=#447700>!-- ime             end index for i in memory<a name='233'></font>
+<font color=#447700>!-- jms             start index for j in memory<a name='234'></font>
+<font color=#447700>!-- jme             end index for j in memory<a name='235'></font>
+<font color=#447700>!-- kms             start index for k in memory<a name='236'></font>
+<font color=#447700>!-- kme             end index for k in memory<a name='237'></font>
+<font color=#447700>!-- jts             start index for j in tile<a name='238'></font>
+<font color=#447700>!-- jte             end index for j in tile<a name='239'></font>
+<font color=#447700>!-- kts             start index for k in tile<a name='240'></font>
+<font color=#447700>!-- kte             end index for k in tile<a name='241'></font>
+<font color=#447700>!... Outputs:<a name='242'></font>
+<a name='243'>
+     IMPLICIT NONE<a name='244'>
+<a name='245'>
+<font color=#447700>!.......Arguments<a name='246'></font>
+<font color=#447700>! DECLARATIONS - INTEGER<a name='247'></font>
+    INTEGER,  INTENT(IN)   ::      ids,ide, jds,jde, kds,kde, &amp;<a name='248'>
+                                   ims,ime, jms,jme, kms,kme, &amp;<a name='249'>
+                                   its,ite, jts,jte, kts,kte <a name='250'>
+<a name='251'>
+   INTEGER,   INTENT(IN)  ::      NSOIL, ITIMESTEP, NLCAT, NSCAT,             &amp;<a name='252'>
+                                  ANAL_INTERVAL, PXLSM_SMOIS_INIT, PXLSM_SOIL_NUDGE<a name='253'>
+<a name='254'>
+   REAL,       INTENT(IN   ),OPTIONAL    ::     curr_secs<a name='255'>
+<a name='256'>
+   REAL,     INTENT(IN )  ::      DT,DTBL <a name='257'>
+<a name='258'>
+   INTEGER,   DIMENSION( ims:ime, jms:jme ), INTENT(INOUT) ::   ISLTYP<a name='259'>
+<a name='260'>
+<font color=#447700>! DECLARATIONS - REAL<a name='261'></font>
+    REAL,    DIMENSION( ims:ime, kms:kme, jms:jme ),  INTENT(IN) :: U3D, V3D, RHO, &amp;<a name='262'>
+                                                                    T3D, TH3D, DZ8W, QV3D           <a name='263'>
+<a name='264'>
+   REAL,     DIMENSION(1:NSOIL), INTENT(IN)::ZS,DZS<a name='265'>
+   REAL,     DIMENSION( ims:ime , 1:NSOIL, jms:jme ),  INTENT(INOUT)   ::  SMOIS, TSLB     <a name='266'>
+<a name='267'>
+   REAL,     DIMENSION( ims:ime , jms:jme ), INTENT(INOUT):: RA, RS, LAI, ZNT, QSFC<a name='268'>
+   REAL,     DIMENSION( ims:ime , jms:jme ), INTENT(OUT):: GRDFLX, TSK, TA2, QA2<a name='269'>
+<a name='270'>
+   REAL,     DIMENSION( ims:ime , 1:NLCAT, jms:jme ), INTENT(IN):: LANDUSEF       <a name='271'>
+   REAL,     DIMENSION( ims:ime , 1:NSCAT, jms:jme ), INTENT(IN):: SOILCTOP, SOILCBOT<a name='272'>
+<a name='273'>
+<a name='274'>
+   REAL,    DIMENSION( ims:ime, jms:jme ),                                     &amp;<a name='275'>
+            INTENT(IN) ::                            PSFC, GSW, GLW, RAINBL,   &amp;                <a name='276'>
+                                                     ALBBCK, SHDMIN, SHDMAX,   &amp;<a name='277'>
+                                                     PBLH, RMOL, SNOWNCV,      &amp;<a name='278'>
+                                                     UST, MAVAIL, SST, EMISS<a name='279'>
+                                                      <a name='280'>
+   REAL,    DIMENSION( ims:ime, jms:jme ),                                     &amp;<a name='281'>
+            INTENT(IN) ::                            T2_NDG_OLD, T2_NDG_NEW,   &amp;                <a name='282'>
+                                                     Q2_NDG_OLD, Q2_NDG_NEW,   &amp; <a name='283'>
+                                                     SN_NDG_OLD, SN_NDG_NEW   <a name='284'>
+<a name='285'>
+   REAL,    DIMENSION( ims:ime, jms:jme ), INTENT(OUT) :: T2OBS, Q2OBS                <a name='286'>
+                                                     <a name='287'>
+   REAL,    DIMENSION( ims:ime, jms:jme ),                                     &amp;<a name='288'>
+            INTENT(INOUT) ::           CAPG,CANWAT, QFX, HFX, LH,              &amp;<a name='289'>
+                                       PSIH,VEGFRA, VEGF_PX, SNOW, SNOALB,     &amp;<a name='290'>
+                                       SNOWH, SNOWC, ALBEDO, XLAND, XICE,      &amp;<a name='291'>
+                                       IMPERV, CANFRA<a name='292'>
+<a name='293'>
+   LOGICAL :: radiation<a name='294'>
+<a name='295'>
+<font color=#447700>!-------------------------------------------------------------------------<a name='296'></font>
+<font color=#447700>!     ---------- Local Variables --------------------------------<a name='297'></font>
+<a name='298'>
+<a name='299'>
+      <font color=#447700>!----  PARAMETERS<a name='300'></font>
+      INTEGER, PARAMETER  :: NSTPS  = 11     <font color=#447700>! max. soil types<a name='301'></font>
+      REAL, PARAMETER     :: DTPBLX = 40.0   <font color=#447700>! Max PX timestep = 40 sec<a name='302'></font>
+<a name='303'>
+      <a name='304'>
+      <font color=#447700>!----  INTEGERS<a name='305'></font>
+      INTEGER, DIMENSION( 1: NSTPS ) :: JP<a name='306'>
+      INTEGER:: J, I, NS, NUDGE, ISTI, WEIGHT<a name='307'>
+      INTEGER:: NTSPS, IT<a name='308'>
+<a name='309'>
+      <font color=#447700>!----  REALS<a name='310'></font>
+      REAL,     DIMENSION( ims:ime, jms:jme ) :: XLAI, XLAIMN, RSTMIN, &amp;<a name='311'>
+                                                 XVEG, XVEGMN, XSNUP, &amp;<a name='312'>
+                                                 XALB, XSNOALB, WETFRA<a name='313'>
+                                                  <a name='314'>
+      REAL,     DIMENSION( ims:ime, jms:jme ) :: RADNET, EG, ER, ETR, QST<a name='315'>
+<a name='316'>
+      REAL:: SFCPRS,TA1,DENS1,QV1,ZLVL,SOLDN,LWDN,    &amp;<a name='317'>
+            EMISSI,PRECIP,THETA1,VAPPRS,QSBT,         &amp;<a name='318'>
+            WG,W2,WR,TG,T2,USTAR,MOLX,Z0,             &amp;<a name='319'>
+            RAIR,CPAIR,IFLAND,ISNOW,                  &amp;<a name='320'>
+            ES,QSS,BETAP,                             &amp;<a name='321'>
+            RH2_OLD, RH2_NEW, T2_OLD, T2_NEW,         &amp;<a name='322'>
+            CORE, CORB, TIME_BETWEEN_ANALYSIS,        &amp;<a name='323'>
+            G1000, ALN10,RH2OBS, HU, SNOBS,           &amp;<a name='324'>
+            FWSAT,FWFC,FWWLT,FB,FCGSAT,FJP,FAS,       &amp;<a name='325'>
+            FSEAS, T2I, HC_SNOW, SNOW_FRA,SNOWALB,    &amp;<a name='326'>
+            QST12,ZFUNC,ZF1,ZA2,QV2, DT_FDDA,         &amp;<a name='327'>
+            FC2R,FC1SAT, DTPBL, RAW<a name='328'>
+<a name='329'>
+      CHARACTER (LEN = 6) :: LAND_USE_TYPE<a name='330'>
+<a name='331'>
+<font color=#447700>!-------------------------------------------------------------------------<a name='332'></font>
+<font color=#447700>!-------------------------------Executable starts here--------------------<a name='333'></font>
+<font color=#447700>!<a name='334'></font>
+      ALN10  = ALOG(10.0)<a name='335'>
+      G1000  = g*1.0E-3            <font color=#447700>! G/1000<a name='336'></font>
+      WEIGHT = 0<a name='337'>
+      <font color=#447700>! Determine Landuse Dataset by the number of categories<a name='338'></font>
+      IF (NLCAT == 50) THEN<a name='339'>
+         LAND_USE_TYPE = 'NLCD50'<a name='340'>
+      ELSE IF (NLCAT == 40) THEN<a name='341'>
+         LAND_USE_TYPE = 'NLCD40'<a name='342'>
+      ELSE IF (NLCAT == 20) THEN<a name='343'>
+         LAND_USE_TYPE = 'MODIS'<a name='344'>
+      ELSE IF (NLCAT == 21) THEN<a name='345'>
+         LAND_USE_TYPE = 'MODIS'<a name='346'>
+      ELSE IF (NLCAT == 24) THEN<a name='347'>
+         LAND_USE_TYPE = 'USGS'<a name='348'>
+      ELSE IF (NLCAT == 28) THEN<a name='349'>
+         LAND_USE_TYPE = 'USGS28'<a name='350'>
+      ELSE<a name='351'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#PXLSM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1199">("Error: Unknown Land Use Category")<a name='352'>
+      END IF <a name='353'>
+      <a name='354'>
+      IF (ITIMESTEP .EQ. 1) THEN<a name='355'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#PXLSM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_983">( 'PX LSM will use the ' // TRIM(LAND_USE_TYPE) // ' landuse tables' )<a name='356'>
+       PRINT *, 'The analysis interval for surface soil and temp nudging = ',ANAL_INTERVAL,'sec.'<a name='357'>
+      ENDIF<a name='358'>
+<a name='359'>
+      <font color=#447700>!-----------------------------------------------------------------------------------<a name='360'></font>
+      <font color=#447700>! Kill WRF if user specifies soil nudging but provides no analysis interval, then provide helpful message.<a name='361'></font>
+      IF (ANAL_INTERVAL .LE. 0.0 .AND. PXLSM_SOIL_NUDGE .EQ. 1) THEN<a name='362'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#PXLSM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_984">('PX LSM Error: The User specified analysis interval is zero or negative.')<a name='363'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#PXLSM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_985">('If the PX LSM is used with soil nudging (pxlsm_soil_nudge=1) a wrfsfdda_d0* file is required.')<a name='364'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#PXLSM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_986">('Make sure these files are present and')<a name='365'>
+       CALL <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#PXLSM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_987">('Check the namelist to ensure sgfdda_interval_m is set to proper sfc analysis interval')<a name='366'>
+       STOP<a name='367'>
+      ENDIF                                                                    <a name='368'>
+      <font color=#447700>!-----------------------------------------------------------------------------------<a name='369'></font>
+      <font color=#447700>!--- Compute time relatve to old and new analysis time for timestep interpolation<a name='370'></font>
+      IF(PXLSM_SOIL_NUDGE .EQ. 1) THEN<a name='371'>
+        DT_FDDA = ANAL_INTERVAL * 1.0    <font color=#447700>! Convert DT of Analysis to real<a name='372'></font>
+        TIME_BETWEEN_ANALYSIS = MOD(CURR_SECS,DT_FDDA)<a name='373'>
+        IF (TIME_BETWEEN_ANALYSIS .EQ. 0.0) THEN<a name='374'>
+          CORB = 1.0<a name='375'>
+          CORE = 0.0    <a name='376'>
+        ELSE<a name='377'>
+          CORE = TIME_BETWEEN_ANALYSIS  / DT_FDDA<a name='378'>
+          CORB = 1.0 - CORE<a name='379'>
+        ENDIF <a name='380'>
+      ENDIF <a name='381'>
+      <font color=#447700>!-----------------------------------------------------------------------------------<a name='382'></font>
+      <font color=#447700>! Compute vegetation and land-use characteristics by land-use fraction weighting<a name='383'></font>
+      <font color=#447700>! These parameters include LAI, VEGF, ZNT, ALBEDO, SNOALB, RS, etc.<a name='384'></font>
+      CALL <A href='../../html_code/phys/module_sf_pxlsm.F.html#VEGELAND'>VEGELAND</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#PXLSM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="VEGELAND_1">(LANDUSEF, VEGFRA, SHDMIN, SHDMAX,         &amp;<a name='385'>
+                    SOILCTOP, SOILCBOT, NLCAT, NSCAT,         &amp;<a name='386'>
+                    ZNT,XLAI,XLAIMN,RSTMIN,XVEG,XVEGMN,XSNUP, &amp;<a name='387'>
+                    XLAND, XALB,XSNOALB,WETFRA,IMPERV,CANFRA, &amp;<a name='388'>
+                    ids,ide, jds,jde, kds,kde,                &amp;<a name='389'>
+                    ims,ime, jms,jme, kms,kme,                &amp;<a name='390'>
+                    its,ite, jts,jte, kts,kte, LAND_USE_TYPE   )<a name='391'>
+      <font color=#447700>!-----------------------------------------------------------------------------------<a name='392'></font>
+      <a name='393'>
+      <font color=#447700>!-----------------------------------------------------------------------------------<a name='394'></font>
+      <font color=#447700>! Main loop over individual grid cells<a name='395'></font>
+      DO J = jts,jte    <font color=#447700>!-- J LOOP<a name='396'></font>
+       DO I = its,ite   <font color=#447700>!-- I LOOP<a name='397'></font>
+          <a name='398'>
+          IFLAND = XLAND(I,J)<a name='399'>
+<a name='400'>
+          <font color=#447700>! Compute soil properties via weighting of fractional components<a name='401'></font>
+          IF (IFLAND .LT. 1.5 ) THEN <a name='402'>
+<a name='403'>
+          <font color=#447700>!---------------------------------------------------------<a name='404'></font>
+            CALL <A href='../../html_code/phys/module_sf_ruclsm.F.html#SOILPROP'>SOILPROP</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#PXLSM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SOILPROP_1"> (SOILCBOT(I,:,J), WEIGHT,               &amp;<a name='405'>
+                         ITIMESTEP, MAVAIL(I,J),                  &amp;<a name='406'>
+                         PXLSM_SMOIS_INIT,                        &amp;<a name='407'>
+                         FWSAT,FWFC,FWWLT,FB,FCGSAT,              &amp;  <a name='408'>
+                         FJP,FAS,FC2R,FC1SAT,ISTI,SMOIS(I,1,J),   &amp;<a name='409'>
+                         SMOIS(I,2,J)) <a name='410'>
+          <font color=#447700>!----------------------------------------------------------<a name='411'></font>
+          <font color=#447700>!----------------------------------------------------------<a name='412'></font>
+            ISLTYP(I,J) = ISTI                      <a name='413'>
+          ELSE<a name='414'>
+            ISLTYP(I,J) = 14                    <font color=#447700>! STATSGO type for water<a name='415'></font>
+          ENDIF<a name='416'>
+<a name='417'>
+          <font color=#447700>!--  Variables Sub. SURFPX needs<a name='418'></font>
+          SFCPRS = PSFC(i,j) / 1000.0                 <font color=#447700>! surface pressure in cb<a name='419'></font>
+          TA1    = T3D(i,1,j)                         <font color=#447700>! air temperature at first layer<a name='420'></font>
+          DENS1  = RHO(I,1,J)                         <font color=#447700>! air density at first layer<a name='421'></font>
+          QV1    = QV3D(i,1,j)                        <font color=#447700>! water vapor mixing ratio at first layer<a name='422'></font>
+          QV2    = QV3D(i,2,j)<a name='423'>
+          ZLVL   = 0.5 * DZ8W(i,1,j)                  <font color=#447700>! thickness of lowest half level<a name='424'></font>
+          ZF1    = DZ8W(i,1,j)<a name='425'>
+          ZA2    = ZF1 + 0.5 * DZ8W(i,2,j)<a name='426'>
+<a name='427'>
+          LWDN   = GLW(I,J)                           <font color=#447700>! longwave radiation<a name='428'></font>
+          EMISSI = EMISS(I,J)                         <font color=#447700>! emissivity<a name='429'></font>
+          PRECIP = MAX ( 1.0E-3*RAINBL(i,j)/DTBL,0.0) <font color=#447700>! accumulated precip. rate during DT (=dtpbl)<a name='430'></font>
+                                                      <font color=#447700>! convert RAINBL from mm to m for PXLSM<a name='431'></font>
+          WR     = 1.0E-3*CANWAT(I,J)                 <font color=#447700>! convert CANWAT from mm to m for PXLSM<a name='432'></font>
+          THETA1 = TH3D(i,1,j)                        <font color=#447700>! potential temp at first layer<a name='433'></font>
+          SNOBS  = SNOW(I,J)                          <font color=#447700>! Set snow cover to existing model value<a name='434'></font>
+                                                      <font color=#447700>!   this is overwritten below if snow analysis is availiable<a name='435'></font>
+                                                      <font color=#447700>!   otherwise snow cover remains constant through simulation<a name='436'></font>
+                   <a name='437'>
+          IF(PXLSM_SOIL_NUDGE .EQ. 1) THEN                   <a name='438'>
+            <font color=#447700>!-- 2 m Temp and RH for Nudging<a name='439'></font>
+            T2_OLD = T2_NDG_OLD(I,J)<a name='440'>
+            T2_NEW     = T2_NDG_NEW(I,J)<a name='441'>
+            VAPPRS     = SVP1 * EXP(SVP2 * (T2_OLD - SVPT0) / ( T2_OLD - SVP3))<a name='442'>
+            QSBT       = EP_2 * VAPPRS / (SFCPRS - VAPPRS)          <a name='443'>
+            RH2_OLD    = Q2_NDG_OLD(I,J) / QSBT<a name='444'>
+            VAPPRS     = SVP1 * EXP(SVP2 * (T2_NEW - SVPT0) / (T2_NEW - SVP3))<a name='445'>
+            QSBT       = EP_2 * VAPPRS / (SFCPRS - VAPPRS)          <a name='446'>
+            RH2_NEW    = Q2_NDG_NEW(I,J) / QSBT<a name='447'>
+            RH2OBS     = CORB * RH2_OLD +  CORE * RH2_NEW  <a name='448'>
+            T2OBS(I,J) = CORB * T2_OLD +  CORE * T2_NEW<a name='449'>
+            Q2OBS(I,J) = CORB * Q2_NDG_OLD(I,J) +  CORE * Q2_NDG_NEW(I,J)<a name='450'>
+            SNOBS = CORB * SN_NDG_OLD(I,J) +  CORE * SN_NDG_NEW(I,J)  <a name='451'>
+          ENDIF<a name='452'>
+<a name='453'>
+          USTAR  = MAX(UST(I,J),0.005)<a name='454'>
+          <a name='455'>
+          IF (IFLAND .GE. 1.5) THEN <font color=#447700>! if over water                            <a name='456'></font>
+            ZNT(I,J) = CZO * UST(I,J) * UST(I,J) / G + OZO<a name='457'>
+          ENDIF                                                              <a name='458'>
+          <a name='459'>
+          Z0       = ZNT(I,J)<a name='460'>
+          CPAIR    = CPD * (1.0 + 0.84 * QV1)            <font color=#447700>! J/(K KG)<a name='461'></font>
+<a name='462'>
+          <font color=#447700>! Set WRF Snow albedo to PX snow albedo based on fractional landuse<a name='463'></font>
+          <font color=#447700>! Snow albedo for each landuse class is defined in module_sf_pxlsm_data.F<a name='464'></font>
+          SNOALB(I,J) = XSNOALB(I,J)<a name='465'>
+          <font color=#447700>!-------------------------------------------------------------<a name='466'></font>
+          <font color=#447700>! Compute fractional snow area and snow albedo<a name='467'></font>
+          CALL <A href='../../html_code/phys/module_sf_pxlsm.F.html#PXSNOW'>PXSNOW</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#PXLSM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="PXSNOW_1"> (ITIMESTEP, SNOBS, SNOWNCV(I,J), SNOW(I,J),  &amp;<a name='468'>
+                       SNOWH(I,J), XSNUP(I,J),  XALB(i,j),         &amp;<a name='469'>
+                       SNOALB(I,J),VEGF_PX(I,J), SHDMIN(I,J),      &amp;<a name='470'>
+                       HC_SNOW, SNOW_FRA, SNOWC(I,J),  ALBEDO(I,J) ) <a name='471'>
+          <font color=#447700>!-------------------------------------------------------------<a name='472'></font>
+                                 <a name='473'>
+          <font color=#447700>!-------------------------------------------------------------<a name='474'></font>
+          <font color=#447700>! Sea Ice from analysis and water cells that are very cold, but more than 50% water<a name='475'></font>
+          <font color=#447700>! are converted to ice/snow for more reasonable treatment.<a name='476'></font>
+          IF( (XICE(I,J).GE.0.5) .OR.   &amp;<a name='477'>
+              (SST(I,J).LE.270.0.AND.XLAND(I,J).GE.1.50) ) THEN<a name='478'>
+              XLAND(I,J) = 1.0<a name='479'>
+              IFLAND = 1.0<a name='480'>
+              ZNT(I,J) = 0.001  <font color=#447700>!  Ice<a name='481'></font>
+              SMOIS(I,1,J) = 1.0     <font color=#447700>! FWSAT<a name='482'></font>
+              SMOIS(I,2,J) = 1.0     <font color=#447700>! FWSAT<a name='483'></font>
+              XICE(I,J) = 1.0<a name='484'>
+              ALBEDO(I,J) = 0.7<a name='485'>
+              SNOWC(I,J) = 1.0<a name='486'>
+              SNOW_FRA = 1.0<a name='487'>
+              VEGF_PX(I,J) = 0.0<a name='488'>
+              LAI(I,J) = 0.0<a name='489'>
+          ENDIF<a name='490'>
+          <font color=#447700>!-------------------------------------------------------------<a name='491'></font>
+<a name='492'>
+          <font color=#447700>!-------------------------------------------------------------<a name='493'></font>
+          <font color=#447700>!-- Note that when IFGROW = 0 is selected in Vegeland then max and min           <a name='494'></font>
+          <font color=#447700>!-- LAI and Veg are the same                                                     <a name='495'></font>
+          T2I = TSLB(I,2,J)                                            <a name='496'>
+<font color=#447700>!         FSEAS = AMAX1(1.0 - 0.0016 * (298.0 - T2I) ** 2,0.0)  ! BATS            <a name='497'></font>
+          FSEAS = AMAX1(1.0 - 0.015625 * (290.0 - T2I) ** 2,0.0) <font color=#447700>! JP97            <a name='498'></font>
+          IF (T2I .GE. 290.0) FSEAS = 1.0                                          <a name='499'>
+          <a name='500'>
+          LAI(I,J)       = XLAIMN(I,J) + FSEAS*(XLAI(I,J) - XLAIMN(I,J))                 <a name='501'>
+          VEGF_PX(I,J)   = XVEGMN(I,J) + FSEAS*(XVEG(I,J) - XVEGMN(I,J))                       <a name='502'>
+          <a name='503'>
+          <font color=#447700>! Ensure veg algorithms not used for water <a name='504'></font>
+          IF (IFLAND .GE. 1.5) THEN                        <a name='505'>
+             VEGF_PX(I,J) = 0.0<a name='506'>
+             LAI(I,J) = 0.0         <a name='507'>
+          ENDIF                                                                   <a name='508'>
+          <font color=#447700>!-------------------------------------------------------------<a name='509'></font>
+<a name='510'>
+<a name='511'>
+          SOLDN  = GSW(I,J) / (1.0 - ALBEDO(I,J))     <font color=#447700>! downward shortwave radiaton<a name='512'></font>
+          ISNOW = SNOWC(I,J)<a name='513'>
+<a name='514'>
+<a name='515'>
+          NUDGE=PXLSM_SOIL_NUDGE<a name='516'>
+          IF ( J .LE. 2 .OR. J .GE. (jde-1) ) NUDGE=0<a name='517'>
+          IF ( I .LE. 2 .OR. I .GE. (ide-1) ) NUDGE=0<a name='518'>
+          <a name='519'>
+          IF ( RMOL(I,J) .GT. 0.0 )  THEN<a name='520'>
+              MOLX = AMIN1(1/RMOL(I,J),1000.0)<a name='521'>
+          ELSE IF ( RMOL(I,J) .LT. 0.0 ) THEN<a name='522'>
+              MOLX = AMAX1(1/RMOL(I,J),-1000.0)<a name='523'>
+          ELSE<a name='524'>
+              MOLX = 1000<a name='525'>
+          ENDIF   <a name='526'>
+ <a name='527'>
+          ZFUNC = ZF1 * (1.0 - ZF1 / MAX(100.,PBLH(I,J))) ** 2<a name='528'>
+          QST12 = KARMAN * ZFUNC*(QV2-QV1) / (ZA2-ZLVL)<a name='529'>
+               <a name='530'>
+<a name='531'>
+          <font color=#447700>!-------------------------------------------------------------<a name='532'></font>
+          <font color=#447700>!-- LSM sub-time loop too prevent dt &gt; 40 sec       <a name='533'></font>
+          NTSPS = INT(DT / (DTPBLX + 0.000001) + 1.0)                                <a name='534'>
+          DTPBL = DT / NTSPS                                                       <a name='535'>
+<a name='536'>
+          DO IT=1,NTSPS                                                     <a name='537'>
+          <a name='538'>
+            <font color=#447700>!... SATURATION VAPOR PRESSURE (MB) <a name='539'></font>
+            IF ( TSLB(I,1,J) .LE. SVPT0 ) THEN        <font color=#447700>! For ground that is below freezing<a name='540'></font>
+              ES = SVP1 * EXP(22.514 - 6.15E3 / TSLB(I,1,J))      <font color=#447700>! cb<a name='541'></font>
+            ELSE<a name='542'>
+              ES = SVP1 * EXP(SVP2 * (TSLB(I,1,J) - SVPT0) /  (TSLB(I,1,J) - SVP3))<a name='543'>
+            ENDIF<a name='544'>
+            QSS  = ES * 0.622 / (SFCPRS - ES)<a name='545'>
+          <a name='546'>
+            <font color=#447700>!... beta method, Lee &amp; Pielke (JAM,May1992)<a name='547'></font>
+            BETAP = 1.0<a name='548'>
+            IF (IFLAND .LT. 1.5 .AND. ISNOW .LT. 0.5 .AND. SMOIS(I,1,J) .LE. FWFC) THEN       <a name='549'>
+              BETAP = 0.25 * (1.0 - COS(SMOIS(I,1,J) / FWFC * PI)) ** 2<a name='550'>
+            ENDIF<a name='551'>
+            <a name='552'>
+            <font color=#447700>!-------------------------------------------------------------------------<a name='553'></font>
+            CALL <A href='../../html_code/phys/module_sf_pxlsm.F.html#SURFPX'>SURFPX</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#PXLSM' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SURFPX_1"> (DTPBL, IFLAND, SNOWC(I,J),  NUDGE, XICE(I,J),          &amp; <font color=#447700>!in<a name='554'></font>
+                      SOLDN,  GSW(I,J), LWDN,   EMISSI, ZLVL,                   &amp; <font color=#447700>!in<a name='555'></font>
+                      MOLX,    Z0,    USTAR,                                    &amp; <font color=#447700>!in<a name='556'></font>
+                      SFCPRS, DENS1,  QV1,    QSS,   TA1,                       &amp; <font color=#447700>!in<a name='557'></font>
+                      THETA1,   PRECIP,                                         &amp; <font color=#447700>!in<a name='558'></font>
+                      CPAIR, PSIH(I,J),                                         &amp; <font color=#447700>!in<a name='559'></font>
+                      RH2OBS,T2OBS(I,J),                                        &amp; <font color=#447700>!in<a name='560'></font>
+                      VEGF_PX(I,J), ISTI, LAI(I,J), IMPERV(I,J), CANFRA(I,J),   &amp; <font color=#447700>!in<a name='561'></font>
+                      BETAP, RSTMIN(I,J), HC_SNOW, SNOW_FRA, WETFRA(I,J),       &amp; <font color=#447700>!in          <a name='562'></font>
+                      FWWLT, FWFC, FCGSAT,  FWSAT, FB,                          &amp; <font color=#447700>!in<a name='563'></font>
+                      FC1SAT,FC2R,FAS,FJP,DZS(1),DZS(2),QST12,                  &amp; <font color=#447700>!in<a name='564'></font>
+                      RADNET(I,J), GRDFLX(I,J), HFX(I,J), QFX(I,J), LH(I,J),    &amp; <font color=#447700>!out<a name='565'></font>
+                      EG(I,J), ER(I,J), ETR(I,J),                               &amp; <font color=#447700>!out<a name='566'></font>
+                      QST(I,J), CAPG(I,J), RS(I,J), RA(I,J),                    &amp; <font color=#447700>!out<a name='567'></font>
+                      TSLB(I,1,J), TSLB(I,2,J),                                 &amp; <font color=#447700>!out<a name='568'></font>
+                      SMOIS(I,1,J), SMOIS(I,2,J), WR,                           &amp;<a name='569'>
+                      TA2(I,J), QA2(I,J), LAND_USE_TYPE,I,J )<a name='570'>
+            <font color=#447700>!-------------------------------------------------------------------------<a name='571'></font>
+          <a name='572'>
+          END DO                        <font color=#447700>! Time internal PX time loop   <a name='573'></font>
+<a name='574'>
+          TSK(I,J)    = TSLB(I,1,J)     <font color=#447700>! Skin temp set to 1 cm soil temperature in PX for now<a name='575'></font>
+          CANWAT(I,J) = WR * 1000.      <font color=#447700>! convert WR back to mm for CANWAT<a name='576'></font>
+          RAW = RA(I,J) + 4.503 / USTAR<a name='577'>
+          QSFC(I,J) = QFX(I,J) * RAW / DENS1 + QV1<a name='578'>
+          <a name='579'>
+       ENDDO <font color=#447700>!  END MIAN I LOOP<a name='580'></font>
+      ENDDO  <font color=#447700>!  END MAIN J LOOP<a name='581'></font>
+      <a name='582'>
+<font color=#447700>!------------------------------------------------------<a name='583'></font>
+   END SUBROUTINE pxlsm<a name='584'>
+<font color=#447700>!-------------------------------------------------------------------------<a name='585'></font>
+<font color=#447700>!-------------------------------------------------------------------------<a name='586'></font>
+<a name='587'>
+<a name='588'>
+<font color=#447700>!-------------------------------------------------------------------------<a name='589'></font>
+<font color=#447700>!-------------------------------------------------------------------------<a name='590'></font>
+<A NAME='VEGELAND'><A href='../../html_code/phys/module_sf_pxlsm.F.html#VEGELAND' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='591'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>VEGELAND</font>( landusef, vegfra,                            &amp;  <A href='../../call_to/VEGELAND.html' TARGET='index'>1</A><a name='592'>
+                            shdmin, shdmax,                             &amp;                          <a name='593'>
+                            soilctop, soilcbot, nlcat, nscat,znt, xlai, &amp;<a name='594'>
+                            xlaimn, rstmin, xveg, xvegmn, xsnup, xland, &amp;<a name='595'>
+                            xalb, xsnoalb, wetfra, imperv, canfra,      &amp;<a name='596'>
+                            ids,ide, jds,jde, kds,kde,                  &amp;<a name='597'>
+                            ims,ime, jms,jme, kms,kme,                  &amp;<a name='598'>
+                            its,ite, jts,jte, kts,kte,                  &amp;<a name='599'>
+                            LAND_USE_TYPE                                )<a name='600'>
+<font color=#447700>!-------------------------------------------------------------------------<a name='601'></font>
+<font color=#447700>!           <a name='602'></font>
+<font color=#447700>!   CALLED FROM Sub. bl_init in module_physics.init.F<a name='603'></font>
+<font color=#447700>!           <a name='604'></font>
+<font color=#447700>!   THIS PROGRAM PROCESSES THE USGS LANDUSE DATA<a name='605'></font>
+<font color=#447700>!   WHICH HAS BEEN GRIDDED BY THE WPS SYSTEM<a name='606'></font>
+<font color=#447700>!   AND PRODUCES 2-D FIELDS OF LU RELATED PARAMETERS<a name='607'></font>
+<font color=#447700>!   FOR USE IN THE PX SURFACE MODEL<a name='608'></font>
+<font color=#447700>!<a name='609'></font>
+<font color=#447700>!<a name='610'></font>
+<font color=#447700>! REVISION HISTORY:<a name='611'></font>
+<font color=#447700>!  AX      Oct 2004 - developed WRF version based on VEGELAND in the MM5 PX LSM<a name='612'></font>
+<font color=#447700>!  RG      Dec 2006 - revised for WRFV2.1.2<a name='613'></font>
+<font color=#447700>!  JP      Dec 2007 - revised for WRFV3 - removed IFGROW options<a name='614'></font>
+<font color=#447700>!-------------------------------------------------------------------------<a name='615'></font>
+<font color=#447700>!-------------------------------------------------------------------------<a name='616'></font>
+                              <a name='617'>
+      IMPLICIT NONE<a name='618'>
+<font color=#447700>!... <a name='619'></font>
+      INTEGER,  INTENT(IN)        ::  ids,ide, jds,jde, kds,kde,  &amp;<a name='620'>
+                                      ims,ime, jms,jme, kms,kme,  &amp;<a name='621'>
+                                      its,ite, jts,jte, kts,kte<a name='622'>
+                                                                            <a name='623'>
+      INTEGER , INTENT(IN)        ::  NSCAT, NLCAT<a name='624'>
+<a name='625'>
+      REAL,    DIMENSION( ims:ime , 1:NLCAT, jms:jme ),  INTENT(IN) :: LANDUSEF                        <a name='626'>
+      REAL,    DIMENSION( ims:ime , 1:NSCAT, jms:jme ),  INTENT(IN) :: SOILCTOP, SOILCBOT<a name='627'>
+                                                                   <a name='628'>
+      REAL,    DIMENSION( ims:ime, jms:jme ),            INTENT(IN) ::  VEGFRA, SHDMIN, SHDMAX <a name='629'>
+<a name='630'>
+      REAL,     DIMENSION( ims:ime, jms:jme ), INTENT(INOUT) :: ZNT, IMPERV, CANFRA<a name='631'>
+<a name='632'>
+      REAL,     DIMENSION( ims:ime, jms:jme ), INTENT(OUT) :: XLAI, XLAIMN, RSTMIN, XALB, &amp;<a name='633'>
+                                                              XVEG, XVEGMN, XSNUP, XLAND, &amp;<a name='634'>
+                                                              WETFRA, XSNOALB <a name='635'>
+      CHARACTER (LEN = 6), INTENT(IN) :: LAND_USE_TYPE<a name='636'>
+<a name='637'>
+                                     <a name='638'>
+<font color=#447700>!... local variables<a name='639'></font>
+<a name='640'>
+      INTEGER :: ITF, JTF, K, J, I<a name='641'>
+      REAL    :: SUMLAI, SUMLMN, SUMRSI, SUMLZ0, SUMVEG, SUMVMN, &amp;<a name='642'>
+                 ALAI, VEGF, SUMSNUP, SUMALB, SUMSNOALB<a name='643'>
+                 <a name='644'>
+      REAL    :: VFMX, VFMN, VSEAS, FAREA, FWAT, ZNOTC, FCAN, FIMP, FORFRA, EXTFOR<a name='645'>
+      REAL,   DIMENSION( NLCAT )  :: LAIMX, LAIMN, Z0, VEG, VEGMN, SNUP, ALB, SNOALB<a name='646'>
+<a name='647'>
+      REAL, PARAMETER :: ZNOTCMN = 5.0  <font color=#447700>! CM, MIN Zo FOR CROPS<a name='648'></font>
+      REAL, PARAMETER :: ZNOTCMX = 15.0 <font color=#447700>! CM, MAX Zo FOR CROPS<a name='649'></font>
+<a name='650'>
+      REAL, SAVE, DIMENSION(:), POINTER  :: RSMIN, Z00, VEG0, VEGMN0, LAI0, &amp;<a name='651'>
+                                            LAIMN0, SNUP0, ALBF, SNOALBF<a name='652'>
+<a name='653'>
+      <font color=#447700>!---- INITIALIZE PARAMETERS<a name='654'></font>
+      INTEGER, SAVE :: KWAT, LIMIT1, LIMIT2<a name='655'>
+<a name='656'>
+     <font color=#447700>! Initialize LU characteristics by LU Dataset<a name='657'></font>
+      IF (LAND_USE_TYPE == 'USGS') THEN<a name='658'>
+         KWAT = 16<a name='659'>
+         RSMIN  =&gt; RSMIN_USGS<a name='660'>
+         Z00    =&gt; Z00_USGS  <a name='661'>
+         VEG0   =&gt; VEG0_USGS <a name='662'>
+         VEGMN0 =&gt; VEGMN0_USGS <a name='663'>
+         LAI0   =&gt; LAI0_USGS <a name='664'>
+         LAIMN0 =&gt; LAIMN0_USGS <a name='665'>
+         SNUP0  =&gt; SNUP0_USGS <a name='666'>
+         ALBF   =&gt; ALBF_USGS<a name='667'>
+         SNOALBF=&gt; SNOALB_USGS<a name='668'>
+         LIMIT1 = 2<a name='669'>
+         LIMIT1 = 6<a name='670'>
+      ELSE IF (LAND_USE_TYPE == 'USGS28') THEN<a name='671'>
+         KWAT = 16<a name='672'>
+         RSMIN  =&gt; RSMIN_USGS28<a name='673'>
+         Z00    =&gt; Z00_USGS28  <a name='674'>
+         VEG0   =&gt; VEG0_USGS28 <a name='675'>
+         VEGMN0 =&gt; VEGMN0_USGS28 <a name='676'>
+         LAI0   =&gt; LAI0_USGS28 <a name='677'>
+         LAIMN0 =&gt; LAIMN0_USGS28 <a name='678'>
+         SNUP0  =&gt; SNUP0_USGS28 <a name='679'>
+         ALBF   =&gt; ALBF_USGS28<a name='680'>
+         SNOALBF=&gt; SNOALB_USGS28<a name='681'>
+         LIMIT1 = 2<a name='682'>
+         LIMIT1 = 6<a name='683'>
+      ELSE IF (LAND_USE_TYPE == 'NLCD50') THEN<a name='684'>
+         KWAT = 1<a name='685'>
+         RSMIN  =&gt; RSMIN_NLCD50<a name='686'>
+         Z00    =&gt; Z00_NLCD50  <a name='687'>
+         VEG0   =&gt; VEG0_NLCD50 <a name='688'>
+         VEGMN0 =&gt; VEGMN0_NLCD50 <a name='689'>
+         LAI0   =&gt; LAI0_NLCD50 <a name='690'>
+         LAIMN0 =&gt; LAIMN0_NLCD50 <a name='691'>
+         SNUP0  =&gt; SNUP0_NLCD50 <a name='692'>
+         ALBF   =&gt; ALBF_NLCD50<a name='693'>
+         SNOALBF=&gt; SNOALB_NLCD50<a name='694'>
+         LIMIT1 = 20<a name='695'>
+         LIMIT1 = 43<a name='696'>
+      ELSE IF (LAND_USE_TYPE == 'NLCD40') THEN<a name='697'>
+         KWAT = 17<a name='698'>
+         RSMIN  =&gt; RSMIN_NLCD40<a name='699'>
+         Z00    =&gt; Z00_NLCD40  <a name='700'>
+         VEG0   =&gt; VEG0_NLCD40 <a name='701'>
+         VEGMN0 =&gt; VEGMN0_NLCD40 <a name='702'>
+         LAI0   =&gt; LAI0_NLCD40 <a name='703'>
+         LAIMN0 =&gt; LAIMN0_NLCD40 <a name='704'>
+         SNUP0  =&gt; SNUP0_NLCD40 <a name='705'>
+         ALBF   =&gt; ALBF_NLCD40<a name='706'>
+         SNOALBF=&gt; SNOALB_NLCD40<a name='707'>
+         LIMIT1 = 20<a name='708'>
+         LIMIT1 = 43<a name='709'>
+      ELSE IF (LAND_USE_TYPE == 'MODIS') THEN<a name='710'>
+         KWAT = 17<a name='711'>
+         RSMIN  =&gt; RSMIN_MODIS<a name='712'>
+         Z00    =&gt; Z00_MODIS  <a name='713'>
+         VEG0   =&gt; VEG0_MODIS <a name='714'>
+         VEGMN0 =&gt; VEGMN0_MODIS <a name='715'>
+         LAI0   =&gt; LAI0_MODIS <a name='716'>
+         LAIMN0 =&gt; LAIMN0_MODIS <a name='717'>
+         SNUP0  =&gt; SNUP0_MODIS <a name='718'>
+         ALBF   =&gt; ALBF_MODIS<a name='719'>
+         SNOALBF=&gt; SNOALB_MODIS<a name='720'>
+         LIMIT1 = 12<a name='721'>
+         LIMIT1 = 14<a name='722'>
+      END IF<a name='723'>
+      <font color=#447700>!--------------------------------------------------------------------<a name='724'></font>
+      DO J = jts,jte<a name='725'>
+        DO I = its,ite<a name='726'>
+          XLAI(I,J)   = 0.0                                                        <a name='727'>
+          XLAIMN(I,J) = 0.0                                                     <a name='728'>
+          RSTMIN(I,J) = 9999.0                                                    <a name='729'>
+          XVEG(I,J)   = 0.0                                                       <a name='730'>
+          XVEGMN(I,J) = 0.0<a name='731'>
+          XSNUP(I,J)  = 0.0                                                            <a name='732'>
+          XALB(I,J)   = 0.0                                                            <a name='733'>
+          XSNOALB(I,J)= 0.0                                                            <a name='734'>
+<a name='735'>
+          <font color=#447700>! Code that may be needed in case these arrays are not intialized<a name='736'></font>
+          <font color=#447700>! with zero by real.exe when not defined by GEOGRID or present <a name='737'></font>
+          <font color=#447700>! in met_em* files<a name='738'></font>
+          <font color=#447700>!IMPERV(I,J) = AMAX1(0.0001,IMPERV(I,J))                                                           <a name='739'></font>
+          <font color=#447700>!CANFRA(I,J) = AMAX1(0.0001,CANFRA(I,J))                                                           <a name='740'></font>
+<a name='741'>
+        ENDDO   <font color=#447700>! END LOOP THROUGH GRID CELLS<a name='742'></font>
+      ENDDO     <font color=#447700>! END LOOP THROUGH GRID CELLS<a name='743'></font>
+      <font color=#447700>!--------------------------------------------------------------------<a name='744'></font>
+<a name='745'>
+      DO J = jts,jte<a name='746'>
+        DO I = its,ite<a name='747'>
+          <font color=#447700>!-- Initialize 2 and 3-D veg parameters to be caculated<a name='748'></font>
+          DO K=1,NLCAT<a name='749'>
+            LAIMX(K) = LAI0(K)                                                       <a name='750'>
+            LAIMN(K) = LAIMN0(K)                                                   <a name='751'>
+            Z0(K)    = Z00(K)                                                   <a name='752'>
+            VEG(K)   = VEG0(K)                                              <a name='753'>
+            VEGMN(K) = VEGMN0(K)<a name='754'>
+            SNUP(K)  = SNUP0(K)                                            <a name='755'>
+            ALB(K)   = ALBF(K)                                            <a name='756'>
+            SNOALB(K)= SNOALBF(K)                                            <a name='757'>
+          ENDDO                                              <a name='758'>
+<a name='759'>
+          <font color=#447700>!--  INITIALIZE SUMS<a name='760'></font>
+          SUMLAI    = 0.0<a name='761'>
+          SUMLMN    = 0.0<a name='762'>
+          SUMRSI    = 0.0<a name='763'>
+          SUMLZ0    = 0.0<a name='764'>
+          SUMVEG    = 0.0<a name='765'>
+          SUMVMN    = 0.0<a name='766'>
+          ALAI      = 0.0<a name='767'>
+          SUMSNUP   = 0.0<a name='768'>
+          SUMALB    = 0.0<a name='769'>
+          SUMSNOALB = 0.0<a name='770'>
+<a name='771'>
+          <font color=#447700>!--   ESTIMATE CROP EMERGANCE DATE FROM VEGFRAC<a name='772'></font>
+          VFMX   = SHDMAX(I,J)<a name='773'>
+          VFMN   = SHDMIN(I,J)<a name='774'>
+          VEGF   = VEGFRA(I,J) <a name='775'>
+                <a name='776'>
+          <font color=#447700>!-- Computations for VEGETATION CELLS ONLY<a name='777'></font>
+          IF(VFMX.GT.0.0.AND.LANDUSEF(I,KWAT,J).LT.1.00) THEN<a name='778'>
+            VSEAS = VEGF/VFMX<a name='779'>
+            IF(VSEAS.GT.1.0.OR.VSEAS.LT.0.0) THEN<a name='780'>
+              VSEAS = MIN(VSEAS,1.0)<a name='781'>
+              VSEAS = MAX(VSEAS,0.0)<a name='782'>
+            ENDIF<a name='783'>
+<a name='784'>
+            ZNOTC = ZNOTCMN * (1-VSEAS) + ZNOTCMX * VSEAS  <font color=#447700>! Zo FOR CROPS<a name='785'></font>
+            DO K = 1, NLCAT<a name='786'>
+              IF (LAND_USE_TYPE == 'MODIS') THEN<a name='787'>
+                <font color=#447700>!-- USE THE VEGFRAC DATA ONLY FOR CROPS<a name='788'></font>
+                IF (K.EQ.12 .OR. K.EQ.14) THEN<a name='789'>
+                   LAIMX(K) = LAIMN0(K) * (1-VSEAS) + LAI0(K) * VSEAS<a name='790'>
+                   LAIMN(K) = LAIMX(K)<a name='791'>
+                   VEG(K)   = VEGMN0(K) * (1-VSEAS) + VEG0(K) * VSEAS<a name='792'>
+                   VEGMN(K) = VEG(K)<a name='793'>
+                   <font color=#447700>!-- SEASONALLY VARY Zo FOR MODIS DryCrop (k=12)<a name='794'></font>
+                   IF (K .EQ. 12) THEN<a name='795'>
+                      Z0(K) = ZNOTC<a name='796'>
+                   <font color=#447700>!-- CrGrM (k=14) USE AVG WITH GRASS AND FOREST<a name='797'></font>
+                   ELSE IF (K .EQ.14) THEN<a name='798'>
+                      Z0(K)  = 0.5 * (ZNOTC + Z00(K))<a name='799'>
+                   ENDIF<a name='800'>
+                ENDIF<a name='801'>
+              ELSE IF (LAND_USE_TYPE == 'NLCD50') THEN<a name='802'>
+                <font color=#447700>!-- USE THE VEGFRAC DATA ONLY FOR CROPS<a name='803'></font>
+                IF (K.EQ.20 .OR. K.EQ.43 .OR. K.EQ.45) THEN<a name='804'>
+                   LAIMX(K) = LAIMN0(K) * (1-VSEAS) + LAI0(K) * VSEAS<a name='805'>
+                   LAIMN(K) = LAIMX(K)<a name='806'>
+                   VEG(K)   = VEGMN0(K) * (1-VSEAS) + VEG0(K) * VSEAS<a name='807'>
+                   VEGMN(K) = VEG(K)<a name='808'>
+                   <font color=#447700>!-- SEASONALLY VARY Zo FOR DryCrop (k=20) OR Irigated Crop (k=43) OR  Mix Crop (k=4)<a name='809'></font>
+                   IF (K.EQ.20 .OR. K.EQ.43) THEN<a name='810'>
+                      Z0(K) = ZNOTC<a name='811'>
+                   <font color=#447700>!-- CrNatM (k=45) USE AVG WITH GRASS AND FOREST<a name='812'></font>
+                  ELSE IF (K.EQ.45) THEN<a name='813'>
+                      Z0(K)  = 0.5 * (ZNOTC + Z00(K))<a name='814'>
+                  ENDIF<a name='815'>
+                ENDIF<a name='816'>
+              ELSE IF (LAND_USE_TYPE == 'NLCD40') THEN<a name='817'>
+                <font color=#447700>!-- USE THE VEGFRAC DATA ONLY FOR CROPS<a name='818'></font>
+                IF (K.EQ.12 .OR. K.EQ.14 .OR. K.EQ.38) THEN<a name='819'>
+                   LAIMX(K) = LAIMN0(K) * (1-VSEAS) + LAI0(K) * VSEAS<a name='820'>
+                   LAIMN(K) = LAIMX(K)<a name='821'>
+                   VEG(K)   = VEGMN0(K) * (1-VSEAS) + VEG0(K) * VSEAS<a name='822'>
+                   VEGMN(K) = VEG(K)<a name='823'>
+                   <font color=#447700>!-- SEASONALLY VARY Zo FOR Crop (k=12 for MODIS or 38 for NLCD)<a name='824'></font>
+                   IF (K.EQ.12 .OR. K.EQ.38) THEN<a name='825'>
+                      Z0(K) = ZNOTC<a name='826'>
+                   <font color=#447700>!-- CrNatM (k=14) USE AVG WITH GRASS AND FOREST<a name='827'></font>
+                   ELSE IF (K.EQ.14) THEN<a name='828'>
+                      Z0(K)  = 0.5 * (ZNOTC + Z00(K))<a name='829'>
+                  ENDIF<a name='830'>
+                ENDIF<a name='831'>
+              ELSE IF (LAND_USE_TYPE == 'USGS') THEN<a name='832'>
+                <font color=#447700>!-- USE THE VEGFRAC DATA ONLY FOR CROPS <a name='833'></font>
+                IF (K .GE. 2 .AND. K .LE. 6) THEN<a name='834'>
+                   LAIMX(K) = LAIMN0(K) * (1-VSEAS) + LAI0(K) * VSEAS<a name='835'>
+                   LAIMN(K) = LAIMX(K)<a name='836'>
+                   VEG(K)   = VEGMN0(K) * (1-VSEAS) + VEG0(K) * VSEAS<a name='837'>
+                   VEGMN(K) = VEG(K)<a name='838'>
+                   <font color=#447700>!-- SEASONALLY VARY Zo FOR DryCrop (k=2) OR Irigated Crop (k=3) OR  Mix Crop (k=4)<a name='839'></font>
+                   IF (K .GE. 2 .AND. K .LE. 4) THEN<a name='840'>
+                      Z0(K) = ZNOTC<a name='841'>
+                   <font color=#447700>!-- CrGrM (k=5) or CrWdM (k=6) USE AVG WITH GRASS AND FOREST<a name='842'></font>
+                   ELSE IF (K .GE.5 .AND. K .LE. 6) THEN<a name='843'>
+                      Z0(K)  = 0.5 * (ZNOTC + Z00(K))<a name='844'>
+                   ENDIF<a name='845'>
+                ENDIF<a name='846'>
+              ELSE IF (LAND_USE_TYPE == 'USGS28') THEN<a name='847'>
+                <font color=#447700>!-- USE THE VEGFRAC DATA ONLY FOR CROPS <a name='848'></font>
+                IF (K .GE. 2 .AND. K .LE. 6) THEN<a name='849'>
+                   LAIMX(K) = LAIMN0(K) * (1-VSEAS) + LAI0(K) * VSEAS<a name='850'>
+                   LAIMN(K) = LAIMX(K)<a name='851'>
+                   VEG(K)   = VEGMN0(K) * (1-VSEAS) + VEG0(K) * VSEAS<a name='852'>
+                   VEGMN(K) = VEG(K)<a name='853'>
+                   <font color=#447700>!-- SEASONALLY VARY Zo FOR DryCrop (k=2) OR Irigated Crop (k=3) OR  Mix Crop (k=4)<a name='854'></font>
+                   IF (K .GE. 2 .AND. K .LE. 4) THEN<a name='855'>
+                      Z0(K) = ZNOTC<a name='856'>
+                   <font color=#447700>!-- CrGrM (k=5) or CrWdM (k=6) USE AVG WITH GRASS AND FOREST<a name='857'></font>
+                   ELSE IF (K .GE.5 .AND. K .LE. 6) THEN<a name='858'>
+                      Z0(K)  = 0.5 * (ZNOTC + Z00(K))<a name='859'>
+                   ENDIF<a name='860'>
+                ENDIF<a name='861'>
+<a name='862'>
+              END IF<a name='863'>
+<a name='864'>
+            ENDDO<a name='865'>
+<a name='866'>
+          ENDIF       <font color=#447700>!-- IF cell is vegetation<a name='867'></font>
+<a name='868'>
+          <font color=#447700>!-------------------------------------<a name='869'></font>
+          <font color=#447700>!-- LOOP THROUGH LANDUSE Fraction and compute totals<a name='870'></font>
+          DO K = 1, NLCAT <a name='871'>
+            FAREA    = LANDUSEF(I,K,J)<a name='872'>
+            SUMLAI   = SUMLAI + LAIMX(K) * FAREA<a name='873'>
+            SUMLMN   = SUMLMN + LAIMN(K) * FAREA<a name='874'>
+            ALAI     = ALAI + FAREA<a name='875'>
+            SUMRSI   = SUMRSI + FAREA * LAIMX(K) / RSMIN(K)<a name='876'>
+            SUMLZ0   = SUMLZ0 + FAREA * ALOG(Z0(K))<a name='877'>
+            SUMVEG   = SUMVEG + FAREA * VEG(K)<a name='878'>
+            SUMVMN   = SUMVMN + FAREA * VEGMN(K)<a name='879'>
+            SUMSNUP  = SUMSNUP+ FAREA * SNUP(K)<a name='880'>
+            SUMALB   = SUMALB + FAREA * ALB(K)<a name='881'>
+            SUMSNOALB= SUMSNOALB + FAREA * SNOALB(K)<a name='882'>
+          ENDDO<a name='883'>
+<a name='884'>
+          FWAT = LANDUSEF(I,KWAT,J)<a name='885'>
+          <font color=#447700>!-- CHECK FOR WATER<a name='886'></font>
+          IF (FWAT .GE. 0.50) THEN        <font color=#447700>! Changed WRFV3.7<a name='887'></font>
+<font color=#447700>!          IF (FWAT .GE. 0.9999) THEN<a name='888'></font>
+            XLAI(I,J)   = LAIMX(KWAT)<a name='889'>
+            XLAIMN(I,J) = LAIMN(KWAT)<a name='890'>
+            RSTMIN(I,J) = RSMIN(KWAT)<a name='891'>
+            ZNT(I,J)    = Z0(KWAT)<a name='892'>
+            XVEG(I,J)   = VEG(KWAT)<a name='893'>
+            XVEGMN(I,J) = VEGMN(KWAT)<a name='894'>
+            XSNUP(I,J)  = SNUP(KWAT)<a name='895'>
+            XALB(I,J)   = ALB(KWAT)<a name='896'>
+            XSNOALB(I,J)= SNOALB(KWAT)<a name='897'>
+          ELSE<a name='898'>
+            IF (FWAT .GT. 0.10) THEN<a name='899'>
+              ALAI   = ALAI - FWAT<a name='900'>
+              SUMLZ0 = SUMLZ0 - FWAT * ALOG(Z0(KWAT))<a name='901'>
+            ENDIF<a name='902'>
+            XLAI(I,J)   = SUMLAI / ALAI<a name='903'>
+            XLAIMN(I,J) = SUMLMN / ALAI<a name='904'>
+            RSTMIN(I,J) = SUMLAI / SUMRSI<a name='905'>
+            ZNT(I,J)    = EXP(SUMLZ0/ALAI)<a name='906'>
+            XVEG(I,J)   = SUMVEG / ALAI<a name='907'>
+            XVEGMN(I,J) = SUMVMN / ALAI<a name='908'>
+            XSNUP(I,J)  = SUMSNUP<a name='909'>
+            XALB(I,J)   = SUMALB<a name='910'>
+            XSNOALB(I,J)= SUMSNOALB<a name='911'>
+          ENDIF<a name='912'>
+<a name='913'>
+          IF (FWAT .GT. 0.50) THEN<a name='914'>
+            ZNT(I,J)    = Z0(KWAT)<a name='915'>
+            XALB(I,J)   = ALB(KWAT)<a name='916'>
+            XSNOALB(I,J)= SNOALB(KWAT)<a name='917'>
+          ENDIF<a name='918'>
+<a name='919'>
+          <font color=#447700>!-- Compute wetlands fraction for proper MMLUIN data set<a name='920'></font>
+          <font color=#447700>!-- Note: if LU categories change, these hard coded indicies must be updated<a name='921'></font>
+          IF (LAND_USE_TYPE == 'USGS') THEN<a name='922'>
+            WETFRA(I,J)  = LANDUSEF(I,17,J)+LANDUSEF(I,18,J)<a name='923'>
+          ELSE IF (LAND_USE_TYPE == 'USGS28') THEN<a name='924'>
+            WETFRA(I,J)  = LANDUSEF(I,17,J)+LANDUSEF(I,18,J)<a name='925'>
+          ELSE IF (LAND_USE_TYPE == 'NLCD50') THEN<a name='926'>
+            WETFRA(I,J)  = LANDUSEF(I,22,J)+LANDUSEF(I,23,J)+LANDUSEF(I,27,J)+LANDUSEF(I,28,J)+LANDUSEF(I,42,J)<a name='927'>
+          ELSE IF (LAND_USE_TYPE == 'NLCD40') THEN<a name='928'>
+            WETFRA(I,J)  = LANDUSEF(I,39,J)+LANDUSEF(I,40,J)+LANDUSEF(I,11,J)<a name='929'>
+          ELSE IF (LAND_USE_TYPE == 'MODIS') THEN<a name='930'>
+            WETFRA(I,J)  = LANDUSEF(I,11,J)<a name='931'>
+          END IF<a name='932'>
+<a name='933'>
+          ZNT(I,J)    = ZNT(I,J) * 0.01           <font color=#447700>!CONVERT TO M<a name='934'></font>
+          XVEG(I,J)   = XVEG(I,J) * 0.01          <font color=#447700>!CONVERT TO FRAC<a name='935'></font>
+          XVEGMN(I,J) = XVEGMN(I,J) * 0.01<a name='936'>
+          XLAND(I,J)  = 1.0 + FWAT<a name='937'>
+          XALB(I,J)   = XALB(I,J) * 0.01<a name='938'>
+          XSNOALB(I,J)= XSNOALB(I,J) * 0.01<a name='939'>
+        <a name='940'>
+          <font color=#447700>!-------Adjustment according to CANFRA and IMPERV fo NLCD40 only -----------<a name='941'></font>
+          FIMP = IMPERV(I,J) * 0.01<a name='942'>
+          FCAN = CANFRA(I,J) * 0.01<a name='943'>
+          IF (LAND_USE_TYPE == 'NLCD40') THEN<a name='944'>
+             XVEG(I,J) = MIN(XVEG(I,J),1.0-FIMP)<a name='945'>
+             XVEGMN(I,J) = MIN(XVEGMN(I,J),1.0-FIMP)<a name='946'>
+             XVEG(I,J) = MAX(XVEG(I,J),FCAN)<a name='947'>
+             XVEGMN(I,J) = MAX(XVEGMN(I,J),FCAN)<a name='948'>
+           <a name='949'>
+             FORFRA = LANDUSEF(I,39,J)+LANDUSEF(I,30,J)+LANDUSEF(I,29,J)+LANDUSEF(I,28,J)<a name='950'>
+             EXTFOR =  FCAN - FORFRA<a name='951'>
+             IF (EXTFOR.GE.0.01) THEN<a name='952'>
+                XLAI(I,J) = LAIMX(30) * EXTFOR + XLAI(I,J) * (1-EXTFOR)<a name='953'>
+                XLAIMN(I,J) = LAIMN(30) * EXTFOR + XLAIMN(I,J) * (1-EXTFOR)<a name='954'>
+             ENDIF<a name='955'>
+          ENDIF<a name='956'>
+          <font color=#447700>!--------------------------------------------------------------------------<a name='957'></font>
+<a name='958'>
+        ENDDO     <font color=#447700>! END LOOP THROUGH GRID CELLS<a name='959'></font>
+      ENDDO       <font color=#447700>! END LOOP THROUGH GRID CELLS<a name='960'></font>
+      <font color=#447700>!--------------------------------------------------------------------<a name='961'></font>
+<a name='962'>
+  END SUBROUTINE vegeland<a name='963'>
+<a name='964'>
+<font color=#447700>!------------------------------------------------------------------------------<a name='965'></font>
+<font color=#447700>!------------------------------------------------------------------------------<a name='966'></font>
+<A NAME='SURFPX'><A href='../../html_code/phys/module_sf_pxlsm.F.html#SURFPX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='967'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>SURFPX</font>(DTPBL, IFLAND, ISNOW, NUDGEX, XICE1, SOLDN, GSW,     &amp; <font color=#447700>!in <A href='../../call_to/SURFPX.html' TARGET='index'>1</A>,<A href='../../call_from/SURFPX.html' TARGET='index'>2</A><a name='968'></font>
+                        LWDN, EMISSI, Z1, MOL, ZNT, UST, PSURF, DENS1,       &amp; <font color=#447700>!in<a name='969'></font>
+                        QV1, QSS, TA1, THETA1, PRECIP, CPAIR, PSIH,          &amp; <font color=#447700>!in<a name='970'></font>
+                        RH2OBS, T2OBS, VEGFRC, ISTI,LAI,IMPERV,CANFRA,BETAP, &amp; <font color=#447700>!in<a name='971'></font>
+                        RSTMIN, HC_SNOW, SNOW_FRA, WETFRA, WWLT, WFC,        &amp; <font color=#447700>!in<a name='972'></font>
+                        CGSAT, WSAT, B, C1SAT, C2R, AS, JP, DS1, DS2, QST12, &amp; <font color=#447700>!in<a name='973'></font>
+                        RADNET, GRDFLX, HFX, QFX, LH, EG, ER,  ETR,          &amp; <font color=#447700>!out<a name='974'></font>
+                        QST, CAPG, RS, RA, TG, T2, WG, W2, WR,               &amp; <font color=#447700>!out<a name='975'></font>
+                        TA2, QA2, LAND_USE_TYPE, I, J )                            <font color=#447700>!out<a name='976'></font>
+<a name='977'>
+<font color=#447700>!------------------------------------------------------------------------------<a name='978'></font>
+<font color=#447700>! <a name='979'></font>
+<font color=#447700>!  FUNCTION:<a name='980'></font>
+<font color=#447700>!    THIS SUBROUTINE COMPUTES SOIL MOISTURE AND TEMPERATURE TENDENCIES<a name='981'></font>
+<font color=#447700>!    BY SOLVING THE PROGNOSTIC EQUATIONS IN PX95.<a name='982'></font>
+<font color=#447700>!<a name='983'></font>
+<font color=#447700>!  SUBROUTINES CALLED:<a name='984'></font>
+<font color=#447700>!    SUB. QFLUX   compute the soil and canopy evaporation, and transpiration<a name='985'></font>
+<font color=#447700>!    SUB. SMASS   compute nudging coefficients for soil moisture and temp nudging<a name='986'></font>
+<font color=#447700>!<a name='987'></font>
+<font color=#447700>!  ARGUMENTS:<a name='988'></font>
+<font color=#447700>!    DTPBL:   TIME STEP OF THE MINOR LOOP FOR THE LAND-SURFACE/PBL MODEL<a name='989'></font>
+<font color=#447700>!    IFLAND:  INDEX WHICH INDICATES THE TYPE OF SURFACE,=1,LAND;=2,SEA<a name='990'></font>
+<font color=#447700>!    ISNOW:   SNOW (=1) OR NOT (=0)<a name='991'></font>
+<font color=#447700>!    NUDGE:   SWITCH FOR SOIL MOISTURE NUDGING<a name='992'></font>
+<font color=#447700>!    SOLDN:   SHORT-WAVE RADIATION<a name='993'></font>
+<font color=#447700>!    LWDN:    LONG-WAVE RADIATION<a name='994'></font>
+<font color=#447700>!    EMISSI:  EMISSIVITY<a name='995'></font>
+<font color=#447700>!    Z1:      HEIGHT OF THE LOWEST HALF LAYER<a name='996'></font>
+<font color=#447700>!    MOL:     MONIN-OBUKOV LENGH (M)<a name='997'></font>
+<font color=#447700>!    ZNT:     ROUGHNESS LENGTH (M)<a name='998'></font>
+<font color=#447700>!    UST:     FRICTION VELOCITY (M/S)<a name='999'></font>
+<font color=#447700>!    TST:     Turbulent moisture scale<a name='1000'></font>
+<font color=#447700>!    RA:      AERODYNAMIC RESISTENCE<a name='1001'></font>
+<font color=#447700>!    PSURF:   P AT SURFACE (CB)<a name='1002'></font>
+<font color=#447700>!    DENS1:   AIR DENSITY AT THE FIRST HALF LAYER<a name='1003'></font>
+<font color=#447700>!    QV1:     Air humidity at first half layer<a name='1004'></font>
+<font color=#447700>!    QSS:     Saturation mixing ratio at ground<a name='1005'></font>
+<font color=#447700>!    TA1:     Air temperature at first half layer<a name='1006'></font>
+<font color=#447700>!    THETA1:  Potential temperature at first half layer<a name='1007'></font>
+<font color=#447700>!    PRECIP:  Precipitation rate in m/s<a name='1008'></font>
+<font color=#447700>!    STBOLT:  STEFAN BOLTZMANN'S CONSTANT<a name='1009'></font>
+<font color=#447700>!    KARMAN:  VON KARMAN CONSTANT<a name='1010'></font>
+<font color=#447700>!    CPAIR:   Specific heat of moist air (M^2 S^-2 K^-1)<a name='1011'></font>
+<font color=#447700>!    TAUINV:  1/1DAY(SEC)<a name='1012'></font>
+<font color=#447700>!    VEGFRC:  Vegetation coverage<a name='1013'></font>
+<font color=#447700>!    ISTI:    soil type<a name='1014'></font>
+<font color=#447700>!    LAI:     Leaf area index<a name='1015'></font>
+<font color=#447700>!    IMPERV:  Percentage of IMPERVIOUS Fraction <a name='1016'></font>
+<font color=#447700>!    CANFRA:  Percentage of Canopy/Tree Fraction <a name='1017'></font>
+<font color=#447700>!    BETAP:   Coefficient for bare soil evaporation<a name='1018'></font>
+<font color=#447700>!    WETFRA:  Fraction of Wetlands area <a name='1019'></font>
+<font color=#447700>!    THZ1OB:  Observed TEMP FROM ANAL OF OBS TEMPS AT SCREEN HT<a name='1020'></font>
+<font color=#447700>!    RHOBS:   Observed relative humidity at SCREEN HT<a name='1021'></font>
+<font color=#447700>!    RSTMIN   Minimum Stomatol resistence<a name='1022'></font>
+<font color=#447700>!... Outputs from SURFPX<a name='1023'></font>
+<font color=#447700>!    RADNET: Net radiation<a name='1024'></font>
+<font color=#447700>!    HFX:    SENSIBLE HEAT FLUX (W / M^2)<a name='1025'></font>
+<font color=#447700>!    QFX:    TOTAL EVAP FLUX (KG / M^2 S)<a name='1026'></font>
+<font color=#447700>!    GRDFLX: Ground heat flux (W / M^2)<a name='1027'></font>
+<font color=#447700>!    QST:    Turbulent moisture scale<a name='1028'></font>
+<font color=#447700>!    CAPG:   THERMAL CAPACITY OF GROUND SLAB (J/M^2/K)<a name='1029'></font>
+<font color=#447700>!    RS:     Surface resistence<a name='1030'></font>
+<font color=#447700>!    RA:     Surface aerodynamic resistence<a name='1031'></font>
+<font color=#447700>!    EG:     evaporation from ground (bare soil)<a name='1032'></font>
+<font color=#447700>!    ER:     evaporation from canopy<a name='1033'></font>
+<font color=#447700>!    ETR:    transpiration from vegetation<a name='1034'></font>
+<font color=#447700>!    TA2:    diagnostic 2-m temperature from surface layer and lsm<a name='1035'></font>
+<font color=#447700>!<a name='1036'></font>
+<font color=#447700>!... Updated variables in this subroutine<a name='1037'></font>
+<font color=#447700>!    TG:     Soil temperature at first soil layer<a name='1038'></font>
+<font color=#447700>!    T2:     Soil temperature in root zone<a name='1039'></font>
+<font color=#447700>!    WG:     Soil moisture at first soil layer<a name='1040'></font>
+<font color=#447700>!    W2:     Soil moisture at root zone<a name='1041'></font>
+<font color=#447700>!    WR:     Canopy water content in m<a name='1042'></font>
+<font color=#447700>!<a name='1043'></font>
+<font color=#447700>!  REVISION HISTORY:<a name='1044'></font>
+<font color=#447700>!     AX     2/2005 - developed WRF version based on the MM5 PX LSM<a name='1045'></font>
+<font color=#447700>!<a name='1046'></font>
+<font color=#447700>!------------------------------------------------------------------------------<a name='1047'></font>
+<font color=#447700>!------------------------------------------------------------------------------<a name='1048'></font>
+      IMPLICIT NONE<a name='1049'>
+<a name='1050'>
+<font color=#447700>!.......Arguments<a name='1051'></font>
+<a name='1052'>
+<font color=#447700>!.. Integer<a name='1053'></font>
+      INTEGER , INTENT(IN)  :: ISTI, NUDGEX, I, J<a name='1054'>
+<a name='1055'>
+<font color=#447700>!... Real<a name='1056'></font>
+      REAL ,    INTENT(IN)  :: DTPBL, DS1, DS2<a name='1057'>
+      REAL ,    INTENT(IN)  :: IFLAND, ISNOW, XICE1<a name='1058'>
+      REAL ,    INTENT(IN)  :: SOLDN, GSW, LWDN, EMISSI, Z1<a name='1059'>
+      REAL ,    INTENT(IN)  :: ZNT<a name='1060'>
+      REAL ,    INTENT(IN)  :: PSURF, DENS1, QV1, QSS, TA1,  THETA1, PRECIP<a name='1061'>
+      REAL ,    INTENT(IN)  :: CPAIR<a name='1062'>
+      REAL ,    INTENT(IN)  :: VEGFRC, LAI, IMPERV, CANFRA<a name='1063'>
+      REAL ,    INTENT(IN)  :: RSTMIN, HC_SNOW, SNOW_FRA, WETFRA <a name='1064'>
+      REAL ,    INTENT(IN)  :: WWLT, WFC, CGSAT, WSAT, B, C1SAT, C2R, AS, JP<a name='1065'>
+      REAL ,    INTENT(IN)  :: RH2OBS,T2OBS<a name='1066'>
+      REAL ,    INTENT(IN)  :: QST12<a name='1067'>
+<a name='1068'>
+      REAL ,    INTENT(OUT) :: RADNET, EG, ER, ETR<a name='1069'>
+      REAL ,    INTENT(OUT) :: QST, CAPG, RS, TA2, QA2<a name='1070'>
+<a name='1071'>
+      REAL ,    INTENT(INOUT) :: TG, T2, WG, W2, WR, UST, RA, BETAP <a name='1072'>
+      REAL ,    INTENT(INOUT) :: GRDFLX, QFX, HFX, LH, PSIH, MOL<a name='1073'>
+<a name='1074'>
+      CHARACTER (LEN = 5), INTENT(IN) :: LAND_USE_TYPE<a name='1075'>
+<a name='1076'>
+<font color=#447700>!... Local Variables<a name='1077'></font>
+<a name='1078'>
+<font color=#447700>!... Real<a name='1079'></font>
+      REAL        :: HF, LV, CQ4, WETSAT, SM2 <a name='1080'>
+      REAL        :: RAH, RAW, ET, W2CG, CG, CT, SOILFLX, CPOT, THETAG<a name='1081'>
+      REAL        :: ZOL, ZOBOL, ZNTOL, Y, Y0, PSIH15, YNT<a name='1082'>
+      REAL        :: WGNUDG, W2NUDG, ALPH1, ALPH2, BET1, BET2, T1P5<a name='1083'>
+      REAL        :: CQ1, CQ2, CQ3, COEFFNP1, COEFFN, TSNEW, TSHLF, T2NEW<a name='1084'>
+      REAL        :: ROFF, WRMAX, PC, DWR, PNET, TENDWR, WRNEW<a name='1085'>
+      REAL        :: COF1, CFNP1WR, CFNWR, PG, FASS<a name='1086'>
+      REAL        :: TENDW2, W2NEW, W2HLF, W2REL, C1, C2, WEQ, CFNP1, CFN, WGNEW<a name='1087'>
+      REAL        :: ALN10, TMP1, TMP2, TMP3, AA, AB, TST, RBH, CTVEG<a name='1088'>
+      REAL        :: QST1,PHIH,PSIOB<a name='1089'>
+      REAL        :: T2NUD, T2NUDF<a name='1090'>
+      REAL        :: VAPPRS, QSBT, RH2MOD, IMF, VEGF, SOILF<a name='1091'>
+<a name='1092'>
+<font color=#447700>!... Parameters<a name='1093'></font>
+      REAL        :: ZOBS, GAMAH, BETAH, SIGF, BH, CT_SNOW, CT_IMPERV<a name='1094'>
+<a name='1095'>
+      REAL, PARAMETER :: CV = 1.2E-5   <font color=#447700>! K-M2/J Note: Update from 8E-6 10/14 Jon Pleim<a name='1096'></font>
+<a name='1097'>
+      PARAMETER (ZOBS  = 1.5)    <font color=#447700>! height for observed screen temp., (m)<a name='1098'></font>
+      PARAMETER (BH    = 15.7)<a name='1099'>
+      PARAMETER (GAMAH = 16. )   <font color=#447700>!11.6)<a name='1100'></font>
+      PARAMETER (BETAH = 5.0 )   <font color=#447700>!8.21)<a name='1101'></font>
+      PARAMETER (SIGF  = 0.5)    <font color=#447700>! rain interception see LSM (can be 0-1)<a name='1102'></font>
+      <font color=#447700>!--------------------------------------------------------------------<a name='1103'></font>
+      <font color=#447700>!  OLD PX legacy value from MM5 ... unknown origin PARAMETER (CT_SNOW  = 5.54E-5)   <a name='1104'></font>
+      <font color=#447700>! New value of CT_SNOW calibrated using multilayer soil model where csnow=6.9E5 J/(m3 K) <a name='1105'></font>
+      <font color=#447700>! from NCAR (WRFV3.2 -WRFV3.6.1) CSM PARAMETER (CT_SNOW  = 2.0E-5) <a name='1106'></font>
+      PARAMETER (CT_SNOW  = 2.0E-5)  <a name='1107'>
+<a name='1108'>
+      <font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1109'></font>
+      <font color=#447700>! CS for concrete/asphalt/road material (http://www.engineeringtoolbox.com/specific-heat-capacity-d_391.html)<a name='1110'></font>
+      <font color=#447700>!                                        cs_imperv = 920 J kg-1 K-1 <a name='1111'></font>
+      <font color=#447700>! CS for asphalt and concrete from 0.1785 to 0.20 cal g-1 K-1 (http://pages.towson.edu/morgan/files/Impervious.pdf)<a name='1112'></font>
+      <font color=#447700>! the values above translate to ~750 to 850 J kg-1 K-1<a name='1113'></font>
+      <font color=#447700>!<a name='1114'></font>
+      <font color=#447700>! CAPG used for WRF urban physics ranges from 1.0E6 for roof and building walls to 1.4E6 J m-3 K-1 for roads/urban ground<a name='1115'></font>
+      <font color=#447700>! Using these values to back out CS along with 0.15 m thickness 1.4E6 J m-3 K-1 * 0.15 m = 2.1E5 J m-2 K-1<a name='1116'></font>
+      <font color=#447700>! inverse of the value above gives CT_IMPERV value of 1/0.000021 = 4.762E-6 K m2 J-1<a name='1117'></font>
+<a name='1118'>
+      <font color=#447700>! The middle value will be used for now. 850 J kg-1 K-1. This needs to be converted from J/K per kg to area using <a name='1119'></font>
+      <font color=#447700>! the approxiate concrete/asphalt density and layer thickness or represenative thickness. For starters (12/2011)<a name='1120'></font>
+      <font color=#447700>! well not use the PX first layer thickness, but representative thickness of most roads/parkinglots/buildings.<a name='1121'></font>
+      <font color=#447700>! for now welll use 6 inches or about 15 cm or 0.15 m. Density of concrete (normal) from <a name='1122'></font>
+      <font color=#447700>! Dorf, Richard. Engineering Handbook. New York: CRC Press, 1996. is ~2400 kg m-3.<a name='1123'></font>
+      <font color=#447700>! Using these values 850 J kg-1 K-1 * 2400 kg m-3 * 0.15 m = 3.06E5 J m-2 K-1 or in CT form (inverse) 3.268E-6 K m2 J-1<a name='1124'></font>
+      <font color=#447700>! If you look at the range of possible values considering density differences of concrete/asphalt/etc<a name='1125'></font>
+      <font color=#447700>! Values can range from 2.5 to 6.0 E-6                                 <a name='1126'></font>
+      PARAMETER (CT_IMPERV  = 3.268E-6)  <a name='1127'>
+      <font color=#447700>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<a name='1128'></font>
+<a name='1129'>
+        ALN10  = ALOG(10.0)<a name='1130'>
+        RADNET = SOLDN - (EMISSI *(STBOLT *TG **4 - LWDN))        <font color=#447700>! NET RADIATION                             <a name='1131'></font>
+        <font color=#447700>!--------------------------------------------------------------------<a name='1132'></font>
+        CPOT= (100.0 / PSURF) ** ROVCP       <font color=#447700>! rcp is global constant(module_model_constants)                            <a name='1133'></font>
+        THETAG = TG * CPOT<a name='1134'>
+<a name='1135'>
+        ZOL   = Z1/MOL                                                       <a name='1136'>
+        ZOBOL = ZOBS/MOL                                                      <a name='1137'>
+        ZNTOL = ZNT/MOL                              <a name='1138'>
+<a name='1139'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1140'></font>
+        IF (MOL .LT. 0.0) THEN<a name='1141'>
+          Y      = ( 1.0 - GAMAH * ZOL ) ** 0.5<a name='1142'>
+          Y0     = ( 1.0 - GAMAH * ZOBOL ) ** 0.5<a name='1143'>
+          YNT    = ( 1.0 - GAMAH * ZNTOL ) ** 0.5<a name='1144'>
+          PSIH15 =  2.0 * ALOG((Y + 1.0) / (Y0 + 1.0))<a name='1145'>
+          PSIH   =  2.0 * ALOG((Y + 1.0) / (YNT + 1.0))<a name='1146'>
+          PSIOB  =  2.0 * ALOG((Y0 + 1.0) / (YNT + 1.0))<a name='1147'>
+          PHIH = 1.0 / Y<a name='1148'>
+        ELSE<a name='1149'>
+          IF((ZOL-ZNTOL).LE.1.0) THEN                                         <a name='1150'>
+            PSIH = -BETAH*(ZOL-ZNTOL)                                        <a name='1151'>
+          ELSE                                                               <a name='1152'>
+            PSIH = 1.-BETAH-(ZOL-ZNTOL)                                      <a name='1153'>
+          ENDIF             <a name='1154'>
+          IF ((ZOBOL - ZNTOL) .LE. 1.0) THEN<a name='1155'>
+            PSIOB = -BETAH * (ZOBOL - ZNTOL)<a name='1156'>
+          ELSE<a name='1157'>
+            PSIOB = 1.0 - BETAH - (ZOBOL - ZNTOL)<a name='1158'>
+          ENDIF<a name='1159'>
+          PSIH15 =  PSIH - PSIOB<a name='1160'>
+          IF(ZOL.LE.1.0) THEN<a name='1161'>
+            PHIH = 1.0 + BETAH * ZOL<a name='1162'>
+          ELSE<a name='1163'>
+            PHIH = BETAH + ZOL<a name='1164'>
+          ENDIF<a name='1165'>
+        ENDIF<a name='1166'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1167'></font>
+        <font color=#447700>!-- ADD RA AND RB FOR HEAT AND MOISTURE<a name='1168'></font>
+        <font color=#447700>!... RB FOR HEAT = 5 /UST<a name='1169'></font>
+        <font color=#447700>!... RB FOR WATER VAPOR =  5*(0.599/0.709)^2/3 /UST = 4.503/UST<a name='1170'></font>
+        RA=PR0* ( ALOG(Z1/ZNT) - PSIH )/(KARMAN*UST)<a name='1171'>
+        RAH = RA + 5.0 / UST<a name='1172'>
+        RAW = RA + 4.503 / UST<a name='1173'>
+<a name='1174'>
+        <font color=#447700>!--------------------------------------------------------------------<a name='1175'></font>
+        <font color=#447700>! Compute soil moisture layer 2 that considers fraction of saturated <a name='1176'></font>
+        <font color=#447700>! wetlands. If 100% of cell is wetland, soil moisture can be no lower<a name='1177'></font>
+        <font color=#447700>! than full soil saturation. If half wetland, no less than half saturated <a name='1178'></font>
+        IF (IFLAND .LT. 1.5 ) THEN<a name='1179'>
+        WETSAT = 1.00 * WSAT                           <font color=#447700>! Wetlands soil moisture<a name='1180'></font>
+        SM2    = (WETFRA * WETSAT)                     <font color=#447700>! <a name='1181'></font>
+        W2     = AMAX1(SM2, W2)                        <font color=#447700>! In case that W2 &gt; Field capacity (heavy precip), use wetter W2<a name='1182'></font>
+        ENDIF<a name='1183'>
+<a name='1184'>
+        <font color=#447700>!--------------------------------------------------------------------<a name='1185'></font>
+        <font color=#447700>!--  COMPUTE MOISTURE FLUX<a name='1186'></font>
+        CALL <A href='../../html_code/phys/module_sf_pxlsm.F.html#QFLUX'>QFLUX</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#SURFPX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="QFLUX_1">( DENS1,  QV1,    TA1,  SOLDN,  RAW, QSS,            &amp;<a name='1187'>
+                    VEGFRC, ISNOW,  ISTI, IFLAND, LAI, BETAP,          &amp;<a name='1188'>
+                    WG,     W2,     WR,                                &amp;<a name='1189'>
+                    RSTMIN, WWLT, WFC,                                 &amp;<a name='1190'>
+                    EG,     ER,     ETR,  CQ4,    RS,  FASS)<a name='1191'>
+        <font color=#447700>!--------------------------------------------------------------------<a name='1192'></font>
+<a name='1193'>
+        <font color=#447700>!--------------------------------------------------------------------<a name='1194'></font>
+        <font color=#447700>!    Compute Total evaporation (ET) from various modes of moisture flux<a name='1195'></font>
+        ET  = EG + ER + ETR<a name='1196'>
+        QST = -ET / (DENS1 * UST)<a name='1197'>
+ <a name='1198'>
+        LV  = 2.83E6                         <font color=#447700>!-- LATENT HEAT OF SUBLIMATION AT 0C FROM STULL(1988)<a name='1199'></font>
+        IF (ISNOW .LT. 0.5.AND.TG.GT.273.15)                            &amp;                                                                               <a name='1200'>
+                    LV = (2.501 - 0.00237 * (TG - 273.15)) * 1.E6  <font color=#447700>!-- FROM STULL(1988) in J/KG<a name='1201'></font>
+        <a name='1202'>
+        <font color=#447700>! IF (IFLAND .LT. 1.5 )  QFX = ET     !-- Recaculate QFX over land to account for P-X LSM EG, ER and ETR<a name='1203'></font>
+        QFX = ET<a name='1204'>
+        LH  = LV * QFX<a name='1205'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1206'></font>
+<a name='1207'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1208'></font>
+        <font color=#447700>! Surface sensible heat flux<a name='1209'></font>
+        TST = (THETA1 - THETAG ) / (UST*RAH)<a name='1210'>
+        HF  = UST * TST           <a name='1211'>
+        HFX = AMAX1(-DENS1 * CPAIR * HF, -250.0)  <font color=#447700>! using -250. from MM5                                   <a name='1212'></font>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1213'></font>
+<a name='1214'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1215'></font>
+        <font color=#447700>! Compute the diagnosed 2m Q and T consistent with PX LSM<a name='1216'></font>
+        QST1 = 0.5*(QST+QST12/PHIH)<a name='1217'>
+        TA2  = (THETAG + TST * (PR0 / KARMAN * (ALOG(ZOBS / ZNT) - PSIOB)+5.))/CPOT<a name='1218'>
+        QA2  = QV1 - QST1 * PR0/ KARMAN *  (ALOG(Z1 / ZOBS) - PSIH15)<a name='1219'>
+<a name='1220'>
+        IF (QA2.LE.0.0) QA2 = QV1<a name='1221'>
+<a name='1222'>
+        <font color=#447700>!--  Relative humidity<a name='1223'></font>
+        VAPPRS = SVP1 * EXP(SVP2 * (TA2 - SVPT0) / (TA2 - SVP3))<a name='1224'>
+        QSBT   = EP_2 * VAPPRS / (PSURF - VAPPRS)<a name='1225'>
+        RH2MOD = QA2 / QSBT<a name='1226'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1227'></font>
+        IF (IFLAND .LT. 1.5 ) THEN<a name='1228'>
+          W2CG = AMAX1(W2,WWLT)<a name='1229'>
+          CG   = CGSAT * 1.0E-6 * (WSAT/ W2CG) **    &amp;  <a name='1230'>
+                 (0.5 * B / ALN10)<a name='1231'>
+          <font color=#447700>! IMPERVIOUS weighting scheme -- Subtract highly accurate impervious fraction from cell<a name='1232'></font>
+          <font color=#447700>! remainder is split between ground and vegetation. CT is a weighted fractional average.<a name='1233'></font>
+          <font color=#447700>! Snow CT is then applied for final heat capacity<a name='1234'></font>
+          IMF  = AMAX1(0.0,IMPERV/100.0)<a name='1235'>
+          VEGF = (1.0 - IMF) * VEGFRC<a name='1236'>
+          SOILF= (1.0 - IMF) * (1.0 - VEGFRC)<a name='1237'>
+          CT   = 1./( IMF/CT_IMPERV + VEGF/CV + SOILF/CG)                        <a name='1238'>
+          CT   = 1./(SNOW_FRA/CT_SNOW + (1-SNOW_FRA)/CT)<a name='1239'>
+          CAPG = 1.0/CT          <a name='1240'>
+<a name='1241'>
+          SOILFLX = 2.0 * PI * TAUINV * (TG - T2)<a name='1242'>
+          GRDFLX  = SOILFLX / CT<a name='1243'>
+        ENDIF<a name='1244'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1245'></font>
+<a name='1246'>
+        <font color=#447700>!--------------------------------------------------------------------<a name='1247'></font>
+        <font color=#447700>!-- ASSIMILATION --- COMPUTE SOIL MOISTURE NUDGING FROM TA2 and RH2               <a name='1248'></font>
+        <font color=#447700>!-------COMPUTE ASSIMILATION COEFFICIENTS FOR ALL I                            <a name='1249'></font>
+        IF (IFLAND .LT. 1.5) THEN<a name='1250'>
+          IF (NUDGEX .EQ. 0) THEN                                          <font color=#447700>!-- NO NUDGING CASE                <a name='1251'></font>
+            WGNUDG = 0.0                                                        <a name='1252'>
+            W2NUDG = 0.0    <a name='1253'>
+            T2NUD  = 0.0                                    <a name='1254'>
+          ELSE                                                               <font color=#447700>!-- NUDGING CASE        <a name='1255'></font>
+            <a name='1256'>
+            CALL <A href='../../html_code/phys/module_sf_pxlsm.F.html#SMASS'>SMASS</A><A href='../../html_code/phys/module_sf_pxlsm.F.html#SURFPX' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SMASS_1"> (ISTI,  FASS,  SOLDN,   VEGFRC, RA, WWLT, WFC,   &amp;                       <a name='1257'>
+                        ALPH1, ALPH2, BET1, BET2, T2NUDF)                             <a name='1258'>
+<a name='1259'>
+            <font color=#447700>!--COMPUTE MODEL RH<a name='1260'></font>
+            WGNUDG = ALPH1 * (T2OBS - TA2) + ALPH2 * (RH2OBS - RH2MOD) * 100  <a name='1261'>
+            W2NUDG = BET1  * (T2OBS - TA2) + BET2  * (RH2OBS - RH2MOD) * 100<a name='1262'>
+            IF (W2 .GE. WFC)  W2NUDG = AMIN1(W2NUDG,0.0)<a name='1263'>
+            IF (W2 .LE. WWLT) W2NUDG = AMAX1(W2NUDG,0.0)<a name='1264'>
+            T2NUD = T2NUDF * (T2OBS - TA2)<a name='1265'>
+          ENDIF<a name='1266'>
+        ENDIF<a name='1267'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1268'></font>
+<a name='1269'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1270'></font>
+        <font color=#447700>!-- Compute new values for TS,T2,WG,W2 and WR. No change over ice or water (XLAND &gt; 1)<a name='1271'></font>
+        IF (IFLAND .LT. 1.5) THEN<a name='1272'>
+          <font color=#447700>!-- SOLVE BY CRANK-NIC --   TENDTS=CT*(RADNET-HFX-QFX)-SOILFLX <a name='1273'></font>
+          <font color=#447700>!-- Calculate the coefficients for implicit calculation of TG<a name='1274'></font>
+          CQ1      = (1.0 - 0.622 * LV * CRANKP / (r_d * TG)) * QSS<a name='1275'>
+          CQ2      = 0.622 * LV * QSS * CRANKP / (r_d * TG * TG)<a name='1276'>
+          CQ3      = DENS1 * BETAP * (1.0 - VEGFRC) / RAW<a name='1277'>
+          COEFFNP1 = 1.0 + DTPBL * CRANKP * (4.0 * EMISSI *  STBOLT * TG ** 3    &amp;<a name='1278'>
+                     * CT + DENS1 * CPAIR / RAH * CPOT * CT + 2.0 * PI           &amp;<a name='1279'>
+                     * TAUINV ) + DTPBL * (CT * LV * CQ2 * (CQ3 + CQ4))<a name='1280'>
+          COEFFN   = CT * (GSW + EMISSI * (STBOLT * (4.0 * CRANKP - 1.0)         &amp;<a name='1281'>
+                     * TG*TG*TG*TG + LWDN)                                       &amp; <font color=#447700>!NET RAD<a name='1282'></font>
+                     + DENS1 * CPAIR / RAH * (THETA1 - (1.0 - CRANKP) * THETAG)  &amp;<a name='1283'>
+                     - LV * (CQ3 * (CQ1 - QV1) + CQ4 * (CQ1 - QV1)))             &amp; <font color=#447700>!SFC HEAT FLUX <a name='1284'></font>
+                     - 2.0 * PI * TAUINV * ((1.0 - CRANKP) * TG - T2)              <font color=#447700>!SOIL FLUX<a name='1285'></font>
+          TSNEW    = (TG + DTPBL * COEFFN) / COEFFNP1<a name='1286'>
+          <font color=#447700>!-- FOR SNOW COVERED SURFACE TEMPERATURE IS NOT MORE THAN ZERO<a name='1287'></font>
+          IF (XICE1 .GT. 0.5) TSNEW = AMIN1(TSNEW,273.15)                         <font color=#447700>! Re-added Jan 2010 to keep ice surface at or below freezing (J. Pleim)<a name='1288'></font>
+          TSHLF = 0.5 * ( TSNEW + TG)<a name='1289'>
+          T2NEW = (T2 + DTPBL * TAUINV * T2TFAC * (TSHLF - (1 - CRANKP) * T2)     &amp;<a name='1290'>
+                + DTPBL*T2NUD)  &amp;              <font color=#447700>! Added deep temperature nudging <a name='1291'></font>
+                  / (1.0 + DTPBL * TAUINV * T2TFAC * CRANKP)<a name='1292'>
+          <font color=#447700>!-- REPLACE OLD with NEW Value<a name='1293'></font>
+          TG = TSNEW<a name='1294'>
+          T2 = T2NEW             <a name='1295'>
+        ENDIF<a name='1296'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1297'></font>
+<a name='1298'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1299'></font>
+      <font color=#447700>! Compute new subsurface soil and canopy moisture values DENS1. No change required over ocean.<a name='1300'></font>
+        IF (IFLAND .LT. 1.5.AND. XICE1.LT.0.5) THEN  <a name='1301'>
+          <font color=#447700>!-- Compute WR<a name='1302'></font>
+          ROFF  = 0.0<a name='1303'>
+          WRMAX = 0.2E-3 * VEGFRC * LAI                     <font color=#447700>! max. WRMAX IN m<a name='1304'></font>
+          <a name='1305'>
+          IF(WRMAX.GT.0.0) THEN<a name='1306'>
+            <font color=#447700>!--  PC is precip. intercepted by veg.(M/S)<a name='1307'></font>
+            PC    = VEGFRC * SIGF * PRECIP<a name='1308'>
+            DWR   = (WRMAX - WR) / DTPBL                       <font color=#447700>!the tendency to reach max.<a name='1309'></font>
+            PNET  = PC - ER/ DENW                              <font color=#447700>! residual of precip. and evap.<a name='1310'></font>
+            IF (PNET .GT. DWR) THEN<a name='1311'>
+              ROFF = PNET - DWR<a name='1312'>
+              PC   = PC - ROFF<a name='1313'>
+            ENDIF<a name='1314'>
+            IF (QSS .LT. QV1) THEN<a name='1315'>
+              TENDWR = PC - ER / DENW<a name='1316'>
+              WRNEW  = WR + DTPBL * TENDWR<a name='1317'>
+            ELSE<a name='1318'>
+              COF1    = DENS1 / DENW * VEGFRC * (QSS - QV1) / RAW<a name='1319'>
+              <font color=#447700>!-- using delta=wr/wrmax<a name='1320'></font>
+              CFNP1WR = 1.0 + DTPBL * COF1 * CRANKP / WRMAX  <a name='1321'>
+              CFNWR   = PC - COF1 * (1.0 - CRANKP) * WR / WRMAX<a name='1322'>
+              WRNEW   = (WR + DTPBL * CFNWR) / CFNP1WR<a name='1323'>
+            ENDIF<a name='1324'>
+          ELSE<a name='1325'>
+            PC=0.0<a name='1326'>
+            WRNEW=0.0  <a name='1327'>
+          ENDIF<a name='1328'>
+          <font color=#447700>!---------------------------------------------<a name='1329'></font>
+          <font color=#447700>!-- Compute W2<a name='1330'></font>
+          PG     = DENW * (PRECIP - PC)               <font color=#447700>! PG is precip. reaching soil (PC already including ROFF)<a name='1331'></font>
+          TENDW2 = 1.0 / (DENW * DS2) * (PG - EG - ETR) &amp;<a name='1332'>
+                   + (W2NUDG + WGNUDG) / DS2                    <font color=#447700>! NUDGING<a name='1333'></font>
+          W2NEW  = W2 + DTPBL * TENDW2<a name='1334'>
+          W2NEW  = AMIN1(W2NEW,WSAT)<a name='1335'>
+          W2NEW  = AMAX1(W2NEW,0.05)<a name='1336'>
+          W2HLF  = 0.5 * (W2 + W2NEW)<a name='1337'>
+          <font color=#447700>!.. new values<a name='1338'></font>
+          W2     = W2NEW<a name='1339'>
+          WR     = AMIN1(WRMAX,WRNEW)<a name='1340'>
+        ENDIF<a name='1341'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1342'></font>
+<a name='1343'>
+        <font color=#447700>!-----------------------------------------------------------------------------------------<a name='1344'></font>
+      <font color=#447700>! Compute new surface soil moisture values (WR).<a name='1345'></font>
+        IF (IFLAND .LT. 1.5.AND. XICE1.LT.0.5) THEN  <font color=#447700>! over ocean no change to wg w2,wr<a name='1346'></font>
+        <font color=#447700>!--    FOR SNOW COVERED SURFACE, ASSUME SURFACE IS SATURATED AND<a name='1347'></font>
+        <font color=#447700>!      WG AND W2 ARE NOT CHANGED<a name='1348'></font>
+          IF (ISNOW .GT.0.5) THEN<a name='1349'>
+            WG = WSAT<a name='1350'>
+          ELSE<a name='1351'>
+            W2REL = W2HLF / WSAT<a name='1352'>
+            IF (WG .GT. WWLT) THEN<a name='1353'>
+              C1 = C1SAT * (WSAT / WG) ** (0.5 * B + 1.0) <a name='1354'>
+            ELSE   <font color=#447700>! elimilate C1 for wg &lt; wilting point<a name='1355'></font>
+              C1 = C1SAT * (WSAT / WWLT) ** (0.5 * B + 1.0)<a name='1356'>
+            ENDIF<a name='1357'>
+            C2 = C2R * W2HLF / (WSAT - W2HLF + 1.E-11) <a name='1358'>
+            IF (W2HLF .GE. WSAT) THEN<a name='1359'>
+              WEQ = WSAT<a name='1360'>
+            ELSE<a name='1361'>
+              WEQ = W2HLF - AS * WSAT * W2REL ** JP *         &amp;<a name='1362'>
+                   (1.0 - W2REL ** (8.0 * JP))<a name='1363'>
+            ENDIF<a name='1364'>
+<a name='1365'>
+            <font color=#447700>!.... The beta method, Lee &amp; Pielke (JAM, May 1992)<a name='1366'></font>
+            CFNP1 = 1.0 + DTPBL * C2 * TAUINV * CRANKP<a name='1367'>
+            CFN   = C1 / (DENW * DS1) * (PG - EG) - C2 * TAUINV *               &amp;<a name='1368'>
+                    ((1.0 - CRANKP) * WG - WEQ) + WGNUDG/ DS1                                    <a name='1369'>
+<a name='1370'>
+            WGNEW = AMAX1((WG + DTPBL * CFN) / CFNP1,0.001)<a name='1371'>
+            <font color=#447700>!-- NEW VALUES<a name='1372'></font>
+            WG    = AMIN1(WGNEW,WSAT)<a name='1373'>
+            <a name='1374'>
+          ENDIF                  <font color=#447700>!endif for ISNOW<a name='1375'></font>
+        ENDIF                    <font color=#447700>!endif for XLAND<a name='1376'></font>
+            <a name='1377'>
+      END SUBROUTINE surfpx<a name='1378'>
+<font color=#447700>!-------------------------------------------------------------------------<a name='1379'></font>
+<font color=#447700>!-------------------------------------------------------------------------<a name='1380'></font>
+<a name='1381'>
+<font color=#447700>!-------------------------------------------------------------------------<a name='1382'></font>
+<font color=#447700>!-------------------------------------------------------------------------<a name='1383'></font>
+<A NAME='QFLUX'><A href='../../html_code/phys/module_sf_pxlsm.F.html#QFLUX' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1384'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>QFLUX</font> (DENS1,  QV1,   TA1,  RG,     RAW, QSS,           &amp; <font color=#447700>! in <A href='../../call_to/QFLUX.html' TARGET='index'>1</A><a name='1385'></font>
+                        VEGFRC, ISNOW, ISTI, IFLAND, LAI, BETAP,         &amp; <font color=#447700>! in<a name='1386'></font>
+                        WG,     W2,    WR,                               &amp; <font color=#447700>! in<a name='1387'></font>
+                        RSTMIN, WWLT,  WFC,                              &amp;<a name='1388'>
+                        EG,     ER,    ETR,  CQ4,    RS,  FASS)            <font color=#447700>! out<a name='1389'></font>
+<a name='1390'>
+<font color=#447700>!-------------------------------------------------------------------------<a name='1391'></font>
+<font color=#447700>!                                                              <a name='1392'></font>
+<font color=#447700>!  FUNCTION:                                                          <a name='1393'></font>
+<font color=#447700>!    THIS SUBROUTINE COMPUTES EVAPORATION FROM BARE SOIL (EG) AND FROM<a name='1394'></font>
+<font color=#447700>!    THE WET PART OF CANOPY (ER) AND TRANSPIRATION FROM THE DRY PART OF<a name='1395'></font>
+<font color=#447700>!    CANOPY (ETR).                       <a name='1396'></font>
+<font color=#447700>!                                        <a name='1397'></font>
+<font color=#447700>!  REVISION HISTORY: <a name='1398'></font>
+<font color=#447700>!    A. Xiu       Oct  2004  - adapted from the PX LSM in MM5 for the WRF system                            <a name='1399'></font>
+<font color=#447700>!    R. Gilliam   Dec  2006  - Completed WRF V2.1.2 implementation                                 <a name='1400'></font>
+<font color=#447700>!                                                               <a name='1401'></font>
+<font color=#447700>!-------------------------------------------------------------------------<a name='1402'></font>
+<font color=#447700>!  QFLUX ARGUMENT LIST:                                                        <a name='1403'></font>
+<font color=#447700>!-------------------------------------------------------------------------<a name='1404'></font>
+<font color=#447700>! INPUTS:<a name='1405'></font>
+<font color=#447700>!-- DENS1        air density at first layer<a name='1406'></font>
+<font color=#447700>!-- QV1          air humidity at first layer<a name='1407'></font>
+<font color=#447700>!-- TA1          air temperature at first layer<a name='1408'></font>
+<font color=#447700>!-- RG           shortwave radition reaching the ground<a name='1409'></font>
+<font color=#447700>!-- RAW          RA+RB for moisture<a name='1410'></font>
+<font color=#447700>!-- QSS          saturation mixing ratio at ground<a name='1411'></font>
+<font color=#447700>!-- VEGFRC       vegetation coverage<a name='1412'></font>
+<font color=#447700>!-- ISNOW        if snow on the ground <a name='1413'></font>
+<font color=#447700>!-- ISTI         soil type<a name='1414'></font>
+<font color=#447700>!-- IFLAND       if land (=1) or water (=2)<a name='1415'></font>
+<font color=#447700>!-- LAI          leaf area index<a name='1416'></font>
+<font color=#447700>!-- BETAP        <a name='1417'></font>
+<font color=#447700>!-- WG           soil moisture at first soil layer<a name='1418'></font>
+<font color=#447700>!-- W2           soil moisture at root zone<a name='1419'></font>
+<font color=#447700>!-- WR           Canopy water<a name='1420'></font>
+<font color=#447700>!<a name='1421'></font>
+<font color=#447700>!  OUTPUTS FROM QFLUX:<a name='1422'></font>
+<font color=#447700>!-- EG           evaporation from ground (bare soil)<a name='1423'></font>
+<font color=#447700>!-- ER           evaporation from canopy<a name='1424'></font>
+<font color=#447700>!-- ETR          transpiration from vegetation<a name='1425'></font>
+<font color=#447700>!-- CQ4<a name='1426'></font>
+<font color=#447700>!-- RS           surface resistence<a name='1427'></font>
+<font color=#447700>!-- FASS         parameter for soil moisture nudging<a name='1428'></font>
+<font color=#447700>!-------------------------------------------------------------------------<a name='1429'></font>
+<font color=#447700>!-------------------------------------------------------------------------<a name='1430'></font>
+<a name='1431'>
+      IMPLICIT NONE<a name='1432'>
+<a name='1433'>
+<font color=#447700>! DECLARATIONS - INTEGER<a name='1434'></font>
+      INTEGER , INTENT(IN)  :: ISTI<a name='1435'>
+<a name='1436'>
+<font color=#447700>! DECLARATIONS - REAL<a name='1437'></font>
+      REAL ,    INTENT(IN)  :: ISNOW, IFLAND<a name='1438'>
+      REAL ,    INTENT(IN)  :: DENS1, QV1, TA1, RG, RAW, QSS,            &amp;<a name='1439'>
+                               VEGFRC, LAI,                              &amp;<a name='1440'>
+                               WG, W2, WR, RSTMIN   <a name='1441'>
+      REAL ,    INTENT(INOUT)  :: BETAP<a name='1442'>
+      REAL,     INTENT(IN)   :: WWLT, WFC<a name='1443'>
+<a name='1444'>
+      REAL ,    INTENT(OUT) :: EG, ER, ETR, CQ4, RS, FASS<a name='1445'>
+<a name='1446'>
+<font color=#447700>!... Local Variables<a name='1447'></font>
+<a name='1448'>
+<font color=#447700>!... Real<a name='1449'></font>
+      REAL    :: WRMAX, DELTA, SIGG, RADL, RADF, W2AVAIL, W2MXAV<a name='1450'>
+      REAL    :: FTOT, F1, F2, F3,  F4<a name='1451'>
+      REAL    :: FSHELT, GS, GA, FX<a name='1452'>
+      REAL    :: PAR, F1MAX<a name='1453'>
+<a name='1454'>
+<a name='1455'>
+<font color=#447700>!... Parameters<a name='1456'></font>
+      REAL, PARAMETER :: RSMAX = 5000.0                <font color=#447700>! s/m<a name='1457'></font>
+      REAL, PARAMETER :: FTMIN = 0.0000001             <font color=#447700>! m/s<a name='1458'></font>
+      REAL, PARAMETER :: F3MIN = 0.25<a name='1459'>
+<a name='1460'>
+<font color=#447700>!<a name='1461'></font>
+<font color=#447700>!... for water surface, no canopy evaporation and transpiration<a name='1462'></font>
+      ER  = 0.0<a name='1463'>
+      ETR = 0.0<a name='1464'>
+      CQ4 = 0.0<a name='1465'>
+      <a name='1466'>
+<font color=#447700>!... GROUND EVAPORATION (DEPOSITION)<a name='1467'></font>
+      IF (QSS .LT. QV1) BETAP = 1.0<a name='1468'>
+      EG = DENS1 * (1.0 - VEGFRC) * BETAP * (QSS - QV1) / RAW<a name='1469'>
+<a name='1470'>
+      <font color=#447700>!!---------------------------------------------------------------------<a name='1471'></font>
+<font color=#447700>!... CANOPY<a name='1472'></font>
+      IF (IFLAND .LT. 1.5 .AND. VEGFRC .GT. 0.0)  THEN<a name='1473'>
+        WRMAX = 0.2E-3 * VEGFRC * LAI   <font color=#447700>! in unit m<a name='1474'></font>
+        IF (WR .LE. 0.0) THEN<a name='1475'>
+          DELTA = 0.0<a name='1476'>
+        ELSE<a name='1477'>
+<font color=#447700>!         DELTA = (WR / WRMAX) ** 0.66667<a name='1478'></font>
+          DELTA = WR / WRMAX           <font color=#447700>! referred to SiB model<a name='1479'></font>
+        ENDIF<a name='1480'>
+        <a name='1481'>
+        IF (QSS .GE. QV1) THEN<a name='1482'>
+          SIGG = DELTA<a name='1483'>
+        ELSE<a name='1484'>
+          SIGG = 1.0<a name='1485'>
+        ENDIF<a name='1486'>
+<a name='1487'>
+        ER = DENS1 * VEGFRC * SIGG * (QSS - QV1) / RAW  <a name='1488'>
+      ENDIF<a name='1489'>
+      <font color=#447700>!!---------------------------------------------------------------------<a name='1490'></font>
+<a name='1491'>
+      <font color=#447700>!-- TRANSPIRATION<a name='1492'></font>
+      <font color=#447700>!!---------------------------------------------------------------------<a name='1493'></font>
+      IF (IFLAND .LT. 1.5 .AND. VEGFRC .GT. 0.0)  THEN<a name='1494'>
+        <a name='1495'>
+        <font color=#447700>!!!-RADIATION<a name='1496'></font>
+        IF (RSTMIN .GT. 130.0) THEN<a name='1497'>
+<font color=#447700>!          RADL = 30.0                                            ! W/M2<a name='1498'></font>
+<font color=#447700>!          F1MAX = 1.-0.03*LAI<a name='1499'></font>
+          F1MAX = 1.-0.02*LAI    <font color=#447700>!Echer2015  Trees<a name='1500'></font>
+        ELSE<a name='1501'>
+<font color=#447700>!          RADL = 100.0                                           ! W/M2<a name='1502'></font>
+<font color=#447700>!          F1MAX = 1.-0.05*LAI<a name='1503'></font>
+          F1MAX = 1.-0.07*LAI    <font color=#447700>!Echer2015 crops/grass<a name='1504'></font>
+        ENDIF<a name='1505'>
+<font color=#447700>!        RADF = 1.1 * RG / (RADL * LAI)                  ! NP89 - EQN34<a name='1506'></font>
+<font color=#447700>!        F1   = (RSTMIN / RSMAX + RADF) / (1.0 + RADF)<a name='1507'></font>
+<font color=#447700>!        PAR = 0.45 * RG<a name='1508'></font>
+        PAR = 0.45 * RG * 4.566  <font color=#447700>! converted from W/m2 to umoles/m2/s  (1/.219)  Echer2015<a name='1509'></font>
+<font color=#447700>!        F1 = F1MAX*(2./(1.+EXP(-0.014*PAR))-1.)<a name='1510'></font>
+        F1 = F1MAX*(1.0-exp(-0.0017*PAR))   <font color=#447700>!Echer2015<a name='1511'></font>
+        F1 = AMAX1(F1,RSTMIN / RSMAX)<a name='1512'>
+<a name='1513'>
+        <font color=#447700>!!!-SOIL MOISTURE<a name='1514'></font>
+        W2AVAIL = W2 - WWLT<a name='1515'>
+        W2MXAV  = WFC - WWLT<a name='1516'>
+        F2      = 1.0 / (1.0 + EXP(-5.0 * ( W2AVAIL / W2MXAV -               &amp;<a name='1517'>
+                  (W2MXAV / 3.0 + WWLT))))    <font color=#447700>! according JP, 9/94<a name='1518'></font>
+<a name='1519'>
+        <font color=#447700>!-AIR TEMP<a name='1520'></font>
+        <font color=#447700>!... according to Avissar (1985) and AX 7/95<a name='1521'></font>
+        IF (TA1 .LE. 302.15) THEN<a name='1522'>
+          F4 = 1.0 / (1.0 + EXP(-0.41 * (TA1 - 282.05)))<a name='1523'>
+        ELSE<a name='1524'>
+          F4 = 1.0 / (1.0 + EXP(0.5 * (TA1 - 314.0)))<a name='1525'>
+        ENDIF<a name='1526'>
+<a name='1527'>
+        FTOT = LAI * F1 * F2 * F4<a name='1528'>
+      ENDIF<a name='1529'>
+<a name='1530'>
+      <font color=#447700>!!---------------------------------------------------------------------<a name='1531'></font>
+      IF (IFLAND .LT. 1.5 .AND. VEGFRC .GT. 0.0)  THEN<a name='1532'>
+        FSHELT = 1.0   <font color=#447700>! go back to NP89<a name='1533'></font>
+        GS     = FTOT / (RSTMIN * FSHELT)<a name='1534'>
+        GA     = 1.0 / RAW<a name='1535'>
+        <font color=#447700>!-- Compute humidity effect according to RH at leaf surf<a name='1536'></font>
+        F3 = 0.5 * (GS - GA + SQRT(GA * GA + GA * GS *                       &amp;<a name='1537'>
+             (4.0 * QV1 / QSS - 2.0) + GS * GS)) / GS<a name='1538'>
+        F3 = AMIN1(AMAX1(F3,F3MIN),1.0)<a name='1539'>
+        RS = 1.0 / (GS * F3)<a name='1540'>
+        <a name='1541'>
+        <font color=#447700>!--- Compute Assimilation factor for soil moisture nudging - jp 12/94<a name='1542'></font>
+        <font color=#447700>!--  Note that the 30 coef is to result in order 1 factor for max<a name='1543'></font>
+        IF (RG .LT. 0.00001) THEN   <font color=#447700>! do not nudge during night<a name='1544'></font>
+          FX = 0.0<a name='1545'>
+        ELSE<a name='1546'>
+          FX = 30.0 * F1 * F4 * LAI / (RSTMIN * FSHELT)<a name='1547'>
+        ENDIF<a name='1548'>
+<a name='1549'>
+        FASS = FX<a name='1550'>
+        ETR = DENS1 * VEGFRC * (1.0 - SIGG) * (QSS - QV1) / (RAW + RS)<a name='1551'>
+        <font color=#447700>!..... CQ4 is used for the implicit calculation of TG in SURFACE<a name='1552'></font>
+        CQ4 = DENS1 * VEGFRC * ((1.0 - SIGG) / (RAW + RS) + SIGG / RAW)<a name='1553'>
+      ENDIF         <a name='1554'>
+<a name='1555'>
+    END SUBROUTINE qflux<a name='1556'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1557'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1558'></font>
+<a name='1559'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1560'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1561'></font>
+<A NAME='SMASS'><A href='../../html_code/phys/module_sf_pxlsm.F.html#SMASS' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1562'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>SMASS</font> (ISTI,  FASS,  RG,   VEGFRC, RA,              &amp; <font color=#447700>!in                       <A href='../../call_to/SMASS.html' TARGET='index'>1</A><a name='1563'></font>
+                        WWLT, WFC,                                   &amp; <font color=#447700>!in<a name='1564'></font>
+                        ALPH1, ALPH2, BET1, BET2, T2NUDF )             <font color=#447700>!out  <a name='1565'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1566'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1567'></font>
+      IMPLICIT NONE<a name='1568'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1569'></font>
+<font color=#447700>!     SMASS COMPUTES SOIL MOISTURE NUDGING COEFFICIENTS<a name='1570'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1571'></font>
+<font color=#447700>!<a name='1572'></font>
+<font color=#447700>!.........Arguments<a name='1573'></font>
+      INTEGER, PARAMETER             :: NSCAT    = 16     <font color=#447700>! max. soil types<a name='1574'></font>
+      <a name='1575'>
+      INTEGER,                   INTENT(IN)   :: ISTI <a name='1576'>
+      REAL,                      INTENT(IN)   :: FASS, RG, VEGFRC, RA<a name='1577'>
+      REAL,                      INTENT(IN)   :: WWLT, WFC<a name='1578'>
+      REAL,                      INTENT(OUT)  :: ALPH1, ALPH2, BET1, BET2, T2NUDF<a name='1579'>
+<a name='1580'>
+<a name='1581'>
+<font color=#447700>!........Local variables<a name='1582'></font>
+<a name='1583'>
+<font color=#447700>!... Real<a name='1584'></font>
+      REAL    :: FBET, FALPH, FRA, FTEXT<a name='1585'>
+      REAL,    DIMENSION( 1: NSCAT ) :: WFCX, WWLTX<a name='1586'>
+      <a name='1587'>
+<font color=#447700>!... Parameters<a name='1588'></font>
+      REAL, PARAMETER  :: A1MAX = -10.E-5, A2MAX = 1.E-5  <font color=#447700>! m/K, m for 6hr period<a name='1589'></font>
+      REAL, PARAMETER  :: B1MAX = -10.E-3, B2MAX = 1.E-3  <font color=#447700>! m/K, m (Bouttier et al 1993)<a name='1590'></font>
+      REAL, PARAMETER  :: TASSI = 4.6296E-5               <font color=#447700>! 1/6hr in 1/sec<a name='1591'></font>
+      REAL, PARAMETER  :: RAMIN = 10.0                    <font color=#447700>! 0.1 s/cm<a name='1592'></font>
+<font color=#447700>!<a name='1593'></font>
+<font color=#447700>!-- WFC is field capacity (M^3/M^3) (JN90)<a name='1594'></font>
+      DATA WFCX   /  0.135, 0.150, 0.195, 0.255, 0.240, 0.255, 0.322,    &amp;<a name='1595'>
+                    0.325, 0.310, 0.370, 0.367, 0.367, 0.367, 0.367, 0.367, 0.367 /<a name='1596'>
+<font color=#447700>!<a name='1597'></font>
+<font color=#447700>!-- WWLT is wilting point (M^3/M^3) (JN90)<a name='1598'></font>
+      DATA WWLTX  /  0.068, 0.075, 0.114, 0.179, 0.155, 0.175, 0.218,    &amp;<a name='1599'>
+                    0.250, 0.219, 0.283, 0.286, 0.286, 0.286, 0.286, 0.286, 0.286 /<a name='1600'>
+<a name='1601'>
+<font color=#447700>!<a name='1602'></font>
+      FBET  = FASS<a name='1603'>
+      FALPH = RG / 1370.0<a name='1604'>
+<font color=#447700>!--TEXTURE FACTOR NORMALIZED BY LOAM (IST=5)<a name='1605'></font>
+      FRA   = RAMIN / RA            <font color=#447700>! scale by aerodynamic resistance<a name='1606'></font>
+      FTEXT = TASSI * (WWLT + WFC) / (WWLTX(5) + WFCX(5)) * FRA<a name='1607'>
+<font color=#447700>!        write(6,*) ' ftot, fbet=',ftot, fbet,' ftext=',ftext/tassi<a name='1608'></font>
+<font color=#447700>!<a name='1609'></font>
+      ALPH1 = A1MAX * FALPH * (1.0 - VEGFRC) * FTEXT<a name='1610'>
+      ALPH2 = A2MAX * FALPH * (1.0 - VEGFRC) * FTEXT<a name='1611'>
+      BET1  = B1MAX * FBET  *        VEGFRC  * FTEXT<a name='1612'>
+      BET2  = B2MAX * FBET  *        VEGFRC  * FTEXT<a name='1613'>
+      T2NUDF = 1.0E-5 * MAX((1.0 - 5.0 * FALPH),0.0)   <font color=#447700>! T2 Nudging at night<a name='1614'></font>
+<a name='1615'>
+    END SUBROUTINE smass<a name='1616'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1617'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1618'></font>
+<a name='1619'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1620'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1621'></font>
+<A NAME='SOILPROP'><A href='../../html_code/phys/module_sf_pxlsm.F.html#SOILPROP' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1622'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>SOILPROP</font> (SOILCBOT,WEIGHT, ITIMESTEP, MAVAIL, &amp;  <font color=#447700>! IN <A href='../../call_to/SOILPROP.html' TARGET='index'>3</A><a name='1623'></font>
+                           PXLSM_SMOIS_INIT,                   &amp;  <font color=#447700>! IN<a name='1624'></font>
+                           FWSAT,FWFC,FWWLT,FB,FCGSAT,         &amp;  <font color=#447700>! OUT<a name='1625'></font>
+                           FJP,FAS,FC2R,FC1SAT,ISTI, WG, W2    )  <font color=#447700>! OUT<a name='1626'></font>
+     <font color=#447700>!------------------------------------------------------------------------<a name='1627'></font>
+     <font color=#447700>!     SOILPROP COMPUTES SOIL PARAMETERS FOR BOTH BOTTOM AND TOP LAYERS<a name='1628'></font>
+     <font color=#447700>!              USING FRACTIONAL SOIL TYPE. A HARD CODED OPTION IS AVAILIABLE<a name='1629'></font>
+     <font color=#447700>!              TO COMPUTE THE SOIL PARAMETERS USING FRACTIONAL INFORMATION, OR<a name='1630'></font>
+     <font color=#447700>!              TO JUST USE SOIL PARAMETERS OF THE DOMINANT SOIL TYPE<a name='1631'></font>
+     <font color=#447700>!------------------------------------------------------------------------<a name='1632'></font>
+     <font color=#447700>!-- SOIL PARAMETERS ARE SPECIFIED BY SOIL TYPE: <a name='1633'></font>
+     <font color=#447700>!   #  SOIL TYPE  WSAT  WFC  WWLT    B   CGSAT   JP   AS   C2R  C1SAT<a name='1634'></font>
+     <font color=#447700>!   _  _________  ____  ___  ____  ____  _____   ___  ___  ___  _____<a name='1635'></font>
+     <font color=#447700>!   1  SAND       .395 .135  .068  4.05  3.222    4  .387  3.9  .082<a name='1636'></font>
+     <font color=#447700>!   2  LOAMY SAND .410 .150  .075  4.38  3.057    4  .404  3.7  .098<a name='1637'></font>
+     <font color=#447700>!   3  SANDY LOAM .435 .195  .114  4.90  3.560    4  .219  1.8  .132<a name='1638'></font>
+     <font color=#447700>!   4  SILT LOAM  .485 .255  .179  5.30  4.418    6  .105  0.8  .153<a name='1639'></font>
+     <font color=#447700>!   5  SILT       .485 .255  .179  5.30  4.418    6  .105  0.8  .153 NP89 does not have Silt so mapped to Silt Loam<a name='1640'></font>
+     <font color=#447700>!   6  LOAM       .451 .240  .155  5.39  4.111    6  .148  0.8  .191<a name='1641'></font>
+     <font color=#447700>!   7  SND CLY LM .420 .255  .175  7.12  3.670    6  .135  0.8  .213<a name='1642'></font>
+     <font color=#447700>!   8  SLT CLY LM .477 .322  .218  7.75  3.593    8  .127  0.4  .385<a name='1643'></font>
+     <font color=#447700>!   9  CLAY LOAM  .476 .325  .250  8.52  3.995   10  .084  0.6  .227<a name='1644'></font>
+     <font color=#447700>!  10  SANDY CLAY .426 .310  .219 10.40  3.058    8  .139  0.3  .421<a name='1645'></font>
+     <font color=#447700>!  11  SILTY CLAY .482 .370  .283 10.40  3.729   10  .075  0.3  .375<a name='1646'></font>
+     <font color=#447700>!  12  CLAY       .482 .367  .286 11.40  3.600   12  .083  0.3  .342<a name='1647'></font>
+     <font color=#447700>!------------------------------------------------------------------------<a name='1648'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1649'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1650'></font>
+      IMPLICIT NONE<a name='1651'>
+<a name='1652'>
+     <font color=#447700>!.........Arguments<a name='1653'></font>
+      INTEGER, PARAMETER             :: NSCAT    = 16     <font color=#447700>! max. soil types<a name='1654'></font>
+      INTEGER, PARAMETER             :: NSCATMIN = 16     <font color=#447700>! min soil types<a name='1655'></font>
+<a name='1656'>
+      INTEGER,                      INTENT(IN)   :: WEIGHT, ITIMESTEP, PXLSM_SMOIS_INIT<a name='1657'>
+      REAL,                         INTENT(IN)   :: MAVAIL<a name='1658'>
+      REAL,     DIMENSION(1:NSCAT), INTENT(IN)   :: SOILCBOT<a name='1659'>
+      REAL,                         INTENT(OUT)  :: FWSAT,FWFC,FWWLT,FB,FCGSAT,          &amp;<a name='1660'>
+                                                    FJP,FAS,FC2R,FC1SAT<a name='1661'>
+      REAL,                         INTENT(INOUT)  :: W2, WG<a name='1662'>
+<a name='1663'>
+<a name='1664'>
+      INTEGER,                      INTENT(OUT)  :: ISTI<a name='1665'>
+<font color=#447700>!........Local variables<a name='1666'></font>
+      CHARACTER*4, AVCLASS<a name='1667'>
+      CHARACTER*4, DIMENSION( 1: NSCAT ) ::  TEXID <a name='1668'>
+<font color=#447700>!... Integer<a name='1669'></font>
+      INTEGER:: S<a name='1670'>
+<font color=#447700>!... Real<a name='1671'></font>
+      REAL:: TFRACBOT, CFRAC, SUMSND, SUMCLY, AVS, AVC, AVSLT<a name='1672'>
+      REAL,    DIMENSION( 1: NSCAT ) :: WSAT, WFC, WWLT, B, CGSAT, AS,  &amp;<a name='1673'>
+                                        JP, C2R, C1SAT<a name='1674'>
+<a name='1675'>
+      REAL,    DIMENSION( 1: NSCATMIN ) ::  SAND, CLAY<a name='1676'>
+<font color=#447700>!.......... DATA statement for SOIL PARAMETERS for the 11 soil types<a name='1677'></font>
+      DATA SAND /92.5,80.5,61.1,19.6,4.0,40.0,57.1,11.3,26.8,       &amp;<a name='1678'>
+                 52.0,6.5,10.2,1.0,1.0,1.0,1.0/                                                  <a name='1679'>
+      DATA CLAY/2.1,4.1,10.9,19.1,7.3,18.8,23.3,32.2,36.6,          &amp;                     <a name='1680'>
+                43.0,46.2,58.8,1.0,1.0,1.0,1.0/                                                 <a name='1681'>
+      DATA TEXID/'Sand','Lsan','Sloa','Sill','Silt','Loam','Sclo',  &amp;             <a name='1682'>
+                 'Sicl','Cllo','Sacl','Sicy','Clay','Ormt','Wate',  &amp;           <a name='1683'>
+                 'Bedr','Othe'/                                         <a name='1684'>
+<a name='1685'>
+<font color=#447700>!<a name='1686'></font>
+<font color=#447700>!-- WSAT is saturated soil moisture (M^3/M^3) (JN90)<a name='1687'></font>
+      DATA WSAT  /  0.395, 0.410, 0.435, 0.485, 0.451, 0.420, 0.477,    &amp;<a name='1688'>
+                    0.476, 0.426, 0.482, 0.482, 0.482, 0.482, 0.482, 0.482, 0.482 /<a name='1689'>
+<font color=#447700>!<a name='1690'></font>
+<font color=#447700>!-- WFC is field capacity (M^3/M^3) (JN90)<a name='1691'></font>
+      DATA WFC   /  0.135, 0.150, 0.195, 0.255, 0.240, 0.255, 0.322,    &amp;<a name='1692'>
+                    0.325, 0.310, 0.370, 0.367, 0.367, 0.367, 0.367, 0.367, 0.367 /<a name='1693'>
+<font color=#447700>!<a name='1694'></font>
+<font color=#447700>!-- WWLT is wilting point (M^3/M^3) (JN90)<a name='1695'></font>
+      DATA WWLT  /  0.068, 0.075, 0.114, 0.179, 0.155, 0.175, 0.218,    &amp;<a name='1696'>
+                    0.250, 0.219, 0.283, 0.286, 0.286, 0.286, 0.286, 0.286, 0.286 /<a name='1697'>
+<font color=#447700>!<a name='1698'></font>
+<font color=#447700>!-- B is slop of the retention curve (NP89)<a name='1699'></font>
+      DATA B     /  4.05,  4.38,  4.90,  5.30,  5.39,  7.12,  7.75,     &amp;<a name='1700'>
+                    8.52, 10.40, 10.40, 11.40, 11.40, 11.40, 11.40, 11.40, 11.40  /<a name='1701'>
+<font color=#447700>!<a name='1702'></font>
+<font color=#447700>!-- CGSAT is soil thermal coef. at saturation (10^-6 K M^2 J^-1) (NP89)<a name='1703'></font>
+      DATA CGSAT /  3.222, 3.057, 3.560, 4.418, 4.111, 3.670, 3.593,    &amp;<a name='1704'>
+                    3.995, 3.058, 3.729, 3.600, 3.600, 3.600, 3.600, 3.600, 3.600 /<a name='1705'>
+<font color=#447700>!<a name='1706'></font>
+<font color=#447700>!-- JP is coefficient of WGEQ formulation (NP89)<a name='1707'></font>
+      DATA JP    /  4,     4,     4,     6,     6,     6,     8,        &amp;<a name='1708'>
+                   10,     8,    10,    12,    12,    12,    12,    12,    12     /<a name='1709'>
+<font color=#447700>!<a name='1710'></font>
+<font color=#447700>!-- AS is coefficient of WGEQ formulation (NP89)<a name='1711'></font>
+      DATA AS    /  0.387, 0.404, 0.219, 0.105, 0.148, 0.135, 0.127,    &amp;<a name='1712'>
+                    0.084, 0.139, 0.075, 0.083, 0.083, 0.083, 0.083, 0.083, 0.083 /<a name='1713'>
+<font color=#447700>!<a name='1714'></font>
+<font color=#447700>!-- C2R is the value of C2 for W2=0.5WSAT (NP89)<a name='1715'></font>
+      DATA C2R   /  3.9,   3.7,   1.8,   0.8,   0.8,   0.8,   0.4,      &amp;<a name='1716'>
+                    0.6,   0.3,   0.3,   0.3,   0.3,   0.3,   0.3,   0.3,   0.3   /<a name='1717'>
+<font color=#447700>!<a name='1718'></font>
+<font color=#447700>!-- C1SAT is the value of C1 at saturation (NP89)<a name='1719'></font>
+      DATA C1SAT /  0.082, 0.098, 0.132, 0.153, 0.191, 0.213, 0.385,    &amp;<a name='1720'>
+                    0.227, 0.421, 0.375, 0.342, 0.342, 0.342, 0.342, 0.342, 0.342 /<a name='1721'>
+<font color=#447700>!   <a name='1722'></font>
+<font color=#447700>!-------------------------------Exicutable starts here--------------------<a name='1723'></font>
+<a name='1724'>
+    IF(WEIGHT.GE.1.0) THEN   <font color=#447700>!Compute soil characteristics using weighting determined by fractional soil content<a name='1725'></font>
+     FWSAT =0<a name='1726'>
+     FWFC  =0<a name='1727'>
+     FWWLT =0<a name='1728'>
+     FB    =0<a name='1729'>
+     FCGSAT=0<a name='1730'>
+     FJP   =0<a name='1731'>
+     FAS   =0<a name='1732'>
+     FC2R  =0<a name='1733'>
+     FC1SAT=0<a name='1734'>
+     TFRACBOT =0<a name='1735'>
+     CFRAC=0<a name='1736'>
+     <a name='1737'>
+     DO S=1,NSCAT<a name='1738'>
+<a name='1739'>
+       IF(SOILCBOT(S).GE.CFRAC) THEN<a name='1740'>
+         ISTI=S<a name='1741'>
+         CFRAC=SOILCBOT(S)<a name='1742'>
+       ENDIF<a name='1743'>
+      <a name='1744'>
+       TFRACBOT=TFRACBOT+SOILCBOT(S)<a name='1745'>
+       FWSAT =FWSAT  +  WSAT(S)  *SOILCBOT(S)<a name='1746'>
+       FWFC  =FWFC   +  WFC(S)   *SOILCBOT(S)<a name='1747'>
+       FWWLT =FWWLT  +  WWLT(S)  *SOILCBOT(S)<a name='1748'>
+       FB    =FB     +  B(S)     *SOILCBOT(S)<a name='1749'>
+       FCGSAT=FCGSAT +  CGSAT(S) *SOILCBOT(S)<a name='1750'>
+       FJP   =FJP    +  JP(S)    *SOILCBOT(S)<a name='1751'>
+       FAS   =FAS    +  AS(S)    *SOILCBOT(S)<a name='1752'>
+       FC2R  =FC2R   +  C2R(S)   *SOILCBOT(S)<a name='1753'>
+       FC1SAT=FC1SAT +  C1SAT(S) *SOILCBOT(S)<a name='1754'>
+             <a name='1755'>
+     ENDDO<a name='1756'>
+<a name='1757'>
+     TFRACBOT = 1/TFRACBOT<a name='1758'>
+     FWSAT =FWSAT   *  TFRACBOT<a name='1759'>
+     FWFC  =FWFC    *  TFRACBOT<a name='1760'>
+     FWWLT =FWWLT   *  TFRACBOT<a name='1761'>
+     FB    =FB      *  TFRACBOT<a name='1762'>
+     FCGSAT=FCGSAT  *  TFRACBOT<a name='1763'>
+     FJP   =FJP     *  TFRACBOT<a name='1764'>
+     FAS   =FAS     *  TFRACBOT<a name='1765'>
+     FC2R  =FC2R    *  TFRACBOT<a name='1766'>
+     FC1SAT=FC1SAT  *  TFRACBOT<a name='1767'>
+    <a name='1768'>
+    ELSE                <font color=#447700>!Compute soil characteristics by sand and clay fraction<a name='1769'></font>
+    <a name='1770'>
+      CFRAC      = 0.0                                                               <a name='1771'>
+      SUMSND     = 0.0                                                               <a name='1772'>
+      SUMCLY     = 0.0                                                               <a name='1773'>
+      TFRACBOT   = 0.0                                                              <a name='1774'>
+                                                                                <a name='1775'>
+      DO S = 1,12                                                         <a name='1776'>
+<a name='1777'>
+        TFRACBOT  = TFRACBOT  + SOILCBOT(S)<a name='1778'>
+        SUMSND    = SUMSND    + SAND(S) * SOILCBOT(S)<a name='1779'>
+        SUMCLY    = SUMCLY    + CLAY(S) * SOILCBOT(S)<a name='1780'>
+         <a name='1781'>
+        IF(SOILCBOT(S).GE.CFRAC) THEN   <font color=#447700>! Find Dominant Category and fraction<a name='1782'></font>
+          ISTI=S<a name='1783'>
+          CFRAC=SOILCBOT(S)<a name='1784'>
+        ENDIF<a name='1785'>
+<a name='1786'>
+      ENDDO<a name='1787'>
+         <a name='1788'>
+      IF(TFRACBOT.GT.0.001) THEN                                                  <a name='1789'>
+        AVS = SUMSND / TFRACBOT                                               <a name='1790'>
+        AVC = SUMCLY / TFRACBOT                                           <a name='1791'>
+        AVSLT = 100 - AVS - AVC                                   <a name='1792'>
+        <a name='1793'>
+        IF(AVS.GT.(85.+ 0.5*AVC)) THEN<a name='1794'>
+          AVCLASS= 'Sand'                                                   <a name='1795'>
+          ISTI = 1                                                          <a name='1796'>
+        ELSE IF(AVS.GT.(70.+ AVC)) THEN<a name='1797'>
+          AVCLASS= 'Lsan'                                             <a name='1798'>
+          ISTI = 2                                                  <a name='1799'>
+        ELSE IF((AVC.LT.20..AND.AVS.GT.52.) &amp;<a name='1800'>
+                .OR.(AVC.LE.7.5.AND.AVSLT.LT.50.)) THEN                <a name='1801'>
+          AVCLASS= 'Sloa'                                             <a name='1802'>
+          ISTI = 3                                                     <a name='1803'>
+        ELSE IF(AVC.LT.35..AND.AVS.GT.45..AND.AVSLT.LT.28.) THEN      <a name='1804'>
+          AVCLASS= 'Sclo'                                                  <a name='1805'>
+          ISTI = 6                                                     <a name='1806'>
+        ELSE IF(AVC.GE.35..AND.AVS.GT.45.) THEN                           <a name='1807'>
+          AVCLASS = 'Sacl'                                                  <a name='1808'>
+          ISTI = 9                                                         <a name='1809'>
+        ELSE IF(AVC.LT.27.0.AND.AVSLT.LT.50.) THEN                        <a name='1810'>
+          AVCLASS= 'Loam'                                                <a name='1811'>
+          ISTI = 5                                                        <a name='1812'>
+        ELSE IF(AVC.LT.12..AND.AVSLT.GT.80.) THEN                <a name='1813'>
+          AVCLASS = 'Silt'                                         <a name='1814'>
+          ISTI = 4                                                           <a name='1815'>
+        ELSE IF(AVC.LT.27.) THEN                                                 <a name='1816'>
+          AVCLASS = 'Sill'                                                       <a name='1817'>
+          ISTI = 4                                                              <a name='1818'>
+        ELSE IF(AVC.LT.40..AND.AVS.GT.20.) THEN                                  <a name='1819'>
+          AVCLASS = 'Cllo'                                                       <a name='1820'>
+          ISTI = 8                                                               <a name='1821'>
+        ELSE IF(AVC.LT.40.) THEN                                                 <a name='1822'>
+          AVCLASS = 'Sicl'                                                       <a name='1823'>
+          ISTI = 7                                                               <a name='1824'>
+        ELSE IF(AVSLT.GE.40.) THEN                                               <a name='1825'>
+          AVCLASS = 'Sicy'                                                       <a name='1826'>
+          ISTI = 10                                                              <a name='1827'>
+        ELSE                                                                     <a name='1828'>
+          AVCLASS = 'Clay'                                                       <a name='1829'>
+          ISTI = 11                                                              <a name='1830'>
+        ENDIF                                                                          <a name='1831'>
+      ELSE<a name='1832'>
+        ISTI=5<a name='1833'>
+        AVCLASS = TEXID(ISTI)  <a name='1834'>
+      ENDIF<a name='1835'>
+  <a name='1836'>
+      FWSAT =WSAT(ISTI)   <a name='1837'>
+      FWFC  =WFC(ISTI)    <a name='1838'>
+      FWWLT =WWLT(ISTI)   <a name='1839'>
+      FB    =B(ISTI)      <a name='1840'>
+      FCGSAT=CGSAT(ISTI)  <a name='1841'>
+      FJP   =JP(ISTI)     <a name='1842'>
+      FAS   =AS(ISTI)     <a name='1843'>
+      FC2R  =C2R(ISTI)   <a name='1844'>
+      FC1SAT=C1SAT(ISTI)  <a name='1845'>
+                            <a name='1846'>
+    ENDIF<a name='1847'>
+    <a name='1848'>
+    <font color=#447700>! Compute W2 using soil moisture availiability if pxlsm_smois_init (in namelist) is not zero<a name='1849'></font>
+    IF (ITIMESTEP .EQ. 1 .AND. PXLSM_SMOIS_INIT .GT. 0) THEN<a name='1850'>
+       WG = FWWLT + (0.5*(FWSAT+FWFC) - FWWLT)  * MAVAIL <a name='1851'>
+       W2 = FWWLT + (0.5*(FWSAT+FWFC) - FWWLT)  * MAVAIL <a name='1852'>
+    ENDIF                                                                    <a name='1853'>
+    <a name='1854'>
+    END SUBROUTINE soilprop<a name='1855'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1856'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1857'></font>
+<a name='1858'>
+<a name='1859'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1860'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1861'></font>
+<A NAME='PXSNOW'><A href='../../html_code/phys/module_sf_pxlsm.F.html#PXSNOW' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1862'>
+      <font color=#993300>SUBROUTINE </font><font color=#cc0000>PXSNOW</font> (ITIMESTEP, ASNOW, CSNOW, SNOW,       &amp; <A href='../../call_to/PXSNOW.html' TARGET='index'>1</A><a name='1863'>
+                         SNOWH, SNUP,                         &amp;<a name='1864'>
+                         ALB, SNOALB, SHDFAC, SHDMIN,         &amp; <a name='1865'>
+                         HC_SNOW, SNOW_FRA, SNOWC, SNOWALB)                   <a name='1866'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1867'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1868'></font>
+<font color=#447700>!     Pleim-Xiu LSM Simple Snow model<a name='1869'></font>
+<font color=#447700>!---------------------------------------------------------------------------------------------------<a name='1870'></font>
+<font color=#447700>!     ITIMESTEP -- Model time step index<a name='1871'></font>
+<font color=#447700>!     ASNOW --  Analyzed snow water equivalent (mm)<a name='1872'></font>
+<font color=#447700>!     CSNOW --  Current snow water equivalent (mm)<a name='1873'></font>
+<font color=#447700>!     SNOW  --  Snow water equivalent in model (mm)<a name='1874'></font>
+<font color=#447700>!     SNOWH --  Physical snow depth (m)<a name='1875'></font>
+<font color=#447700>!     SNUP --   Physical snow depth (landuse dependent) where when below, snow cover is fractional<a name='1876'></font>
+<font color=#447700>!<a name='1877'></font>
+<font color=#447700>!     HC_SNOW -- Heat capacity of snow as a function of depth<a name='1878'></font>
+<font color=#447700>!     SNOW_FRA-- Factional snow area <a name='1879'></font>
+<font color=#447700>!     IFSNOW  -- Snow flag<a name='1880'></font>
+<font color=#447700>!     SNOWALB -- Snow albedo<a name='1881'></font>
+<font color=#447700>!---------------------------------------------------------------------------------------------------<a name='1882'></font>
+<a name='1883'>
+      IMPLICIT NONE<a name='1884'>
+<a name='1885'>
+<font color=#447700>!---  Arguments<a name='1886'></font>
+      REAL, PARAMETER  :: W2SN_CONV   =   10.0<a name='1887'>
+      REAL, PARAMETER  :: CS_SNOWPACK = 2092.0<a name='1888'>
+      REAL, PARAMETER  :: SALP        =    2.6<a name='1889'>
+<font color=#447700>!-----------------------------------------------<a name='1890'></font>
+      INTEGER,       INTENT(IN)    :: ITIMESTEP<a name='1891'>
+      REAL,          INTENT(IN)    :: ASNOW, CSNOW, SNUP, ALB, SNOALB, SHDFAC, SHDMIN<a name='1892'>
+      REAL,          INTENT(INOUT) :: SNOW, SNOWH, SNOWC<a name='1893'>
+      REAL,          INTENT(OUT)   :: HC_SNOW, SNOW_FRA, SNOWALB<a name='1894'>
+<font color=#447700>!------------------------------------------------------------------------------------<a name='1895'></font>
+<a name='1896'>
+                                                   <a name='1897'>
+<font color=#447700>!-----------------------------------------------<a name='1898'></font>
+<font color=#447700>!    Local variables<a name='1899'></font>
+     <font color=#447700>!... Real<a name='1900'></font>
+     REAL:: CONV_WAT2SNOW, CSNOWW, RHO_SNOWPACK,   &amp;<a name='1901'>
+            LIQSN_RATIO, SNEQV, RSNOW<a name='1902'>
+<font color=#447700>!-----------------------------------------------<a name='1903'></font>
+             <a name='1904'>
+     SNEQV=ASNOW*0.001              <font color=#447700>! Snow water in meters<a name='1905'></font>
+     RHO_SNOWPACK = 450                   <font color=#447700>! Snowpack density (kg/m3), this should be computed in the future<a name='1906'></font>
+     LIQSN_RATIO  = DENW/RHO_SNOWPACK     <font color=#447700>! Ratio of water density and snowpack density<a name='1907'></font>
+     <a name='1908'>
+     CONV_WAT2SNOW = LIQSN_RATIO/1000     <font color=#447700>! Conversion factor for snow liquid equiv. (mm) to snowpack (m)<a name='1909'></font>
+      <a name='1910'>
+     SNOW = ASNOW                         <font color=#447700>! Set snow water to analysis value for now, implement a nudging scheme later<a name='1911'></font>
+     SNOWH= SNOW * CONV_WAT2SNOW          <font color=#447700>! Conversion of snow water (mm) to snow depth (m)     <a name='1912'></font>
+     <a name='1913'>
+     <a name='1914'>
+     <font color=#447700>! Is snow cover now present. The limit is 0.45 mm of water eqivalent or about 2 inches snow depth <a name='1915'></font>
+     SNOWC = 0.0<a name='1916'>
+     IF (SNOWH .GT. 0.005) SNOWC = 1.0  <a name='1917'>
+     <a name='1918'>
+     HC_SNOW = RHO_SNOWPACK * CS_SNOWPACK * SNOWH<a name='1919'>
+     <a name='1920'>
+      IF (SNEQV &lt; SNUP) THEN                                                  <a name='1921'>
+         RSNOW = SNEQV / SNUP                                                    <a name='1922'>
+         SNOW_FRA = 1. - ( EXP ( - SALP * RSNOW) - RSNOW * EXP ( - SALP))          <a name='1923'>
+      ELSE                                                                       <a name='1924'>
+         SNOW_FRA = 1.0                                                            <a name='1925'>
+      END IF   <a name='1926'>
+      <a name='1927'>
+      SNOWC  = SNOW_FRA<a name='1928'>
+<a name='1929'>
+      SNOWALB = ALB + SNOWC*(SNOALB-ALB)<a name='1930'>
+<a name='1931'>
+    END SUBROUTINE pxsnow<a name='1932'>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1933'></font>
+<font color=#447700>!------------------------------------------------------------------------------------------<a name='1934'></font>
+<a name='1935'>
+END MODULE module_sf_pxlsm<a name='1936'>
+<a name='1937'>
+</pre></body></html>

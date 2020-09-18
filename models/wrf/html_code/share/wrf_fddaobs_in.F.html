@@ -1,0 +1,1946 @@
+<HTML> <BODY BGCOLOR=#eedddd LINK=#0000aa VLINK=#0000ff ALINK=#ff0000 ><BASE TARGET="bottom_target"><PRE><a name='1'>
+<font color=#447700>!WRF:MEDIATION_LAYER:IO<a name='2'></font>
+<font color=#447700>!  ---<a name='3'></font>
+<a name='4'>
+<font color=#447700>! This obs-nudging FDDA module (RTFDDA) is developed by the <a name='5'></font>
+<font color=#447700>! NCAR/RAL/NSAP (National Security Application Programs), under the <a name='6'></font>
+<font color=#447700>! sponsorship of ATEC (Army Test and Evaluation Commands). ATEC is <a name='7'></font>
+<font color=#447700>! acknowledged for releasing this capability for WRF community <a name='8'></font>
+<font color=#447700>! research applications.<a name='9'></font>
+<font color=#447700>!<a name='10'></font>
+<font color=#447700>! The NCAR/RAL RTFDDA module was adapted, and significantly modified <a name='11'></font>
+<font color=#447700>! from the obs-nudging module in the standard MM5V3.1 which was originally <a name='12'></font>
+<font color=#447700>! developed by PSU (Stauffer and Seaman, 1994). <a name='13'></font>
+<font color=#447700>! <a name='14'></font>
+<font color=#447700>! Yubao Liu (NCAR/RAL): lead developer of the RTFDDA module <a name='15'></font>
+<font color=#447700>! Al Bourgeois (NCAR/RAL): lead engineer implementing RTFDDA into WRF-ARW<a name='16'></font>
+<font color=#447700>! Nov. 2006<a name='17'></font>
+<font color=#447700>! <a name='18'></font>
+<font color=#447700>! References:<a name='19'></font>
+<font color=#447700>!   <a name='20'></font>
+<font color=#447700>!   Liu, Y., A. Bourgeois, T. Warner, S. Swerdlin and J. Hacker, 2005: An<a name='21'></font>
+<font color=#447700>!     implementation of obs-nudging-based FDDA into WRF for supporting <a name='22'></font>
+<font color=#447700>!     ATEC test operations. 2005 WRF user workshop. Paper 10.7.<a name='23'></font>
+<font color=#447700>!<a name='24'></font>
+<font color=#447700>!   Liu, Y., A. Bourgeois, T. Warner, S. Swerdlin and W. Yu, 2006: An update <a name='25'></font>
+<font color=#447700>!     on "obs-nudging"-based FDDA for WRF-ARW: Verification using OSSE <a name='26'></font>
+<font color=#447700>!     and performance of real-time forecasts. 2006 WRF user workshop. Paper 4.7. <a name='27'></font>
+<a name='28'>
+<font color=#447700>!   <a name='29'></font>
+<font color=#447700>!   Stauffer, D.R., and N.L. Seaman, 1994: Multi-scale four-dimensional data <a name='30'></font>
+<font color=#447700>!     assimilation. J. Appl. Meteor., 33, 416-434.<a name='31'></font>
+<font color=#447700>!<a name='32'></font>
+<font color=#447700>!   http://www.rap.ucar.edu/projects/armyrange/references.html<a name='33'></font>
+<font color=#447700>!<a name='34'></font>
+<a name='35'>
+<A NAME='WRF_FDDAOBS_IN'><A href='../../html_code/share/wrf_fddaobs_in.F.html#WRF_FDDAOBS_IN' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='36'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>wrf_fddaobs_in</font> (grid ,config_flags) <A href='../../call_to/WRF_FDDAOBS_IN.html' TARGET='index'>1</A>,<A href='../../call_from/WRF_FDDAOBS_IN.html' TARGET='index'>5</A><a name='37'>
+<a name='38'>
+    USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#WRF_FDDAOBS_IN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_460"><a name='39'>
+    USE <A href='../../html_code/frame/module_configure.F.html#MODULE_CONFIGURE'>module_configure</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#WRF_FDDAOBS_IN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_CONFIGURE_293"><a name='40'>
+    USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#WRF_FDDAOBS_IN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_122">        <font color=#447700>!rovg<a name='41'></font>
+<a name='42'>
+    IMPLICIT NONE<a name='43'>
+    TYPE(domain) :: grid<a name='44'>
+    TYPE(grid_config_rec_type),  INTENT(IN)    :: config_flags<a name='45'>
+#if ( EM_CORE == 1 )<a name='46'>
+<a name='47'>
+<font color=#447700>! Local variables<a name='48'></font>
+    integer            :: ktau            <font color=#447700>! timestep index corresponding to xtime<a name='49'></font>
+    integer            :: krest           <font color=#447700>! restart timestep<a name='50'></font>
+    integer            :: inest           <font color=#447700>! nest level<a name='51'></font>
+    integer            :: infreq          <font color=#447700>! input frequency<a name='52'></font>
+    integer            :: nstlev          <font color=#447700>! nest level<a name='53'></font>
+    real               :: dtmin           <font color=#447700>! dt in minutes<a name='54'></font>
+    real               :: xtime           <font color=#447700>! forecast time in minutes<a name='55'></font>
+    logical            :: iprt_in4dob     <font color=#447700>! print flag<a name='56'></font>
+<a name='57'>
+    INTEGER ids , ide , jds , jde , kds , kde , &amp;<a name='58'>
+            ims , ime , jms , jme , kms , kme , &amp;<a name='59'>
+            ips , ipe , jps , jpe , kps , kpe<a name='60'>
+    INTEGER ij, its, ite, jts, jte<a name='61'>
+<a name='62'>
+<font color=#447700>!   Modified to also call in4dob intially, since subr in4dob is no<a name='63'></font>
+<font color=#447700>!   longer called from subr fddaobs_init. Note that itimestep is now<a name='64'></font>
+<font color=#447700>!   the model step BEFORE the model integration step, because this<a name='65'></font>
+<font color=#447700>!   routine is now called by med_before_solve_io.<a name='66'></font>
+    ktau   = grid%itimestep               <font color=#447700>! ktau corresponds to xtime<a name='67'></font>
+    krest  = grid%fdob%ktaur<a name='68'>
+    inest  = grid%grid_id<a name='69'>
+    nstlev = grid%fdob%levidn(inest) <a name='70'>
+    infreq = grid%obs_ionf*(grid%parent_grid_ratio**nstlev)<a name='71'>
+    iprt_in4dob = grid%obs_ipf_in4dob<a name='72'>
+<a name='73'>
+    IF( ((ktau.GT.krest.AND.MOD(ktau,infreq).EQ.0)                            &amp;<a name='74'>
+                                         .OR.(ktau.EQ.krest)) .AND. grid%xtime &lt;= grid%fdda_end ) then<a name='75'>
+<font color=#447700>! Calculate forecast time.<a name='76'></font>
+      dtmin = grid%dt/60.<a name='77'>
+      xtime = grid%xtime<a name='78'>
+<a name='79'>
+      CALL <A href='../../html_code/frame/module_domain.F.html#GET_IJK_FROM_GRID'>get_ijk_from_grid</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#WRF_FDDAOBS_IN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_IJK_FROM_GRID_123"> (  grid ,                                       &amp;<a name='80'>
+                                ids, ide, jds, jde, kds, kde,                &amp;<a name='81'>
+                                ims, ime, jms, jme, kms, kme,                &amp;<a name='82'>
+                                ips, ipe, jps, jpe, kps, kpe    )<a name='83'>
+<a name='84'>
+      <font color=#447700>!$OMP PARALLEL DO   &amp;<a name='85'></font>
+      <font color=#447700>!$OMP PRIVATE ( ij )<a name='86'></font>
+<a name='87'>
+      DO ij = 1 , grid%num_tiles<a name='88'>
+         its = grid%i_start(ij)<a name='89'>
+         ite = min(grid%i_end(ij),ide-1)<a name='90'>
+         jts = grid%j_start(ij)<a name='91'>
+         jte = min(grid%j_end(ij),jde-1)<a name='92'>
+<a name='93'>
+         CALL <A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB'>in4dob</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#WRF_FDDAOBS_IN' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="IN4DOB_1">(inest, xtime, ktau, krest, dtmin,                              &amp;<a name='94'>
+                     grid%julyr, grid%julday, grid%gmt,                             &amp;    <font color=#447700>!obsnypatch<a name='95'></font>
+                     grid%obs_nudge_opt,  grid%obs_nudge_wind, grid%obs_nudge_temp, &amp;<a name='96'>
+                     grid%obs_nudge_mois, grid%obs_nudge_pstr, grid%obs_coef_wind,  &amp;<a name='97'>
+                     grid%obs_coef_temp,  grid%obs_coef_mois,  grid%obs_coef_pstr,  &amp;<a name='98'>
+                     grid%obs_rinxy,      grid%obs_rinsig,     grid%fdob%window,    &amp;<a name='99'>
+                     grid%obs_npfi,       grid%obs_ionf,                            &amp;<a name='100'>
+                     grid%obs_prt_max,    grid%obs_prt_freq,                        &amp;<a name='101'>
+                     grid%obs_idynin,                                               &amp;<a name='102'>
+                     grid%obs_dtramp,     grid%fdob,           grid%fdob%varobs,    &amp;<a name='103'>
+                     grid%fdob%timeob,    grid%fdob%nlevs_ob,  grid%fdob%lev_in_ob, &amp;<a name='104'>
+                     grid%fdob%plfo,      grid%fdob%elevob,    grid%fdob%rio,       &amp;<a name='105'>
+                     grid%fdob%rjo,       grid%fdob%rko,                            &amp;<a name='106'>
+                     grid%xlat, grid%xlong,                                         &amp;<a name='107'>
+                     config_flags%cen_lat,                                          &amp;<a name='108'>
+                     config_flags%cen_lon,                                          &amp;<a name='109'>
+                     config_flags%stand_lon,                                        &amp;<a name='110'>
+                     config_flags%truelat1, config_flags%truelat2,                  &amp;<a name='111'>
+                     grid%fdob%known_lat, grid%fdob%known_lon,                      &amp;<a name='112'>
+                     config_flags%dx, config_flags%dy, rovg, t0,                    &amp;<a name='113'>
+                     grid%fdob%obsprt,                                              &amp;<a name='114'>
+                     grid%fdob%latprt, grid%fdob%lonprt,                            &amp;<a name='115'>
+                     grid%fdob%mlatprt, grid%fdob%mlonprt,                          &amp;<a name='116'>
+                     grid%fdob%stnidprt,                                            &amp;<a name='117'>
+                     ide, jde,                                                      &amp;<a name='118'>
+                     ims, ime, jms, jme,                                            &amp;<a name='119'>
+                     its, ite, jts, jte,                                            &amp;<a name='120'>
+                     config_flags%map_proj,                                         &amp;<a name='121'>
+                     model_config_rec%parent_grid_ratio,                            &amp;<a name='122'>
+                     model_config_rec%i_parent_start(inest),                        &amp;<a name='123'>
+                     model_config_rec%j_parent_start(inest),                        &amp;<a name='124'>
+                     model_config_rec%max_dom,                                      &amp;<a name='125'>
+                     model_config_rec%nobs_ndg_vars, grid%max_obs, iprt_in4dob)<a name='126'>
+       ENDDO<a name='127'>
+      <font color=#447700>!$OMP END PARALLEL DO<a name='128'></font>
+<a name='129'>
+    ENDIF<a name='130'>
+<a name='131'>
+    RETURN<a name='132'>
+#endif<a name='133'>
+  END SUBROUTINE wrf_fddaobs_in<a name='134'>
+#if ( EM_CORE == 1 )<a name='135'>
+<font color=#447700>!------------------------------------------------------------------------------<a name='136'></font>
+<font color=#447700>! Begin subroutine in4dob and its subroutines<a name='137'></font>
+<font color=#447700>!------------------------------------------------------------------------------<a name='138'></font>
+<A NAME='IN4DOB'><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='139'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>in4dob</font>(inest, xtime, ktau, ktaur, dtmin,                    &amp; <A href='../../call_to/IN4DOB.html' TARGET='index'>1</A>,<A href='../../call_from/IN4DOB.html' TARGET='index'>68</A><a name='140'>
+                    myear, julday, gmt,                                  &amp;      <font color=#447700>!obsnypatch<a name='141'></font>
+                    nudge_opt, iswind, istemp,                           &amp;<a name='142'>
+                    ismois, ispstr, giv,                                 &amp;<a name='143'>
+                    git, giq, gip,                                       &amp;<a name='144'>
+                    rinxy, rinsig, twindo,                               &amp;<a name='145'>
+                    npfi, ionf, prt_max, prt_freq, idynin,               &amp;<a name='146'>
+                    dtramp, fdob, varobs,                                &amp;<a name='147'>
+                    timeob, nlevs_ob, lev_in_ob,                         &amp;<a name='148'>
+                    plfo, elevob, rio,                                   &amp;<a name='149'>
+                    rjo, rko,                                            &amp;<a name='150'>
+                    xlat, xlong,                                         &amp;<a name='151'>
+                    cen_lat,                                             &amp;<a name='152'>
+                    cen_lon,                                             &amp;<a name='153'>
+                    stand_lon,                                           &amp;<a name='154'>
+                    true_lat1, true_lat2,                                &amp;<a name='155'>
+                    known_lat, known_lon,                                &amp;<a name='156'>
+                    dxm, dym, rovg, t0,                                  &amp;<a name='157'>
+                    obs_prt,                                             &amp;<a name='158'>
+                    lat_prt, lon_prt,                                    &amp;<a name='159'>
+                    mlat_prt, mlon_prt,                                  &amp;<a name='160'>
+                    stnid_prt,                                           &amp;<a name='161'>
+                    e_we, e_sn,                                          &amp;<a name='162'>
+                    ims, ime, jms, jme,                                  &amp;<a name='163'>
+                    its, ite, jts, jte,                                  &amp;<a name='164'>
+                    map_proj,                                            &amp;<a name='165'>
+                    parent_grid_ratio,                                   &amp;<a name='166'>
+                    i_parent_start,                                      &amp;<a name='167'>
+                    j_parent_start,                                      &amp;<a name='168'>
+                    maxdom,                                              &amp;<a name='169'>
+                    nndgv, niobf, iprt)<a name='170'>
+<a name='171'>
+  USE <A href='../../html_code/frame/module_domain.F.html#MODULE_DOMAIN'>module_domain</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DOMAIN_461"><a name='172'>
+  USE <A href='../../html_code/share/module_model_constants.F.html#MODULE_MODEL_CONSTANTS'>module_model_constants</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_MODEL_CONSTANTS_123">, ONLY : rcp<a name='173'>
+  USE <A href='../../html_code/share/module_date_time.F.html#MODULE_DATE_TIME'>module_date_time</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_DATE_TIME_31"> , ONLY : geth_idts<a name='174'>
+  USE <A href='../../html_code/share/module_llxy.F.html#MODULE_LLXY'>module_llxy</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_LLXY_11"><a name='175'>
+<a name='176'>
+  IMPLICIT NONE<a name='177'>
+<a name='178'>
+<font color=#447700>! THIS IS SUBROUTINE READS AN OBSERVATION DATA FILE AND<a name='179'></font>
+<font color=#447700>! SELECTS ONLY THOSE VALUES OBSERVED AT TIMES THAT FALL<a name='180'></font>
+<font color=#447700>! WITHIN A TIME WINDOW (TWINDO) CENTERED ABOUT THE CURRENT<a name='181'></font>
+<font color=#447700>! FORECAST TIME (XTIME).  THE INCOMING OBS FILES MUST BE<a name='182'></font>
+<font color=#447700>! IN CHRONOLOGICAL ORDER.<a name='183'></font>
+<font color=#447700>!<a name='184'></font>
+<font color=#447700>! NOTE: This routine was originally designed for MM5, which uses<a name='185'></font>
+<font color=#447700>!       a nonstandard (I,J) coordinate system. For WRF, I is the <a name='186'></font>
+<font color=#447700>!       east-west running coordinate, and J is the south-north<a name='187'></font>
+<font color=#447700>!       running coordinate. So "J-slab" here is west-east in<a name='188'></font>
+<font color=#447700>!       extent, not south-north as for MM5. RIO and RJO have<a name='189'></font>
+<font color=#447700>!       the opposite orientation here as for MM5. -ajb 06/10/2004<a name='190'></font>
+<a name='191'>
+<font color=#447700>! NOTE - IN4DOB IS CALLED ONLY FOR THE COARSE MESH TIMES<a name='192'></font>
+<font color=#447700>!      - VAROBS(IVAR,N) HOLDS THE OBSERVATIONS.<a name='193'></font>
+<font color=#447700>!        IVAR=1   OBS U<a name='194'></font>
+<font color=#447700>!        IVAR=2   OBS V<a name='195'></font>
+<font color=#447700>!        IVAR=3   OBS T<a name='196'></font>
+<font color=#447700>!        IVAR=4   OBS Q<a name='197'></font>
+<font color=#447700>!        IVAR=5   OBS Pressure<a name='198'></font>
+<font color=#447700>!        IVAR=6   OBS Height<a name='199'></font>
+<a name='200'>
+  INTEGER, intent(in) :: niobf          <font color=#447700>! maximum number of observations<a name='201'></font>
+  INTEGER, intent(in) :: nndgv          <font color=#447700>! number of nudge variables<a name='202'></font>
+  INTEGER, intent(in)  :: INEST         <font color=#447700>! nest level<a name='203'></font>
+  REAL, intent(in)     :: xtime         <font color=#447700>! model time in minutes<a name='204'></font>
+  INTEGER, intent(in)  :: KTAU          <font color=#447700>! current timestep<a name='205'></font>
+  INTEGER, intent(in)  :: KTAUR         <font color=#447700>! restart timestep<a name='206'></font>
+  REAL, intent(in)     :: dtmin         <font color=#447700>! dt in minutes<a name='207'></font>
+  INTEGER, intent(in)  :: myear         <font color=#447700>! model year                           !obsnypatch<a name='208'></font>
+  INTEGER, intent(in)  :: julday        <font color=#447700>! Julian day<a name='209'></font>
+  REAL, intent(in)     :: gmt           <font color=#447700>! Model GMT at start of run<a name='210'></font>
+  INTEGER, intent(in)  :: nudge_opt     <font color=#447700>! obs-nudge flag for this nest<a name='211'></font>
+  INTEGER, intent(in)  :: iswind        <font color=#447700>! nudge flag for wind<a name='212'></font>
+  INTEGER, intent(in)  :: istemp        <font color=#447700>! nudge flag for temperature<a name='213'></font>
+  INTEGER, intent(in)  :: ismois        <font color=#447700>! nudge flag for moisture<a name='214'></font>
+  INTEGER, intent(in)  :: ispstr        <font color=#447700>! nudge flag for pressure (obsolete)<a name='215'></font>
+  REAL, intent(in)     :: giv           <font color=#447700>! coefficient for wind<a name='216'></font>
+  REAL, intent(in)     :: git           <font color=#447700>! coefficient for temperature<a name='217'></font>
+  REAL, intent(in)     :: giq           <font color=#447700>! coefficient for moisture<a name='218'></font>
+  REAL, intent(in)     :: gip           <font color=#447700>! coefficient for pressure<a name='219'></font>
+  REAL, intent(in)     :: rinxy         <font color=#447700>! horizontal radius of influence (km)<a name='220'></font>
+  REAL, intent(in)     :: rinsig        <font color=#447700>! vertical radius of influence (on sigma)<a name='221'></font>
+  REAL, intent(inout)  :: twindo        <font color=#447700>! (time window)/2 (min) for nudging<a name='222'></font>
+  INTEGER, intent(in)  :: npfi          <font color=#447700>! coarse-grid time-step frequency for diagnostics<a name='223'></font>
+  INTEGER, intent(in)  :: ionf          <font color=#447700>! coarse-grid time-step frequency for obs-nudging calcs<a name='224'></font>
+  INTEGER, intent(in)  :: prt_max       <font color=#447700>! max number of entries of obs for diagnostic printout<a name='225'></font>
+  INTEGER, intent(in)  :: prt_freq      <font color=#447700>! frequency (in obs index) for diagnostic printout.<a name='226'></font>
+  INTEGER, intent(in)  :: idynin        <font color=#447700>! for dynamic initialization using a ramp-down function<a name='227'></font>
+  REAL, intent(in)     :: dtramp        <font color=#447700>! time period in minutes for ramping<a name='228'></font>
+  TYPE(fdob_type), intent(inout)  :: fdob     <font color=#447700>! derived data type for obs data<a name='229'></font>
+  REAL, intent(inout) :: varobs(nndgv,niobf)  <font color=#447700>! observational values in each variable<a name='230'></font>
+  REAL, intent(inout) :: timeob(niobf)        <font color=#447700>! model times for each observation (hours)<a name='231'></font>
+  REAL, intent(inout) :: nlevs_ob(niobf)      <font color=#447700>! numbers of levels in sounding obs<a name='232'></font>
+  REAL, intent(inout) :: lev_in_ob(niobf)     <font color=#447700>! level in sounding-type obs<a name='233'></font>
+  REAL, intent(inout) :: plfo(niobf)          <font color=#447700>! index for type of obs-platform<a name='234'></font>
+  REAL, intent(inout) :: elevob(niobf)        <font color=#447700>! elevations of observations  (meters)<a name='235'></font>
+  REAL, intent(inout) :: rio(niobf)           <font color=#447700>! west-east grid coordinate (non-staggered grid)<a name='236'></font>
+  REAL, intent(inout) :: rjo(niobf)           <font color=#447700>! south-north grid coordinate (non-staggered grid)<a name='237'></font>
+  REAL, intent(inout) :: rko(niobf)           <font color=#447700>! vertical grid coordinate<a name='238'></font>
+  REAL, DIMENSION( ims:ime, jms:jme ),                            &amp;<a name='239'>
+        INTENT(IN )       :: xlat, xlong      <font color=#447700>! lat/lon on mass-pt grid (for diagnostics only)<a name='240'></font>
+  REAL, intent(in) :: cen_lat                 <font color=#447700>! center latitude for map projection<a name='241'></font>
+  REAL, intent(in) :: cen_lon                 <font color=#447700>! center longitude for map projection<a name='242'></font>
+  REAL, intent(in) :: stand_lon               <font color=#447700>! standard longitude for map projection<a name='243'></font>
+  REAL, intent(in) :: true_lat1               <font color=#447700>! truelat1 for map projection<a name='244'></font>
+  REAL, intent(in) :: true_lat2               <font color=#447700>! truelat2 for map projection<a name='245'></font>
+  REAL, intent(in) :: known_lat               <font color=#447700>! latitude  of domain origin point (i,j)=(1,1) <a name='246'></font>
+  REAL, intent(in) :: known_lon               <font color=#447700>! longigude of domain origin point (i,j)=(1,1)<a name='247'></font>
+  REAL, intent(in) :: dxm                     <font color=#447700>! grid size in x (meters)<a name='248'></font>
+  REAL, intent(in) :: dym                     <font color=#447700>! grid size in y (meters)<a name='249'></font>
+  REAL, intent(in) :: rovg                    <font color=#447700>! constant rho over g<a name='250'></font>
+  REAL, intent(in) :: t0                      <font color=#447700>! background temperature<a name='251'></font>
+  INTEGER, intent(inout) :: obs_prt(prt_max)  <font color=#447700>! For printout of obs index<a name='252'></font>
+  REAL, intent(inout) :: lat_prt(prt_max)     <font color=#447700>! For printout of obs latitude <a name='253'></font>
+  REAL, intent(inout) :: lon_prt(prt_max)     <font color=#447700>! For printout of obs longitude<a name='254'></font>
+  REAL, intent(inout) :: mlat_prt(prt_max)    <font color=#447700>! For printout of model lat at obs (ri,rj)<a name='255'></font>
+  REAL, intent(inout) :: mlon_prt(prt_max)    <font color=#447700>! For printout of model lon at obs (ri,rj)<a name='256'></font>
+  INTEGER, intent(inout) :: stnid_prt(40,prt_max) <font color=#447700>! For printout of model lon at obs (ri,rj)<a name='257'></font>
+  INTEGER, intent(in) :: e_we                 <font color=#447700>! max grid index in south-north coordinate<a name='258'></font>
+  INTEGER, intent(in) :: e_sn                 <font color=#447700>! max grid index in west-east   coordinate<a name='259'></font>
+  INTEGER, intent(in) :: ims                  <font color=#447700>! grid memory start index (west-east dim)<a name='260'></font>
+  INTEGER, intent(in) :: ime                  <font color=#447700>! grid memory end   index (west-east dim)<a name='261'></font>
+  INTEGER, intent(in) :: jms                  <font color=#447700>! grid memory start index (south-north dim)<a name='262'></font>
+  INTEGER, intent(in) :: jme                  <font color=#447700>! grid memory end   index (south-north dim)<a name='263'></font>
+  INTEGER, intent(in) :: its                  <font color=#447700>! grid tile   start index (west-east dim)<a name='264'></font>
+  INTEGER, intent(in) :: ite                  <font color=#447700>! grid tile   end   index (west-east dim)<a name='265'></font>
+  INTEGER, intent(in) :: jts                  <font color=#447700>! grid tile   start index (south-north dim)<a name='266'></font>
+  INTEGER, intent(in) :: jte                  <font color=#447700>! grid tile   end   index (south-north dim)<a name='267'></font>
+  INTEGER, intent(in) :: map_proj             <font color=#447700>! map projection index<a name='268'></font>
+  INTEGER, intent(in) :: parent_grid_ratio    <font color=#447700>! parent to nest grid ration<a name='269'></font>
+  INTEGER, intent(in) :: i_parent_start       <font color=#447700>! starting i coordinate in parent domain<a name='270'></font>
+  INTEGER, intent(in) :: j_parent_start       <font color=#447700>! starting j coordinate in parent domain<a name='271'></font>
+  INTEGER, intent(in) :: maxdom               <font color=#447700>! maximum number of domains<a name='272'></font>
+  LOGICAL, intent(in) :: iprt                 <font color=#447700>! print flag<a name='273'></font>
+      <a name='274'>
+<font color=#447700>!***  DECLARATIONS FOR IMPLICIT NONE                                    <a name='275'></font>
+  integer :: n, ndum, nopen, nvol, idate, imm, iss<a name='276'>
+  integer :: nlast                      <font color=#447700>! last obs in list of valid obs from prev window<a name='277'></font>
+  integer :: nsta                       <font color=#447700>! number of stations held in timeobs array <a name='278'></font>
+  integer :: nstaw                      <font color=#447700>! # stations within the actual time window<a name='279'></font>
+  integer :: nprev                      <font color=#447700>! previous n in obs read loop (for printout only)<a name='280'></font>
+  integer :: meas_count, imc, njend, njc, njcc, julob, kn<a name='281'>
+  real    :: hourob, rjulob<a name='282'>
+  real    :: xhour, tback, tforwd, rjdate1, timanl1, rtimob<a name='283'>
+  real    :: rj, ri, elevation, pressure_data<a name='284'>
+  real    :: pressure_qc, height_data, height_qc, temperature_data<a name='285'>
+  real    :: temperature_qc, u_met_data, u_met_qc, v_met_data<a name='286'>
+  real    :: v_met_qc, rh_data, rh_qc, r_data, slp_data, slp_qc<a name='287'>
+  real    :: ref_pres_data, ref_pres_qc, psfc_data, psfc_qc<a name='288'>
+  real    :: precip_data, precip_qc, tbar, twdop<a name='289'>
+  real*8  :: tempob<a name='290'>
+  INTEGER, EXTERNAL :: nvals_le_limit         <font color=#447700>! for finding #obs with timeobs &lt;= tforwd<a name='291'></font>
+<a name='292'>
+<font color=#447700>! Local variables<a name='293'></font>
+  TYPE (PROJ_INFO)   :: obs_proj        <font color=#447700>! Structure for obs projection information.<a name='294'></font>
+  character*14 date_char<a name='295'>
+  character*19 obs_date                                                        <font color=#447700>!obsnypatch<a name='296'></font>
+  integer idts                                                                 <font color=#447700>!obsnypatch<a name='297'></font>
+  character*40 platform,source,id,namef<a name='298'>
+  character*2 fonc<a name='299'>
+  character(len=200) :: msg       <font color=#447700>! Argument to wrf_message<a name='300'></font>
+  real latitude,longitude<a name='301'>
+  logical :: newpass          <font color=#447700>! New pass flag (used for printout)<a name='302'></font>
+  logical is_sound,bogus<a name='303'>
+  LOGICAL OPENED,exist<a name='304'>
+  integer :: ieof(5),ifon(5)<a name='305'>
+  data ieof/0,0,0,0,0/<a name='306'>
+  data ifon/0,0,0,0,0/<a name='307'>
+  integer :: nmove, nvola<a name='308'>
+  integer :: iyear, itimob                                                     <font color=#447700>!obsnypatch<a name='309'></font>
+  integer :: errcnt<a name='310'>
+  DATA NMOVE/0/,NVOLA/61/<a name='311'>
+  character*140 file_name_on_obs_unit, obs_domain_file_name<a name='312'>
+  integer :: obs_domain_file_unit<a name='313'>
+<a name='314'>
+<font color=#447700>! if(ieof(inest).eq.2.and.fdob%nstat.eq.0)then<a name='315'></font>
+<font color=#447700>!   IF (iprt) print *,'returning from in4dob'<a name='316'></font>
+<font color=#447700>!   return<a name='317'></font>
+<font color=#447700>! endif<a name='318'></font>
+<font color=#447700>! IF (iprt) print *,'start in4dob ',inest,xtime<a name='319'></font>
+  IF(nudge_opt.NE.1)RETURN<a name='320'>
+<a name='321'>
+<font color=#447700>! Initialize obs for printout<a name='322'></font>
+  obs_prt = -999<a name='323'>
+  newpass = .true.<a name='324'>
+  errcnt  = 0 <a name='325'>
+<a name='326'>
+<font color=#447700>! if start time, or restart time, set obs array to missing value<a name='327'></font>
+  IF(KTAU.EQ.0.OR.KTAU.EQ.KTAUR) THEN<a name='328'>
+    DO N=1,NIOBF<a name='329'>
+      TIMEOB(N)=99999.<a name='330'>
+    ENDDO<a name='331'>
+    fdob%xtime_at_rest = xtime    <font color=#447700>!yliu 20080127<a name='332'></font>
+  ENDIF<a name='333'>
+<font color=#447700>! set number of obs=0 if at start or restart<a name='334'></font>
+  IF(KTAU.EQ.KTAUR)fdob%NSTAT=0<a name='335'>
+  NSTA=fdob%NSTAT<a name='336'>
+<a name='337'>
+  XHOUR=XTIME/60.<a name='338'>
+  XHOUR=AMAX1(XHOUR,0.0)<a name='339'>
+<a name='340'>
+<font color=#447700>! DEFINE THE MAX LIMITS OF THE WINDOW<a name='341'></font>
+  TBACK=XHOUR-TWINDO<a name='342'>
+  TFORWD=XHOUR+TWINDO<a name='343'>
+<a name='344'>
+  IF (iprt) then<a name='345'>
+     write(msg,fmt='(2(a,f8.3),a,i2)')                                            &amp;<a name='346'>
+                  'OBS NUDGING: Reading new obs for time window TBACK = ',  &amp;<a name='347'>
+                  tback,' TFORWD = ',tforwd,' for grid = ',inest<a name='348'>
+     call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1405">(msg)<a name='349'>
+  ENDIF<a name='350'>
+<a name='351'>
+<font color=#447700>! For obs that have become invalid because they are too old for the current time<a name='352'></font>
+<font color=#447700>! window, mark with 99999 to set up for removal from the rolling valid-obs list.<a name='353'></font>
+<a name='354'>
+  IF(NSTA.NE.0) THEN<a name='355'>
+    NDUM=0<a name='356'>
+    t_window : DO N=1,NSTA+1<a name='357'>
+      IF((TIMEOB(N)-TBACK).LT.0) THEN<a name='358'>
+        TIMEOB(N)=99999.<a name='359'>
+      ENDIF<a name='360'>
+      IF(TIMEOB(N).LT.9.E4) EXIT t_window<a name='361'>
+      NDUM=N<a name='362'>
+    ENDDO t_window<a name='363'>
+<a name='364'>
+    IF (iprt .and. ndum&gt;0) THEN<a name='365'>
+      write(msg,fmt='(a,i5,2a)') 'OBS NUDGING: ',ndum,' previously read obs ',  &amp;<a name='366'>
+           'are now too old for the current window and have been removed.'<a name='367'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1406">(msg)<a name='368'>
+    ENDIF<a name='369'>
+<a name='370'>
+<font color=#447700>! REMOVE OLD OBS DENOTED BY 99999. AT THE FRONT OF TIMEOB ARRAY<a name='371'></font>
+<font color=#447700>!   IF (iprt) print *,'ndum at 20=',ndum<a name='372'></font>
+    NDUM=ABS(NDUM)<a name='373'>
+    NMOVE=NIOBF-NDUM<a name='374'>
+    IF(NMOVE.GT.0 .AND. NDUM.NE.0 ) THEN  <a name='375'>
+      DO N=1,NMOVE<a name='376'>
+        do KN = 1,nndgv<a name='377'>
+          VAROBS(KN,N)=VAROBS(KN,N+NDUM)<a name='378'>
+        enddo<a name='379'>
+<font color=#447700>! RIO is the west-east coordinate. RJO is south-north. (ajb)<a name='380'></font>
+        RJO(N)=RJO(N+NDUM)<a name='381'>
+        RIO(N)=RIO(N+NDUM)<a name='382'>
+        RKO(N)=RKO(N+NDUM)<a name='383'>
+        TIMEOB(N)=TIMEOB(N+NDUM)<a name='384'>
+        nlevs_ob(n)=nlevs_ob(n+ndum)<a name='385'>
+        lev_in_ob(n)=lev_in_ob(n+ndum)<a name='386'>
+        plfo(n)=plfo(n+ndum)<a name='387'>
+        elevob(n)=elevob(n+ndum) <a name='388'>
+      ENDDO<a name='389'>
+    ENDIF<a name='390'>
+    NOPEN=NMOVE+1<a name='391'>
+    IF(NOPEN.LE.NIOBF) THEN<a name='392'>
+      DO N=NOPEN,NIOBF<a name='393'>
+        do KN = 1,nndgv<a name='394'>
+          VAROBS(KN,N)=99999.<a name='395'>
+        enddo<a name='396'>
+        RIO(N)=99999.<a name='397'>
+        RJO(N)=99999.<a name='398'>
+        RKO(N)=99999.<a name='399'>
+        TIMEOB(N)=99999.<a name='400'>
+        nlevs_ob(n)=99999.<a name='401'>
+        lev_in_ob(n)=99999.<a name='402'>
+        plfo(n)=99999.<a name='403'>
+        elevob(n)=99999.<a name='404'>
+      ENDDO<a name='405'>
+    ENDIF<a name='406'>
+  ENDIF<a name='407'>
+<a name='408'>
+<font color=#447700>! Compute map projection info.<a name='409'></font>
+  call <A href='../../html_code/share/wrf_fddaobs_in.F.html#SET_PROJECTION'>set_projection</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="SET_PROJECTION_1">(obs_proj, map_proj, cen_lat, cen_lon,            &amp;<a name='410'>
+                      true_lat1, true_lat2, stand_lon,                 &amp;<a name='411'>
+                      known_lat, known_lon,                            &amp;<a name='412'>
+                      e_we, e_sn, dxm, dym )<a name='413'>
+<a name='414'>
+<font color=#447700>! FIND THE LAST OBS IN THE LIST<a name='415'></font>
+  NLAST=0<a name='416'>
+  last_ob : DO N=1,NIOBF<a name='417'>
+<font color=#447700>!   print *,'nlast,n,timeob(n)=',nlast,n,timeob(n)<a name='418'></font>
+    IF(TIMEOB(N).GT.9.E4) EXIT last_ob<a name='419'>
+    NLAST=N<a name='420'>
+  ENDDO last_ob<a name='421'>
+<a name='422'>
+<font color=#447700>! print *,'in4dob, after 90 ',nlast,ktau,ktaur,nsta<a name='423'></font>
+<font color=#447700>! open file if at beginning or restart<a name='424'></font>
+  IF(KTAU.EQ.0.OR.KTAU.EQ.KTAUR) THEN<a name='425'>
+    fdob%RTLAST=-999.<a name='426'>
+    obs_domain_file_unit = NVOLA+INEST-1<a name='427'>
+    INQUIRE (obs_domain_file_unit,NAME=file_name_on_obs_unit,OPENED=OPENED)<a name='428'>
+    <font color=#447700>!Build obs nudging file name (OBS_DOMAINX01 where X is the current domain number)<a name='429'></font>
+      ifon(inest)=1<a name='430'>
+      write(fonc(1:2),'(i2)')ifon(inest)<a name='431'>
+      if(fonc(1:1).eq.' ')fonc(1:1)='0'<a name='432'>
+    obs_domain_file_name='OBS_DOMAIN'//CHAR(INEST+ICHAR('0'))//fonc(1:2)  <a name='433'>
+    IF (.NOT. OPENED) THEN<a name='434'>
+      INQUIRE (file=obs_domain_file_name,EXIST=exist)<a name='435'>
+      if(exist)then<a name='436'>
+        IF (iprt) THEN<a name='437'>
+          write(msg,*) 'opening first fdda obs file, fonc=',              &amp;<a name='438'>
+                       fonc,' inest=',inest<a name='439'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1407">(msg)<a name='440'>
+          write(msg,*) 'ifon=',ifon(inest)<a name='441'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1408">(msg)<a name='442'>
+        ENDIF<a name='443'>
+        OPEN(obs_domain_file_unit,FILE=obs_domain_file_name,FORM='FORMATTED',STATUS='OLD')<a name='444'>
+      else<a name='445'>
+<font color=#447700>! no first file to open<a name='446'></font>
+        IF (iprt) call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1409">("there are no fdda obs files to open")<a name='447'>
+        return<a name='448'>
+      endif<a name='449'>
+    ELSE<a name='450'>
+     <font color=#447700>!If the unit for observation nudging file is already open make sure the file<a name='451'></font>
+     <font color=#447700>!name matches the expected name to ensure that some other part of WRF has<a name='452'></font>
+     <font color=#447700>!not opened a file using the same unit number<a name='453'></font>
+     IF(file_name_on_obs_unit .ne. obs_domain_file_name) THEN <a name='454'>
+      write(msg,*) 'File open on obs nudging unit (',obs_domain_file_unit,') with wrong name'<a name='455'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1410">(msg)<a name='456'>
+      write(msg,*) 'File open on obs nudging unit is named ',&amp;<a name='457'>
+       trim(adjustl(file_name_on_obs_unit)),' but it should be named ',&amp;<a name='458'>
+       trim(adjustl(obs_domain_file_name))<a name='459'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1411">(msg)<a name='460'>
+      write(msg,*) 'This likely means this unit number was opened elsewhere in WRF'<a name='461'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1412">(msg)<a name='462'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1484"> ( 'wrf_fddaobs_in: in4dob STOP Obs nudging file name mismatch' )<a name='463'>
+     ENDIF<a name='464'>
+    ENDIF<a name='465'>
+  ENDIF  <font color=#447700>!end if(KTAU.EQ.0.OR.KTAU.EQ.KTAUR)<a name='466'></font>
+<font color=#447700>! print *,'at jc check1'<a name='467'></font>
+ <a name='468'>
+<font color=#447700>!**********************************************************************<a name='469'></font>
+<font color=#447700>!       --------------   BIG 100 LOOP OVER N  --------------<a name='470'></font>
+<font color=#447700>!**********************************************************************<a name='471'></font>
+<font color=#447700>! NOW CHECK TO SEE IF EXTRA DATA MUST BE READ IN FROM THE<a name='472'></font>
+<font color=#447700>! DATA FILE.  CONTINUE READING UNTIL THE REACHING THE EOF<a name='473'></font>
+<font color=#447700>! (DATA TIME IS NEGATIVE) OR FIRST TIME PAST TFORWD. THE<a name='474'></font>
+<font color=#447700>! LAST OBS CURRENTLY AVAILABLE IS IN N=NMOVE.<a name='475'></font>
+<a name='476'>
+  N=NLAST<a name='477'>
+  IF(N.EQ.0)GOTO 110<a name='478'>
+<a name='479'>
+ 1001 continue<a name='480'>
+<a name='481'>
+<font color=#447700>! ieof=2 means no more files<a name='482'></font>
+<a name='483'>
+    IF(IEOF(inest).GT.1) then<a name='484'>
+      GOTO 130<a name='485'>
+    endif<a name='486'>
+<a name='487'>
+100 CONTINUE<a name='488'>
+<font color=#447700>!ajb 20070116 bugfix for zero array index. N=0 if first obs is not in the domain.<a name='489'></font>
+    IF(N.ne.0) THEN<a name='490'>
+      IF(TIMEOB(N).GT.TFORWD.and.timeob(n).lt.99999.) THEN<a name='491'>
+         GOTO 130<a name='492'>
+      ENDIF<a name='493'>
+    ENDIF<a name='494'>
+ <a name='495'>
+<font color=#447700>! OBSFILE: no more data in the obsfile <a name='496'></font>
+<font color=#447700>! AJB note: This is where we would implement multi-file reading.<a name='497'></font>
+    if(ieof(inest).eq.1 )then<a name='498'>
+      ieof(inest)=2<a name='499'>
+      goto 130<a name='500'>
+    endif<a name='501'>
+<a name='502'>
+<font color=#447700>!**********************************************************************<a name='503'></font>
+<font color=#447700>!       --------------   110 SUBLOOP OVER N  --------------<a name='504'></font>
+<font color=#447700>!**********************************************************************<a name='505'></font>
+  110 continue<a name='506'>
+<font color=#447700>! THE TIME OF THE MOST RECENTLY ACQUIRED OBS IS .LE. TFORWD,<a name='507'></font>
+<font color=#447700>! SO CONTINUE READING<a name='508'></font>
+<a name='509'>
+      IF(N.GT.NIOBF-1)GOTO 120<a name='510'>
+<font color=#447700>! REPLACE NVOLA WITH LUN 70, AND USE NVOLA AS A FILE COUNTER<a name='511'></font>
+      NVOL=NVOLA+INEST-1<a name='512'>
+      IF(fdob%IEODI.EQ.1)GOTO 111<a name='513'>
+      read(nvol,101,end=111,err=111)date_char<a name='514'>
+ 101  FORMAT(1x,a14)<a name='515'>
+<a name='516'>
+      n=n+1<a name='517'>
+<a name='518'>
+<font color=#447700>! Convert the form of the observation date for geth_idts.<a name='519'></font>
+      call <A href='../../html_code/share/wrf_fddaobs_in.F.html#FMT_DATE'>fmt_date</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="FMT_DATE_1">(date_char, obs_date)<a name='520'>
+<a name='521'>
+<font color=#447700>! Compute the time period in seconds from the model reference<a name='522'></font>
+<font color=#447700>! date (fdob%sdate) until the observation date.<a name='523'></font>
+<a name='524'>
+      call <A href='../../html_code/io_grib_share/io_grib_share.F.html#GETH_IDTS'>geth_idts</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GETH_IDTS_2">(obs_date, fdob%sdate(1:19), idts)<a name='525'>
+<a name='526'>
+<font color=#447700>! Convert time in seconds to hours.<a name='527'></font>
+      <font color=#447700>! In case of restart, correct for new sdate.<a name='528'></font>
+      idts = idts + nint(fdob%xtime_at_rest*60.)  <font color=#447700>! yliu 20080127<a name='529'></font>
+<a name='530'>
+      rtimob =float(idts)/3600.<a name='531'>
+      timeob(n)=rtimob<a name='532'>
+<a name='533'>
+<font color=#447700>!     print *,'read in ob ',n,timeob(n),rtimob<a name='534'></font>
+      IF(IDYNIN.EQ.1.AND.TIMEOB(N)*60..GT.fdob%DATEND) THEN<a name='535'>
+        IF (iprt) THEN<a name='536'>
+          write(msg,*) ' IN4DOB: FOR INEST = ',INEST,' AT XTIME = ',XTIME,    &amp;<a name='537'>
+                       ' TIMEOB = ',TIMEOB(N)*60.,' AND DATEND = ',fdob%DATEND,' :'<a name='538'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1413">(msg)<a name='539'>
+          write(msg,*) '         END-OF-DATA FLAG SET FOR OBS-NUDGING',       &amp;<a name='540'>
+                       ' DYNAMIC INITIALIZATION'<a name='541'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1414">(msg)<a name='542'>
+        ENDIF<a name='543'>
+        fdob%IEODI=1<a name='544'>
+        TIMEOB(N)=99999.<a name='545'>
+        rtimob=timeob(n)<a name='546'>
+      ENDIF<a name='547'>
+      read(nvol,102)latitude,longitude<a name='548'>
+ 102  FORMAT(2x,2(f9.4,1x))<a name='549'>
+<a name='550'>
+<font color=#447700>!     if(ifon.eq.4)print *,'ifon=4',latitude,longitude<a name='551'></font>
+<font color=#447700>! this works only for lc projection<a name='552'></font>
+<font color=#447700>! yliu: add llxy for all 3 projection<a name='553'></font>
+          <a name='554'>
+<font color=#447700>!ajb Arguments ri and rj have been switched from MM5 orientation.<a name='555'></font>
+<a name='556'>
+      CALL <A href='../../html_code/share/module_llxy.F.html#LATLON_TO_IJ'>latlon_to_ij</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="LATLON_TO_IJ_6">(obs_proj, latitude, longitude, ri, rj)<a name='557'>
+<a name='558'>
+<font color=#447700>!ajb  ri and rj are referenced to the non-staggered grid (not mass-pt!).<a name='559'></font>
+<font color=#447700>!     (For MM5, they were referenced to the dot grid.)<a name='560'></font>
+<a name='561'>
+      ri = ri + .5      <font color=#447700>!ajb Adjust from mass-pt to non-staggered grid.<a name='562'></font>
+      rj = rj + .5      <font color=#447700>!ajb Adjust from mass-pt to non-staggered grid.<a name='563'></font>
+<a name='564'>
+      rio(n)=ri<a name='565'>
+      rjo(n)=rj<a name='566'>
+<a name='567'>
+      read(nvol,1021)id,namef<a name='568'>
+ 1021 FORMAT(2x,2(a40,3x))<a name='569'>
+      read(nvol,103)platform,source,elevation,is_sound,bogus,meas_count<a name='570'>
+ 103  FORMAT( 2x,2(a16,2x),f8.0,2x,2(l4,2x),i5)<a name='571'>
+<a name='572'>
+<font color=#447700>!     write(6,*) '----- OBS description ----- '<a name='573'></font>
+<font color=#447700>!     write(6,*) 'platform,source,elevation,is_sound,bogus,meas_count:'<a name='574'></font>
+<font color=#447700>!     write(6,*) platform,source,elevation,is_sound,bogus,meas_count<a name='575'></font>
+<a name='576'>
+<font color=#447700>! yliu <a name='577'></font>
+      elevob(n)=elevation<a name='578'>
+<font color=#447700>! jc<a name='579'></font>
+<font color=#447700>! change platform from synop to profiler when needed<a name='580'></font>
+      if(namef(2:9).eq.'PROFILER')platform(7:14)='PROFILER'<a name='581'>
+<font color=#447700>! yliu<a name='582'></font>
+      if(namef(2:6).eq.'ACARS')platform(7:11)='ACARS'<a name='583'>
+      if(namef(1:7).eq.'SATWNDS') platform(1:11)='SATWNDS    '<a name='584'>
+      if(namef(1:8).eq.'CLASS DA')platform(7:10)='TEMP'<a name='585'>
+<font color=#447700>! yliu end<a name='586'></font>
+ <a name='587'>
+      rko(n)=-99.<a name='588'>
+<font color=#447700>!yliu 20050706<a name='589'></font>
+<font color=#447700>!     if((platform(7:11).eq.'METAR').or.(platform(7:11).eq.'SPECI').or.<a name='590'></font>
+<font color=#447700>!    1   (platform(7:10).eq.'SHIP').or.(platform(7:11).eq.'SYNOP').or.<a name='591'></font>
+<font color=#447700>!    1    (platform(1:4).eq.'SAMS'))<a name='592'></font>
+<font color=#447700>!    1   rko(n)=1.0<a name='593'></font>
+      if(.NOT. is_sound) rko(n)=1.0<a name='594'>
+<font color=#447700>!yliu 20050706 end<a name='595'></font>
+<a name='596'>
+<font color=#447700>! plfo is inFORMATion on what platform. May use this later in adjusting weights<a name='597'></font>
+      plfo(n)=99.<a name='598'>
+      if(platform(7:11).eq.'METAR')plfo(n)=1.<a name='599'>
+      if(platform(7:11).eq.'SPECI')plfo(n)=2.<a name='600'>
+      if(platform(7:10).eq.'SHIP')plfo(n)=3.<a name='601'>
+      if(platform(7:11).eq.'SYNOP')plfo(n)=4.<a name='602'>
+      if(platform(7:10).eq.'TEMP')plfo(n)=5.<a name='603'>
+      if(platform(7:11).eq.'PILOT')plfo(n)=6.<a name='604'>
+      if(platform(1:7).eq.'SATWNDS')plfo(n)=7.<a name='605'>
+      if(platform(7:11).eq.'SATWI')plfo(n)=7.<a name='606'>
+      if(platform(1:4).eq.'SAMS')plfo(n)=8.<a name='607'>
+      if(platform(7:14).eq.'PROFILER')plfo(n)=9.<a name='608'>
+<font color=#447700>! yliu: ACARS-&gt;SATWINDS<a name='609'></font>
+      if(platform(7:11).eq.'ACARS')plfo(n)=7.<a name='610'>
+<font color=#447700>! yliu: end<a name='611'></font>
+      if(plfo(n).eq.99.) then<a name='612'>
+         IF (iprt) then<a name='613'>
+           write(msg,*) 'n=',n,' unknown ob of type ',platform<a name='614'>
+           call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1415">(msg)<a name='615'>
+         ENDIF<a name='616'>
+      endif<a name='617'>
+<a name='618'>
+<font color=#447700>!======================================================================<a name='619'></font>
+<font color=#447700>!======================================================================<a name='620'></font>
+<font color=#447700>! THIS PART READS SOUNDING INFO<a name='621'></font>
+      IF(is_sound)THEN<a name='622'>
+        nlevs_ob(n)=real(meas_count)<a name='623'>
+        lev_in_ob(n)=1.<a name='624'>
+        do imc=1,meas_count<a name='625'>
+<font color=#447700>!             write(6,*) '0 inest = ',inest,' n = ',n<a name='626'></font>
+<font color=#447700>! the sounding has one header, many levels. This part puts it into <a name='627'></font>
+<font color=#447700>! "individual" observations. There's no other way for nudob to deal<a name='628'></font>
+<font color=#447700>! with it.<a name='629'></font>
+          if(imc.gt.1)then                          <font color=#447700>! sub-loop over N<a name='630'></font>
+            n=n+1<a name='631'>
+            if(n.gt.niobf)goto 120<a name='632'>
+            nlevs_ob(n)=real(meas_count)<a name='633'>
+            lev_in_ob(n)=real(imc)<a name='634'>
+            timeob(n)=rtimob<a name='635'>
+            rio(n)=ri<a name='636'>
+            rjo(n)=rj<a name='637'>
+            rko(n)=-99.<a name='638'>
+            plfo(n)=plfo(n-imc+1)<a name='639'>
+            elevob(n)=elevation<a name='640'>
+          endif<a name='641'>
+<a name='642'>
+          read(nvol,104)pressure_data,pressure_qc,                  &amp;<a name='643'>
+                        height_data,height_qc,                      &amp;<a name='644'>
+                        temperature_data,temperature_qc,            &amp;<a name='645'>
+                        u_met_data,u_met_qc,                        &amp;<a name='646'>
+                        v_met_data,v_met_qc,                        &amp;<a name='647'>
+                        rh_data,rh_qc<a name='648'>
+ 104      FORMAT( 1x,6(f11.3,1x,f11.3,1x))<a name='649'>
+<a name='650'>
+<font color=#447700>! yliu: Ensemble - add disturbance to upr obs<a name='651'></font>
+<font color=#447700>!         if(plfo(n).eq.5.or.plfo(n).eq.6.or.plfo(n).eq.9) then                  FORE07E08<a name='652'></font>
+<font color=#447700>!          if(imc.eq.1) then                                                     FORE07E08<a name='653'></font>
+<font color=#447700>!     call srand(n)<a name='654'></font>
+<font color=#447700>!     t_rand =- (rand(2)-0.5)*6<a name='655'></font>
+<font color=#447700>!     call srand(n+100000)<a name='656'></font>
+<font color=#447700>!     u_rand =- (rand(2)-0.5)*6<a name='657'></font>
+<font color=#447700>!     call srand(n+200000)<a name='658'></font>
+<font color=#447700>!     v_rand =- (rand(2)-0.5)*6<a name='659'></font>
+<font color=#447700>!          endif                                                                 FORE07E08<a name='660'></font>
+<font color=#447700>!     if(temperature_qc.ge.0..and.temperature_qc.lt.30000..and.<a name='661'></font>
+<font color=#447700>!    &amp;   temperature_data .gt. -88880.0 )<a name='662'></font>
+<font color=#447700>!    &amp; temperature_data = temperature_data  + t_rand<a name='663'></font>
+<font color=#447700>!     if((u_met_qc.ge.0..and.u_met_qc.lt.30000.).and.<a name='664'></font>
+<font color=#447700>!    &amp;   (v_met_qc.ge.0..and.v_met_qc.lt.30000.).and.<a name='665'></font>
+<font color=#447700>! make sure at least 1 of the components is .ne.0<a name='666'></font>
+<font color=#447700>!    &amp;   (u_met_data.ne.0..or.v_met_data.ne.0.) .and.<a name='667'></font>
+<font color=#447700>!    &amp;   (u_met_data.gt.-88880.0 .and. v_met_data.gt.-88880.0) )then<a name='668'></font>
+<font color=#447700>!         u_met_data = u_met_data + u_rand<a name='669'></font>
+<font color=#447700>!         v_met_data = v_met_data + v_rand<a name='670'></font>
+<font color=#447700>!     endif<a name='671'></font>
+<font color=#447700>!         endif                                                                  FORE07E08<a name='672'></font>
+<font color=#447700>! yliu: Ens test - end<a name='673'></font>
+<a name='674'>
+ <a name='675'>
+<font color=#447700>! jc<a name='676'></font>
+<font color=#447700>! hardwire to switch -777777. qc to 0. here temporarily<a name='677'></font>
+<font color=#447700>! -777777. is a sounding level that no qc was done on.<a name='678'></font>
+ <a name='679'>
+          if(temperature_qc.eq.-777777.)temperature_qc=0.<a name='680'>
+          if(pressure_qc.eq.-777777.)pressure_qc=0.<a name='681'>
+          if(height_qc.eq.-777777.)height_qc=0.<a name='682'>
+          if(u_met_qc.eq.-777777.)u_met_qc=0.<a name='683'>
+          if(v_met_qc.eq.-777777.)v_met_qc=0.<a name='684'>
+          if(rh_qc.eq.-777777.)rh_qc=0.<a name='685'>
+          if(temperature_data.eq.-888888.)temperature_qc=-888888.<a name='686'>
+          if(pressure_data.eq.-888888.)pressure_qc=-888888.<a name='687'>
+          if(height_data.eq.-888888.)height_qc=-888888.<a name='688'>
+          if(u_met_data.eq.-888888.)u_met_qc=-888888.<a name='689'>
+          if(v_met_data.eq.-888888.)v_met_qc=-888888.<a name='690'>
+          if(rh_data.eq.-888888.)rh_qc=-888888.<a name='691'>
+ <a name='692'>
+<font color=#447700>! jc<a name='693'></font>
+<font color=#447700>! Hardwire so that only use winds in pilot obs (no winds from temp) and<a name='694'></font>
+<font color=#447700>!    only use temperatures and rh in temp obs (no temps from pilot obs)<a name='695'></font>
+<font color=#447700>! Do this because temp and pilot are treated as 2 platforms, but pilot <a name='696'></font>
+<font color=#447700>!    has most of the winds, and temp has most of the temps. If use both,<a name='697'></font>
+<font color=#447700>!    the second will smooth the effect of the first. Usually temps come in after<a name='698'></font>
+<font color=#447700>!    pilots. pilots usually don't have any temps, but temp obs do have some <a name='699'></font>
+<font color=#447700>!    winds usually.<a name='700'></font>
+<font color=#447700>! plfo=5 is TEMP ob, range sounding is an exception<a name='701'></font>
+<font color=#447700>!yliu start -- comment out to test with merged PILOT and TEMP and <a name='702'></font>
+<font color=#447700>!        do not use obs interpolated by little_r<a name='703'></font>
+<font color=#447700>!       if(plfo(n).eq.5. .and. namef(1:8).ne.'CLASS DA')then<a name='704'></font>
+<font color=#447700>!         u_met_data=-888888.<a name='705'></font>
+<font color=#447700>!         v_met_data=-888888.<a name='706'></font>
+<font color=#447700>!         u_met_qc=-888888.<a name='707'></font>
+<font color=#447700>!         v_met_qc=-888888.<a name='708'></font>
+<font color=#447700>!       endif<a name='709'></font>
+          if(plfo(n).eq.5..and.(u_met_qc.eq.256..or.v_met_qc.eq.256.))then<a name='710'>
+            u_met_data=-888888.<a name='711'>
+            v_met_data=-888888.<a name='712'>
+            u_met_qc=-888888.<a name='713'>
+            v_met_qc=-888888.<a name='714'>
+          endif<a name='715'>
+<font color=#447700>!yliu end<a name='716'></font>
+<font color=#447700>! plfo=6 is PILOT ob<a name='717'></font>
+          if(plfo(n).eq.6.)then<a name='718'>
+            temperature_data=-888888.<a name='719'>
+            rh_data=-888888.<a name='720'>
+            temperature_qc=-888888.<a name='721'>
+            rh_qc=-888888.<a name='722'>
+          endif<a name='723'>
+<a name='724'>
+<font color=#447700>!ajb Store temperature for WRF<a name='725'></font>
+<font color=#447700>!    NOTE: The conversion to potential temperature, performed later in subroutine<a name='726'></font>
+<font color=#447700>!    errob, requires good pressure data, either directly or via good height data.<a name='727'></font>
+<font color=#447700>!    So here, in addition to checking for good temperature data,  we must also<a name='728'></font>
+<font color=#447700>!    do a check for good pressure or height.<a name='729'></font>
+          if(temperature_qc.ge.0..and.temperature_qc.lt.30000.)then<a name='730'>
+<a name='731'>
+            if( (pressure_qc.ge.0..and.pressure_qc.lt.30000.) .or.    &amp;<a name='732'>
+                (height_qc  .ge.0..and.height_qc  .lt.30000.) ) then<a name='733'>
+<a name='734'>
+              varobs(3,n) = temperature_data<a name='735'>
+            else<a name='736'>
+              varobs(3,n)=-888888.<a name='737'>
+            endif<a name='738'>
+<a name='739'>
+          else<a name='740'>
+            varobs(3,n)=-888888.<a name='741'>
+          endif<a name='742'>
+<a name='743'>
+<font color=#447700>!ajb Store obs height<a name='744'></font>
+          if(height_qc.ge.0..and.height_qc.lt.30000.)then<a name='745'>
+            varobs(6,n)=height_data<a name='746'>
+          else<a name='747'>
+            varobs(6,n)=-888888.<a name='748'>
+          endif<a name='749'>
+<a name='750'>
+          if(pressure_qc.ge.0..and.pressure_qc.lt.30000.)then<a name='751'>
+<font color=#447700>!           if(pressure_qc.ge.0.)then<a name='752'></font>
+            varobs(5,n)=pressure_data<a name='753'>
+          else<a name='754'>
+            varobs(5,n)=-888888.<a name='755'>
+            IF (iprt) THEN<a name='756'>
+              if(varobs(6,n).eq.-888888.000) then<a name='757'>
+                if (errcnt.le.10) then<a name='758'>
+                  write(msg,*) '*** PROBLEM: sounding, p and ht undefined',latitude,longitude<a name='759'>
+                  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1416">(msg)<a name='760'>
+                  errcnt = errcnt + 1<a name='761'>
+                  if (errcnt.gt.10) call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1417">("MAX of 10 warnings issued.")<a name='762'>
+                endif<a name='763'>
+              endif<a name='764'>
+            ENDIF<a name='765'>
+          endif <a name='766'>
+          if(varobs(5,n).ge.0.)varobs(5,n)=varobs(5,n)*1.e-3<a name='767'>
+<font color=#447700>! don't use data above 80 mb<a name='768'></font>
+          if((varobs(5,n).gt.0.).and.(varobs(5,n).le.8.))then<a name='769'>
+            u_met_data=-888888.<a name='770'>
+            v_met_data=-888888.<a name='771'>
+            u_met_qc=-888888.<a name='772'>
+            v_met_qc=-888888.<a name='773'>
+            temperature_data=-888888.<a name='774'>
+            temperature_qc=-888888.<a name='775'>
+            rh_data=-888888.<a name='776'>
+            rh_qc=-888888.<a name='777'>
+          endif<a name='778'>
+<a name='779'>
+<a name='780'>
+<font color=#447700>! Store horizontal wind components for WRF<a name='781'></font>
+          if((u_met_qc.ge.0..and.u_met_qc.lt.30000.).and.  &amp;<a name='782'>
+             (v_met_qc.ge.0..and.v_met_qc.lt.30000.).and.  &amp;<a name='783'>
+<font color=#447700>! make sure at least 1 of the components is .ne.0<a name='784'></font>
+             (u_met_data.ne.0..or.v_met_data.ne.0.))then<a name='785'>
+<a name='786'>
+<font color=#447700>! If Earth-relative wind vector, need to rotate it to grid-relative coords<a name='787'></font>
+               if(u_met_qc.eq.129. .and. v_met_qc.eq.129.) then<a name='788'>
+                  CALL <A href='../../html_code/share/wrf_fddaobs_in.F.html#ROTATE_VECTOR'>rotate_vector</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ROTATE_VECTOR_1">(longitude,u_met_data,v_met_data,   &amp;<a name='789'>
+                                     obs_proj,map_proj)<a name='790'>
+               endif<a name='791'>
+               varobs(1,n)=u_met_data<a name='792'>
+               varobs(2,n)=v_met_data<a name='793'>
+          else<a name='794'>
+               varobs(1,n)=-888888.<a name='795'>
+               varobs(2,n)=-888888.<a name='796'>
+          endif<a name='797'>
+<a name='798'>
+          r_data=-888888.<a name='799'>
+<a name='800'>
+          if(rh_qc.ge.0..and.rh_qc.lt.30000.)then<a name='801'>
+            if((pressure_qc.ge.0.).and.(temperature_qc.ge.0.).and.       &amp;<a name='802'>
+              (pressure_qc.lt.30000.).and.(temperature_qc.lt.30000.))then<a name='803'>
+              call <A href='../../html_code/share/wrf_fddaobs_in.F.html#RH2R'>rh2r</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RH2R_1">(rh_data,temperature_data,pressure_data*.01,      &amp;<a name='804'>
+                        r_data,0)            <font color=#447700>! yliu, change last arg from 1 to 0<a name='805'></font>
+            else<a name='806'>
+<font color=#447700>!             print *,'rh, but no t or p to convert',temperature_qc,     &amp;<a name='807'></font>
+<font color=#447700>!             pressure_qc,n<a name='808'></font>
+              r_data=-888888.<a name='809'>
+            endif<a name='810'>
+          endif<a name='811'>
+          varobs(4,n)=r_data<a name='812'>
+        enddo    <font color=#447700>! end do imc=1,meas_count<a name='813'></font>
+<font color=#447700>!       print *,'--- sdng n=',n,nlevs_ob(n),lev_in_ob(n),timeob(n)<a name='814'></font>
+<font color=#447700>!       read in non-sounding obs<a name='815'></font>
+<a name='816'>
+      ELSEIF(.NOT.is_sound)THEN<a name='817'>
+        nlevs_ob(n)=1.<a name='818'>
+        lev_in_ob(n)=1.<a name='819'>
+        read(nvol,105)slp_data,slp_qc,                                 &amp;<a name='820'>
+                      ref_pres_data,ref_pres_qc,                       &amp;<a name='821'>
+                      height_data,height_qc,                           &amp;<a name='822'>
+                      temperature_data,temperature_qc,                 &amp;<a name='823'>
+                      u_met_data,u_met_qc,                             &amp;<a name='824'>
+                      v_met_data,v_met_qc,                             &amp;<a name='825'>
+                      rh_data,rh_qc,                                   &amp;<a name='826'>
+                      psfc_data,psfc_qc,                               &amp;<a name='827'>
+                      precip_data,precip_qc<a name='828'>
+ 105    FORMAT( 1x,9(f11.3,1x,f11.3,1x))<a name='829'>
+<a name='830'>
+<font color=#447700>! Ensemble: add disturbance to sfc obs<a name='831'></font>
+<font color=#447700>!     call srand(n)<a name='832'></font>
+<font color=#447700>!     t_rand =+ (rand(2)-0.5)*5<a name='833'></font>
+<font color=#447700>!     call srand(n+100000)<a name='834'></font>
+<font color=#447700>!     u_rand =+ (rand(2)-0.5)*5<a name='835'></font>
+<font color=#447700>!     call srand(n+200000)<a name='836'></font>
+<font color=#447700>!     v_rand =+ (rand(2)-0.5)*5<a name='837'></font>
+<font color=#447700>!     if(temperature_qc.ge.0..and.temperature_qc.lt.30000.  .and.<a name='838'></font>
+<font color=#447700>!    &amp;   temperature_data .gt. -88880.0 )<a name='839'></font>
+<font color=#447700>!    &amp; temperature_data = temperature_data  + t_rand<a name='840'></font>
+<font color=#447700>!     if((u_met_qc.ge.0..and.u_met_qc.lt.30000.).and.<a name='841'></font>
+<font color=#447700>!    &amp;   (v_met_qc.ge.0..and.v_met_qc.lt.30000.).and.<a name='842'></font>
+<font color=#447700>! make sure at least 1 of the components is .ne.0<a name='843'></font>
+<font color=#447700>!    &amp;   (u_met_data.ne.0..or.v_met_data.ne.0.) .and.<a name='844'></font>
+<font color=#447700>!    &amp;   (u_met_data.gt.-88880.0 .and. v_met_data.gt.-88880.0) )then<a name='845'></font>
+<font color=#447700>!         u_met_data = u_met_data + u_rand<a name='846'></font>
+<font color=#447700>!         v_met_data = v_met_data + v_rand<a name='847'></font>
+<font color=#447700>!      endif<a name='848'></font>
+<font color=#447700>! yliu: Ens test - end<a name='849'></font>
+<a name='850'>
+<font color=#447700>!Lilis<a name='851'></font>
+<a name='852'>
+<font color=#447700>! calculate psfc if slp is there<a name='853'></font>
+        if((psfc_qc.lt.0.).and.(slp_qc.ge.0..and.slp_qc.lt.30000.).and.   &amp;<a name='854'>
+              (temperature_qc.ge.0..and.temperature_qc.lt.30000.).and.    &amp;<a name='855'>
+              (slp_data.gt.90000.))then<a name='856'>
+          tbar=temperature_data+0.5*elevation*.0065<a name='857'>
+          psfc_data=slp_data*exp(-elevation/(rovg*tbar))<a name='858'>
+          varobs(5,n)=psfc_data<a name='859'>
+          psfc_qc=0.<a name='860'>
+        endif<a name='861'>
+<a name='862'>
+<font color=#447700>!c *No* **Very rough** estimate of psfc from sfc elevation if UUtah ob and elev&gt;1000m<a name='863'></font>
+<font color=#447700>! estimate psfc from temp and elevation<a name='864'></font>
+<font color=#447700>!   Do not know sfc pressure in model at this point.<a name='865'></font>
+<font color=#447700>!      if((psfc_qc.lt.0.).and.(elevation.gt.1000.).and.<a name='866'></font>
+<font color=#447700>!     1   (temperature_qc.ge.0..and.temperature_qc.lt.30000.)<a name='867'></font>
+<font color=#447700>!     1    .and.(platform(7:16).eq.'SYNOP PRET'))then<a name='868'></font>
+        if((psfc_qc.lt.0.).and.                                          &amp;<a name='869'>
+          (temperature_qc.ge.0..and.temperature_qc.lt.30000.))then<a name='870'>
+          tbar=temperature_data+0.5*elevation*.0065<a name='871'>
+          psfc_data=100000.*exp(-elevation/(rovg*tbar))<a name='872'>
+          varobs(5,n)=psfc_data<a name='873'>
+          psfc_qc=0.<a name='874'>
+        endif<a name='875'>
+<a name='876'>
+        if((psfc_qc.ge.0..and.psfc_qc.lt.30000.).and.(psfc_data.gt.70000.  &amp;<a name='877'>
+        .and.psfc_data.lt.105000.))then<a name='878'>
+          varobs(5,n)=psfc_data<a name='879'>
+        else<a name='880'>
+          varobs(5,n)=-888888.<a name='881'>
+        endif<a name='882'>
+<a name='883'>
+        if(varobs(5,n).ge.0.)varobs(5,n)=varobs(5,n)*1.e-3<a name='884'>
+<a name='885'>
+<font color=#447700>!Lilie<a name='886'></font>
+<font color=#447700>!ajb Store temperature for WRF<a name='887'></font>
+        if(temperature_qc.ge.0..and.temperature_qc.lt.30000.)then<a name='888'>
+<a name='889'>
+          if((psfc_qc.ge.0..and.psfc_qc.lt.30000.).and.          &amp;<a name='890'>
+             (psfc_data.gt.70000. .and.psfc_data.lt.105000.))then<a name='891'>
+<a name='892'>
+            varobs(3,n) = temperature_data<a name='893'>
+          else<a name='894'>
+            varobs(3,n)=-888888.<a name='895'>
+          endif<a name='896'>
+        else<a name='897'>
+          varobs(3,n)=-888888.<a name='898'>
+        endif<a name='899'>
+<a name='900'>
+<font color=#447700>! Store horizontal wind components for WRF<a name='901'></font>
+        if((u_met_qc.ge.0..and.u_met_qc.lt.30000.).and.            &amp;<a name='902'>
+           (v_met_qc.ge.0..and.v_met_qc.lt.30000.).and.            &amp;<a name='903'>
+<font color=#447700>! make sure at least 1 of the components is .ne.0<a name='904'></font>
+           (u_met_data.ne.0..or.v_met_data.ne.0.))then<a name='905'>
+<a name='906'>
+<font color=#447700>! If Earth-relative wind vector, need to rotate it to grid-relative coords<a name='907'></font>
+             if(u_met_qc.eq.129. .and. v_met_qc.eq.129.) then<a name='908'>
+                CALL <A href='../../html_code/share/wrf_fddaobs_in.F.html#ROTATE_VECTOR'>rotate_vector</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="ROTATE_VECTOR_2">(longitude,u_met_data,v_met_data,   &amp;<a name='909'>
+                                   obs_proj,map_proj)<a name='910'>
+             endif<a name='911'>
+             varobs(1,n)=u_met_data<a name='912'>
+             varobs(2,n)=v_met_data<a name='913'>
+        else<a name='914'>
+             varobs(1,n)=-888888.<a name='915'>
+             varobs(2,n)=-888888.<a name='916'>
+        endif<a name='917'>
+<a name='918'>
+<font color=#447700>! jc<a name='919'></font>
+<font color=#447700>! if a ship ob has rh&lt;70%, then throw out<a name='920'></font>
+<a name='921'>
+        if(plfo(n).eq.3..and.rh_qc.ge.0..and.rh_data.lt.70.)then<a name='922'>
+          rh_qc=-888888.<a name='923'>
+          rh_data=-888888.<a name='924'>
+        endif<a name='925'>
+<font color=#447700>!<a name='926'></font>
+        r_data=-888888.<a name='927'>
+        if(rh_qc.ge.0..and.rh_qc.lt.30000.)then<a name='928'>
+          if((psfc_qc.ge.0..and.psfc_qc.lt.30000.)                       &amp;<a name='929'>
+          .and.(temperature_qc.ge.0..and.temperature_qc.lt.30000.))then<a name='930'>
+<font color=#447700>!           rh_data=amin1(rh_data,96.) ! yliu: do not allow surface to be saturated<a name='931'></font>
+            call <A href='../../html_code/share/wrf_fddaobs_in.F.html#RH2R'>rh2r</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="RH2R_2">(rh_data,temperature_data,psfc_data*.01,            &amp;<a name='932'>
+                      r_data,0)            <font color=#447700>! yliu, change last arg from 1 to 0<a name='933'></font>
+          else<a name='934'>
+<font color=#447700>!           print *,'rh, but no t or p',temperature_data,<a name='935'></font>
+<font color=#447700>!    1 psfc_data,n<a name='936'></font>
+            r_data=-888888.<a name='937'>
+          endif<a name='938'>
+        endif<a name='939'>
+        varobs(4,n)=r_data<a name='940'>
+      ELSE<a name='941'>
+        IF (iprt) THEN<a name='942'>
+           call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1418">(" ======  ")<a name='943'>
+           call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1419">(" NO Data Found ")<a name='944'>
+        ENDIF<a name='945'>
+      ENDIF   <font color=#447700>!end if(is_sound)<a name='946'></font>
+<font color=#447700>! END OF SFC OBS INPUT SECTION<a name='947'></font>
+<font color=#447700>!======================================================================<a name='948'></font>
+<font color=#447700>!======================================================================<a name='949'></font>
+<font color=#447700>! check if ob time is too early (only applies to beginning)<a name='950'></font>
+      IF(RTIMOB.LT.TBACK-TWINDO)then<a name='951'>
+        IF (iprt) call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1420">("ob too early")<a name='952'>
+        n=n-1<a name='953'>
+        GOTO 110<a name='954'>
+      ENDIF<a name='955'>
+<a name='956'>
+<font color=#447700>! check if this ob is a duplicate<a name='957'></font>
+<font color=#447700>! this check has to be before other checks<a name='958'></font>
+      njend=n-1<a name='959'>
+      if(is_sound)njend=n-meas_count<a name='960'>
+      do njc=1,njend<a name='961'>
+<font color=#447700>! Check that time, lat, lon, and platform all match exactly.<a name='962'></font>
+<font color=#447700>! Platforms 1-4 (surface obs) can match with each other. Otherwise,<a name='963'></font>
+<font color=#447700>!   platforms have to match exactly. <a name='964'></font>
+        if( (timeob(n).eq.timeob(njc)) .and.                     &amp;<a name='965'>
+            (rio(n).eq.rio(njc))       .and.                     &amp;<a name='966'>
+            (rjo(n).eq.rjo(njc))       .and.                     &amp;<a name='967'>
+            (plfo(njc).ne.99.) ) then<a name='968'>
+<font color=#447700>!yliu: if two sfc obs are departed less than 1km, consider they are redundant<a name='969'></font>
+<font color=#447700>!              (abs(rio(n)-rio(njc))*dscg.gt.1000.)   &amp;<a name='970'></font>
+<font color=#447700>!         .or. (abs(rjo(n)-rjo(njc))*dscg.gt.1000.)   &amp;<a name='971'></font>
+<font color=#447700>!         .or. (plfo(njc).eq.99.) )goto 801<a name='972'></font>
+<font color=#447700>!yliu end<a name='973'></font>
+<font color=#447700>! If platforms different, and either &gt; 4, jump out<a name='974'></font>
+          if( ( (plfo(n).le.4.).and.(plfo(njc).le.4.) ) .or.     &amp;<a name='975'>
+                (plfo(n).eq.plfo(njc)) ) then<a name='976'>
+<a name='977'>
+<font color=#447700>! if not a sounding, and levels are the same then replace first occurrence <a name='978'></font>
+            if((.not.is_sound).and.(rko(njc).eq.rko(n))) then<a name='979'>
+<font color=#447700>!             print *,'dup single ob-replace ',n,inest,<a name='980'></font>
+<font color=#447700>!             plfo(n),plfo(njc)<a name='981'></font>
+<font color=#447700>! this is the sfc ob replacement part<a name='982'></font>
+              do KN = 1,nndgv<a name='983'>
+                VAROBS(KN,njc)=VAROBS(KN,n)<a name='984'>
+              enddo<a name='985'>
+<font color=#447700>! don't need to switch these because they're the same<a name='986'></font>
+<font color=#447700>!             RIO(njc)=RIO(n)<a name='987'></font>
+<font color=#447700>!             RJO(njc)=RJO(n)<a name='988'></font>
+<font color=#447700>!             RKO(njc)=RKO(n)<a name='989'></font>
+<font color=#447700>!             TIMEOB(njc)=TIMEOB(n)<a name='990'></font>
+<font color=#447700>!             nlevs_ob(njc)=nlevs_ob(n)<a name='991'></font>
+<font color=#447700>!             lev_in_ob(njc)=lev_in_ob(n)<a name='992'></font>
+<font color=#447700>!             plfo(njc)=plfo(n)<a name='993'></font>
+<font color=#447700>! end sfc ob replacement part<a name='994'></font>
+<a name='995'>
+              n=n-1<a name='996'>
+              goto 100<a name='997'>
+<font color=#447700>! It's harder to fix the soundings, since the number of levels may be different<a name='998'></font>
+<font color=#447700>! The easiest thing to do is to just set the first occurrence to all missing, and<a name='999'></font>
+<font color=#447700>!    keep the second occurrence, or vice versa.<a name='1000'></font>
+<font color=#447700>! For temp or profiler keep the second, for pilot keep the one with more levs<a name='1001'></font>
+<font color=#447700>! This is for a temp or prof sounding, equal to same<a name='1002'></font>
+<font color=#447700>!  also if a pilot, but second one has more obs<a name='1003'></font>
+            elseif( (is_sound).and.(plfo(njc).eq.plfo(n)) .and.            &amp;<a name='1004'>
+                    ( (plfo(njc).eq.5.).or.(plfo(njc).eq.9.).or.           &amp;<a name='1005'>
+                    ( (plfo(njc).eq.6.).and.                               &amp;<a name='1006'>
+                      (nlevs_ob(n).ge.nlevs_ob(njc)) ) ) )then<a name='1007'>
+              IF (iprt) THEN<a name='1008'>
+                write(msg,*) 'duplicate sounding - eliminate first occurrence', &amp;<a name='1009'>
+                                       n,inest,meas_count,nlevs_ob(njc),        &amp;<a name='1010'>
+                                       latitude,longitude,plfo(njc)<a name='1011'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1421">(msg)<a name='1012'>
+              ENDIF<a name='1013'>
+              if(lev_in_ob(njc).ne.1.) then<a name='1014'>
+                IF (iprt) THEN<a name='1015'>
+                  write(msg,*) 'problem ******* - dup sndg ',                   &amp;<a name='1016'>
+                               lev_in_ob(njc),nlevs_ob(njc)<a name='1017'>
+                  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1422">(msg)<a name='1018'>
+                ENDIF<a name='1019'>
+              endif<a name='1020'>
+<font color=#447700>!             n=n-meas_count<a name='1021'></font>
+<font color=#447700>! set the first sounding ob to missing<a name='1022'></font>
+              do njcc=njc,njc+nint(nlevs_ob(njc))-1<a name='1023'>
+                do KN = 1,nndgv<a name='1024'>
+                  VAROBS(KN,njcc)=-888888.<a name='1025'>
+                enddo<a name='1026'>
+                plfo(njcc)=99.<a name='1027'>
+              enddo<a name='1028'>
+              goto 100<a name='1029'>
+<font color=#447700>!  if a pilot, but first one has more obs<a name='1030'></font>
+            elseif( (is_sound).and.(plfo(njc).eq.plfo(n)) .and.            &amp;<a name='1031'>
+                    (plfo(njc).eq.6.).and.                                 &amp;<a name='1032'>
+                    (nlevs_ob(n).lt.nlevs_ob(njc)) )then<a name='1033'>
+              IF (iprt) THEN<a name='1034'>
+                write(msg,*)                                               &amp;<a name='1035'>
+                 'duplicate pilot sounding - eliminate second occurrence', &amp;<a name='1036'>
+                                 n,inest,meas_count,nlevs_ob(njc),         &amp;<a name='1037'>
+                                 latitude,longitude,plfo(njc)<a name='1038'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1423">(msg)<a name='1039'>
+              ENDIF<a name='1040'>
+              if(lev_in_ob(njc).ne.1.) then<a name='1041'>
+                IF (iprt) THEN<a name='1042'>
+                  write(msg,*) 'problem ******* - dup sndg ',              &amp;<a name='1043'>
+                           lev_in_ob(njc),nlevs_ob(njc)<a name='1044'>
+                  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1424">(msg)<a name='1045'>
+                ENDIF<a name='1046'>
+              endif<a name='1047'>
+              n=n-meas_count<a name='1048'>
+<a name='1049'>
+<font color=#447700>!ajb  Reset timeob for discarded indices.<a name='1050'></font>
+              do imc = n+1, n+meas_count<a name='1051'>
+                timeob(imc) = 99999.<a name='1052'>
+              enddo<a name='1053'>
+              goto 100<a name='1054'>
+<font color=#447700>! This is for a single-level satellite upper air ob - replace first<a name='1055'></font>
+            elseif( (is_sound).and.                                        &amp;<a name='1056'>
+                    (nlevs_ob(njc).eq.1.).and.                             &amp;<a name='1057'>
+                    (nlevs_ob(n).eq.1.).and.                               &amp;<a name='1058'>
+                    (varobs(5,njc).eq.varobs(5,n)).and.                    &amp;<a name='1059'>
+                    (plfo(njc).eq.7.).and.(plfo(n).eq.7.) ) then<a name='1060'>
+              IF (iprt) then<a name='1061'>
+                write(msg,*)                                               &amp;<a name='1062'>
+                'duplicate single lev sat-wind ob - replace first',n,      &amp;<a name='1063'>
+                                 inest,meas_count,varobs(5,n)<a name='1064'>
+                call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1425">(msg)<a name='1065'>
+              ENDIF<a name='1066'>
+<font color=#447700>! this is the single ua ob replacement part<a name='1067'></font>
+              do KN = 1,nndgv<a name='1068'>
+                VAROBS(KN,njc)=VAROBS(KN,n)<a name='1069'>
+              enddo<a name='1070'>
+<font color=#447700>! don't need to switch these because they're the same<a name='1071'></font>
+<font color=#447700>!           RIO(njc)=RIO(n)<a name='1072'></font>
+<font color=#447700>!           RJO(njc)=RJO(n)<a name='1073'></font>
+<font color=#447700>!           RKO(njc)=RKO(n)<a name='1074'></font>
+<font color=#447700>!           TIMEOB(njc)=TIMEOB(n)<a name='1075'></font>
+<font color=#447700>!           nlevs_ob(njc)=nlevs_ob(n)<a name='1076'></font>
+<font color=#447700>!           lev_in_ob(njc)=lev_in_ob(n)<a name='1077'></font>
+<font color=#447700>!           plfo(njc)=plfo(n)<a name='1078'></font>
+<font color=#447700>! end single ua ob replacement part<a name='1079'></font>
+              n=n-1<a name='1080'>
+              goto 100<a name='1081'>
+            else<a name='1082'>
+<font color=#447700>!             IF (iprt) THEN<a name='1083'></font>
+<font color=#447700>!               write(msg,*) 'duplicate location, but no match otherwise',n,njc,  &amp;<a name='1084'></font>
+<font color=#447700>!                            plfo(n),varobs(5,n),nlevs_ob(n),lev_in_ob(n),        &amp;<a name='1085'></font>
+<font color=#447700>!                            plfo(njc),varobs(5,njc),nlevs_ob(njc),lev_in_ob(njc)<a name='1086'></font>
+<font color=#447700>!               call wrf_message(msg)<a name='1087'></font>
+<font color=#447700>!             ENDIF<a name='1088'></font>
+            endif<a name='1089'>
+          endif<a name='1090'>
+        endif<a name='1091'>
+<font color=#447700>! end of njc do loop<a name='1092'></font>
+      enddo<a name='1093'>
+<a name='1094'>
+<font color=#447700>! check if ob is a sams ob that came in via UUtah - discard<a name='1095'></font>
+      if( plfo(n).eq.4..and.(platform(7:16).eq.'SYNOP PRET').and.          &amp;<a name='1096'>
+          (id(7:15).eq.'METNET= 3') )then<a name='1097'>
+<font color=#447700>!       print *,'elim metnet=3',latitude,longitude,rtimob<a name='1098'></font>
+        n=n-1<a name='1099'>
+        goto 100<a name='1100'>
+      endif<a name='1101'>
+<a name='1102'>
+<font color=#447700>! check if ob is in the domain<a name='1103'></font>
+      if( (ri.lt.2.).or.(ri.gt.real(e_we-1)).or.(rj.lt.2.).or.         &amp;<a name='1104'>
+          (rj.gt.real(e_sn-1)) ) then<a name='1105'>
+<a name='1106'>
+          n=n-meas_count<a name='1107'>
+<font color=#447700>!ajb  Reset timeob for discarded indices.<a name='1108'></font>
+          do imc = n+1, n+meas_count<a name='1109'>
+            timeob(imc) = 99999.<a name='1110'>
+          enddo<a name='1111'>
+          goto 100<a name='1112'>
+      endif<a name='1113'>
+<a name='1114'>
+      IF(TIMEOB(N).LT.fdob%RTLAST) THEN<a name='1115'>
+        IF (iprt) THEN<a name='1116'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1426">("2 OBS ARE NOT IN CHRONOLOGICAL ORDER")<a name='1117'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1427">("NEW YEAR?")<a name='1118'>
+          write(msg,*) 'timeob,rtlast,n=',timeob(n),fdob%rtlast,n<a name='1119'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1428">(msg)<a name='1120'>
+        ENDIF<a name='1121'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1485"> ( 'wrf_fddaobs_in: in4dob STOP 111' )<a name='1122'>
+      ELSE<a name='1123'>
+        fdob%RTLAST=TIMEOB(N)<a name='1124'>
+      ENDIF<a name='1125'>
+<font color=#447700>! Save obs and model latitude and longitude for printout<a name='1126'></font>
+      CALL <A href='../../html_code/share/wrf_fddaobs_in.F.html#COLLECT_OBS_INFO'>collect_obs_info</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="COLLECT_OBS_INFO_1">(newpass,inest,n,latitude,longitude,              &amp;<a name='1127'>
+                         nlast,nprev,niobf,id,stnid_prt,                     &amp;<a name='1128'>
+                         rio,rjo,prt_max,prt_freq,xlat,xlong,                &amp;<a name='1129'>
+                         obs_prt,lat_prt,lon_prt,mlat_prt,mlon_prt,          &amp;<a name='1130'>
+                         e_we,e_sn,ims,ime,jms,jme,its,ite,jts,jte)<a name='1131'>
+      GOTO 100<a name='1132'>
+  111 CONTINUE<a name='1133'>
+<font color=#447700>!**********************************************************************<a name='1134'></font>
+<font color=#447700>!       --------------   END BIG 100 LOOP OVER N  --------------<a name='1135'></font>
+<font color=#447700>!**********************************************************************<a name='1136'></font>
+<a name='1137'>
+      if (iprt) then<a name='1138'>
+        write(msg,5403) NVOL,XTIME<a name='1139'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1429">(msg)<a name='1140'>
+      endif<a name='1141'>
+      IEOF(inest)=1<a name='1142'>
+<a name='1143'>
+      close(NVOLA+INEST-1)<a name='1144'>
+      IF (iprt) then<a name='1145'>
+         write(msg,*) 'closed fdda file for inest=',inest,nsta<a name='1146'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1430">(msg)<a name='1147'>
+      ENDIF<a name='1148'>
+<a name='1149'>
+<font color=#447700>! AJB note: Go back and check for more files. (Multi-file implementation)<a name='1150'></font>
+  goto 1001<a name='1151'>
+<a name='1152'>
+120 CONTINUE<a name='1153'>
+<font color=#447700>! THE OBSERVATION ARRAYS ARE FULL AND THE MOST RECENTLY<a name='1154'></font>
+<font color=#447700>! ACQUIRED OBS STILL HAS TIMEOB .LE. TFORWD.  SO START<a name='1155'></font>
+<font color=#447700>! DECREASING THE SIZE OF THE WINDOW<a name='1156'></font>
+<font color=#447700>! get here if too many obs<a name='1157'></font>
+  IF (iprt) THEN<a name='1158'>
+    write(msg,121) N,NIOBF<a name='1159'>
+    call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1431">(msg)<a name='1160'>
+  ENDIF<a name='1161'>
+  call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1486"> ( 'wrf_fddaobs_in: in4dob STOP 122' )<a name='1162'>
+<a name='1163'>
+130 CONTINUE<a name='1164'>
+<font color=#447700>! READ CYCLE IS COMPLETED. DETERMINE THE NUMBER OF OBS IN<a name='1165'></font>
+<font color=#447700>! THE CURRENT WINDOW<a name='1166'></font>
+<font color=#447700>!<a name='1167'></font>
+<font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='1168'></font>
+<font color=#447700>! BUT FIRST, WHEN KTAU.EQ.0 (OR IN GENERAL, KTAUR), DISCARD THE<a name='1169'></font>
+<font color=#447700>! "OLD" OBS FIRST...<a name='1170'></font>
+<a name='1171'>
+<font color=#447700>! Get here if at end of file, or if obs time is beyond what we need right now.<a name='1172'></font>
+<font color=#447700>! On startup, we report the index of the last obs read.<a name='1173'></font>
+<font color=#447700>! For restarts, we need to remove any old obs and then repack obs list.<a name='1174'></font>
+  IF(KTAU.EQ.KTAUR)THEN<a name='1175'>
+    NSTA=0<a name='1176'>
+    keep_obs : DO N=1,NIOBF<a name='1177'>
+<font color=#447700>! try to keep all obs, but just don't use yet<a name='1178'></font>
+<font color=#447700>!  (don't want to throw away last obs read in - especially if<a name='1179'></font>
+<font color=#447700>!  its a sounding, in which case it looks like many obs)<a name='1180'></font>
+      IF(TIMEOB(N).GT.9.e4) EXIT keep_obs<a name='1181'>
+      if(timeob(n).gt.tforwd) then<a name='1182'>
+        if(iprt) then<a name='1183'>
+           write(msg,950) inest<a name='1184'>
+           call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1432">(msg)<a name='1185'>
+           write(msg,951) n,timeob(n),tforwd<a name='1186'>
+           call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1433">(msg)<a name='1187'>
+        endif<a name='1188'>
+ 950    FORMAT('Saving index of first ob after end of current time window ', &amp;<a name='1189'>
+               'for nest = ', i3,':')<a name='1190'>
+ 951    FORMAT('  ob index = ',i8,',   time of ob = ',f8.4,                  &amp;<a name='1191'>
+               ' hrs,   end of time window = ',f8.4,' hrs')<a name='1192'>
+      endif<a name='1193'>
+      NSTA=N<a name='1194'>
+    ENDDO keep_obs<a name='1195'>
+<a name='1196'>
+    NDUM=0<a name='1197'>
+<font color=#447700>! make time=99999. if ob is too old<a name='1198'></font>
+<font color=#447700>!   print *,'tback,nsta=',tback,nsta<a name='1199'></font>
+    old_obs : DO N=1,NSTA+1<a name='1200'>
+      IF((TIMEOB(N)-TBACK).LT.0)THEN<a name='1201'>
+        TIMEOB(N)=99999.<a name='1202'>
+      ENDIF<a name='1203'>
+<font color=#447700>!     print *,'n,ndum,timeob=',n,ndum,timeob(n)<a name='1204'></font>
+      IF(TIMEOB(N).LT.9.E4) EXIT old_obs<a name='1205'>
+      NDUM=N<a name='1206'>
+    ENDDO old_obs<a name='1207'>
+<a name='1208'>
+<font color=#447700>! REMOVE OLD OBS DENOTED BY 99999. AT THE FRONT OF TIMEOB ARRAY<a name='1209'></font>
+    IF (iprt .and. ktaur &gt; 0) THEN<a name='1210'>
+      write(msg,fmt='(a,i5,a)') 'OBS NUDGING: Upon restart, skipped over ',ndum,   &amp;<a name='1211'>
+                ' obs that are now too old for the current obs window.'<a name='1212'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1434">(msg)<a name='1213'>
+    ENDIF<a name='1214'>
+<a name='1215'>
+    NDUM=ABS(NDUM)<a name='1216'>
+    NMOVE=NIOBF-NDUM<a name='1217'>
+    IF( NMOVE.GT.0 .AND. NDUM.NE.0) THEN<a name='1218'>
+      DO N=1,NMOVE<a name='1219'>
+        do KN = 1,nndgv<a name='1220'>
+          VAROBS(KN,N)=VAROBS(KN,N+NDUM)<a name='1221'>
+        enddo<a name='1222'>
+        RJO(N)=RJO(N+NDUM)<a name='1223'>
+        RIO(N)=RIO(N+NDUM)<a name='1224'>
+        RKO(N)=RKO(N+NDUM)<a name='1225'>
+        TIMEOB(N)=TIMEOB(N+NDUM)<a name='1226'>
+        nlevs_ob(n)=nlevs_ob(n+ndum)<a name='1227'>
+        lev_in_ob(n)=lev_in_ob(n+ndum)<a name='1228'>
+        plfo(n)=plfo(n+ndum)<a name='1229'>
+      ENDDO<a name='1230'>
+    ENDIF<a name='1231'>
+<font color=#447700>! moved obs up. now fill remaining space with 99999.<a name='1232'></font>
+    NOPEN=NMOVE+1<a name='1233'>
+    IF(NOPEN.LE.NIOBF) THEN<a name='1234'>
+      DO N=NOPEN,NIOBF<a name='1235'>
+        do KN = 1,nndgv<a name='1236'>
+          VAROBS(KN,N)=99999.<a name='1237'>
+        enddo<a name='1238'>
+        RIO(N)=99999.<a name='1239'>
+        RJO(N)=99999.<a name='1240'>
+        RKO(N)=99999.<a name='1241'>
+        TIMEOB(N)=99999.<a name='1242'>
+      ENDDO<a name='1243'>
+    ENDIF<a name='1244'>
+  ENDIF<a name='1245'>
+<font color=#447700>!CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC<a name='1246'></font>
+  NSTA=0<a name='1247'>
+<font color=#447700>! print *,'nsta at restart setting is ',nsta<a name='1248'></font>
+<font color=#447700>! recalculate nsta after moving things around<a name='1249'></font>
+  recalc : DO N=1,NIOBF<a name='1250'>
+<font color=#447700>! try to save all obs - don't throw away latest read in<a name='1251'></font>
+    IF(TIMEOB(N).GT.9.e4) EXIT recalc<a name='1252'>
+    NSTA=N<a name='1253'>
+<font color=#447700>!   nsta=n-1         ! yliu test<a name='1254'></font>
+  ENDDO recalc<a name='1255'>
+<a name='1256'>
+<font color=#447700>! Find the number of stations that are actually within the time window.<a name='1257'></font>
+  nstaw = <A href='../../html_code/share/wrf_fddaobs_in.F.html#NVALS_LE_LIMIT'>nvals_le_limit</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="NVALS_LE_LIMIT_1">(nsta, timeob, tforwd)<a name='1258'>
+<a name='1259'>
+  IF (iprt) then<a name='1260'>
+      write(msg,160) KTAU,XTIME,NSTAW<a name='1261'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1435">(msg)<a name='1262'>
+  ENDIF<a name='1263'>
+  IF(KTAU.EQ.KTAUR)THEN<a name='1264'>
+    IF(nudge_opt.EQ.1)THEN<a name='1265'>
+      TWDOP=TWINDO*60.<a name='1266'>
+      IF (iprt) THEN<a name='1267'>
+        write(msg,1449) INEST,RINXY,RINSIG,TWDOP<a name='1268'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1436">(msg)<a name='1269'>
+        IF(ISWIND.EQ.1) then<a name='1270'>
+          write(msg,1450) GIV<a name='1271'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1437">(msg)<a name='1272'>
+        ELSE<a name='1273'>
+          write(msg,1455) INEST<a name='1274'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1438">("")<a name='1275'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1439">(msg)<a name='1276'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1440">("")<a name='1277'>
+        ENDIF<a name='1278'>
+        IF(ISTEMP.EQ.1) then<a name='1279'>
+          write(msg,1451) GIT<a name='1280'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1441">(msg)<a name='1281'>
+        ELSE<a name='1282'>
+          write(msg,1456) INEST<a name='1283'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1442">("")<a name='1284'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1443">(msg)<a name='1285'>
+        ENDIF<a name='1286'>
+        IF(ISMOIS.EQ.1) then<a name='1287'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1444">("")<a name='1288'>
+          write(msg,1452) GIQ<a name='1289'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1445">(msg)<a name='1290'>
+        ELSE<a name='1291'>
+          write(msg,1457) INEST<a name='1292'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1446">("")<a name='1293'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1447">(msg)<a name='1294'>
+          call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1448">("")<a name='1295'>
+        ENDIF<a name='1296'>
+      ENDIF<a name='1297'>
+    ENDIF<a name='1298'>
+  ENDIF<a name='1299'>
+  IF(KTAU.EQ.KTAUR)THEN<a name='1300'>
+    IF(fdob%IWTSIG.NE.1)THEN<a name='1301'>
+      IF (iprt) THEN<a name='1302'>
+        write(msg,555)<a name='1303'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1449">(msg)<a name='1304'>
+        write(msg,556) fdob%RINFMN*RINXY,fdob%RINFMX*RINXY,fdob%PFREE*10.<a name='1305'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1450">(msg)<a name='1306'>
+      ENDIF<a name='1307'>
+      IF(fdob%RINFMN.GT.fdob%RINFMX) then<a name='1308'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1487"> ( 'wrf_fddaobs_in: in4dob STOP 556' )<a name='1309'>
+      ENDIF<a name='1310'>
+<font color=#447700>! IS MINIMUM GREATER THAN MAXIMUM?<a name='1311'></font>
+<a name='1312'>
+      IF (iprt) then<a name='1313'>
+        write(msg,557) fdob%DPSMX*10.,fdob%DCON<a name='1314'>
+        call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1451">(msg)<a name='1315'>
+      ENDIF<a name='1316'>
+      IF(fdob%DPSMX.GT.10.) then<a name='1317'>
+         call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1488"> ( 'wrf_fddaobs_in: in4dob STOP 557' )<a name='1318'>
+      ENDIF<a name='1319'>
+    ENDIF<a name='1320'>
+  ENDIF<a name='1321'>
+ <a name='1322'>
+  IF(KTAU.EQ.KTAUR)THEN<a name='1323'>
+    IF (iprt) then<a name='1324'>
+      write(msg,601) INEST,IONF<a name='1325'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1452">(msg)<a name='1326'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#IN4DOB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1453">("")<a name='1327'>
+    ENDIF<a name='1328'>
+  ENDIF<a name='1329'>
+  fdob%NSTAT=NSTA<a name='1330'>
+  fdob%NSTAW=NSTAW<a name='1331'>
+<a name='1332'>
+555   FORMAT(1X,'   ABOVE THE SURFACE LAYER, OBS NUDGING IS PERFORMED',  &amp;<a name='1333'>
+      ' ON PRESSURE LEVELS,')<a name='1334'>
+556   FORMAT(1X,'   WHERE RINXY VARIES LINEARLY FROM ',E11.3,' KM AT',   &amp;<a name='1335'>
+      ' THE SURFACE TO ',E11.3,' KM AT ',F7.2,' MB AND ABOVE')<a name='1336'>
+557   FORMAT(1X,'   IN THE SURFACE LAYER, WXY IS A FUNCTION OF ',        &amp;<a name='1337'>
+      'DPSMX = ',F7.2,' MB WITH DCON = ',E11.3,                          &amp;<a name='1338'>
+      ' - SEE SUBROUTINE NUDOB')<a name='1339'>
+601   FORMAT('FOR EFFICIENCY, THE OBS NUDGING FREQUENCY ',               &amp;<a name='1340'>
+        'FOR MESH #',I2,' IS ',1I2,' CGM TIMESTEPS ')<a name='1341'>
+121   FORMAT('  WARNING: NOBS  = ',I4,' IS GREATER THAN NIOBF = ',       &amp;<a name='1342'>
+      I4,': INCREASE PARAMETER NIOBF')<a name='1343'>
+5403  FORMAT(1H0,'-------------EOF REACHED FOR NVOL = ',I3,              &amp;<a name='1344'>
+       ' AND XTIME = ',F10.2,'-------------------')<a name='1345'>
+160   FORMAT('****** CALL IN4DOB AT KTAU = ',I5,' AND XTIME = ',         &amp;<a name='1346'>
+      F10.2,':  NSTA = ',I7,' ******')<a name='1347'>
+1449  FORMAT('*****NUDGING INDIVIDUAL OBS ON MESH #',I2,                 &amp;<a name='1348'>
+       ' WITH RINXY = ',                                                 &amp;<a name='1349'>
+      E11.3,' KM, RINSIG = ',E11.3,' AND TWINDO (HALF-PERIOD) = ',       &amp;<a name='1350'>
+      E11.3,' MIN')<a name='1351'>
+1450  FORMAT(1X,'NUDGING IND. OBS WINDS WITH GIV = ',E11.3)<a name='1352'>
+1451  FORMAT(1X,'NUDGING IND. OBS TEMPERATURE WITH GIT = ',E11.3)<a name='1353'>
+1452  FORMAT(1X,'NUDGING IND. OBS MOISTURE WITH GIQ = ',E11.3)<a name='1354'>
+1455  FORMAT(1X,'*** OBS WIND NUDGING FOR MESH ',I2,' IS TURNED OFF<font color=#447700>!!')<a name='1355'></font>
+1456  FORMAT(1X,'*** OBS TEMPERATURE NUDGING FOR MESH ',I2,' IS TURNED OFF<font color=#447700>!!')<a name='1356'></font>
+1457  FORMAT(1X,'*** OBS MOISTURE NUDGING FOR MESH ',I2,' IS TURNED OFF<font color=#447700>!!')<a name='1357'></font>
+<a name='1358'>
+  RETURN<a name='1359'>
+  END SUBROUTINE in4dob<a name='1360'>
+<a name='1361'>
+<A NAME='JULGMT'><A href='../../html_code/share/wrf_fddaobs_in.F.html#JULGMT' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1362'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>julgmt</font>(mdate,julgmtn,timanl,julday,gmt,ind)<a name='1363'>
+<font color=#447700>! CONVERT MDATE YYMMDDHH TO JULGMT (JULIAN DAY * 100. +GMT)<a name='1364'></font>
+<font color=#447700>! AND TO TIMANL (TIME IN MINUTES WITH RESPECT TO MODEL TIME)<a name='1365'></font>
+<font color=#447700>! IF IND=0  INPUT MDATE, OUTPUT JULGMTN AND TIMANL<a name='1366'></font>
+<font color=#447700>! IF IND=1  INPUT TIMANL, OUTPUT JULGMTN<a name='1367'></font>
+<font color=#447700>! IF IND=2  INPUT JULGMTN, OUTPUT TIMANL<a name='1368'></font>
+      INTEGER, intent(in) :: MDATE<a name='1369'>
+      REAL, intent(out) :: JULGMTN<a name='1370'>
+      REAL, intent(out) :: TIMANL<a name='1371'>
+      INTEGER, intent(in) :: JULDAY<a name='1372'>
+      REAL, intent(in) :: GMT<a name='1373'>
+      INTEGER, intent(in) :: IND <a name='1374'>
+<a name='1375'>
+<font color=#447700>!***  DECLARATIONS FOR IMPLICIT NONE                                    <a name='1376'></font>
+      real :: MO(12), rjulanl, houranl, rhr<a name='1377'>
+<a name='1378'>
+      integer :: iyr, idate1, imo, idy, ihr, my1, my2, my3, ileap<a name='1379'>
+      integer :: juldayn, juldanl, idymax, mm<a name='1380'>
+      <a name='1381'>
+      <a name='1382'>
+      IF(IND.EQ.2)GOTO 150<a name='1383'>
+      IYR=INT(MDATE/1000000.+0.001)<a name='1384'>
+      IDATE1=MDATE-IYR*1000000<a name='1385'>
+      IMO=INT(IDATE1/10000.+0.001)<a name='1386'>
+      IDY=INT((IDATE1-IMO*10000.)/100.+0.001)<a name='1387'>
+      IHR=IDATE1-IMO*10000-IDY*100<a name='1388'>
+      MO(1)=31<a name='1389'>
+      MO(2)=28<a name='1390'>
+<font color=#447700>! IS THE YEAR A LEAP YEAR? (IN THIS CENTURY)<a name='1391'></font>
+      IYR=IYR+1900<a name='1392'>
+      MY1=MOD(IYR,4)<a name='1393'>
+      MY2=MOD(IYR,100)<a name='1394'>
+      MY3=MOD(IYR,400)<a name='1395'>
+      ILEAP=0<a name='1396'>
+<font color=#447700>! jc<a name='1397'></font>
+<font color=#447700>!      IF(MY1.EQ.0.AND.MY2.NE.0.OR.MY3.EQ.0)THEN<a name='1398'></font>
+      IF(MY1.EQ.0)THEN<a name='1399'>
+        ILEAP=1<a name='1400'>
+        MO(2)=29<a name='1401'>
+      ENDIF<a name='1402'>
+      IF(IND.EQ.1)GOTO 200<a name='1403'>
+      MO(3)=31<a name='1404'>
+      MO(4)=30<a name='1405'>
+      MO(5)=31<a name='1406'>
+      MO(6)=30<a name='1407'>
+      MO(7)=31<a name='1408'>
+      MO(8)=31<a name='1409'>
+      MO(9)=30<a name='1410'>
+      MO(10)=31<a name='1411'>
+      MO(11)=30<a name='1412'>
+      MO(12)=31<a name='1413'>
+      JULDAYN=0<a name='1414'>
+      DO 100 MM=1,IMO-1<a name='1415'>
+        JULDAYN=JULDAYN+MO(MM)<a name='1416'>
+ 100     CONTINUE<a name='1417'>
+<a name='1418'>
+      IF(IHR.GE.24)THEN<a name='1419'>
+        IDY=IDY+1<a name='1420'>
+        IHR=IHR-24<a name='1421'>
+      ENDIF<a name='1422'>
+      JULGMTN=(JULDAYN+IDY)*100.+IHR<a name='1423'>
+<font color=#447700>! CONVERT JULGMT TO TIMANL WRT MODEL TIME IN MINUTES (XTIME)<a name='1424'></font>
+ 150   CONTINUE<a name='1425'>
+      JULDANL=INT(JULGMTN/100.+0.000001)<a name='1426'>
+      RJULANL=FLOAT(JULDANL)*100.<a name='1427'>
+      HOURANL=JULGMTN-RJULANL<a name='1428'>
+      TIMANL=(FLOAT(JULDANL-JULDAY)*24.-GMT+HOURANL)*60.<a name='1429'>
+      RETURN<a name='1430'>
+ 200   CONTINUE<a name='1431'>
+      RHR=GMT+TIMANL/60.+0.000001<a name='1432'>
+      IDY=JULDAY<a name='1433'>
+      IDYMAX=365+ILEAP<a name='1434'>
+ 300   IF(RHR.GE.24.0)THEN<a name='1435'>
+        RHR=RHR-24.0<a name='1436'>
+        IDY=IDY+1<a name='1437'>
+        GOTO 300<a name='1438'>
+      ENDIF<a name='1439'>
+      IF(IDY.GT.IDYMAX)IDY=IDY-IDYMAX<a name='1440'>
+      JULGMTN=FLOAT(IDY)*100.+RHR<a name='1441'>
+      RETURN<a name='1442'>
+  END SUBROUTINE julgmt<a name='1443'>
+<a name='1444'>
+<A NAME='RH2R'><A href='../../html_code/share/wrf_fddaobs_in.F.html#RH2R' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1445'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>rh2r</font>(rh,t,p,r,iice) <A href='../../call_to/RH2R.html' TARGET='index'>2</A><a name='1446'>
+ <a name='1447'>
+<font color=#447700>! convert rh to r<a name='1448'></font>
+<font color=#447700>! if iice=1, use saturation with respect to ice<a name='1449'></font>
+<font color=#447700>! rh is 0-100.<a name='1450'></font>
+<font color=#447700>! r is g/g<a name='1451'></font>
+<font color=#447700>! t is K<a name='1452'></font>
+<font color=#447700>! p is mb<a name='1453'></font>
+<font color=#447700>!<a name='1454'></font>
+      REAL, intent(in)  :: rh<a name='1455'>
+      REAL, intent(in)  :: t<a name='1456'>
+      REAL, intent(in)  :: p<a name='1457'>
+      REAL, intent(out) :: r<a name='1458'>
+      INTEGER, intent(in)  :: iice<a name='1459'>
+<a name='1460'>
+<font color=#447700>!***  DECLARATIONS FOR IMPLICIT NONE                                    <a name='1461'></font>
+      real eps, e0, eslcon1, eslcon2, esicon1, esicon2, t0, rh1<a name='1462'>
+      real esat, rsat<a name='1463'>
+<a name='1464'>
+      eps=0.62197<a name='1465'>
+      e0=6.1078<a name='1466'>
+      eslcon1=17.2693882<a name='1467'>
+      eslcon2=35.86<a name='1468'>
+      esicon1=21.8745584<a name='1469'>
+      esicon2=7.66<a name='1470'>
+      t0=260.<a name='1471'>
+ <a name='1472'>
+<font color=#447700>!     print *,'rh2r input=',rh,t,p<a name='1473'></font>
+      rh1=rh*.01<a name='1474'>
+ <a name='1475'>
+      if(iice.eq.1.and.t.le.t0)then<a name='1476'>
+        esat=e0*exp(esicon1*(t-273.16)/(t-esicon2))<a name='1477'>
+      else<a name='1478'>
+        esat=e0*exp(eslcon1*(t-273.16)/(t-eslcon2))<a name='1479'>
+      endif<a name='1480'>
+      rsat=eps*esat/(p-esat)<a name='1481'>
+<font color=#447700>!     print *,'rsat,esat=',rsat,esat<a name='1482'></font>
+      r=rh1*rsat<a name='1483'>
+ <a name='1484'>
+<font color=#447700>!      print *,'rh2r rh,t,p,r=',rh1,t,p,r<a name='1485'></font>
+ <a name='1486'>
+      return<a name='1487'>
+  END SUBROUTINE rh2r<a name='1488'>
+<a name='1489'>
+<A NAME='RH2RB'><A href='../../html_code/share/wrf_fddaobs_in.F.html#RH2RB' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1490'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>rh2rb</font>(rh,t,p,r,iice),<A href='../../call_from/RH2RB.html' TARGET='index'>2</A><a name='1491'>
+ <a name='1492'>
+<font color=#447700>! convert rh to r<a name='1493'></font>
+<font color=#447700>! if iice=1, use daturation with respect to ice<a name='1494'></font>
+<font color=#447700>! rh is 0-100.<a name='1495'></font>
+<font color=#447700>! r is g/g<a name='1496'></font>
+<font color=#447700>! t is K<a name='1497'></font>
+<font color=#447700>! p is mb<a name='1498'></font>
+ <a name='1499'>
+      REAL, intent(in)  :: rh<a name='1500'>
+      REAL, intent(in)  :: t<a name='1501'>
+      REAL, intent(in)  :: p<a name='1502'>
+      REAL, intent(out) :: r<a name='1503'>
+      INTEGER, intent(in)  :: iice<a name='1504'>
+<a name='1505'>
+<font color=#447700>!***  DECLARATIONS FOR IMPLICIT NONE                                    <a name='1506'></font>
+      real eps, e0, eslcon1, eslcon2, esicon1, esicon2, t0, rh1<a name='1507'>
+      real esat, rsat<a name='1508'>
+      character(len=200) :: msg       <font color=#447700>! Argument to wrf_message<a name='1509'></font>
+<a name='1510'>
+      eps=0.622<a name='1511'>
+      e0=6.112<a name='1512'>
+      eslcon1=17.67<a name='1513'>
+      eslcon2=29.65<a name='1514'>
+      esicon1=22.514<a name='1515'>
+      esicon2=6.15e3<a name='1516'>
+      t0=273.15<a name='1517'>
+ <a name='1518'>
+      write(msg,*) 'rh2r input=',rh,t,p<a name='1519'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#RH2RB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1454">(msg)<a name='1520'>
+      rh1=rh*.01<a name='1521'>
+ <a name='1522'>
+      if(iice.eq.1.and.t.le.t0)then<a name='1523'>
+        esat=e0*exp(esicon1-esicon2/t)<a name='1524'>
+      else<a name='1525'>
+        esat=e0*exp(eslcon1*(t-t0)/(t-eslcon2))<a name='1526'>
+      endif<a name='1527'>
+      rsat=eps*esat/(p-esat)<a name='1528'>
+<font color=#447700>!     print *,'rsat,esat=',rsat,esat<a name='1529'></font>
+      r=rh1*eps*rsat/(eps+rsat*(1.-rh1))<a name='1530'>
+ <a name='1531'>
+      write(msg,*) 'rh2r rh,t,p,r=',rh1,t,p,r<a name='1532'>
+      call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#RH2RB' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1455">(msg)<a name='1533'>
+      rh1=rh*.01<a name='1534'>
+ <a name='1535'>
+      return<a name='1536'>
+END SUBROUTINE rh2rb<a name='1537'>
+<a name='1538'>
+<A NAME='SET_PROJECTION'><A href='../../html_code/share/wrf_fddaobs_in.F.html#SET_PROJECTION' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1539'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>set_projection</font> (obs_proj, map_proj, cen_lat, cen_lon,     &amp; <A href='../../call_to/SET_PROJECTION.html' TARGET='index'>1</A>,<A href='../../call_from/SET_PROJECTION.html' TARGET='index'>7</A><a name='1540'>
+                             true_lat1, true_lat2, stand_lon,          &amp;<a name='1541'>
+                             known_lat, known_lon,                     &amp;<a name='1542'>
+                             e_we, e_sn, dxm, dym )<a name='1543'>
+<a name='1544'>
+  USE <A href='../../html_code/share/module_llxy.F.html#MODULE_LLXY'>module_llxy</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#SET_PROJECTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_LLXY_12"><a name='1545'>
+<a name='1546'>
+<font color=#447700>!*************************************************************************<a name='1547'></font>
+<font color=#447700>! Purpose: Set map projection information which will be used to map the<a name='1548'></font>
+<font color=#447700>!          observation (lat,lon) location to its corresponding (x,y)<a name='1549'></font>
+<font color=#447700>!          location on the WRF (coarse) grid. using the selected map<a name='1550'></font>
+<font color=#447700>!          projection (e.g., Lambert, Mercator, Polar Stereo, etc).<a name='1551'></font>
+<font color=#447700>!*************************************************************************<a name='1552'></font>
+<a name='1553'>
+      IMPLICIT NONE<a name='1554'>
+<a name='1555'>
+  TYPE(PROJ_INFO), intent(out)  :: obs_proj   <font color=#447700>! structure for obs projection info.<a name='1556'></font>
+  INTEGER, intent(in) :: map_proj             <font color=#447700>! map projection index<a name='1557'></font>
+  REAL, intent(in) :: cen_lat                 <font color=#447700>! center latitude for map projection<a name='1558'></font>
+  REAL, intent(in) :: cen_lon                 <font color=#447700>! center longiture for map projection<a name='1559'></font>
+  REAL, intent(in) :: true_lat1               <font color=#447700>! truelat1 for map projection<a name='1560'></font>
+  REAL, intent(in) :: true_lat2               <font color=#447700>! truelat2 for map projection<a name='1561'></font>
+  REAL, intent(in) :: stand_lon               <font color=#447700>! standard longitude for map projection<a name='1562'></font>
+  INTEGER, intent(in) :: e_we                 <font color=#447700>! max grid index in south-north coordinate<a name='1563'></font>
+  INTEGER, intent(in) :: e_sn                 <font color=#447700>! max grid index in west-east   coordinate<a name='1564'></font>
+  REAL, intent(in) :: known_lat               <font color=#447700>! latitude  of domain origin point (i,j)=(1,1) <a name='1565'></font>
+  REAL, intent(in) :: known_lon               <font color=#447700>! longigude of domain origin point (i,j)=(1,1)<a name='1566'></font>
+  REAL, intent(in) :: dxm                     <font color=#447700>! grid size in x (meters)<a name='1567'></font>
+  REAL, intent(in) :: dym                     <font color=#447700>! grid size in y (meters)<a name='1568'></font>
+<a name='1569'>
+<font color=#447700>! Set up map transformation structure<a name='1570'></font>
+      CALL <A href='../../html_code/share/module_llxy.F.html#MAP_INIT'>map_init</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#SET_PROJECTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAP_INIT_6">(obs_proj)<a name='1571'>
+<a name='1572'>
+      <font color=#447700>! Mercator<a name='1573'></font>
+      IF (map_proj == PROJ_MERC) THEN<a name='1574'>
+         CALL <A href='../../html_code/share/module_llxy.F.html#MAP_SET'>map_set</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#SET_PROJECTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAP_SET_22">(PROJ_MERC, obs_proj,                                &amp;<a name='1575'>
+                      truelat1 = true_lat1,                               &amp;<a name='1576'>
+                      lat1     = known_lat,                               &amp;<a name='1577'>
+                      lon1     = known_lon,                               &amp;<a name='1578'>
+                      knowni   = 1.,                                      &amp;<a name='1579'>
+                      knownj   = 1.,                                      &amp;<a name='1580'>
+                      dx       = dxm)<a name='1581'>
+<a name='1582'>
+      <font color=#447700>! Lambert conformal<a name='1583'></font>
+      ELSE IF (map_proj == PROJ_LC) THEN<a name='1584'>
+      CALL <A href='../../html_code/share/module_llxy.F.html#MAP_SET'>map_set</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#SET_PROJECTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAP_SET_23">(PROJ_LC, obs_proj,                                     &amp;<a name='1585'>
+                      truelat1 = true_lat1,                               &amp;<a name='1586'>
+                      truelat2 = true_lat2,                               &amp;<a name='1587'>
+                      stdlon   = stand_lon,                               &amp;<a name='1588'>
+                      lat1     = known_lat,                               &amp;<a name='1589'>
+                      lon1     = known_lon,                               &amp;<a name='1590'>
+                      knowni   = 1.,                                      &amp;<a name='1591'>
+                      knownj   = 1.,                                      &amp;<a name='1592'>
+                      dx       = dxm)<a name='1593'>
+<a name='1594'>
+      <font color=#447700>! Polar stereographic<a name='1595'></font>
+      ELSE IF (map_proj == PROJ_PS) THEN<a name='1596'>
+         CALL <A href='../../html_code/share/module_llxy.F.html#MAP_SET'>map_set</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#SET_PROJECTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAP_SET_24">(PROJ_PS, obs_proj,                                  &amp;<a name='1597'>
+                      truelat1 = true_lat1,                               &amp;<a name='1598'>
+                      stdlon   = stand_lon,                               &amp;<a name='1599'>
+                      lat1     = known_lat,                               &amp;<a name='1600'>
+                      lon1     = known_lon,                               &amp;<a name='1601'>
+                      knowni   = 1.,                                      &amp;<a name='1602'>
+                      knownj   = 1.,                                      &amp;<a name='1603'>
+                      dx       = dxm)<a name='1604'>
+      <font color=#447700>! Cassini (global ARW)<a name='1605'></font>
+      ELSE IF (map_proj == PROJ_CASSINI) THEN<a name='1606'>
+         CALL <A href='../../html_code/share/module_llxy.F.html#MAP_SET'>map_set</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#SET_PROJECTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAP_SET_25">(PROJ_CASSINI, obs_proj,                             &amp;<a name='1607'>
+                      latinc   = dym*360.0/(2.0*EARTH_RADIUS_M*PI),       &amp;<a name='1608'>
+                      loninc   = dxm*360.0/(2.0*EARTH_RADIUS_M*PI),       &amp;<a name='1609'>
+                      lat1     = known_lat,                               &amp;<a name='1610'>
+                      lon1     = known_lon,                               &amp;<a name='1611'>
+<font color=#447700>! We still need to get POLE_LAT and POLE_LON metadata variables before<a name='1612'></font>
+<font color=#447700>!   this will work for rotated poles.<a name='1613'></font>
+                      lat0     = 90.0,                                    &amp;<a name='1614'>
+                      lon0     = 0.0,                                     &amp;<a name='1615'>
+                      knowni   = 1.,                                      &amp;<a name='1616'>
+                      knownj   = 1.,                                      &amp;<a name='1617'>
+                      stdlon   = stand_lon)<a name='1618'>
+<a name='1619'>
+      <font color=#447700>! Rotated latitude-longitude<a name='1620'></font>
+      ELSE IF (map_proj == PROJ_ROTLL) THEN<a name='1621'>
+         CALL <A href='../../html_code/share/module_llxy.F.html#MAP_SET'>map_set</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#SET_PROJECTION' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MAP_SET_26">(PROJ_ROTLL, obs_proj,                               &amp;<a name='1622'>
+<font color=#447700>! I have no idea how this should work for NMM nested domains<a name='1623'></font>
+                      ixdim    = e_we-1,                                  &amp;<a name='1624'>
+                      jydim    = e_sn-1,                                  &amp;<a name='1625'>
+                      phi      = real(e_sn-2)*dym/2.0,                    &amp;<a name='1626'>
+                      lambda   = real(e_we-2)*dxm,                        &amp;<a name='1627'>
+                      lat1     = cen_lat,                                 &amp;<a name='1628'>
+                      lon1     = cen_lon,                                 &amp;<a name='1629'>
+                      latinc   = dym,                                     &amp;<a name='1630'>
+                      loninc   = dxm,                                     &amp;<a name='1631'>
+                      stagger  = HH)<a name='1632'>
+<a name='1633'>
+      END IF<a name='1634'>
+<a name='1635'>
+  END SUBROUTINE set_projection<a name='1636'>
+<a name='1637'>
+<A NAME='FMT_DATE'><A href='../../html_code/share/wrf_fddaobs_in.F.html#FMT_DATE' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1638'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>fmt_date</font>(idate,odate)                                             <font color=#447700>!obsnypatch <A href='../../call_to/FMT_DATE.html' TARGET='index'>1</A><a name='1639'></font>
+<a name='1640'>
+<font color=#447700>!*************************************************************************<a name='1641'></font>
+<font color=#447700>! Purpose: Re-format a character date string from YYYYMMDDHHmmss form<a name='1642'></font>
+<font color=#447700>!          to YYYY-MM-DD_HH:mm:ss form.<a name='1643'></font>
+<font color=#447700>! INPUT:<a name='1644'></font>
+<font color=#447700>!     IDATE - Date string as YYYYMMDDHHmmss<a name='1645'></font>
+<font color=#447700>! OUTPUT:<a name='1646'></font>
+<font color=#447700>!     ODATE - Date string as YYYY-MM-DD_HH:mm:ss<a name='1647'></font>
+<font color=#447700>!*************************************************************************<a name='1648'></font>
+<a name='1649'>
+      IMPLICIT NONE<a name='1650'>
+<a name='1651'>
+      CHARACTER*14, intent(in)  :: idate        <font color=#447700>! input  date string<a name='1652'></font>
+      CHARACTER*19, intent(out) :: odate        <font color=#447700>! output date string<a name='1653'></font>
+<a name='1654'>
+      odate(1:19) = "0000-00-00_00:00:00"<a name='1655'>
+      odate(1:4)   = idate(1:4)                 <font color=#447700>! Year<a name='1656'></font>
+      odate(6:7)   = idate(5:6)                 <font color=#447700>! Month<a name='1657'></font>
+      odate(9:10)  = idate(7:8)                 <font color=#447700>! Day<a name='1658'></font>
+      odate(12:13) = idate(9:10)                <font color=#447700>! Hours<a name='1659'></font>
+      odate(15:16) = idate(11:12)               <font color=#447700>! Minutes<a name='1660'></font>
+      odate(18:19) = idate(13:14)               <font color=#447700>! Seconds<a name='1661'></font>
+<a name='1662'>
+      RETURN<a name='1663'>
+  END SUBROUTINE fmt_date<a name='1664'>
+<a name='1665'>
+<A NAME='NVALS_LE_LIMIT'><A href='../../html_code/share/wrf_fddaobs_in.F.html#NVALS_LE_LIMIT' TARGET='top_target'><IMG SRC="../../gif/bar_green.gif" border=0></A><a name='1666'>
+  INTEGER <font color=#993300>FUNCTION </font><font color=#cc0000>nvals_le_limit</font>(isize, values, limit) <A href='../../call_to/NVALS_LE_LIMIT.html' TARGET='index'>1</A><a name='1667'>
+<font color=#447700>!------------------------------------------------------------------------------<a name='1668'></font>
+<font color=#447700>! PURPOSE: Return the number of values in a (real) non-decreasing array that<a name='1669'></font>
+<font color=#447700>!          are less than or equal to the specified upper limit.<a name='1670'></font>
+<font color=#447700>! NOTE: It is important that the array is non-decreasing!<a name='1671'></font>
+<font color=#447700>!      <a name='1672'></font>
+<font color=#447700>!------------------------------------------------------------------------------<a name='1673'></font>
+  IMPLICIT NONE<a name='1674'>
+<a name='1675'>
+  INTEGER, INTENT(IN) :: isize           <font color=#447700>! Size of input array<a name='1676'></font>
+  REAL,    INTENT(IN) :: values(isize)   <font color=#447700>! Input array of reals<a name='1677'></font>
+  REAL,    INTENT(IN) :: limit           <font color=#447700>! Upper limit<a name='1678'></font>
+<a name='1679'>
+<font color=#447700>! Local variables<a name='1680'></font>
+  integer :: n<a name='1681'>
+<a name='1682'>
+<font color=#447700>! Search the array from largest to smallest values.<a name='1683'></font>
+   find_nvals: DO n = isize, 1, -1<a name='1684'>
+                 if(values(n).le.limit) EXIT find_nvals<a name='1685'>
+               ENDDO find_nvals<a name='1686'>
+  nvals_le_limit = n<a name='1687'>
+<a name='1688'>
+  RETURN<a name='1689'>
+  END FUNCTION nvals_le_limit<a name='1690'>
+<a name='1691'>
+<A NAME='COLLECT_OBS_INFO'><A href='../../html_code/share/wrf_fddaobs_in.F.html#COLLECT_OBS_INFO' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1692'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>collect_obs_info</font>(newpass,inest,n,latitude,longitude,             &amp; <A href='../../call_to/COLLECT_OBS_INFO.html' TARGET='index'>1</A>,<A href='../../call_from/COLLECT_OBS_INFO.html' TARGET='index'>4</A><a name='1693'>
+                              nlast,nprev,niobf,station_id,stnid,             &amp;<a name='1694'>
+                              rio,rjo,prt_max,prt_freq,xlat,xlong,            &amp;<a name='1695'>
+                              obs, lat,lon, mlat,mlon,                        &amp;<a name='1696'>
+                              e_we,e_sn,ims,ime,jms,jme,its,ite,jts,jte)<a name='1697'>
+<font color=#447700>!*************************************************************************<a name='1698'></font>
+<font color=#447700>! Purpose: Collect the obs index, obs latitude, obs longitude, obs station<a name='1699'></font>
+<font color=#447700>!          id, and model latitude and longitude values for print<a name='1700'></font>
+<font color=#447700>!          diagnostics. Note that THIS SUBROUTINE IS CALLED INTERATIVELY<a name='1701'></font>
+<font color=#447700>!          FROM IN4DOB, WITHIN THE OBS READ LOOP that reads new obser-<a name='1702'></font>
+<font color=#447700>!          vations needed for the new time window. Flag newpass is true<a name='1703'></font>
+<font color=#447700>!          the first time collect_obs_info is called from the read-loop<a name='1704'></font>
+<font color=#447700>!          for a new time window. So for each pass of IN4DOB, newpass is<a name='1705'></font>
+<font color=#447700>!          true the first time IN4DOB calls collec_obs_info.<a name='1706'></font>
+<a name='1707'>
+<font color=#447700>!          OBS (soundings) contain multiple obs levels. So on each sub-<a name='1708'></font>
+<font color=#447700>!          sequent call of collect_obs_info for a specific pass of IN4DOB,<a name='1709'></font>
+<font color=#447700>!          n will jump by the number of levels in the sounding.<a name='1710'></font>
+<font color=#447700>!<a name='1711'></font>
+<font color=#447700>!          Here, nlast refers to the index of the last valid-time obs<a name='1712'></font>
+<font color=#447700>!          that was read in during the last pass of IN4DOB (after the old<a name='1713'></font>
+<font color=#447700>!          obs were removed). This way we can properly start storing<a name='1714'></font>
+<font color=#447700>!          obs information for the new obs that are being read on this<a name='1715'></font>
+<font color=#447700>!          pass of IN4DOB, beginning with the first newly read obs for<a name='1716'></font>
+<font color=#447700>!          this pass of IN4DOB.<a name='1717'></font>
+<font color=#447700>!<a name='1718'></font>
+<font color=#447700>!          Note that nprev is needed to properly handle soundings. On<a name='1719'></font>
+<font color=#447700>!          each pass, n is stored into nprev, and on each subsequent<a name='1720'></font>
+<font color=#447700>!          pass of collect_obs_info, a loop is performed from nprev+1 to n.<a name='1721'></font>
+<font color=#447700>!*************************************************************************<a name='1722'></font>
+<a name='1723'>
+  IMPLICIT NONE<a name='1724'>
+<a name='1725'>
+  LOGICAL, intent(inout) :: newpass        <font color=#447700>! New pass flag<a name='1726'></font>
+  INTEGER, intent(in)    :: inest          <font color=#447700>! nest index<a name='1727'></font>
+  INTEGER, intent(in)    :: n              <font color=#447700>! Observation index<a name='1728'></font>
+  REAL,    intent(in)    :: latitude       <font color=#447700>! Latitude of obs<a name='1729'></font>
+  REAL,    intent(in)    :: longitude      <font color=#447700>! Latitude of obs<a name='1730'></font>
+  INTEGER, intent(in)    :: nlast          <font color=#447700>! Last obs of valid obs, prev window<a name='1731'></font>
+  INTEGER, intent(inout) :: nprev          <font color=#447700>! Previous obs in new window read seq<a name='1732'></font>
+  INTEGER, intent(in)    :: niobf          <font color=#447700>! Maximum number of observations<a name='1733'></font>
+  CHARACTER*15, intent(in) :: station_id   <font color=#447700>! First 15 chars of station id for obs n<a name='1734'></font>
+  INTEGER, intent(in)    :: prt_max        <font color=#447700>! Max no. of obs for diagnostic printout<a name='1735'></font>
+  INTEGER, intent(inout) :: stnid(40,prt_max) <font color=#447700>! Station ids for diagnostic printout<a name='1736'></font>
+  REAL,    intent(in)    :: rio(niobf)     <font color=#447700>! West-east coord (non-stagger)<a name='1737'></font>
+  REAL,    intent(in)    :: rjo(niobf)     <font color=#447700>! South-north coord (non-stagger)<a name='1738'></font>
+  INTEGER, intent(in)    :: prt_freq       <font color=#447700>! Frequency for diagnostic printout<a name='1739'></font>
+  REAL, DIMENSION( ims:ime, jms:jme ),                                   &amp;<a name='1740'>
+           intent(in )   :: xlat, xlong    <font color=#447700>! Lat/lon on mass-pt grid<a name='1741'></font>
+  INTEGER, intent(inout) :: obs(prt_max)   <font color=#447700>! Obs index for printout<a name='1742'></font>
+  REAL,    intent(inout) :: lat(prt_max)   <font color=#447700>! Obs latitude for printout<a name='1743'></font>
+  REAL,    intent(inout) :: lon(prt_max)   <font color=#447700>! Obs longitude for printout<a name='1744'></font>
+  REAL,    intent(inout) :: mlat(prt_max)  <font color=#447700>! Model latitude at (rio,rjo) for printout<a name='1745'></font>
+  REAL,    intent(inout) :: mlon(prt_max)  <font color=#447700>! Model longitude at (rio,rjo) for printout<a name='1746'></font>
+  INTEGER, intent(in)    :: e_we           <font color=#447700>! Max grid index in south-north<a name='1747'></font>
+  INTEGER, intent(in)    :: e_sn           <font color=#447700>! Max grid index in west-east<a name='1748'></font>
+  INTEGER, intent(in)    :: ims            <font color=#447700>! Grid mem start (west-east)<a name='1749'></font>
+  INTEGER, intent(in)    :: ime            <font color=#447700>! Grid mem end   (west-east)<a name='1750'></font>
+  INTEGER, intent(in)    :: jms            <font color=#447700>! Grid mem start (south-north)<a name='1751'></font>
+  INTEGER, intent(in)    :: jme            <font color=#447700>! Grid mem end   (south-north)<a name='1752'></font>
+  INTEGER, intent(in)    :: its            <font color=#447700>! Grid tile start (west-east)<a name='1753'></font>
+  INTEGER, intent(in)    :: ite            <font color=#447700>! Grid tile end   (west-east)<a name='1754'></font>
+  INTEGER, intent(in)    :: jts            <font color=#447700>! Grid tile start (south-north)<a name='1755'></font>
+  INTEGER, intent(in)    :: jte            <font color=#447700>! Grid tile end   (south-north)<a name='1756'></font>
+<a name='1757'>
+<font color=#447700>! Local variables<a name='1758'></font>
+  integer i                       <font color=#447700>! Loop counter over station id character<a name='1759'></font>
+  integer nn                      <font color=#447700>! Loop counter over obs index<a name='1760'></font>
+  integer ndx,ndxp                <font color=#447700>! Index into printout arrays (ndx and prev ndx)<a name='1761'></font>
+  real    :: ri, rj               <font color=#447700>! Mass-pt coord of obs<a name='1762'></font>
+  integer :: ril, rjl             <font color=#447700>! Mass-pt integer coord immed sw of obs<a name='1763'></font>
+  integer :: iend, jend           <font color=#447700>! Upper i, j index for interpolation<a name='1764'></font>
+  real    :: dxob, dyob           <font color=#447700>! Grid fractions for interp<a name='1765'></font>
+  logical :: llsave               <font color=#447700>! Save lat/lon values if true<a name='1766'></font>
+  character(len=200) :: msg       <font color=#447700>! Argument to wrf_message<a name='1767'></font>
+<a name='1768'>
+  if(newpass) then<a name='1769'>
+    newpass = .false.<a name='1770'>
+    nprev = nlast       <font color=#447700>! Reset in case old obs have been discarded from prev window<a name='1771'></font>
+  endif<a name='1772'>
+<a name='1773'>
+<font color=#447700>! Start iteration only if we have not yet stored prt_max number of obs for printing.<a name='1774'></font>
+<font color=#447700>! Note: The loop below could represent multiple levels in a sounding, so we<a name='1775'></font>
+<font color=#447700>!       go ahead and start the loop if the beginning index (ndx) is prt_max or<a name='1776'></font>
+<font color=#447700>!       less, and then exit the loop if ndx exceeds prt_max.<a name='1777'></font>
+    if(prt_freq.gt.0) then<a name='1778'>
+       ndx  = (n-nlast-1)/prt_freq + 1<a name='1779'>
+       ndxp = (nprev-nlast-1)/prt_freq + 1<a name='1780'>
+    else<a name='1781'>
+       write(msg,*) 'STOP<font color=#447700>! OBS NAMELIST INPUT obs_prt_freq MUST BE GREATER THAN ZERO.'<a name='1782'></font>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#COLLECT_OBS_INFO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1456">(msg)<a name='1783'>
+       write(msg,*) 'THE NAMELIST VALUE IS',prt_freq,' FOR NEST ',inest<a name='1784'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_MESSAGE'>wrf_message</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#COLLECT_OBS_INFO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_MESSAGE_1457">(msg)<a name='1785'>
+       call <A href='../../html_code/frame/module_wrf_error.F.html#WRF_ERROR_FATAL'>wrf_error_fatal</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#COLLECT_OBS_INFO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="WRF_ERROR_FATAL_1489"> ( 'wrf_fddaobs_in: in4dob STOP' )<a name='1786'>
+    endif<a name='1787'>
+<a name='1788'>
+<font color=#447700>!   write(6,'5(a,i5),a,a15') 'n = ',n,'  nlast = ',nlast,'  ndx = ',ndx,  &amp;<a name='1789'></font>
+<font color=#447700>!                            '  nprev = ',nprev,'  ndxp = ',ndxp,         &amp;<a name='1790'></font>
+<font color=#447700>!                            '  station id = ',station_id<a name='1791'></font>
+<a name='1792'>
+    if(ndxp .lt. prt_max) then<a name='1793'>
+<a name='1794'>
+   MODCHK : do nn = nprev+1, n<a name='1795'>
+        llsave = .false.<a name='1796'>
+<a name='1797'>
+<font color=#447700>!       if( mod(nn-1,prt_freq) .eq. 0 ) then<a name='1798'></font>
+        if( mod(nn-nlast-1,prt_freq) .eq. 0 ) then<a name='1799'>
+           ndx = (nn-nlast-1)/prt_freq + 1<a name='1800'>
+           if(ndx.gt.prt_max) EXIT MODCHK       <font color=#447700>! Limit printout to prt_max entries<a name='1801'></font>
+           llsave = .true.<a name='1802'>
+        endif<a name='1803'>
+        if(llsave) then<a name='1804'>
+<a name='1805'>
+<font color=#447700>! Collect obs index and latitude and longitude.<a name='1806'></font>
+          obs(ndx) = nn<a name='1807'>
+          lat(ndx) = latitude<a name='1808'>
+          lon(ndx) = longitude<a name='1809'>
+<a name='1810'>
+<font color=#447700>! Collect first 15 chars of obs station id (in integer format).<a name='1811'></font>
+          do i = 1,15<a name='1812'>
+            stnid(i,ndx) = ichar(station_id(i:i))<a name='1813'>
+          enddo<a name='1814'>
+<a name='1815'>
+<font color=#447700>! Compute and collect the model latitude and longitude at the obs point.<a name='1816'></font>
+          CALL <A href='../../html_code/share/wrf_fddaobs_in.F.html#GET_MODEL_LATLON'>get_model_latlon</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#COLLECT_OBS_INFO' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="GET_MODEL_LATLON_1">(nn,niobf,rio,rjo,xlat,xlong,e_we,e_sn,    &amp;<a name='1817'>
+                                ims,ime,jms,jme,its,ite,jts,jte,          &amp;<a name='1818'>
+                                mlat(ndx),mlon(ndx))<a name='1819'>
+        endif  <font color=#447700>!end if(llsave)<a name='1820'></font>
+      enddo MODCHK<a name='1821'>
+<a name='1822'>
+    endif  <font color=#447700>!end if(ndx .le. prt_max)<a name='1823'></font>
+<a name='1824'>
+<font color=#447700>! Save index of previous obs in read loop.<a name='1825'></font>
+    nprev = n<a name='1826'>
+<a name='1827'>
+  END SUBROUTINE collect_obs_info<a name='1828'>
+<a name='1829'>
+<A NAME='GET_MODEL_LATLON'><A href='../../html_code/share/wrf_fddaobs_in.F.html#GET_MODEL_LATLON' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1830'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>get_model_latlon</font>(n,niobf,rio,rjo,xlat,xlong,e_we,e_sn,   &amp; <A href='../../call_to/GET_MODEL_LATLON.html' TARGET='index'>1</A><a name='1831'>
+                              ims,ime,jms,jme,its,ite,jts,jte,        &amp;<a name='1832'>
+                              mlat,mlon)<a name='1833'>
+<font color=#447700>!*************************************************************************<a name='1834'></font>
+<font color=#447700>! Purpose: Use bilinear interpolation to compute the model latitude and <a name='1835'></font>
+<font color=#447700>!          longitude at the observation point.<a name='1836'></font>
+<font color=#447700>!*************************************************************************<a name='1837'></font>
+<a name='1838'>
+  IMPLICIT NONE<a name='1839'>
+<a name='1840'>
+  INTEGER, intent(in)    :: n              <font color=#447700>! Observation index<a name='1841'></font>
+  INTEGER, intent(in)    :: niobf          <font color=#447700>! Maximum number of observations<a name='1842'></font>
+  REAL,    intent(in)    :: rio(niobf)     <font color=#447700>! West-east coord (non-stagger)<a name='1843'></font>
+  REAL,    intent(in)    :: rjo(niobf)     <font color=#447700>! South-north coord (non-stagger)<a name='1844'></font>
+  REAL, DIMENSION( ims:ime, jms:jme ),                                   &amp;<a name='1845'>
+           intent(in )   :: xlat, xlong    <font color=#447700>! Lat/lon on mass-pt grid<a name='1846'></font>
+  INTEGER, intent(in)    :: e_we           <font color=#447700>! Max grid index in south-north<a name='1847'></font>
+  INTEGER, intent(in)    :: e_sn           <font color=#447700>! Max grid index in west-east<a name='1848'></font>
+  INTEGER, intent(in)    :: ims            <font color=#447700>! Grid mem start (west-east)<a name='1849'></font>
+  INTEGER, intent(in)    :: ime            <font color=#447700>! Grid mem end   (west-east)<a name='1850'></font>
+  INTEGER, intent(in)    :: jms            <font color=#447700>! Grid mem start (south-north)<a name='1851'></font>
+  INTEGER, intent(in)    :: jme            <font color=#447700>! Grid mem end   (south-north)<a name='1852'></font>
+  INTEGER, intent(in)    :: its            <font color=#447700>! Grid tile start (west-east)<a name='1853'></font>
+  INTEGER, intent(in)    :: ite            <font color=#447700>! Grid tile end   (west-east)<a name='1854'></font>
+  INTEGER, intent(in)    :: jts            <font color=#447700>! Grid tile start (south-north)<a name='1855'></font>
+  INTEGER, intent(in)    :: jte            <font color=#447700>! Grid tile end   (south-north)<a name='1856'></font>
+  REAL,    intent(out)   :: mlat           <font color=#447700>! Model latitude at obs point<a name='1857'></font>
+  REAL,    intent(out)   :: mlon           <font color=#447700>! Model longitude at obs point<a name='1858'></font>
+<a name='1859'>
+<font color=#447700>! Local variables<a name='1860'></font>
+  integer ndx                     <font color=#447700>! Index into save arrays<a name='1861'></font>
+  real    :: ri, rj               <font color=#447700>! Mass-pt coord of obs <a name='1862'></font>
+  integer :: ril, rjl             <font color=#447700>! Mass-pt integer coord immed sw of obs <a name='1863'></font>
+  integer :: iend, jend           <font color=#447700>! Upper i, j index for interpolation<a name='1864'></font>
+  real    :: dxob, dyob           <font color=#447700>! Grid fractions for interp<a name='1865'></font>
+<a name='1866'>
+<font color=#447700>! Compute model latitude and longitude if point on tile.<a name='1867'></font>
+  ri  = rio(n) - .5            <font color=#447700>! mass-pt west-east obs grid coord<a name='1868'></font>
+  rj  = rjo(n) - .5            <font color=#447700>! mass-pt south-north obs grid coord<a name='1869'></font>
+  ril = int(ri)<a name='1870'>
+  rjl = int(rj)<a name='1871'>
+  dxob = ri - float(ril)<a name='1872'>
+  dyob = rj - float(rjl)<a name='1873'>
+  iend = min(ite+1,e_we-2)<a name='1874'>
+  jend = min(jte+1,e_sn-2)<a name='1875'>
+  mlat = -999<a name='1876'>
+  mlon = -999<a name='1877'>
+<a name='1878'>
+  if(ri.ge.its .and. ri.lt.iend .and. rj.ge.jts .and. rj.lt.jend) then<a name='1879'>
+<a name='1880'>
+<font color=#447700>! bilinear interpolation<a name='1881'></font>
+     mlat = ((1.-dyob)*((1.-dxob)*xlat(ril,rjl)+             &amp;<a name='1882'>
+            dxob*xlat(ril+1,rjl)                             &amp;<a name='1883'>
+            )+dyob*((1.-dxob)*xlat(ril,rjl+1)+               &amp;<a name='1884'>
+            dxob*xlat(ril+1,rjl+1)))<a name='1885'>
+<a name='1886'>
+     mlon = ((1.-dyob)*((1.-dxob)*xlong(ril,rjl)+            &amp;<a name='1887'>
+            dxob*xlong(ril+1,rjl)                            &amp;<a name='1888'>
+            )+dyob*((1.-dxob)*xlong(ril,rjl+1)+              &amp;<a name='1889'>
+            dxob*xlong(ril+1,rjl+1)))<a name='1890'>
+  endif<a name='1891'>
+<a name='1892'>
+  END SUBROUTINE get_model_latlon<a name='1893'>
+<a name='1894'>
+<A NAME='ROTATE_VECTOR'><A href='../../html_code/share/wrf_fddaobs_in.F.html#ROTATE_VECTOR' TARGET='top_target'><IMG SRC="../../gif/bar_red.gif" border=0></A><a name='1895'>
+  <font color=#993300>SUBROUTINE </font><font color=#cc0000>rotate_vector</font>(lon,u,v,obs_proj,map_proj) <A href='../../call_to/ROTATE_VECTOR.html' TARGET='index'>2</A>,<A href='../../call_from/ROTATE_VECTOR.html' TARGET='index'>1</A><a name='1896'>
+<a name='1897'>
+  USE <A href='../../html_code/share/module_llxy.F.html#MODULE_LLXY'>module_llxy</A><A href='../../html_code/share/wrf_fddaobs_in.F.html#ROTATE_VECTOR' TARGET='bottom_target'><IMG SRC="../../gif/cyan.gif" border=0></a><A NAME="MODULE_LLXY_13"><a name='1898'>
+<a name='1899'>
+<font color=#447700>!*************************************************************************<a name='1900'></font>
+<font color=#447700>! Purpose: Rotate a single Earth-relative wind vector to a grid-relative<a name='1901'></font>
+<font color=#447700>!          wind vector.<a name='1902'></font>
+<font color=#447700>!*************************************************************************<a name='1903'></font>
+<a name='1904'>
+  IMPLICIT NONE<a name='1905'>
+<a name='1906'>
+  REAL,           intent(in)    :: lon        <font color=#447700>! Longitude (deg)<a name='1907'></font>
+  REAL,           intent(inout) :: u          <font color=#447700>! U-component of wind vector<a name='1908'></font>
+  REAL,           intent(inout) :: v          <font color=#447700>! V-component of wind vector<a name='1909'></font>
+  TYPE(PROJ_INFO),intent(in)    :: obs_proj   <font color=#447700>! Structure for obs projection<a name='1910'></font>
+  INTEGER,        intent(in)    :: map_proj   <font color=#447700>! Map projection index<a name='1911'></font>
+<a name='1912'>
+<font color=#447700>! Local variables<a name='1913'></font>
+  real diff, alpha<a name='1914'>
+  double precision udbl, vdbl<a name='1915'>
+<a name='1916'>
+<font color=#447700>! Only rotate winds for Lambert conformal or polar stereographic<a name='1917'></font>
+  if (map_proj == PROJ_LC .or. map_proj == PROJ_PS) then<a name='1918'>
+<a name='1919'>
+     diff = obs_proj%stdlon - lon<a name='1920'>
+     if (diff &gt; 180.) then<a name='1921'>
+        diff = diff - 360.<a name='1922'>
+     else if (diff &lt; -180.) then<a name='1923'>
+        diff = diff + 360.<a name='1924'>
+     end if<a name='1925'>
+<a name='1926'>
+<font color=#447700>! Calculate the rotation angle, alpha, in radians<a name='1927'></font>
+     if (map_proj == PROJ_LC) then<a name='1928'>
+        alpha = diff * obs_proj%cone * rad_per_deg * obs_proj%hemi<a name='1929'>
+     else<a name='1930'>
+        alpha = diff * rad_per_deg * obs_proj%hemi<a name='1931'>
+     end if<a name='1932'>
+<a name='1933'>
+     udbl = v*sin(alpha) + u*cos(alpha)<a name='1934'>
+     vdbl = v*cos(alpha) - u*sin(alpha)<a name='1935'>
+     u = udbl<a name='1936'>
+     v = vdbl<a name='1937'>
+<a name='1938'>
+  endif<a name='1939'>
+  END SUBROUTINE rotate_vector<a name='1940'>
+<a name='1941'>
+#endif<a name='1942'>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1943'></font>
+<font color=#447700>! End subroutines for in4dob<a name='1944'></font>
+<font color=#447700>!-----------------------------------------------------------------------<a name='1945'></font>
+</pre></body></html>
