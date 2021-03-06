@@ -9,7 +9,7 @@
 <div class='logo'>
     <div class='logotexts'>
         <h3>简介</h3>
-        <span>毕业于<a href=https://www.nuist.edu.cn>南京信息工程大学(2011-2018)</a>，硕士期间主要从事强对流数值模拟。目前博士在读。</span>
+        <span>毕业于<a href=https://www.nuist.edu.cn>南京信息工程大学(2011-2018)</a>，硕士期间主要从事强对流数值模拟。目前博士在读。欢迎关注 气象汇 公众号。</span>
     </div>
 </div>
 
